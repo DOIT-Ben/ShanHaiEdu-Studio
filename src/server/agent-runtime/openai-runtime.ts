@@ -5,6 +5,7 @@ import type {
   AgentRuntimeResult,
   AgentRuntimeTask,
 } from "./types";
+import { taskGuidance } from "./task-guidance";
 
 type OpenAIResponsePayload = {
   model: string;
@@ -48,15 +49,6 @@ type StructuredRuntimeOutput = {
   nextSuggestedAction: {
     label: string;
   };
-};
-
-const taskLabels: Record<AgentRuntimeTask, string> = {
-  requirement_spec: "需求规格说明书",
-  textbook_evidence: "教材证据包",
-  lesson_plan: "公开课教案",
-  ppt_outline: "PPT 大纲与逐页脚本",
-  intro_video_plan: "导入视频方案",
-  final_delivery_checklist: "最终交付清单",
 };
 
 export class OpenAIRuntime implements AgentRuntime {
@@ -130,11 +122,16 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, model: stri
       "只生成面向教师可阅读的 Markdown 文本产物。",
       "不要输出工程实现细节、密钥、调试信息、本地路径或底层错误。",
       "如果是导入视频方案，必须保持独立创意，不提前讲知识点结论，并通过课程锚点回到课堂。",
+      "artifactDraft.markdown 必须包含任务必备字段，并以 ## 自检清单 结尾。",
       "返回内容必须严格符合指定 JSON 结构。",
     ].join("\n"),
     input: JSON.stringify({
       task: input.task,
-      taskLabel: taskLabels[input.task],
+      taskLabel: taskGuidance[input.task].label,
+      taskGuidance: {
+        requiredFields: taskGuidance[input.task].requiredFields,
+        checklist: taskGuidance[input.task].checklist,
+      },
       projectContext: input.projectContext,
       userMessage: input.userMessage,
       approvedArtifacts: input.approvedArtifacts.map((artifact) => ({
