@@ -27,7 +27,7 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
         </div>
       </div>
 
-      <div className="relative rounded-lg border bg-[#f8f8f8] px-5 py-4">
+      <div className="relative rounded-lg border bg-card px-5 py-4">
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">

@@ -25,7 +25,12 @@ export function ChatTranscript({ messages }: ChatTranscriptProps) {
                 <span className="font-medium">{assistant ? "ShanHaiEdu AI" : "您"}</span>
                 <span className="text-sm text-muted-foreground">10:24</span>
               </div>
-              <div className="max-w-[760px] rounded-lg border bg-card px-5 py-4 text-sm leading-7">
+              <div
+                className={cn(
+                  "max-w-[760px] rounded-lg border px-5 py-4 text-sm leading-7",
+                  assistant ? "bg-card" : "bg-[#f3f3f3]",
+                )}
+              >
                 {message.title && <div className="mb-1 font-medium">{message.title}</div>}
                 <p>{message.body}</p>
               </div>
