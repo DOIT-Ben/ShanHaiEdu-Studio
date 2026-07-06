@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale";
 
 export type ArtifactKind =
+  | "requirement_spec"
   | "textbook_evidence"
   | "lesson_plan"
   | "intro_video_plan"
@@ -32,6 +33,9 @@ export type ArtifactActionState = {
 
 export type ArtifactItem = {
   key: string;
+  artifactId?: string;
+  nodeKey?: ArtifactKind;
+  version?: number;
   kind: ArtifactKind;
   title: string;
   status: ArtifactStatus;

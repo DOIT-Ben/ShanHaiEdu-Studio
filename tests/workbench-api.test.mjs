@@ -83,6 +83,79 @@ const seedArtifacts = [
   },
 ];
 
+const backendProject = {
+  id: "backend-project-a",
+  title: "五年级百分数公开课",
+  status: "active",
+  currentNodeKey: "requirement_spec",
+  grade: "五年级",
+  subject: "数学",
+  textbookVersion: null,
+  lessonTopic: "百分数",
+  createdAt: "2026-07-07T00:00:00.000Z",
+  updatedAt: "2026-07-07T00:01:00.000Z",
+};
+
+const backendNodes = [
+  {
+    id: "node-requirement",
+    projectId: backendProject.id,
+    key: "requirement_spec",
+    title: "需求规格",
+    status: "needs_review",
+    order: 1,
+    upstreamNodeKeys: [],
+    approvedArtifactId: null,
+    staleReason: null,
+    updatedAt: "2026-07-07T00:01:00.000Z",
+  },
+  {
+    id: "node-lesson",
+    projectId: backendProject.id,
+    key: "lesson_plan",
+    title: "教案",
+    status: "not_started",
+    order: 2,
+    upstreamNodeKeys: ["requirement_spec", "textbook_evidence"],
+    approvedArtifactId: null,
+    staleReason: null,
+    updatedAt: "2026-07-07T00:01:00.000Z",
+  },
+];
+
+const backendArtifact = {
+  id: "artifact-requirement-v1",
+  projectId: backendProject.id,
+  nodeKey: "requirement_spec",
+  title: "需求规格说明书",
+  kind: "requirement_spec",
+  status: "needs_review",
+  summary: "围绕百分数公开课生成第一版需求规格。",
+  markdownContent: "# 需求规格说明书\n\n## 课题\n百分数",
+  structuredContent: { "课题": "百分数", "年级": "五年级" },
+  version: 1,
+  isApproved: false,
+  createdAt: "2026-07-07T00:02:00.000Z",
+  updatedAt: "2026-07-07T00:02:00.000Z",
+};
+
+const backendSnapshot = {
+  project: backendProject,
+  messages: [
+    {
+      id: "backend-message-1",
+      projectId: backendProject.id,
+      role: "teacher",
+      content: "我想做一节百分数公开课。",
+      artifactRefs: [],
+      createdAt: "2026-07-07T00:03:00.000Z",
+    },
+  ],
+  nodes: backendNodes,
+  artifacts: [backendArtifact],
+  agentRuns: [],
+};
+
 function loadWorkbenchApiModule() {
   const ts = require("typescript");
   const source = readFileSync(apiSourcePath, "utf8");
@@ -121,19 +194,13 @@ function loadWorkbenchApiModule() {
 test("API client uses the shared workbench contract paths", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
-  const snapshot = {
-    project: seedProjects[0],
-    messages: seedMessages,
-    artifacts: seedArtifacts,
-    activeArtifactKey: "intro-video-plan",
-  };
   const client = createWorkbenchApiClient({
     baseUrl: "https://example.test",
     fetcher: async (url, init) => {
       calls.push({ url: String(url), init });
       return {
         ok: true,
-        json: async () => (String(url).endsWith("/projects") ? seedProjects : snapshot),
+        json: async () => (String(url).endsWith("/projects") ? { projects: [backendProject] } : backendSnapshot),
       };
     },
   });
@@ -149,11 +216,68 @@ test("API client uses the shared workbench contract paths", async () => {
   assert.equal(calls[2].url, "https://example.test/api/workbench/projects/project-a/messages");
   assert.equal(calls[2].init.method, "POST");
   assert.deepEqual(JSON.parse(calls[2].init.body), {
-    body: "我想做百分数公开课",
-    reference: "导入视频方案：生活情境",
+    role: "teacher",
+    content: "我想做百分数公开课",
+    artifactRefs: ["导入视频方案：生活情境"],
   });
-  assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");
-  assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/regenerate");
+  assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");
+  assert.equal(calls[5].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/regenerate");
+});
+
+test("API client normalizes Backend Workflow Lite project lists and snapshots", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const client = createWorkbenchApiClient({
+    fetcher: async (url) => ({
+      ok: true,
+      json: async () => (String(url).endsWith("/projects") ? { projects: [backendProject] } : backendSnapshot),
+    }),
+  });
+
+  const projects = await client.listProjects();
+  assert.equal(projects[0].id, "backend-project-a");
+  assert.equal(projects[0].currentStep, "需求规格");
+  assert.equal(projects[0].meta, "五年级 数学");
+
+  const snapshot = await client.getProjectSnapshot("backend-project-a");
+  assert.equal(snapshot.project.id, "backend-project-a");
+  assert.equal(snapshot.messages[0].speaker, "teacher");
+  assert.equal(snapshot.messages[0].body, "我想做一节百分数公开课。");
+  assert.equal(snapshot.artifacts.length, 2);
+
+  const requirement = snapshot.artifacts.find((item) => item.nodeKey === "requirement_spec");
+  assert.equal(requirement.key, "artifact-requirement-v1");
+  assert.equal(requirement.title, "需求规格说明书");
+  assert.equal(requirement.actions.canCopy, true);
+  assert.equal(requirement.actions.canConfirm, true);
+  assert.equal(requirement.content.Markdown, "# 需求规格说明书\n\n## 课题\n百分数");
+
+  const lesson = snapshot.artifacts.find((item) => item.nodeKey === "lesson_plan");
+  assert.equal(lesson.key, "node-lesson");
+  assert.equal(lesson.summary, "还没有生成内容。");
+  assert.equal(lesson.actions.canCopy, false);
+  assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
+});
+
+test("API client creates projects through backend shape and then reads a snapshot", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => (init?.method === "POST" ? { project: backendProject } : backendSnapshot),
+      };
+    },
+  });
+
+  const snapshot = await client.createProject();
+
+  assert.equal(calls[0].url, "/api/workbench/projects");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[1].url, "/api/workbench/projects/backend-project-a/snapshot");
+  assert.equal(snapshot.project.id, "backend-project-a");
 });
 
 test("API client normalizes failed responses to teacher-facing errors", async () => {

@@ -69,6 +69,12 @@
 - 输入一句话后，中间对话和右侧节点同步更新。
 - 失败时显示用户可理解恢复态。
 
+当前状态：
+
+- 已完成 Stage 2 raw contract 适配，收尾见 `docs\stages\frontend-api-backed-stage2-closeout.md`。
+- 前端 API client 已能把 Backend Workflow Lite Stage 1 raw snapshot 映射为 UI view model。
+- Stage 3 前需拆分 `workbench-api.ts` 映射层，避免继续接动作逻辑时越过 500 行警戒线。
+
 ### 阶段 3：产物动作接入
 
 交付：
