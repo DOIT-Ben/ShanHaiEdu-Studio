@@ -79,7 +79,7 @@ export function ArtifactNodeCard({
             onOpen(item);
           }}
           className={cn(
-            "group grid w-full grid-cols-[28px_1fr] items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-none transition duration-150 ease-out hover:bg-[#ebebeb] focus:ring-2 focus:ring-ring/35",
+            "group grid w-full grid-cols-[28px] items-center justify-center rounded-md py-1.5 outline-none transition duration-150 ease-out hover:bg-[#ebebeb] focus:ring-2 focus:ring-ring/35 2xl:grid-cols-[28px_1fr] 2xl:justify-stretch 2xl:gap-2 2xl:pr-1",
             active && "bg-[#e9e9e9]",
           )}
         >
@@ -92,7 +92,7 @@ export function ArtifactNodeCard({
             <Icon className={cn("h-3.5 w-3.5", active ? "text-foreground" : "text-muted-foreground")} />
             {active && <span className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-card", meta.dot)} />}
           </span>
-          <span className={cn("truncate text-sm", active ? "font-medium text-foreground" : "text-muted-foreground")}>
+          <span className={cn("hidden truncate text-sm 2xl:block", active ? "font-medium text-foreground" : "text-muted-foreground")}>
             {item.title.replace("策划卡", "").replace("提示词", "")}
           </span>
         </button>

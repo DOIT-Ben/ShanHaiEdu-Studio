@@ -69,8 +69,8 @@ export function ArtifactRail({
 
   return (
     <aside className="flex h-full items-center justify-center border-l bg-[#f7f7f7]">
-      <div className="relative flex w-[92px] flex-col gap-2 px-2 py-4">
-        <span className="absolute left-[22px] top-7 bottom-7 w-px bg-border" />
+      <div className="relative flex w-full flex-col items-center gap-2 px-2 py-4 2xl:w-[92px] 2xl:items-stretch">
+        <span className="absolute bottom-7 left-1/2 top-7 w-px -translate-x-1/2 bg-border 2xl:left-[22px] 2xl:translate-x-0" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
             <ArtifactNodeCard

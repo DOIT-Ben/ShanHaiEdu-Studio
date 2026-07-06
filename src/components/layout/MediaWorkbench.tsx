@@ -59,7 +59,7 @@ export function MediaWorkbench() {
               onRecover={controller.showRecovery}
             />
           </div>
-          <div className="hidden w-32 shrink-0 xl:block">
+          <div className="hidden w-16 shrink-0 lg:block 2xl:w-32">
             <ArtifactRail
               items={controller.artifacts}
               activeKey={controller.activeArtifact.key}
