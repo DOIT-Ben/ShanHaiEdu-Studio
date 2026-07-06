@@ -111,3 +111,10 @@ export type SaveArtifactInput = {
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
 };
+
+export type RegenerateArtifactInput = {
+  title?: string;
+  summary: string;
+  markdownContent: string;
+  structuredContent?: Record<string, unknown>;
+};

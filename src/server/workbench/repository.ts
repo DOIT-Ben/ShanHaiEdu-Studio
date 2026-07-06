@@ -1,7 +1,7 @@
 import { prisma } from "@/server/db/client";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
-import type { AddMessageInput, CreateProjectInput, SaveArtifactInput } from "./types";
+import type { AddMessageInput, CreateProjectInput, RegenerateArtifactInput, SaveArtifactInput } from "./types";
 
 export type WorkbenchRepository = ReturnType<typeof createPrismaWorkbenchRepository>;
 
@@ -93,6 +93,11 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           throw new Error(`Artifact not found: ${artifactId}`);
         }
 
+        await tx.artifact.updateMany({
+          where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
+          data: { isApproved: false },
+        });
+
         const artifact = await tx.artifact.update({
           where: { id: artifactId },
           data: { status: "approved", isApproved: true },
@@ -101,6 +106,51 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         await tx.workflowNode.update({
           where: { projectId_key: { projectId, key: existing.nodeKey } },
           data: { status: "approved", approvedArtifactId: artifact.id },
+        });
+
+        return artifact;
+      });
+    },
+
+    async getArtifact(projectId: string, artifactId: string) {
+      return client.artifact.findFirst({
+        where: { id: artifactId, projectId },
+      });
+    },
+
+    async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.artifact.findFirst({
+          where: { id: artifactId, projectId },
+        });
+
+        if (!existing) {
+          throw new Error(`Artifact not found: ${artifactId}`);
+        }
+
+        const latest = await tx.artifact.findFirst({
+          where: { projectId, nodeKey: existing.nodeKey },
+          orderBy: { version: "desc" },
+        });
+
+        const artifact = await tx.artifact.create({
+          data: {
+            projectId,
+            nodeKey: existing.nodeKey,
+            kind: existing.kind,
+            title: input.title ?? existing.title,
+            status: "needs_review",
+            summary: input.summary,
+            markdownContent: input.markdownContent,
+            structuredContentJson: JSON.stringify(input.structuredContent ?? {}),
+            version: latest ? latest.version + 1 : existing.version + 1,
+            isApproved: false,
+          },
+        });
+
+        await tx.workflowNode.update({
+          where: { projectId_key: { projectId, key: existing.nodeKey } },
+          data: { status: "needs_review" },
         });
 
         return artifact;

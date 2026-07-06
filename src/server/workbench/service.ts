@@ -7,6 +7,7 @@ import type {
   CreateProjectInput,
   ProjectRecord,
   ProjectSnapshot,
+  RegenerateArtifactInput,
   SaveArtifactInput,
   WorkflowNodeRecord,
 } from "./types";
@@ -42,8 +43,21 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapArtifact(artifact);
     },
 
+    async getArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
+      const artifact = await repository.getArtifact(projectId, artifactId);
+      if (!artifact) {
+        throw new Error(`Artifact not found: ${artifactId}`);
+      }
+      return mapArtifact(artifact);
+    },
+
     async approveArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
       const artifact = await repository.approveArtifact(projectId, artifactId);
+      return mapArtifact(artifact);
+    },
+
+    async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput): Promise<ArtifactRecord> {
+      const artifact = await repository.regenerateArtifact(projectId, artifactId, input);
       return mapArtifact(artifact);
     },
 
