@@ -3,9 +3,9 @@ import { cn } from "@/lib/utils";
 
 const tones = {
   neutral: "border-border bg-muted text-muted-foreground",
-  success: "border-success/20 bg-success/10 text-success",
-  warning: "border-warning/20 bg-warning/10 text-warning",
-  info: "border-info/20 bg-info/10 text-info",
+  success: "border-border bg-muted text-muted-foreground",
+  warning: "border-border bg-muted text-muted-foreground",
+  info: "border-border bg-muted text-muted-foreground",
   danger: "border-destructive/20 bg-destructive/10 text-destructive",
   bronze: "border-bronze/25 bg-bronze/10 text-bronze",
 };
@@ -22,4 +22,3 @@ export function Badge({
     />
   );
 }
-

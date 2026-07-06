@@ -124,7 +124,7 @@ export function MediaWorkbench() {
               onRecover={showRecovery}
             />
           </div>
-          <div className="hidden w-[360px] shrink-0 xl:block">
+          <div className="hidden w-[86px] shrink-0 xl:block">
             <ArtifactRail
               items={artifacts}
               activeKey={activeArtifact.key}
@@ -140,6 +140,7 @@ export function MediaWorkbench() {
         <SheetContent className="max-w-[390px]">
           <SheetTitle className="sr-only">线性产物</SheetTitle>
           <ArtifactRail
+            variant="drawer"
             items={artifacts}
             activeKey={activeArtifact.key}
             onCopy={copyArtifact}
@@ -161,4 +162,3 @@ export function MediaWorkbench() {
     </TooltipProvider>
   );
 }
-

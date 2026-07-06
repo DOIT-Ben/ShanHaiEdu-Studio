@@ -44,8 +44,8 @@ export function ArtifactDetailSheet({
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="space-y-4 p-5">
-                <div className="rounded-lg border border-warning/25 bg-warning/5 p-3 text-sm leading-6 text-warning">
-                  <div className="flex items-center gap-2 font-medium">
+                <div className="rounded-lg border bg-muted/45 p-3 text-sm leading-6 text-muted-foreground">
+                  <div className="flex items-center gap-2 font-medium text-foreground">
                     <ShieldAlert className="h-4 w-4" />
                     当前内容是前端演示数据
                   </div>
@@ -111,4 +111,3 @@ export function ArtifactDetailSheet({
     </Sheet>
   );
 }
-

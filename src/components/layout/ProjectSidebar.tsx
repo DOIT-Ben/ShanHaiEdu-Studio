@@ -7,10 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const projectTone = {
-  active: { label: "进行中", tone: "info" as const, dot: "text-info" },
-  review: { label: "待重审", tone: "warning" as const, dot: "text-warning" },
+  active: { label: "进行中", tone: "info" as const, dot: "text-bronze" },
+  review: { label: "待重审", tone: "warning" as const, dot: "text-bronze" },
   blocked: { label: "需处理", tone: "danger" as const, dot: "text-destructive" },
-  done: { label: "已完成", tone: "success" as const, dot: "text-success" },
+  done: { label: "已完成", tone: "success" as const, dot: "text-muted-foreground" },
 };
 
 type ProjectSidebarProps = {
@@ -23,12 +23,7 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect }: ProjectSidebarProps) {
   return (
-    <aside
-      className={cn(
-        "flex h-full min-h-0 flex-col border-r bg-card/82 transition-[width] duration-150",
-        collapsed ? "w-16" : "w-64",
-      )}
-    >
+    <aside className={cn("flex h-full min-h-0 flex-col border-r bg-card transition-[width] duration-150", collapsed ? "w-16" : "w-72")}>
       <div className={cn("border-b p-4", collapsed && "px-2")}>
         <div className={cn("flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
           {!collapsed && (
@@ -46,7 +41,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         </div>
         {!collapsed && (
           <>
-            <Button className="mt-4 w-full" variant="bronze">
+            <Button className="mt-4 w-full justify-start" variant="ghost">
               <Plus className="h-4 w-4" />
               新建项目
             </Button>
@@ -67,8 +62,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               type="button"
               onClick={() => onSelect(project.id)}
               className={cn(
-                "mb-1 w-full rounded-lg border p-3 text-left transition duration-150 hover:border-bronze/35 hover:bg-background",
-                active ? "border-bronze bg-bronze/5" : "border-transparent",
+                "mb-1 w-full rounded-md border border-transparent p-3 text-left transition duration-150 hover:bg-muted",
+                active ? "bg-muted" : "bg-transparent",
                 collapsed && "flex h-11 items-center justify-center p-0",
               )}
             >
@@ -94,4 +89,3 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
     </aside>
   );
 }
-
