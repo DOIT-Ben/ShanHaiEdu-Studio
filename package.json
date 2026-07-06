@@ -12,6 +12,7 @@
     "test:e2e:stage1": "playwright test tests/e2e/stage1-foundation.spec.ts --project=chromium-desktop",
     "test:e2e:stage2:preflight": "node scripts/e2e-stage2-preflight.mjs",
     "test:e2e:stage2": "node scripts/run-stage2-e2e.mjs",
+    "test:e2e:stage3:preflight": "node scripts/e2e-stage3-preflight.mjs",
     "test:e2e:report": "playwright show-report playwright-report",
     "playwright:install": "playwright install chromium",
     "db:generate": "prisma generate",
