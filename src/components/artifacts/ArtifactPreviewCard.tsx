@@ -20,7 +20,7 @@ export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: Arti
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-foreground">{item.title}</h4>
+          <h4 className="text-sm font-medium text-foreground">{item.title}</h4>
           <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary}</p>
         </div>
         <Badge tone={meta.tone}>{meta.label}</Badge>

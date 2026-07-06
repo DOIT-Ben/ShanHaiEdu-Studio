@@ -67,7 +67,7 @@ export function ArtifactDetailSheet({
             <ScrollArea className="min-h-0 flex-1">
               <div className="space-y-6 p-5">
                 <section>
-                  <h3 className="mb-3 text-sm font-semibold">生成来源</h3>
+                  <h3 className="mb-3 text-sm font-medium">生成来源</h3>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-lg border bg-background p-3">
                       <div className="text-xs text-muted-foreground">上游产物</div>
@@ -82,7 +82,7 @@ export function ArtifactDetailSheet({
 
                 <section>
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">缩略预览</h3>
+                    <h3 className="text-sm font-medium">缩略预览</h3>
                     <Button variant="ghost" size="sm">
                       <Eye className="h-4 w-4" />
                       查看全部
@@ -96,7 +96,7 @@ export function ArtifactDetailSheet({
                 </section>
 
                 <section>
-                  <h3 className="mb-3 text-sm font-semibold">可复用内容</h3>
+                  <h3 className="mb-3 text-sm font-medium">可复用内容</h3>
                   <div className="space-y-2">
                     {Object.entries(item.content).map(([key, value]) => (
                       <div key={key} className="rounded-lg border bg-card p-3">

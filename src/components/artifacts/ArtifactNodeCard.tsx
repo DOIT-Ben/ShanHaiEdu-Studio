@@ -46,8 +46,8 @@ export function ArtifactNodeCard({
         type="button"
         onClick={() => onOpen(item)}
         className={cn(
-          "w-full rounded-lg px-3 py-3 text-left transition hover:bg-muted",
-          active && "bg-muted",
+          "w-full rounded-md px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
+          active && "bg-[#e9e9e9]",
         )}
       >
         <div className="flex items-center justify-between gap-3">
@@ -78,18 +78,18 @@ export function ArtifactNodeCard({
             setPreviewOpen(false);
             onOpen(item);
           }}
-          className="group grid w-full grid-cols-[34px_1fr] items-center gap-2 rounded-full py-1.5 pr-1 text-left outline-none transition duration-150 hover:bg-muted/70 focus:ring-2 focus:ring-ring/35"
+          className="group grid w-full grid-cols-[34px_1fr] items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-none transition duration-150 ease-out hover:bg-[#ebebeb] focus:ring-2 focus:ring-ring/35"
         >
           <span
             className={cn(
               "relative flex h-8 w-8 items-center justify-center rounded-full border bg-card transition",
-              active && "border-input bg-muted",
+              active && "border-input bg-[#e9e9e9]",
             )}
           >
             <Icon className={cn("h-4 w-4", active ? "text-foreground" : "text-muted-foreground")} />
             <span className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-card", meta.dot)} />
           </span>
-          <span className={cn("truncate text-sm", active ? "font-semibold text-foreground" : "text-muted-foreground")}>
+          <span className={cn("truncate text-sm", active ? "font-medium text-foreground" : "text-muted-foreground")}>
             {item.title.replace("策划卡", "").replace("提示词", "")}
           </span>
         </button>

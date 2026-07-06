@@ -26,7 +26,7 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
             <div>
-              <div className="font-semibold">任务：生成教学设计方案</div>
+              <div className="font-medium">任务：生成教学设计方案</div>
               <div className="mt-1 text-sm text-muted-foreground">已完成 10:24</div>
             </div>
           </div>
@@ -38,7 +38,7 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <BookOpen className="h-5 w-5 text-muted-foreground" />
-            <div className="font-semibold">参考依据</div>
+            <div className="font-medium">参考依据</div>
             <span className="text-sm text-muted-foreground">已检索 3 条</span>
           </div>
           <Button variant="ghost" size="sm">查看详情</Button>
@@ -54,7 +54,7 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              <div className="font-semibold">当前行动</div>
+              <div className="font-medium">当前行动</div>
               <span className="text-sm text-muted-foreground">10:24</span>
             </div>
             <p className="mt-2 text-sm leading-6">正在拆分 PPT 页面，预计 1 分钟。已确认教案与导入锚点。</p>
@@ -71,7 +71,7 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
           <div>
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-muted-foreground" />
-              <h2 className="font-semibold">PPT 页面生成中</h2>
+              <h2 className="font-medium">PPT 页面生成中</h2>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">12 页，已生成 8 页，来自已确认教案与导入锚点。</p>
           </div>

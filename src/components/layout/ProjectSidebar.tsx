@@ -3,14 +3,13 @@
 import { BookOpen, ChevronDown, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { ProjectItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const projectTone = {
-  active: { label: "进行中", tone: "info" as const, dot: "text-muted-foreground" },
-  review: { label: "待重审", tone: "warning" as const, dot: "text-muted-foreground" },
-  blocked: { label: "需处理", tone: "danger" as const, dot: "text-destructive" },
-  done: { label: "已完成", tone: "success" as const, dot: "text-muted-foreground" },
+  active: { label: "进行中", dot: "text-muted-foreground" },
+  review: { label: "待重审", dot: "text-muted-foreground" },
+  blocked: { label: "需处理", dot: "text-destructive" },
+  done: { label: "已完成", dot: "text-muted-foreground" },
 };
 
 type ProjectSidebarProps = {
@@ -23,39 +22,39 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect }: ProjectSidebarProps) {
   return (
-    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-muted/45 transition-[width] duration-150", collapsed ? "w-16" : "w-72")}>
+    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f7f7f7] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
       <button
         type="button"
         onClick={onToggle}
-        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card hover:bg-muted lg:flex"
+        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card transition hover:bg-[#eeeeee] lg:flex"
         aria-label="折叠项目栏"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
-      <div className={cn("p-5", collapsed && "px-2")}>
+      <div className={cn("px-3 py-4", collapsed && "px-2")}>
         <div className={cn("flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
           {!collapsed && (
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-card text-muted-foreground">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground">
                   <BookOpen className="h-4 w-4" />
                 </div>
-                <h2 className="truncate text-sm font-semibold text-foreground">ShanHaiEdu 备课工作台</h2>
+                <h2 className="truncate text-sm font-medium text-foreground">ShanHaiEdu 备课工作台</h2>
               </div>
             </div>
           )}
         </div>
         {!collapsed && (
           <>
-            <Button className="mt-8 w-full" variant="default">
+            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 hover:bg-[#ebebeb]" variant="ghost">
               <Plus className="h-4 w-4" />
               新建项目
             </Button>
-            <div className="mt-6 flex h-10 items-center gap-2 rounded-lg border bg-background px-3 text-sm text-muted-foreground">
+            <div className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-[#ebebeb]">
               <Search className="h-4 w-4" />
               <span>搜索课题</span>
             </div>
-            <div className="mt-8 flex items-center justify-between text-sm font-medium">
+            <div className="mt-6 flex h-9 items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#ebebeb]">
               <span className="flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
                 公开课备课
@@ -65,7 +64,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
           </>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar px-4">
+      <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar px-2">
         {projects.map((project) => {
           const meta = projectTone[project.status];
           const active = project.id === activeProjectId;
@@ -75,8 +74,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               type="button"
               onClick={() => onSelect(project.id)}
               className={cn(
-                "mb-2 w-full rounded-lg border border-transparent p-4 text-left transition duration-150 hover:bg-card",
-                active ? "border-border bg-card text-foreground" : "bg-transparent text-foreground",
+                "mb-1 w-full rounded-md px-3 py-2.5 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
+                active ? "bg-[#e9e9e9] text-foreground" : "bg-transparent text-foreground",
                 collapsed && "flex h-11 items-center justify-center p-0",
               )}
             >
@@ -84,17 +83,17 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
                 <Circle className={cn("h-3 w-3 fill-current", meta.dot)} />
               ) : (
                 <>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      <h3 className="line-clamp-2 text-sm font-semibold leading-5">{project.title}</h3>
-                    </div>
-                    <Badge tone={meta.tone}>{meta.label}</Badge>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <h3 className="truncate text-sm font-medium leading-5">{project.title}</h3>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{project.meta}</p>
-                  <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="truncate">{project.currentStep}</span>
                     <span className="shrink-0">{project.updatedAt}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="truncate">{project.meta}</span>
+                    <span className="shrink-0">{meta.label}</span>
                   </div>
                 </>
               )}
@@ -103,8 +102,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         })}
       </div>
       {!collapsed && (
-        <div className="p-5">
-          <Button variant="secondary" className="w-full justify-start">
+        <div className="px-3 py-4">
+          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent hover:bg-[#ebebeb]">
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>

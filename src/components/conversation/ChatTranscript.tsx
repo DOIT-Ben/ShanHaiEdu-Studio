@@ -22,11 +22,11 @@ export function ChatTranscript({ messages }: ChatTranscriptProps) {
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center gap-3">
-                <span className="font-semibold">{assistant ? "ShanHaiEdu AI" : "您"}</span>
+                <span className="font-medium">{assistant ? "ShanHaiEdu AI" : "您"}</span>
                 <span className="text-sm text-muted-foreground">10:24</span>
               </div>
               <div className="max-w-[740px] rounded-lg border bg-card px-5 py-4 text-sm leading-7">
-                {message.title && <div className="mb-1 font-semibold">{message.title}</div>}
+                {message.title && <div className="mb-1 font-medium">{message.title}</div>}
                 <p>{message.body}</p>
               </div>
             </div>

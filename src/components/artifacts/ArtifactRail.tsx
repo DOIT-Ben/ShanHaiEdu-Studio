@@ -33,7 +33,7 @@ export function ArtifactRail({
 
   if (variant === "drawer") {
     return (
-      <aside className="flex h-full min-h-0 flex-col bg-card">
+      <aside className="flex h-full min-h-0 flex-col bg-[#f7f7f7]">
         <div className="border-b px-5 py-4">
           <h2 className="title-md">线性产物</h2>
           <p className="mt-1 text-xs text-muted-foreground">点击节点查看详情，确认后再作为下一步输入。</p>
@@ -68,8 +68,8 @@ export function ArtifactRail({
   }
 
   return (
-    <aside className="flex h-full items-center justify-center border-l bg-card">
-      <div className="relative flex w-[104px] flex-col gap-1 rounded-[26px] border bg-card px-2 py-4">
+    <aside className="flex h-full items-center justify-center border-l bg-[#f7f7f7]">
+      <div className="relative flex w-[104px] flex-col gap-1 px-2 py-4">
         <span className="absolute left-[25px] top-7 bottom-7 w-px bg-border" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
