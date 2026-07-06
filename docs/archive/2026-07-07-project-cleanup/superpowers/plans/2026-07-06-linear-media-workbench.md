@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build an isolated, runnable ShanHaiEdu linear AI lesson-production workbench frontend in `E:\desktop\shanhai媒体工作台`.
+**Goal:** Build an isolated, runnable ShanHaiEdu linear AI lesson-production workbench frontend in `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main`.
 
 **Architecture:** A Next.js App Router app renders one client-side workbench shell. Data is mock-only and lives in `src\lib\mock-data.ts`; interaction state stays local in `MediaWorkbench`.
 

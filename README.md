@@ -4,7 +4,25 @@
 
 ## 当前项目
 
-`shanhai-media-workbench` 是 ShanHaiEdu Studio 的线性 AI 备课媒体工作台，目标是让小学数学公开课教师从一句话需求开始，逐步获得需求规格、教材证据、教案、PPT 方案、导入视频方案和最终交付包。
+`ShanHaiEdu-Studio` 是 ShanHaiEdu Studio 的线性 AI 备课媒体工作台，目标是让小学数学公开课教师从一句话需求开始，逐步获得需求规格、教材证据、教案、PPT 方案、导入视频方案和最终交付包。
+
+## 本地目录
+
+总目录：
+
+```powershell
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio
+```
+
+当前 5 个 worktree：
+
+```powershell
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\backend-workflow-lite
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\frontend-api-backed-workbench
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\agent-runtime-adapter
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\e2e-verification
+```
 
 ## 核心文档
 

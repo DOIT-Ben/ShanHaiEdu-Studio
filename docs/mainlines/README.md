@@ -32,14 +32,17 @@ MVP 不是 mock 原型，必须至少做到：
 - 阶段内可以小步验证，阶段结束必须集中验收。
 - 四条主线通过共享 API 合同和数据模型对齐，不靠口头约定。
 
-## 4. 推荐工作树
+## 4. 当前工作树
 
 ```powershell
-git worktree add ..\shanhai-media-workbench-backend -b feature/mvp-backend-workflow-lite main
-git worktree add ..\shanhai-media-workbench-frontend -b feature/mvp-frontend-api-backed-workbench main
-git worktree add ..\shanhai-media-workbench-runtime -b feature/mvp-agent-runtime-adapter main
-git worktree add ..\shanhai-media-workbench-e2e -b feature/mvp-e2e-verification main
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\backend-workflow-lite
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\frontend-api-backed-workbench
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\agent-runtime-adapter
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\e2e-verification
 ```
+
+`main` 只做集成和稳定态；四条功能主线均在各自 worktree 中开发。
 
 ## 5. 集成顺序
 

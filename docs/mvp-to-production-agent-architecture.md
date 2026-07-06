@@ -68,7 +68,7 @@ Next.js 前端
 
 ### 2.1 当前前端原型
 
-当前项目 `E:\desktop\shanhai-media-workbench` 是独立 Next.js 前端工作台：
+当前项目 `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main` 是独立 Next.js 前端工作台：
 
 - 技术栈：Next.js 16、React 19、TypeScript、Tailwind CSS 4、Radix UI、lucide-react。
 - 主壳：`src\components\layout\MediaWorkbench.tsx`。

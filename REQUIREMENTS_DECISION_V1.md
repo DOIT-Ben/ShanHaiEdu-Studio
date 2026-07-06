@@ -11,7 +11,7 @@
 关联文档：
 
 - 原始需求记录：`原始需求记录_V1.md`
-- 当前前端原型：`shanhai-media-workbench`
+- 当前前端原型：`ShanHaiEdu-Studio`
 
 ## 2. V1 产品定义
 

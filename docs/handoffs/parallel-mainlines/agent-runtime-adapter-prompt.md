@@ -1,14 +1,14 @@
 # 新对话提示词：Agent Runtime Adapter
 
-你现在接手 `shanhai-media-workbench` 的 Agent Runtime Adapter 主线。
+你现在接手 `ShanHaiEdu-Studio` 的 Agent Runtime Adapter 主线。
 
-工作目录建议：
+工作目录：
 
 ```powershell
-git worktree add ..\shanhai-media-workbench-runtime -b feature/mvp-agent-runtime-adapter main
+E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\agent-runtime-adapter
 ```
 
-进入 worktree 后先读：
+进入该 worktree 后先读：
 
 1. `AGENTS.md`
 2. `REQUIREMENTS_DECISION_V1.md`
