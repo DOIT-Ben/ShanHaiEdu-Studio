@@ -5,16 +5,18 @@ import type { ArtifactItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
+import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 
 type ArtifactPreviewCardProps = {
   item: ArtifactItem;
-  onCopy: (item: ArtifactItem) => void;
+  onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
 };
 
 export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: ArtifactPreviewCardProps) {
   const meta = getArtifactStatusMeta(item.status);
+  const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
 
   return (
     <div className="space-y-3">
@@ -34,9 +36,9 @@ export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: Arti
         ))}
       </div>
       <div className="flex gap-2">
-        <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={() => onCopy(item)}>
+        <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={copyItem}>
           <Clipboard className="h-3.5 w-3.5" />
-          复制
+          {copyLabel}
         </Button>
         <Button variant="secondary" size="sm" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
           <SendToBack className="h-3.5 w-3.5" />

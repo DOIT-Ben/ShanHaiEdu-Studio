@@ -135,8 +135,10 @@ export function useWorkbenchController() {
     try {
       await navigator.clipboard.writeText(text);
       setNotice(`已复制「${item.title}」关键内容。`);
+      return true;
     } catch {
       setNotice(`复制没有成功，请打开「${item.title}」详情后手动选择内容。`);
+      return false;
     }
   }
 

@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MarkdownPreview } from "@/components/artifacts/MarkdownPreview";
 import { ResizableHandle } from "@/components/artifacts/ResizableHandle";
+import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 
 type ArtifactSidePanelProps = {
   item: ArtifactItem | null;
   open: boolean;
   onClose: () => void;
-  onCopy: (item: ArtifactItem) => void;
+  onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpenDetail: (item: ArtifactItem) => void;
 };
@@ -34,41 +35,73 @@ export function ArtifactSidePanel({
       aria-hidden={!open}
     >
       {open && item && (
-        <div className="relative flex h-full min-w-[300px] flex-col">
-          <ResizableHandle width={width} onChange={setWidth} />
-          <div className="flex items-center justify-between border-b bg-card px-5 py-4">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{item.title}</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">产物预览 · {item.updatedAt}</div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="打开完整详情" onClick={() => onOpenDetail(item)}>
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="关闭产物预览" onClick={onClose}>
-                <PanelRightClose className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="px-5 py-6">
-              <MarkdownPreview item={item} />
-            </div>
-          </ScrollArea>
-
-          <div className="flex flex-wrap gap-2 border-t bg-card px-5 py-3">
-            <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={() => onCopy(item)}>
-              <Clipboard className="h-3.5 w-3.5" />
-              复制
-            </Button>
-            <Button variant="secondary" size="sm" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
-              <SendToBack className="h-3.5 w-3.5" />
-              作为输入
-            </Button>
-          </div>
-        </div>
+        <ArtifactSidePanelContent
+          item={item}
+          width={width}
+          onWidthChange={setWidth}
+          onClose={onClose}
+          onCopy={onCopy}
+          onUseAsInput={onUseAsInput}
+          onOpenDetail={onOpenDetail}
+        />
       )}
     </aside>
+  );
+}
+
+function ArtifactSidePanelContent({
+  item,
+  width,
+  onWidthChange,
+  onClose,
+  onCopy,
+  onUseAsInput,
+  onOpenDetail,
+}: {
+  item: ArtifactItem;
+  width: number;
+  onWidthChange: (width: number) => void;
+  onClose: () => void;
+  onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
+  onUseAsInput: (item: ArtifactItem) => void;
+  onOpenDetail: (item: ArtifactItem) => void;
+}) {
+  const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
+
+  return (
+    <div className="relative flex h-full min-w-[300px] flex-col">
+      <ResizableHandle width={width} onChange={onWidthChange} />
+      <div className="flex items-center justify-between border-b bg-card px-5 py-4">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">{item.title}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">产物预览 · {item.updatedAt}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="打开完整详情" onClick={() => onOpenDetail(item)}>
+            <Maximize2 className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="关闭产物预览" onClick={onClose}>
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="px-5 py-6">
+          <MarkdownPreview item={item} />
+        </div>
+      </ScrollArea>
+
+      <div className="flex flex-wrap gap-2 border-t bg-card px-5 py-3">
+        <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={copyItem}>
+          <Clipboard className="h-3.5 w-3.5" />
+          {copyLabel}
+        </Button>
+        <Button variant="secondary" size="sm" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
+          <SendToBack className="h-3.5 w-3.5" />
+          作为输入
+        </Button>
+      </div>
+    </div>
   );
 }

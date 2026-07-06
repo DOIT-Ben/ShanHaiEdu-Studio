@@ -111,6 +111,19 @@
 - 字号层级稳定。
 - 普通用户界面无工程词。
 
+当前状态：
+
+- 已完成 Stage 4 响应式与关键交互回归，收尾见 `docs\stages\frontend-api-backed-stage4-closeout.md`。
+- 桌面 `1440x900` 与窄屏 `390x844` 均无页面级横向溢出。
+- 复制、作为输入、确认、详情、发送、Enter、Shift+Enter 和 hover 复制入口均已浏览器验证。
+- `npm run lint` 仍为 Next 16 脚本债务，需后续单独修复或合并前接受为已知风险。
+
+### 主线收尾结论
+
+当前前端职责内已完成 API-backed workbench 迁移：项目列表、项目 snapshot、消息发送、节点/产物映射、产物动作边界、桌面和窄屏回归均已覆盖。后端真实 provider 和 regenerate 版本合同不属于本前端主线，本分支不伪装这些能力已完成。
+
+本分支可作为前端 API-backed 边界合并候选；合并 `main` 前需用户明确确认，并处理或接受 `npm run lint` 脚本债务。
+
 ## 6. 测试策略
 
 - API client mock tests。
@@ -136,6 +149,6 @@
 
 ## 8. 阻塞条件
 
-- 后端 snapshot contract 未定，不做真实接入。
-- API 错误格式未定，不做错误 UI 定稿。
-- artifact action contract 未定，不做确认/重做最终实现。
+- 后端生产真源与真实 provider 调用不由本前端主线声明完成。
+- API 错误格式未定，不做错误 UI 最终定稿。
+- artifact regenerate 版本合同未定，不做重做生产闭环声明。
