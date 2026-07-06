@@ -1,14 +1,14 @@
 "use client";
 
-import { BookOpen, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { ProjectItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const projectTone = {
-  active: { label: "进行中", tone: "info" as const, dot: "text-bronze" },
-  review: { label: "待重审", tone: "warning" as const, dot: "text-bronze" },
+  active: { label: "进行中", tone: "info" as const, dot: "text-muted-foreground" },
+  review: { label: "待重审", tone: "warning" as const, dot: "text-muted-foreground" },
   blocked: { label: "需处理", tone: "danger" as const, dot: "text-destructive" },
   done: { label: "已完成", tone: "success" as const, dot: "text-muted-foreground" },
 };
@@ -23,11 +23,11 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect }: ProjectSidebarProps) {
   return (
-    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-card transition-[width] duration-150", collapsed ? "w-16" : "w-72")}>
+    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-muted/45 transition-[width] duration-150", collapsed ? "w-16" : "w-72")}>
       <button
         type="button"
         onClick={onToggle}
-        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card shadow-md hover:bg-muted lg:flex"
+        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card hover:bg-muted lg:flex"
         aria-label="折叠项目栏"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -37,10 +37,10 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
           {!collapsed && (
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-card text-muted-foreground">
                   <BookOpen className="h-4 w-4" />
                 </div>
-                <h2 className="truncate text-base font-semibold text-primary">ShanHaiEdu 备课工作台</h2>
+                <h2 className="truncate text-sm font-semibold text-foreground">ShanHaiEdu 备课工作台</h2>
               </div>
             </div>
           )}
@@ -57,10 +57,10 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
             </div>
             <div className="mt-8 flex items-center justify-between text-sm font-medium">
               <span className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-bronze" />
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
                 公开课备课
               </span>
-              <span className="text-muted-foreground">⌃</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </div>
           </>
         )}
@@ -75,8 +75,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               type="button"
               onClick={() => onSelect(project.id)}
               className={cn(
-                "mb-2 w-full rounded-lg border border-transparent p-4 text-left transition duration-150 hover:bg-muted",
-                active ? "bg-primary/5 text-primary" : "bg-transparent",
+                "mb-2 w-full rounded-lg border border-transparent p-4 text-left transition duration-150 hover:bg-card",
+                active ? "border-border bg-card text-foreground" : "bg-transparent text-foreground",
                 collapsed && "flex h-11 items-center justify-center p-0",
               )}
             >

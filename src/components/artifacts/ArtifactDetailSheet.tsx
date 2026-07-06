@@ -20,7 +20,7 @@ type ArtifactDetailSheetProps = {
 function PreviewThumb({ label }: { label: string }) {
   return (
     <div>
-      <div className="aspect-[4/3] rounded-lg border bg-gradient-to-br from-emerald-50 via-white to-orange-50" />
+      <div className="aspect-[4/3] rounded-lg border bg-muted" />
       <div className="mt-1 text-xs text-muted-foreground">{label}</div>
     </div>
   );
@@ -48,7 +48,7 @@ export function ArtifactDetailSheet({
                     {item.summary}
                   </SheetDescription>
                 </div>
-                <Badge tone={item.status === "blocked" ? "danger" : item.status === "needs_review" ? "bronze" : "success"}>
+                <Badge tone={item.status === "blocked" ? "danger" : "neutral"}>
                   {item.status === "blocked" ? "需处理" : item.status === "needs_review" ? "待确认" : "已保存"}
                 </Badge>
               </div>
@@ -57,7 +57,7 @@ export function ArtifactDetailSheet({
                   <button
                     key={tab}
                     type="button"
-                    className={index === 0 ? "border-b-2 border-primary pb-2 font-medium text-primary" : "pb-2 text-muted-foreground"}
+                    className={index === 0 ? "border-b-2 border-foreground pb-2 font-medium text-foreground" : "pb-2 text-muted-foreground"}
                   >
                     {tab}
                   </button>
@@ -142,4 +142,3 @@ export function ArtifactDetailSheet({
     </Sheet>
   );
 }
-

@@ -28,7 +28,7 @@ export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: Arti
       <div className="space-y-2">
         {item.previewFields.slice(0, 3).map((field) => (
           <div key={field.label} className="rounded-md bg-muted/70 px-3 py-2">
-            <div className="text-[11px] text-muted-foreground">{field.label}</div>
+            <div className="text-xs text-muted-foreground">{field.label}</div>
             <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-foreground">{field.value}</div>
           </div>
         ))}
@@ -50,4 +50,3 @@ export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: Arti
     </div>
   );
 }
-

@@ -82,11 +82,11 @@ export function ArtifactNodeCard({
         >
           <span
             className={cn(
-              "relative flex h-8 w-8 items-center justify-center rounded-full border bg-card shadow-sm transition group-hover:scale-105",
-              active && "border-bronze bg-bronze/10",
+              "relative flex h-8 w-8 items-center justify-center rounded-full border bg-card transition",
+              active && "border-input bg-muted",
             )}
           >
-            <Icon className={cn("h-4 w-4", active ? "text-bronze" : "text-muted-foreground")} />
+            <Icon className={cn("h-4 w-4", active ? "text-foreground" : "text-muted-foreground")} />
             <span className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-card", meta.dot)} />
           </span>
           <span className={cn("truncate text-sm", active ? "font-semibold text-foreground" : "text-muted-foreground")}>
@@ -97,7 +97,7 @@ export function ArtifactNodeCard({
       <PopoverContent
         side="left"
         align="center"
-        className="w-[350px] border-border bg-card/98 shadow-xl"
+        className="w-[350px] border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.08)]"
         onMouseEnter={() => setPreviewOpen(true)}
         onMouseLeave={() => setPreviewOpen(false)}
       >

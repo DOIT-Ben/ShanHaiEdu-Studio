@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { ListFilter } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { ArtifactNodeCard } from "@/components/artifacts/ArtifactNodeCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -70,9 +69,8 @@ export function ArtifactRail({
 
   return (
     <aside className="flex h-full items-center justify-center border-l bg-card">
-      <div className="relative flex w-[104px] flex-col gap-1 rounded-[28px] border bg-card px-2 py-4 shadow-lg">
-        <ListFilter className="mx-auto mb-2 h-4 w-4 text-muted-foreground" />
-        <span className="absolute left-[25px] top-14 bottom-5 w-px bg-border" />
+      <div className="relative flex w-[104px] flex-col gap-1 rounded-[26px] border bg-card px-2 py-4">
+        <span className="absolute left-[25px] top-7 bottom-7 w-px bg-border" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
             <ArtifactNodeCard

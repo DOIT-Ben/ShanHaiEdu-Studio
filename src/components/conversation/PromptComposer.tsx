@@ -14,10 +14,10 @@ type PromptComposerProps = {
 
 export function PromptComposer({ value, reference, onChange, onClearReference, onSend }: PromptComposerProps) {
   return (
-    <div className="border-t bg-background px-8 py-5">
+    <div className="border-t bg-card px-8 py-5">
       <div className="mx-auto w-full max-w-5xl">
         {reference && (
-          <div className="mb-2 inline-flex max-w-full items-start justify-between gap-3 rounded-lg border bg-card px-3 py-2">
+          <div className="mb-2 inline-flex max-w-full items-start justify-between gap-3 rounded-lg border bg-muted/45 px-3 py-2">
             <div className="min-w-0 text-xs leading-5 text-foreground">
               <span className="font-medium text-muted-foreground">引用：</span>
               <span>{reference}</span>
@@ -32,7 +32,7 @@ export function PromptComposer({ value, reference, onChange, onClearReference, o
             </button>
           </div>
         )}
-        <div className="rounded-xl border bg-card p-2 shadow-sm">
+        <div className="rounded-xl border bg-card p-2 shadow-[0_8px_28px_rgba(0,0,0,0.06)]">
           <Textarea
             id="lesson-workbench-prompt"
             name="lesson-workbench-prompt"

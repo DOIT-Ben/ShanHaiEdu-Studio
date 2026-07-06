@@ -7,7 +7,7 @@ const tones = {
   warning: "border-border bg-muted text-muted-foreground",
   info: "border-border bg-muted text-muted-foreground",
   danger: "border-destructive/20 bg-destructive/10 text-destructive",
-  bronze: "border-bronze/25 bg-bronze/10 text-bronze",
+  bronze: "border-border bg-muted text-muted-foreground",
 };
 
 export function Badge({

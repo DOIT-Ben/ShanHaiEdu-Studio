@@ -32,12 +32,12 @@ export function ConversationWorkbench({
   onRecover,
 }: ConversationWorkbenchProps) {
   return (
-    <main className="flex h-full min-h-0 flex-col bg-background">
+    <main className="flex h-full min-h-0 flex-col bg-card">
       <WorkbenchTopbar />
       <StageProgress activeIndex={2} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-5xl space-y-8 px-8 pb-8">
-          {notice && <div className="rounded-xl border bg-card px-4 py-3 text-sm text-foreground shadow-sm">{notice}</div>}
+          {notice && <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-foreground">{notice}</div>}
           <ChatTranscript messages={messages} />
           <GenerationPanel onConfirmIntro={onConfirmIntro} onRecover={onRecover} />
         </div>
@@ -52,4 +52,3 @@ export function ConversationWorkbench({
     </main>
   );
 }
-

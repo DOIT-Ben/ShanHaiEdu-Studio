@@ -13,7 +13,7 @@ export function SelectTrigger({
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "inline-flex h-9 min-w-36 items-center justify-between gap-2 rounded-md border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring/35",
+        "inline-flex h-9 min-w-36 items-center justify-between gap-2 rounded-md border bg-card px-3 text-sm outline-none hover:bg-muted focus:ring-2 focus:ring-ring/35",
         className,
       )}
       {...props}
@@ -32,7 +32,7 @@ export function SelectContent({
 }: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>) {
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Content className={cn("z-50 rounded-md border bg-card p-1 shadow-lg", className)} {...props}>
+      <SelectPrimitive.Content className={cn("z-50 rounded-md border bg-card p-1 shadow-[0_12px_32px_rgba(0,0,0,0.08)]", className)} {...props}>
         <SelectPrimitive.Viewport>{props.children}</SelectPrimitive.Viewport>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
@@ -58,4 +58,3 @@ export function SelectItem({
     </SelectPrimitive.Item>
   );
 }
-

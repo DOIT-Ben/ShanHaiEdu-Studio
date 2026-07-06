@@ -14,8 +14,8 @@ export function ChatTranscript({ messages }: ChatTranscriptProps) {
           <article key={message.id} className="flex gap-4">
             <div
               className={cn(
-                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white shadow-sm",
-                assistant ? "bg-primary" : "bg-slate-600",
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-medium text-muted-foreground",
+                assistant && "text-foreground",
               )}
             >
               {assistant ? "AI" : "T"}
@@ -25,7 +25,7 @@ export function ChatTranscript({ messages }: ChatTranscriptProps) {
                 <span className="font-semibold">{assistant ? "ShanHaiEdu AI" : "您"}</span>
                 <span className="text-sm text-muted-foreground">10:24</span>
               </div>
-              <div className="max-w-[720px] rounded-xl border bg-card px-5 py-4 text-sm leading-7 shadow-sm">
+              <div className="max-w-[740px] rounded-lg border bg-card px-5 py-4 text-sm leading-7">
                 {message.title && <div className="mb-1 font-semibold">{message.title}</div>}
                 <p>{message.body}</p>
               </div>
@@ -36,4 +36,3 @@ export function ChatTranscript({ messages }: ChatTranscriptProps) {
     </div>
   );
 }
-

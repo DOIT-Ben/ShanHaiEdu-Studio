@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CheckCircle2, Eye, FileText, Image as ImageIcon, Loader2, Sparkles } from "lucide-react";
+import { BookOpen, CheckCircle2, Eye, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -11,8 +11,8 @@ type GenerationPanelProps = {
 
 function SlideThumb({ index, active }: { index: number; active?: boolean }) {
   return (
-    <div className={active ? "rounded-lg border border-bronze bg-white p-2 shadow-sm" : "rounded-lg border bg-white p-2"}>
-      <div className="h-20 rounded-md bg-gradient-to-br from-emerald-50 via-white to-orange-50" />
+    <div className={active ? "rounded-lg border border-input bg-white p-2" : "rounded-lg border bg-white p-2"}>
+      <div className="h-20 rounded-md bg-muted" />
       <div className="mt-2 text-center text-xs text-muted-foreground">{index} / 12</div>
     </div>
   );
@@ -21,10 +21,10 @@ function SlideThumb({ index, active }: { index: number; active?: boolean }) {
 export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelProps) {
   return (
     <section className="space-y-6">
-      <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+      <div className="rounded-lg border bg-card px-5 py-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-primary" />
+            <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
             <div>
               <div className="font-semibold">任务：生成教学设计方案</div>
               <div className="mt-1 text-sm text-muted-foreground">已完成 10:24</div>
@@ -34,10 +34,10 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+      <div className="rounded-lg border bg-card px-5 py-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <BookOpen className="h-5 w-5 text-primary" />
+            <BookOpen className="h-5 w-5 text-muted-foreground" />
             <div className="font-semibold">参考依据</div>
             <span className="text-sm text-muted-foreground">已检索 3 条</span>
           </div>
@@ -50,41 +50,39 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
         </ul>
       </div>
 
-      <div className="relative rounded-xl border border-bronze/30 bg-[#fffaf5] px-5 py-4 shadow-sm">
-        <div className="absolute left-0 top-0 h-full w-1 rounded-l-xl bg-bronze" />
+      <div className="relative rounded-lg border bg-muted/35 px-5 py-4">
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-bronze" />
               <div className="font-semibold">当前行动</div>
               <span className="text-sm text-muted-foreground">10:24</span>
             </div>
             <p className="mt-2 text-sm leading-6">正在拆分 PPT 页面，预计 1 分钟。已确认教案与导入锚点。</p>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-border">
-              <div className="h-full w-[48%] rounded-full bg-primary" />
+              <div className="h-full w-[48%] rounded-full bg-muted-foreground/45" />
             </div>
           </div>
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-5 shadow-sm">
+      <div className="rounded-lg border bg-card p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
+              <FileText className="h-5 w-5 text-muted-foreground" />
               <h2 className="font-semibold">PPT 页面生成中</h2>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">12 页，已生成 8 页，来自已确认教案与导入锚点。</p>
           </div>
-          <Badge tone="bronze">进行中</Badge>
+          <Badge tone="neutral">进行中</Badge>
         </div>
         <div className="mt-5 grid grid-cols-[180px_1fr] gap-5 max-lg:grid-cols-1">
           <div className="space-y-3 rounded-lg bg-muted/45 p-4 text-sm">
             {["封面", "学习目标", "情境导入", "练习巩固"].map((name, index) => (
               <div key={name} className="flex items-center justify-between">
                 <span>{name}</span>
-                <span className={index < 2 ? "text-primary" : "text-muted-foreground"}>{index < 2 ? "已完成" : "待生成"}</span>
+                <span className="text-muted-foreground">{index < 2 ? "已完成" : "待生成"}</span>
               </div>
             ))}
           </div>
@@ -100,7 +98,6 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
             确认使用
           </Button>
           <Button variant="secondary">
-            <ImageIcon className="h-4 w-4" />
             调整后重做
           </Button>
           <Button variant="secondary">
@@ -113,4 +110,3 @@ export function GenerationPanel({ onConfirmIntro, onRecover }: GenerationPanelPr
     </section>
   );
 }
-

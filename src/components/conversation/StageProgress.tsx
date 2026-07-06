@@ -14,8 +14,8 @@ export function StageProgress({ activeIndex = 2 }: { activeIndex?: number }) {
               <div
                 className={cn(
                   "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-                  active && "border-primary bg-primary text-white shadow-sm",
-                  done && "border-primary/25 bg-primary/8 text-primary",
+                  active && "border-input bg-muted text-foreground",
+                  done && "border-border bg-card text-muted-foreground",
                   !active && !done && "border-border bg-card text-muted-foreground",
                 )}
               >

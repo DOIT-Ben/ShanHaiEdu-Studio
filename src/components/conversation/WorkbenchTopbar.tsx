@@ -15,7 +15,7 @@ export function WorkbenchTopbar() {
       </nav>
       <div className="flex shrink-0 items-center gap-2">
         <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
-          <CheckCircle2 className="h-4 w-4 text-primary" />
+          <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           已保存 10:24
         </Button>
         <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
@@ -29,4 +29,3 @@ export function WorkbenchTopbar() {
     </div>
   );
 }
-

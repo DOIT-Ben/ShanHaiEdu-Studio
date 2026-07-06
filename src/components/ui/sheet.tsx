@@ -14,10 +14,10 @@ export function SheetContent({
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: "right" | "bottom" }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/18" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/10" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed z-50 flex flex-col border bg-card shadow-xl outline-none",
+          "fixed z-50 flex flex-col border bg-card shadow-[0_12px_42px_rgba(0,0,0,0.10)] outline-none",
           side === "right" && "inset-y-0 right-0 w-full max-w-[560px]",
           side === "bottom" && "inset-x-0 bottom-0 max-h-[84vh] rounded-t-lg",
           className,
@@ -35,4 +35,3 @@ export function SheetContent({
 
 export const SheetTitle = DialogPrimitive.Title;
 export const SheetDescription = DialogPrimitive.Description;
-
