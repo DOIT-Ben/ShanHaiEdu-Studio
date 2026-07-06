@@ -3,11 +3,13 @@ node_modules/
 out/
 dist/
 *.log
+*.tsbuildinfo
 
 # Local verification screenshots
 chrome-*.png
 desktop-*.png
 mobile-*.png
+output/playwright/
 
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip

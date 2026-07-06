@@ -1,7 +1,6 @@
 "use client";
 
 import { ListTree } from "lucide-react";
-import { chatMessages, projects } from "@/lib/mock-data";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
 import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
@@ -21,11 +20,12 @@ export function MediaWorkbench() {
         <div className="flex h-full">
           <div className="hidden lg:block">
             <ProjectSidebar
-              projects={projects}
+              projects={controller.projects}
               activeProjectId={controller.activeProjectId}
               collapsed={controller.sidebarCollapsed}
               onToggle={() => controller.setSidebarCollapsed((value) => !value)}
-              onSelect={controller.setActiveProjectId}
+              onSelect={controller.selectProject}
+              onCreateProject={controller.createProject}
             />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
@@ -37,9 +37,10 @@ export function MediaWorkbench() {
                 <SheetContent side="right" className="max-w-[300px]">
                   <SheetTitle className="sr-only">项目列表</SheetTitle>
                   <ProjectSidebar
-                    projects={projects}
+                    projects={controller.projects}
                     activeProjectId={controller.activeProjectId}
-                    onSelect={controller.setActiveProjectId}
+                    onSelect={controller.selectProject}
+                    onCreateProject={controller.createProject}
                   />
                 </SheetContent>
               </Sheet>
@@ -49,7 +50,9 @@ export function MediaWorkbench() {
               </Button>
             </div>
             <ConversationWorkbench
-              messages={chatMessages}
+              messages={controller.messages}
+              loadState={controller.loadState}
+              errorMessage={controller.errorMessage}
               input={controller.input}
               reference={controller.reference}
               notice={controller.notice}
@@ -57,7 +60,8 @@ export function MediaWorkbench() {
               onInputChange={controller.setInput}
               onClearReference={() => controller.setReference(null)}
               onSend={controller.sendPrompt}
-              onConfirmIntro={() => controller.confirmArtifact(controller.activeArtifact)}
+              onRetry={controller.retryActiveProject}
+              onConfirmIntro={() => controller.activeArtifact && controller.confirmArtifact(controller.activeArtifact)}
               onRecover={controller.showRecovery}
             />
           </div>
@@ -72,7 +76,7 @@ export function MediaWorkbench() {
           <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
             <ArtifactRail
               items={controller.artifacts}
-              activeKey={controller.activeArtifact.key}
+              activeKey={controller.activeArtifact?.key ?? ""}
               previewDisabled={controller.sidePanelOpen}
               onCopy={controller.copyArtifact}
               onUseAsInput={controller.useAsInput}
@@ -88,7 +92,7 @@ export function MediaWorkbench() {
           <ArtifactRail
             variant="drawer"
             items={controller.artifacts}
-            activeKey={controller.activeArtifact.key}
+            activeKey={controller.activeArtifact?.key ?? ""}
             onCopy={controller.copyArtifact}
             onUseAsInput={controller.useAsInput}
             onOpen={controller.openDetail}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { ChatMessage } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
+import type { ChatMessage, WorkbenchLoadState } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
 import { StageProgress } from "@/components/conversation/StageProgress";
@@ -12,6 +12,8 @@ import { ConversationNavigator } from "@/components/conversation/ConversationNav
 
 type ConversationWorkbenchProps = {
   messages: ChatMessage[];
+  loadState: WorkbenchLoadState;
+  errorMessage: string | null;
   input: string;
   reference: string | null;
   notice: string | null;
@@ -19,12 +21,15 @@ type ConversationWorkbenchProps = {
   onInputChange: (value: string) => void;
   onClearReference: () => void;
   onSend: () => void;
+  onRetry: () => void;
   onConfirmIntro: () => void;
   onRecover: () => void;
 };
 
 export function ConversationWorkbench({
   messages,
+  loadState,
+  errorMessage,
   input,
   reference,
   notice,
@@ -32,11 +37,16 @@ export function ConversationWorkbench({
   onInputChange,
   onClearReference,
   onSend,
+  onRetry,
   onConfirmIntro,
   onRecover,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeMessageId, setActiveMessageId] = useState(messages[0]?.id);
+
+  useEffect(() => {
+    setActiveMessageId(messages[0]?.id);
+  }, [messages]);
 
   function registerMessage(id: string, node: HTMLElement | null) {
     messageRefs.current[id] = node;
@@ -61,8 +71,29 @@ export function ConversationWorkbench({
                   {notice}
                 </div>
               )}
-              <ChatTranscript messages={messages} registerMessage={registerMessage} />
-              <GenerationPanel onConfirmIntro={onConfirmIntro} onRecover={onRecover} />
+              {loadState === "loading" && (
+                <div className="inline-flex max-w-full rounded-md bg-[#f5f5f5] px-3 py-2 text-sm text-muted-foreground">
+                  正在取回项目内容...
+                </div>
+              )}
+              {loadState === "error" && (
+                <div className="flex max-w-[560px] items-center justify-between gap-3 rounded-md bg-[#f5f5f5] px-3 py-2 text-sm text-muted-foreground">
+                  <span>{errorMessage ?? "项目内容暂时没有取回，请稍后再试。"}</span>
+                  <button type="button" className="shrink-0 text-foreground underline-offset-4 hover:underline" onClick={onRetry}>
+                    重试
+                  </button>
+                </div>
+              )}
+              {messages.length > 0 ? (
+                <ChatTranscript messages={messages} registerMessage={registerMessage} />
+              ) : (
+                loadState !== "loading" && (
+                  <div className="max-w-[560px] rounded-md bg-[#f5f5f5] px-3 py-2 text-sm text-muted-foreground">
+                    还没有对话。请描述年级、课题和希望生成的材料。
+                  </div>
+                )
+              )}
+              {messages.length > 0 && <GenerationPanel onConfirmIntro={onConfirmIntro} onRecover={onRecover} />}
             </div>
           </div>
         </div>
