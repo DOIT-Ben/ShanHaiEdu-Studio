@@ -1,0 +1,94 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Project {
+  id              String                @id @default(cuid())
+  title           String
+  status          String                @default("active")
+  currentNodeKey  String
+  grade           String?
+  subject         String?
+  textbookVersion String?
+  lessonTopic     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  messages        ConversationMessage[]
+  nodes           WorkflowNode[]
+  artifacts       Artifact[]
+  agentRuns       AgentRun[]
+}
+
+model ConversationMessage {
+  id               String   @id @default(cuid())
+  projectId        String
+  role             String
+  content          String
+  artifactRefsJson String   @default("[]")
+  createdAt        DateTime @default(now())
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model WorkflowNode {
+  id                 String    @id @default(cuid())
+  projectId          String
+  key                String
+  title              String
+  status             String    @default("not_started")
+  order              Int
+  upstreamNodeKeysJson String  @default("[]")
+  approvedArtifactId String?
+  staleReason        String?
+  updatedAt          DateTime  @updatedAt
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approvedArtifact   Artifact? @relation("ApprovedArtifact", fields: [approvedArtifactId], references: [id])
+
+  @@unique([projectId, key])
+  @@index([projectId, order])
+}
+
+model Artifact {
+  id                    String         @id @default(cuid())
+  projectId             String
+  nodeKey               String
+  title                 String
+  kind                  String
+  status                String
+  summary               String
+  markdownContent       String
+  structuredContentJson String         @default("{}")
+  version               Int
+  isApproved            Boolean        @default(false)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  project               Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approvedByNodes       WorkflowNode[] @relation("ApprovedArtifact")
+
+  @@index([projectId, nodeKey, version])
+}
+
+model AgentRun {
+  id           String    @id @default(cuid())
+  projectId    String
+  nodeKey      String
+  status       String
+  runtime      String
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  errorMessage String?
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, nodeKey, startedAt])
+}

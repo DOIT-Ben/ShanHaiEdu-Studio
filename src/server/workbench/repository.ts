@@ -1,0 +1,114 @@
+import { prisma } from "@/server/db/client";
+import type { PrismaClient } from "@/generated/prisma/client";
+import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
+import type { AddMessageInput, CreateProjectInput, SaveArtifactInput } from "./types";
+
+export type WorkbenchRepository = ReturnType<typeof createPrismaWorkbenchRepository>;
+
+export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
+  return {
+    async listProjects() {
+      return client.project.findMany({ orderBy: { updatedAt: "desc" } });
+    },
+
+    async createProject(input: CreateProjectInput) {
+      return client.$transaction(async (tx) => {
+        const project = await tx.project.create({
+          data: {
+            title: input.title,
+            currentNodeKey: FIRST_WORKFLOW_NODE_KEY,
+            grade: input.grade,
+            subject: input.subject,
+            textbookVersion: input.textbookVersion,
+            lessonTopic: input.lessonTopic,
+          },
+        });
+
+        await tx.workflowNode.createMany({
+          data: DEFAULT_WORKFLOW_NODES.map((node) => ({
+            projectId: project.id,
+            key: node.key,
+            title: node.title,
+            status: node.status,
+            order: node.order,
+            upstreamNodeKeysJson: JSON.stringify(node.upstreamNodeKeys),
+          })),
+        });
+
+        return project;
+      });
+    },
+
+    async getProject(projectId: string) {
+      return client.project.findUnique({ where: { id: projectId } });
+    },
+
+    async addMessage(projectId: string, input: AddMessageInput) {
+      return client.conversationMessage.create({
+        data: {
+          projectId,
+          role: input.role,
+          content: input.content,
+          artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+        },
+      });
+    },
+
+    async saveArtifact(projectId: string, input: SaveArtifactInput) {
+      return client.$transaction(async (tx) => {
+        const latest = await tx.artifact.findFirst({
+          where: { projectId, nodeKey: input.nodeKey },
+          orderBy: { version: "desc" },
+        });
+        const artifact = await tx.artifact.create({
+          data: {
+            projectId,
+            nodeKey: input.nodeKey,
+            kind: input.kind,
+            title: input.title,
+            status: input.status,
+            summary: input.summary,
+            markdownContent: input.markdownContent,
+            structuredContentJson: JSON.stringify(input.structuredContent ?? {}),
+            version: latest ? latest.version + 1 : 1,
+          },
+        });
+
+        await tx.workflowNode.update({
+          where: { projectId_key: { projectId, key: input.nodeKey } },
+          data: { status: input.status },
+        });
+
+        return artifact;
+      });
+    },
+
+    async getMessages(projectId: string) {
+      return client.conversationMessage.findMany({
+        where: { projectId },
+        orderBy: { createdAt: "asc" },
+      });
+    },
+
+    async getNodes(projectId: string) {
+      return client.workflowNode.findMany({
+        where: { projectId },
+        orderBy: { order: "asc" },
+      });
+    },
+
+    async getArtifacts(projectId: string) {
+      return client.artifact.findMany({
+        where: { projectId },
+        orderBy: [{ nodeKey: "asc" }, { version: "asc" }],
+      });
+    },
+
+    async getAgentRuns(projectId: string) {
+      return client.agentRun.findMany({
+        where: { projectId },
+        orderBy: { startedAt: "asc" },
+      });
+    },
+  };
+}
