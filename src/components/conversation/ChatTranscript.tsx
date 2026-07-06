@@ -78,7 +78,7 @@ function AssistantMessageActions({ text }: { text: string }) {
   }
 
   return (
-    <div className="mt-3 flex items-center gap-1 opacity-70 transition-opacity duration-150 ease-out group-hover:opacity-100">
+    <div className="mt-3 flex h-7 items-center gap-1 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100">
       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={copyText} aria-label="复制回复">
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>

@@ -53,6 +53,7 @@ export function MediaWorkbench() {
               input={controller.input}
               reference={controller.reference}
               notice={controller.notice}
+              composerNotice={controller.composerNotice}
               onInputChange={controller.setInput}
               onClearReference={() => controller.setReference(null)}
               onSend={controller.sendPrompt}
@@ -72,6 +73,7 @@ export function MediaWorkbench() {
             <ArtifactRail
               items={controller.artifacts}
               activeKey={controller.activeArtifact.key}
+              previewDisabled={controller.sidePanelOpen}
               onCopy={controller.copyArtifact}
               onUseAsInput={controller.useAsInput}
               onOpen={controller.openSidePanel}

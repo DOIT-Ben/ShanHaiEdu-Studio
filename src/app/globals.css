@@ -25,13 +25,13 @@
   --radius: 0.5rem;
   --font-sans: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --background: #ffffff;
-  --foreground: #202124;
+  --foreground: #1f2328;
   --card: #ffffff;
-  --card-foreground: #202124;
-  --muted: #f6f6f6;
-  --muted-foreground: #6f7378;
-  --border: #e5e5e5;
-  --input: #dadada;
+  --card-foreground: #1f2328;
+  --muted: #f7f7f8;
+  --muted-foreground: #717780;
+  --border: #e8e8ea;
+  --input: #d9d9dc;
   --ring: #9ca3af;
   --primary: #3f3f46;
   --primary-foreground: #ffffff;
@@ -77,6 +77,12 @@ button {
 
 button:active {
   transform: translateY(1px);
+}
+
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(124, 128, 138, 0.42);
+  outline-offset: 2px;
 }
 
 .title-lg {

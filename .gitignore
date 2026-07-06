@@ -9,3 +9,5 @@ chrome-*.png
 desktop-*.png
 mobile-*.png
 
+# Private API ledgers and local credential bundles
+*PRIVATE*.zip

@@ -22,11 +22,11 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect }: ProjectSidebarProps) {
   return (
-    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f7f7f7] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
+    <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f8f8f9] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
       <button
         type="button"
         onClick={onToggle}
-        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card transition hover:bg-[#eeeeee] lg:flex"
+        className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card transition hover:bg-[#f1f1f2] lg:flex"
         aria-label="折叠项目栏"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -46,15 +46,15 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         </div>
         {!collapsed && (
           <>
-            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#ebebeb]" variant="ghost">
+            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#eeeeef]" variant="ghost">
               <Plus className="h-4 w-4" />
               新建项目
             </Button>
-            <div className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-[#ebebeb]">
+            <div className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-[#eeeeef]">
               <Search className="h-4 w-4" />
               <span>搜索课题</span>
             </div>
-            <div className="mt-6 flex h-9 items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#ebebeb]">
+            <div className="mt-6 flex h-9 items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef]">
               <span className="flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
                 公开课备课
@@ -74,8 +74,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               type="button"
               onClick={() => onSelect(project.id)}
               className={cn(
-                "group mb-0.5 w-full rounded-md px-3 py-2 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
-                active ? "bg-[#e9e9e9] text-foreground" : "bg-transparent text-foreground",
+                "group mb-0.5 w-full rounded-md px-3 py-2 text-left transition duration-150 ease-out hover:bg-[#eeeeef]",
+                active ? "bg-[#ededee] text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.02)]" : "bg-transparent text-foreground",
                 collapsed && "flex h-11 items-center justify-center p-0",
               )}
             >
@@ -99,7 +99,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
       </div>
       {!collapsed && (
         <div className="px-3 py-4">
-          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#ebebeb]">
+          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]">
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>

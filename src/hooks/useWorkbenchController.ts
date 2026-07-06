@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { artifacts as initialArtifacts, projects } from "@/lib/mock-data";
 import type { ArtifactItem } from "@/lib/types";
 
@@ -15,6 +15,7 @@ export function useWorkbenchController() {
   const [input, setInput] = useState("");
   const [reference, setReference] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
@@ -23,6 +24,15 @@ export function useWorkbenchController() {
   const [artifacts, setArtifacts] = useState(initialArtifacts);
 
   const activeArtifact = useMemo(() => artifacts.find((item) => item.key === "intro-video-plan") ?? artifacts[0], [artifacts]);
+  const composerNoticeTimer = useRef<number | null>(null);
+
+  function flashComposerNotice(message: string) {
+    setComposerNotice(message);
+    if (composerNoticeTimer.current) {
+      window.clearTimeout(composerNoticeTimer.current);
+    }
+    composerNoticeTimer.current = window.setTimeout(() => setComposerNotice(null), 1800);
+  }
 
   function openDetail(item: ArtifactItem) {
     setDetailItem(item);
@@ -53,6 +63,7 @@ export function useWorkbenchController() {
     setReference(`${item.title}：${item.summary}`);
     setInput((current) => (current ? `${current}\n\n请基于：${text}` : `请基于：${text}`));
     setNotice(`已把「${item.title}」插入为下一步输入。`);
+    flashComposerNotice("已插入为下一步输入。");
     setRailOpen(false);
     setSidePanelOpen(false);
   }
@@ -70,10 +81,12 @@ export function useWorkbenchController() {
 
   function sendPrompt() {
     if (!input.trim() && !reference) {
-      setNotice("可以先输入你的修改要求，或从右侧选择一个上游产物作为输入。");
+      flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
       return;
     }
-    setNotice("已收到修改要求。演示版不会连接真实生成服务，但会保留你的输入状态。");
+    setInput("");
+    setReference(null);
+    flashComposerNotice("已发送");
   }
 
   function showRecovery() {
@@ -92,6 +105,7 @@ export function useWorkbenchController() {
     reference,
     setReference,
     notice,
+    composerNotice,
     detailItem,
     detailOpen,
     setDetailOpen,

@@ -1,0 +1,174 @@
+# shanhai-media-workbench 项目级 Codex 工作规则
+
+> 本文件约束当前项目 `shanhai-media-workbench`。若与用户当前明确指令冲突，以用户当前指令为准；若与平台、安全或工具权限限制冲突，以平台和工具限制为准。
+
+## 1. 项目定位
+
+- 项目名称：`shanhai-media-workbench`
+- 项目类型：线性 AI 备课媒体工作台 / MVP 基础工程
+- 当前目标：从纯前端原型推进到真实可用 MVP，同时保留长期生产架构迁移口。
+- 技术栈：Next.js、React、TypeScript、Tailwind CSS、Radix UI、lucide-react。
+- 主要入口：`src\app\page.tsx`
+- 核心规划：
+  - `docs\linear-media-workbench-plan.md`
+  - `docs\frontend-polish-v0.3.9.md`
+  - `docs\mvp-to-production-agent-architecture.md`
+
+## 2. 沟通与输出规则
+
+- 每次回复用户必须以 `董事长，` 开头。
+- 默认使用中文，结论先行，少空话。
+- 简单任务短回复；复杂任务按“方案 -> 风险 -> 验证 -> 下一步”组织。
+- 对用户展示路径时使用 Windows 风格路径，例如 `E:\desktop\shanhai-media-workbench`。
+- 不确定时明确说明，不编造。
+
+## 3. 工作模式
+
+默认轻量模式：问答、只读核验、小范围低风险修正，可以直接处理。
+
+满足以下任一条件时进入严格模式：
+
+- 改动不少于 5 个文件。
+- 单文件改动不少于 150 行。
+- 涉及架构、数据模型、API、Agent Runtime、数据库、存储、并发、权限或生产部署。
+- 涉及正式交付物、清理归档、分支并行计划或阶段复盘。
+- 用户明确要求规划、记录、复盘或长期架构。
+
+严格模式动手前必须明确：
+
+1. 当前目标。
+2. 范围边界。
+3. 关键假设。
+4. 可验证成功标准。
+5. 风险与回退方式。
+
+## 4. 规划文档门禁
+
+任何需求增加、需求变更、架构调整、后端接入、Agent 接入、数据库设计或正式开发前，必须先产出或更新 `docs\` 下的规划文档。
+
+规划文档必须按以下路线组织：
+
+1. 第一性原理：当前阶段真正要解决什么问题。
+2. 可复用调研：行业方法、成熟库、官方 SDK、API、skills、项目既有模式。
+3. 复用与自研边界：哪些复用，哪些适配，哪些必须自研。
+4. 落地方案：模块、文件、数据流、风险、验证标准。
+
+不得在未理解需求、未调研可复用方案时盲目手搓。
+
+## 5. MVP 与生产边界
+
+- 当前不是继续做 mock 原型，而是推进真实可用 MVP。
+- MVP 至少应支持 1-2 人真实同时使用，架构上预留 5 人试运行。
+- MVP 必须真实保存项目、对话、节点产物和确认状态。
+- MVP 可以先降低生成质量，但不能把 mock、placeholder、演示数据伪装成真实完成。
+- 前端可见界面不得出现工程调试词、后端字段名、命令行、接口路径、schema、manifest、provider、node_id、storage、debug 等。
+- 长期目标应保留迁移口：后续可迁移到独立 BFF/API、Python Agent Worker、Temporal、Redis、对象存储和多 provider adapter。
+
+## 6. Agent 与后端架构边界
+
+- OpenAI SDK / OpenAI Agents SDK 只能接在服务端 Runtime Adapter 层，不能直接塞进 React 组件。
+- 智能体负责规划、生成、审查和工具调用；业务状态真源必须归项目后端管理。
+- 项目、对话、节点、产物、确认、版本、失败恢复、交付包状态不得由单个 prompt 或前端本地状态充当真源。
+- 必须保留这些可迁移接口边界：
+  - `AgentRuntime`
+  - `ArtifactStorage`
+  - `WorkflowRepository`
+  - `WorkflowEngine`
+  - `ProviderAdapter`
+- MVP 允许先做 Next.js 全栈单体，但代码结构必须为后续拆分服务预留模块边界。
+
+## 7. 前端设计约束
+
+- 保留当前 Codex 风格工作台方向：左侧项目、中间对话、右侧压缩线性节点、点击打开阅读侧栏。
+- 中间对话区是主视觉，不做营销页、大 hero、大渐变背景或炫技动效。
+- 整体风格必须纯白、克制、简约、低噪声。
+- 字体最大不超过 35px；字号层级控制在 2-3 种。
+- 颜色尽量少，一个语义只用一个颜色；选中态优先灰阶轻底色。
+- 不使用 emoji。
+- 不做卡片套卡片，不堆条条框框。
+- 复制、重做等低频按钮默认隐藏，hover/focus 时显示。
+- 右侧节点默认压缩，hover 预览，click 打开/切换/关闭详情侧栏；详情打开时不得再出现冲突 hover 浮层。
+- 桌面端和窄屏都必须做浏览器检查。
+
+## 8. 开发原则
+
+- 优先复用成熟组件、库、官方 SDK 和项目既有模式。
+- 不重做 UI kit，优先使用 Radix/shadcn 风格 primitives。
+- 定向重构优先于补丁堆积；文件过大或职责混乱时先评估拆分。
+- 不顺手格式化、改名或重构无关文件。
+- 不删除或回滚用户已有改动，除非用户明确要求。
+- 工作区可能是脏的；先查看 `git status --short`，只处理本轮相关改动。
+- 配置优先，环境差异、密钥、端点、provider 开关不得硬编码进业务代码。
+- 结构化数据优先使用类型和解析器，不做脆弱字符串拼接。
+
+## 9. 清理与归档规则
+
+- 大批量删除、迁移后删除、覆盖、清理生成物前，必须说明 exact paths 和处理方式。
+- 默认清理方式是移动到归档或送回收站，不做不可恢复删除。
+- 可再生成目录如 `.next`、`node_modules` 可以清理，但必须说明恢复命令。
+- 旧规划、截图、日志优先归档到 `docs\archive\YYYY-MM-DD-*`，保留可追溯性。
+- 不清理源码、核心规划、依赖清单、项目规则和当前验收证据。
+
+## 10. 运行与验证
+
+常用命令：
+
+```powershell
+npm install
+npm run dev
+npm run build
+```
+
+宣称完成前必须有新鲜验证证据：
+
+- 构建完成：`npm run build` exit 0。
+- 页面可用：浏览器实际打开关键页面。
+- UI 修复：提供桌面和窄屏关键流程检查。
+- 交互修复：复测原始症状，例如发送、Enter、Shift+Enter、hover、侧栏开关、复制。
+- 后端/API 修复：真实请求或集成测试通过。
+- 无法验证时，必须说明原因和剩余风险。
+
+## 11. 分支与提交规范
+
+- 分支按职责拆分，避免大锅提交。
+- 推荐分支：
+  - `feature/mvp-frontend-api-backed-workbench`
+  - `feature/mvp-backend-workflow-lite`
+  - `feature/mvp-agent-runtime-adapter`
+  - `feature/mvp-e2e-verification`
+- 提交信息使用中文：
+
+```text
+类型: 简要描述 | 版本号 | YYYY-MM-DD HH:MM
+```
+
+类型限：
+
+```text
+feat / fix / opt / refactor / docs / conf / hotfix
+```
+
+未经用户明确要求，不主动 push、部署、发布或执行不可逆操作。
+
+## 12. 敏感信息
+
+- 不得在回复、日志、提交信息、文档、截图中明文展示密钥、token、账号或个人敏感信息。
+- `.env`、私有配置、provider key 只在任务确实需要时读取。
+- 真实 provider 配置只写本地 `.env` 或环境变量；仓库中只允许 `.env.example` 占位。
+
+## 13. 当前项目保留物
+
+根目录应优先保持克制：
+
+- `src\`
+- `docs\`
+- `AGENTS.md`
+- `package.json`
+- `package-lock.json`
+- `next.config.ts`
+- `postcss.config.mjs`
+- `tsconfig.json`
+- `next-env.d.ts`
+- `.gitignore`
+
+核心规划保留在 `docs\` 根级；历史资料进入 `docs\archive\`。

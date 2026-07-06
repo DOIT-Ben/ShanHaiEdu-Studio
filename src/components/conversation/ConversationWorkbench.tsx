@@ -15,6 +15,7 @@ type ConversationWorkbenchProps = {
   input: string;
   reference: string | null;
   notice: string | null;
+  composerNotice: string | null;
   onInputChange: (value: string) => void;
   onClearReference: () => void;
   onSend: () => void;
@@ -27,6 +28,7 @@ export function ConversationWorkbench({
   input,
   reference,
   notice,
+  composerNotice,
   onInputChange,
   onClearReference,
   onSend,
@@ -68,6 +70,7 @@ export function ConversationWorkbench({
       <PromptComposer
         value={input}
         reference={reference}
+        notice={composerNotice}
         onChange={onInputChange}
         onClearReference={onClearReference}
         onSend={onSend}

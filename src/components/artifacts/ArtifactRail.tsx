@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ArtifactItem } from "@/lib/types";
 import { ArtifactNodeCard } from "@/components/artifacts/ArtifactNodeCard";
 import { ArtifactPreviewCard } from "@/components/artifacts/ArtifactPreviewCard";
@@ -11,6 +11,7 @@ type ArtifactRailProps = {
   items: ArtifactItem[];
   activeKey: string;
   variant?: "rail" | "drawer";
+  previewDisabled?: boolean;
   onCopy: (item: ArtifactItem) => void;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
@@ -21,6 +22,7 @@ export function ArtifactRail({
   items,
   activeKey,
   variant = "rail",
+  previewDisabled = false,
   onCopy,
   onUseAsInput,
   onOpen,
@@ -34,12 +36,18 @@ export function ArtifactRail({
     return true;
   });
 
+  useEffect(() => {
+    if (previewDisabled) setPreviewItem(null);
+  }, [previewDisabled]);
+
   function openPreview(item: ArtifactItem) {
+    if (previewDisabled) return;
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
     setPreviewItem((current) => (current?.key === item.key ? current : item));
   }
 
   function keepPreviewOpen() {
+    if (previewDisabled) return;
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
   }
 
@@ -86,7 +94,7 @@ export function ArtifactRail({
 
   return (
     <aside className="relative flex h-full items-center justify-center border-l bg-card">
-      <div className="relative flex w-full flex-col items-center gap-2 px-2 py-4">
+      <div className="relative flex w-full flex-col items-center gap-2.5 px-2 py-4">
         <span className="absolute bottom-8 left-1/2 top-8 w-px -translate-x-1/2 bg-border" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
@@ -104,7 +112,7 @@ export function ArtifactRail({
       </div>
       {previewItem && (
         <div
-          className="artifact-preview-popover absolute right-full top-1/2 z-40 mr-3 w-[350px] -translate-y-1/2 rounded-lg border bg-card p-3 text-card-foreground shadow-[0_12px_32px_rgba(0,0,0,0.08)] outline-none"
+          className="artifact-preview-popover absolute right-full top-1/2 z-40 mr-4 w-[340px] -translate-y-1/2 rounded-lg border bg-card p-3 text-card-foreground shadow-[0_14px_34px_rgba(0,0,0,0.075)] outline-none"
           onMouseEnter={keepPreviewOpen}
           onMouseLeave={closePreviewSoon}
         >
