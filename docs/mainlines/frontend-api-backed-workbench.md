@@ -49,6 +49,12 @@
 - 刷新后能恢复同一个项目视图。
 - mock 数据不再作为默认真源。
 
+当前状态：
+
+- 已完成 Stage 1 前端边界纵切，提交前收尾见 `docs\stages\frontend-api-backed-stage1-closeout.md`。
+- 已建立 API client 与开发态 adapter，但真实后端 route 尚未在本主线落地。
+- 下一步进入 Stage 2：对齐并接入 Backend Workflow Lite 的真实 snapshot 合同。
+
 ### 阶段 2：对话与节点接入
 
 交付：

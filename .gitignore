@@ -11,11 +11,13 @@ dev.db
 dev.db-journal
 prisma/*.db
 prisma/*.db-journal
+*.tsbuildinfo
 
 # Local verification screenshots
 chrome-*.png
 desktop-*.png
 mobile-*.png
+output/playwright/
 
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip

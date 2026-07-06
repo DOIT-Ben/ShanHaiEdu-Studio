@@ -52,6 +52,24 @@ export type ChatMessage = {
   tone?: "normal" | "focus" | "warning" | "error";
 };
 
+export type WorkbenchSnapshot = {
+  project: ProjectItem;
+  messages: ChatMessage[];
+  artifacts: ArtifactItem[];
+  activeArtifactKey: string;
+};
+
+export type WorkbenchDataSource = {
+  listProjects: () => Promise<ProjectItem[]>;
+  createProject: () => Promise<WorkbenchSnapshot>;
+  getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
+  sendMessage: (projectId: string, body: string, reference: string | null) => Promise<WorkbenchSnapshot>;
+  approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+  regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+};
+
+export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
+
 export type StepDefinition = {
   key: ArtifactKind;
   label: string;
