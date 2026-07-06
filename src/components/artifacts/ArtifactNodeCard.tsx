@@ -52,13 +52,13 @@ export function ArtifactNodeCard({
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", meta.dot)} />
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)} />
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{item.title}</div>
-              <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.summary}</div>
+              <div className={cn("mt-0.5 line-clamp-1 text-xs text-muted-foreground", !active && "hidden")}>{item.summary}</div>
             </div>
           </div>
-          <Badge tone={meta.tone}>{meta.label}</Badge>
+          {active && <Badge tone={meta.tone}>{meta.label}</Badge>}
         </div>
       </button>
     );
@@ -78,16 +78,19 @@ export function ArtifactNodeCard({
             setPreviewOpen(false);
             onOpen(item);
           }}
-          className="group grid w-full grid-cols-[34px_1fr] items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-none transition duration-150 ease-out hover:bg-[#ebebeb] focus:ring-2 focus:ring-ring/35"
+          className={cn(
+            "group grid w-full grid-cols-[28px_1fr] items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-none transition duration-150 ease-out hover:bg-[#ebebeb] focus:ring-2 focus:ring-ring/35",
+            active && "bg-[#e9e9e9]",
+          )}
         >
           <span
             className={cn(
-              "relative flex h-8 w-8 items-center justify-center rounded-full border bg-card transition",
-              active && "border-input bg-[#e9e9e9]",
+              "relative flex h-7 w-7 items-center justify-center rounded-full border bg-card transition",
+              active && "border-input bg-card",
             )}
           >
-            <Icon className={cn("h-4 w-4", active ? "text-foreground" : "text-muted-foreground")} />
-            <span className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-card", meta.dot)} />
+            <Icon className={cn("h-3.5 w-3.5", active ? "text-foreground" : "text-muted-foreground")} />
+            {active && <span className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-card", meta.dot)} />}
           </span>
           <span className={cn("truncate text-sm", active ? "font-medium text-foreground" : "text-muted-foreground")}>
             {item.title.replace("策划卡", "").replace("提示词", "")}

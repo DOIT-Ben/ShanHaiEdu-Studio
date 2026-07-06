@@ -14,7 +14,7 @@ type PromptComposerProps = {
 
 export function PromptComposer({ value, reference, onChange, onClearReference, onSend }: PromptComposerProps) {
   return (
-    <div className="border-t bg-card px-8 py-5">
+    <div className="border-t bg-card px-8 py-4">
       <div className="mx-auto w-full max-w-5xl">
         {reference && (
           <div className="mb-2 inline-flex max-w-full items-start justify-between gap-3 rounded-lg border bg-muted/45 px-3 py-2">
@@ -32,21 +32,21 @@ export function PromptComposer({ value, reference, onChange, onClearReference, o
             </button>
           </div>
         )}
-        <div className="rounded-xl border bg-card p-2 shadow-[0_8px_28px_rgba(0,0,0,0.06)]">
+        <div className="rounded-lg border bg-card p-2 shadow-[0_6px_20px_rgba(0,0,0,0.045)]">
           <Textarea
             id="lesson-workbench-prompt"
             name="lesson-workbench-prompt"
             value={value}
             onChange={(event) => onChange(event.target.value)}
             placeholder="继续描述备课目标，或引用右侧产物继续生成"
-            className="min-h-20 border-0 bg-transparent shadow-none focus:ring-0"
+            className="min-h-16 border-0 bg-transparent shadow-none focus:ring-0"
           />
           <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="icon" aria-label="粘贴资料">
+              <Button variant="ghost" size="icon" aria-label="粘贴资料">
                 <Paperclip className="h-4 w-4" />
               </Button>
-              <Button variant="secondary" size="icon" aria-label="重新生成">
+              <Button variant="ghost" size="icon" aria-label="重新生成">
                 <RotateCcw className="h-4 w-4" />
               </Button>
             </div>

@@ -40,6 +40,7 @@
   --warning: #74777d;
   --info: #74777d;
   --destructive: #a15b5b;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -67,6 +68,15 @@ body {
 button,
 textarea {
   font: inherit;
+}
+
+button {
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-out);
+}
+
+button:active {
+  transform: translateY(1px);
 }
 
 .title-lg {

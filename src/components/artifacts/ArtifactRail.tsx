@@ -36,7 +36,7 @@ export function ArtifactRail({
       <aside className="flex h-full min-h-0 flex-col bg-[#f7f7f7]">
         <div className="border-b px-5 py-4">
           <h2 className="title-md">线性产物</h2>
-          <p className="mt-1 text-xs text-muted-foreground">点击节点查看详情，确认后再作为下一步输入。</p>
+          <p className="mt-1 text-xs text-muted-foreground">点击查看详情，确认后复用到下一步。</p>
           <Select value={filter} onValueChange={setFilter}>
             <SelectTrigger className="mt-3 w-full">
               <SelectValue placeholder="筛选节点" />
@@ -69,8 +69,8 @@ export function ArtifactRail({
 
   return (
     <aside className="flex h-full items-center justify-center border-l bg-[#f7f7f7]">
-      <div className="relative flex w-[104px] flex-col gap-1 px-2 py-4">
-        <span className="absolute left-[25px] top-7 bottom-7 w-px bg-border" />
+      <div className="relative flex w-[92px] flex-col gap-2 px-2 py-4">
+        <span className="absolute left-[22px] top-7 bottom-7 w-px bg-border" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
             <ArtifactNodeCard

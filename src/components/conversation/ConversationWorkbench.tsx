@@ -36,7 +36,7 @@ export function ConversationWorkbench({
       <WorkbenchTopbar />
       <StageProgress activeIndex={2} />
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto w-full max-w-5xl space-y-8 px-8 pb-8">
+        <div className="mx-auto w-full max-w-5xl space-y-7 px-8 pb-32 lg:pb-8">
           {notice && <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-foreground">{notice}</div>}
           <ChatTranscript messages={messages} />
           <GenerationPanel onConfirmIntro={onConfirmIntro} onRecover={onRecover} />

@@ -46,7 +46,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         </div>
         {!collapsed && (
           <>
-            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 hover:bg-[#ebebeb]" variant="ghost">
+            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#ebebeb]" variant="ghost">
               <Plus className="h-4 w-4" />
               新建项目
             </Button>
@@ -74,7 +74,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               type="button"
               onClick={() => onSelect(project.id)}
               className={cn(
-                "mb-1 w-full rounded-md px-3 py-2.5 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
+                "group mb-0.5 w-full rounded-md px-3 py-2 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
                 active ? "bg-[#e9e9e9] text-foreground" : "bg-transparent text-foreground",
                 collapsed && "flex h-11 items-center justify-center p-0",
               )}
@@ -85,15 +85,11 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
                 <>
                   <div className="flex min-w-0 items-center gap-2">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <h3 className="truncate text-sm font-medium leading-5">{project.title}</h3>
+                    <h3 className="truncate text-sm font-normal leading-5">{project.title}</h3>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">{project.currentStep}</span>
-                    <span className="shrink-0">{project.updatedAt}</span>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">{project.meta}</span>
-                    <span className="shrink-0">{meta.label}</span>
+                    <span className="truncate">{active ? project.currentStep : project.meta}</span>
+                    <span className="shrink-0">{active ? project.updatedAt : meta.label}</span>
                   </div>
                 </>
               )}
@@ -103,7 +99,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
       </div>
       {!collapsed && (
         <div className="px-3 py-4">
-          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent hover:bg-[#ebebeb]">
+          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#ebebeb]">
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>
