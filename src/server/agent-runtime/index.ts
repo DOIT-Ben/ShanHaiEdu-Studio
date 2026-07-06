@@ -1,4 +1,6 @@
 export { DeterministicRuntime } from "./deterministic-runtime";
+export { OpenAIRuntime, buildOpenAIResponseRequest } from "./openai-runtime";
+export { createAgentRuntimeFromEnv } from "./runtime-factory";
 export type {
   AgentArtifactDraft,
   AgentAssistantMessage,
@@ -11,3 +13,4 @@ export type {
   AgentRuntimeResult,
   AgentRuntimeTask,
 } from "./types";
+export type { OpenAIResponsesClient } from "./openai-runtime";
