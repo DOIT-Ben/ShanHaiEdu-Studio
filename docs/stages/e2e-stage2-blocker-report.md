@@ -13,6 +13,9 @@ Stage 2 当前阻塞，不能开发或宣称 deterministic browser E2E 通过。
 - 当前 E2E 分支没有 `src\app\api\workbench`。
 - 当前 E2E 分支没有服务端 `src\server\agent-runtime`。
 - 其他 worktree 有相关未提交或未集成进 E2E 分支的工作，不能作为当前分支验收依据。
+- 只读审计显示：`backend-workflow-lite` worktree 目前有未提交的 `src\app\api\workbench`、`src\server\workbench`、Prisma 和 contract test 文件，但其 Stage 1 closeout 明确把 `approve/regenerate` 放到后续阶段。
+- 只读审计显示：`frontend-api-backed-workbench` worktree 目前有未提交的 `src\lib\workbench-api.ts` 和 API-backed controller 改动，但 Stage 1 仍使用开发态 adapter，尚未证明真实后端 snapshot 接入。
+- 只读审计显示：`agent-runtime-adapter` worktree 有本地提交到 Stage 4 closeout，但这些提交尚未合入 E2E 分支。
 
 ## 3. 阻塞项
 
@@ -22,6 +25,7 @@ Stage 2 当前阻塞，不能开发或宣称 deterministic browser E2E 通过。
 | 缺 API-backed shell | Frontend API-backed Workbench | 前端从 API snapshot 获取项目、消息、节点和产物 |
 | 缺 deterministic runtime 集成 | Agent Runtime Adapter | 服务端 DeterministicRuntime 可由工作流调用并生成 artifact |
 | 缺 snapshot contract | Backend + Frontend | 刷新恢复所需的项目状态合同 |
+| 缺 artifact approve 合同 | Backend + Frontend | 用户确认动作必须经真实 route 或 API-backed client contract 返回更新后的 snapshot |
 
 ## 4. 尝试与结果
 

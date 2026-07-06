@@ -20,14 +20,23 @@ const checks = [
   {
     id: "backend-workbench-api",
     owner: "Backend Workflow Lite",
-    ok: exists("src/app/api/workbench"),
-    required: "src/app/api/workbench must expose project/message/artifact/snapshot routes.",
+    ok:
+      exists("src/app/api/workbench/projects/route.ts") &&
+      exists("src/app/api/workbench/projects/[projectId]/messages/route.ts") &&
+      exists("src/app/api/workbench/projects/[projectId]/artifacts/route.ts") &&
+      exists("src/app/api/workbench/projects/[projectId]/snapshot/route.ts"),
+    required:
+      "Workbench API must expose project, message, artifact, and snapshot routes under src/app/api/workbench.",
   },
   {
     id: "agent-runtime-deterministic",
     owner: "Agent Runtime Adapter",
-    ok: exists("src/server/agent-runtime") && includes("src/server/agent-runtime/index.ts", "Deterministic"),
-    required: "src/server/agent-runtime must expose a deterministic runtime through the server boundary.",
+    ok:
+      exists("src/server/agent-runtime/index.ts") &&
+      exists("src/server/agent-runtime/deterministic-runtime.ts") &&
+      includes("src/server/agent-runtime/index.ts", "Deterministic"),
+    required:
+      "src/server/agent-runtime must expose DeterministicRuntime through the server boundary.",
   },
   {
     id: "frontend-api-backed-shell",
@@ -45,6 +54,15 @@ const checks = [
       exists("src/app/api/workbench/projects") ||
       exists("src/app/api/workbench/projects/[projectId]/snapshot"),
     required: "A project snapshot contract must exist before refresh recovery can be verified.",
+  },
+  {
+    id: "artifact-approve-contract",
+    owner: "Backend Workflow Lite / Frontend API-backed Workbench",
+    ok:
+      exists("src/app/api/workbench/projects/[projectId]/artifacts/[artifactKey]/approve/route.ts") ||
+      includes("src/lib/workbench-api.ts", "/approve"),
+    required:
+      "Artifact approval must have a real route or API-backed client contract before user confirmation can be verified.",
   },
 ];
 

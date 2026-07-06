@@ -20,6 +20,7 @@ npm run test:e2e:stage2:preflight
 - 存在服务端 `DeterministicRuntime` 边界。
 - 工作台前端不再默认从 `@/lib/mock-data` 读取项目、消息和产物。
 - 存在项目 snapshot contract。
+- 存在 artifact approval route 或 API-backed client contract。
 
 任一条件不满足时，Stage 2 不运行 browser E2E，并输出阻塞报告。
 
@@ -54,4 +55,5 @@ npm run test:e2e:stage2
 - 缺 API route 或 snapshot：Backend Workflow Lite。
 - 前端仍从 `mock-data` 取状态：Frontend API-backed Workbench。
 - 缺 DeterministicRuntime：Agent Runtime Adapter。
+- 缺 artifact approve 合同：Backend Workflow Lite / Frontend API-backed Workbench。
 - Playwright 配置或选择器问题：E2E Verification。
