@@ -80,6 +80,8 @@ export type AgentRunRecord = {
   errorMessage: string | null;
 };
 
+export type AgentRunStatus = "running" | "succeeded" | "failed";
+
 export type ProjectSnapshot = {
   project: ProjectRecord;
   messages: ConversationMessageRecord[];
@@ -117,4 +119,14 @@ export type RegenerateArtifactInput = {
   summary: string;
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
+};
+
+export type StartAgentRunInput = {
+  nodeKey: WorkflowNodeKey;
+  runtime: string;
+};
+
+export type FinishAgentRunInput = {
+  status: Exclude<AgentRunStatus, "running">;
+  errorMessage?: string;
 };

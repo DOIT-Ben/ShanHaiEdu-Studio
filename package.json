@@ -12,7 +12,8 @@
     "test:stage1": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage1-contract.test.ts",
     "test:stage2": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage2-workflow-lite.test.ts",
     "test:stage3": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage3-artifact-versioning.test.ts",
-    "test:stage4": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage4-stale-propagation.test.ts"
+    "test:stage4": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage4-stale-propagation.test.ts",
+    "test:stage5": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage5-agent-run-recovery.test.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",

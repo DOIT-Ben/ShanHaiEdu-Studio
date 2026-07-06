@@ -1,7 +1,14 @@
 import { prisma } from "@/server/db/client";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
-import type { AddMessageInput, CreateProjectInput, RegenerateArtifactInput, SaveArtifactInput } from "./types";
+import type {
+  AddMessageInput,
+  CreateProjectInput,
+  FinishAgentRunInput,
+  RegenerateArtifactInput,
+  SaveArtifactInput,
+  StartAgentRunInput,
+} from "./types";
 
 export type WorkbenchRepository = ReturnType<typeof createPrismaWorkbenchRepository>;
 
@@ -203,6 +210,56 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           isApproved: true,
         },
         orderBy: [{ nodeKey: "asc" }, { version: "asc" }],
+      });
+    },
+
+    async startAgentRun(projectId: string, input: StartAgentRunInput) {
+      return client.$transaction(async (tx) => {
+        const run = await tx.agentRun.create({
+          data: {
+            projectId,
+            nodeKey: input.nodeKey,
+            runtime: input.runtime,
+            status: "running",
+          },
+        });
+
+        await tx.workflowNode.update({
+          where: { projectId_key: { projectId, key: input.nodeKey } },
+          data: { status: "in_progress" },
+        });
+
+        return run;
+      });
+    },
+
+    async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.agentRun.findFirst({
+          where: { id: runId, projectId },
+        });
+
+        if (!existing) {
+          throw new Error(`AgentRun not found: ${runId}`);
+        }
+
+        const run = await tx.agentRun.update({
+          where: { id: runId },
+          data: {
+            status: input.status,
+            finishedAt: new Date(),
+            errorMessage: input.errorMessage ?? null,
+          },
+        });
+
+        if (input.status === "failed") {
+          await tx.workflowNode.update({
+            where: { projectId_key: { projectId, key: existing.nodeKey } },
+            data: { status: "failed" },
+          });
+        }
+
+        return run;
       });
     },
 

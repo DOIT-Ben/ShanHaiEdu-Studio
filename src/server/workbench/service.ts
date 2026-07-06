@@ -5,10 +5,12 @@ import type {
   ArtifactRecord,
   ConversationMessageRecord,
   CreateProjectInput,
+  FinishAgentRunInput,
   ProjectRecord,
   ProjectSnapshot,
   RegenerateArtifactInput,
   SaveArtifactInput,
+  StartAgentRunInput,
   WorkflowNodeRecord,
 } from "./types";
 import type { AgentRun, Artifact, ConversationMessage, Project, WorkflowNode } from "@/generated/prisma/client";
@@ -72,6 +74,16 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return artifacts
         .map(mapArtifact)
         .sort((left, right) => upstreamNodeKeys.indexOf(left.nodeKey) - upstreamNodeKeys.indexOf(right.nodeKey));
+    },
+
+    async startAgentRun(projectId: string, input: StartAgentRunInput): Promise<AgentRunRecord> {
+      const run = await repository.startAgentRun(projectId, input);
+      return mapAgentRun(run);
+    },
+
+    async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput): Promise<AgentRunRecord> {
+      const run = await repository.finishAgentRun(projectId, runId, input);
+      return mapAgentRun(run);
     },
 
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
