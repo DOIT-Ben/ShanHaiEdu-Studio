@@ -47,3 +47,20 @@ rg -n "sk-[A-Za-z0-9_-]{20,}" docs src tests package.json package-lock.json
 
 - `SHANHAIEDU_LEGACY_RETROSPECTIVE.md`：未跟踪，不属于 Runtime 阶段交付，未提交。
 - `tsconfig.tsbuildinfo`：TypeScript 本地构建缓存，已通过 `.gitignore` 忽略。
+
+## 4. 最终只读审查记录
+
+用户指定的只读审查线程 `019f3924-e46f-7f20-a680-968ed38ea5e1` 已完成复核。
+
+结论：
+
+- P0：未发现。
+- P1：未发现。
+- P2：`SHANHAIEDU_LEGACY_RETROSPECTIVE.md` 仍是未跟踪文件，不应纳入本 Runtime 分支。
+- 建议：可以 push 当前 Runtime commits；不要提交未跟踪复盘文档。
+
+处理：
+
+- 未跟踪复盘文档继续排除在本 Runtime 分支外。
+- 真实 OpenAI provider smoke 未执行，保留为显式环境配置后的单独验证项。
+- `npm audit` 仍有 2 个 moderate 风险；`audit fix --force` 会做破坏性依赖变更，不在本 Runtime 合同主线内强修。
