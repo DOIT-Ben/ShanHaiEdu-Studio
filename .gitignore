@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+dist/
+*.log
+
+# Local verification screenshots
+chrome-*.png
+desktop-*.png
+mobile-*.png
+
