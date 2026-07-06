@@ -63,8 +63,6 @@ export function MediaWorkbench() {
           <ArtifactSidePanel
             item={controller.sidePanelItem}
             open={controller.sidePanelOpen}
-            width={controller.sidePanelWidth}
-            onWidthChange={controller.setSidePanelWidth}
             onClose={() => controller.setSidePanelOpen(false)}
             onCopy={controller.copyArtifact}
             onUseAsInput={controller.useAsInput}

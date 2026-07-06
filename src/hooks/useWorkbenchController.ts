@@ -20,7 +20,6 @@ export function useWorkbenchController() {
   const [railOpen, setRailOpen] = useState(false);
   const [sidePanelItem, setSidePanelItem] = useState<ArtifactItem | null>(null);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  const [sidePanelWidth, setSidePanelWidth] = useState(380);
   const [artifacts, setArtifacts] = useState(initialArtifacts);
 
   const activeArtifact = useMemo(() => artifacts.find((item) => item.key === "intro-video-plan") ?? artifacts[0], [artifacts]);
@@ -31,6 +30,10 @@ export function useWorkbenchController() {
   }
 
   function openSidePanel(item: ArtifactItem) {
+    if (sidePanelOpen && sidePanelItem?.key === item.key) {
+      setSidePanelOpen(false);
+      return;
+    }
     setSidePanelItem(item);
     setSidePanelOpen(true);
   }
@@ -97,8 +100,6 @@ export function useWorkbenchController() {
     sidePanelItem,
     sidePanelOpen,
     setSidePanelOpen,
-    sidePanelWidth,
-    setSidePanelWidth,
     artifacts,
     activeArtifact,
     openDetail,

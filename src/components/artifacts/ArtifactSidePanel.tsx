@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Clipboard, PanelRightClose, SendToBack, Maximize2 } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -10,8 +11,6 @@ import { ResizableHandle } from "@/components/artifacts/ResizableHandle";
 type ArtifactSidePanelProps = {
   item: ArtifactItem | null;
   open: boolean;
-  width: number;
-  onWidthChange: (width: number) => void;
   onClose: () => void;
   onCopy: (item: ArtifactItem) => void;
   onUseAsInput: (item: ArtifactItem) => void;
@@ -21,13 +20,13 @@ type ArtifactSidePanelProps = {
 export function ArtifactSidePanel({
   item,
   open,
-  width,
-  onWidthChange,
   onClose,
   onCopy,
   onUseAsInput,
   onOpenDetail,
 }: ArtifactSidePanelProps) {
+  const [width, setWidth] = useState(380);
+
   return (
     <aside
       className="relative hidden h-full shrink-0 overflow-hidden border-l bg-card transition-[width] duration-300 ease-out lg:block"
@@ -36,7 +35,7 @@ export function ArtifactSidePanel({
     >
       {open && item && (
         <div className="relative flex h-full min-w-[300px] flex-col">
-          <ResizableHandle width={width} onChange={onWidthChange} />
+          <ResizableHandle width={width} onChange={setWidth} />
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{item.title}</div>

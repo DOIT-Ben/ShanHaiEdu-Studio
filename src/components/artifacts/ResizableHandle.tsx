@@ -16,13 +16,24 @@ export function ResizableHandle({ width, min = 300, max = 520, onChange }: Resiz
     const startWidth = width;
     const previousCursor = document.body.style.cursor;
     const previousSelect = document.body.style.userSelect;
+    let frame = 0;
+    let nextWidth = startWidth;
 
     function move(pointerEvent: PointerEvent) {
-      const nextWidth = Math.min(max, Math.max(min, startWidth - (pointerEvent.clientX - startX)));
-      onChange(nextWidth);
+      nextWidth = Math.min(max, Math.max(min, startWidth - (pointerEvent.clientX - startX)));
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        onChange(nextWidth);
+      });
     }
 
     function stop() {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      onChange(nextWidth);
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousSelect;
       window.removeEventListener("pointermove", move);
