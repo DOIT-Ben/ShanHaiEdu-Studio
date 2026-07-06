@@ -15,6 +15,9 @@
 4. `docs\mainlines\README.md`
 5. `docs\mainlines\agent-runtime-adapter.md`
 
+可用私有资料：
+- 本地 API 台账见 `docs\private-api-ledger.md`。需要确认 OpenAI、Coze、图片、视频、TTS 或其他 provider 能力时可查，但不得提交、摘录或泄露其中的密钥和敏感配置。
+
 主线目标：
 - 建立可替换的 `AgentRuntime` 输入输出合同。
 - 先完成 `DeterministicRuntime`，无 key 时也能稳定生成 artifact draft。

@@ -15,6 +15,9 @@
 4. `docs\mainlines\README.md`
 5. `docs\mainlines\backend-workflow-lite.md`
 
+可用私有资料：
+- 本地 API 台账见 `docs\private-api-ledger.md`。需要确认接口能力或环境配置时可查，但不得提交、摘录或泄露其中的密钥和敏感配置。
+
 主线目标：
 - 建立真实 MVP 状态真源，覆盖 Project、ConversationMessage、WorkflowNode、Artifact、AgentRun。
 - 提供项目、消息、节点、产物、确认状态的保存、读取和恢复能力。

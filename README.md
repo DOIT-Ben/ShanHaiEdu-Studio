@@ -30,6 +30,7 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\e2e-verification
 - `原始需求记录_V1.md`：用户原始需求记录。
 - `AGENTS.md`：项目长期工程准则。
 - `docs\mvp-to-production-agent-architecture.md`：MVP 到生产架构方案。
+- `docs\private-api-ledger.md`：私有 API 台账位置、用途和安全边界。
 
 ## 本地运行
 
@@ -47,3 +48,5 @@ npm run build
 ## 安全说明
 
 私有 API 台账、密钥、provider 配置和本地凭据不得提交到仓库。仓库只保留可公开的代码、规划和脱敏文档。
+
+本地 API 台账位于 `ShanHaiEdu-API-Ledger-Standalone-PRIVATE.zip`，用于查询各环节可用 API 和能力证据；使用前先读 `docs\private-api-ledger.md`。

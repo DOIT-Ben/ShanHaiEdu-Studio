@@ -15,6 +15,9 @@
 4. `docs\mainlines\README.md`
 5. `docs\mainlines\e2e-verification.md`
 
+可用私有资料：
+- 本地 API 台账见 `docs\private-api-ledger.md`。需要确认真实 API 验收边界或 provider 能力时可查，但不得提交、摘录或泄露其中的密钥和敏感配置。
+
 主线目标：
 - 建立可持续 E2E 验收体系，证明本地 MVP 真实可用。
 - 覆盖新建项目、输入需求、生成 artifact、右侧节点显示、详情查看、用户确认、刷新恢复。

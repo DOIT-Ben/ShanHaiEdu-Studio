@@ -18,6 +18,9 @@
 4. `docs\mainlines\README.md`
 5. `【本主线规划文档】`
 
+可用私有资料：
+- 本地 API 台账见 `docs\private-api-ledger.md`。需要接入 API 或确认 provider 能力时可查，但不得提交、摘录或泄露其中的密钥和敏感配置。
+
 主线目标：
 - 【目标 1】
 - 【目标 2】

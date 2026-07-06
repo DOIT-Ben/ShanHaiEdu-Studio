@@ -18,6 +18,9 @@
 7. `src\hooks\useWorkbenchController.ts`
 8. `src\lib\types.ts`
 
+可用私有资料：
+- 本地 API 台账见 `docs\private-api-ledger.md`。需要确认接口能力或环境配置时可查，但不得提交、摘录或泄露其中的密钥和敏感配置。
+
 主线目标：
 - 保留当前 Codex 风格工作台，不重写 UI、不破坏纯白极简风格。
 - 把项目、对话、节点、产物和确认状态从 mock 数据迁移到真实 API-backed controller。
