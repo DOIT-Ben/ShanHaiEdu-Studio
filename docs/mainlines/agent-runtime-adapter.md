@@ -4,6 +4,15 @@
 
 建立可替换的 Agent Runtime 层，让系统先用稳定的 deterministic runtime 跑通端到端，再接入 OpenAI 生成真实文本产物。
 
+当前完成状态（2026-07-07）：
+
+- 已完成 `AgentRuntime` 输入输出合同。
+- 已完成 `DeterministicRuntime`，无 key 时可稳定生成文本 artifact draft。
+- 已完成 `OpenAIRuntime` 服务端边界，OpenAI SDK 未进入 React 组件。
+- 已覆盖需求规格、教材证据、教案、PPT 大纲、导入视频方案、最终交付清单。
+- 已补齐任务级必备字段和轻量自检清单。
+- 已用 fake client 覆盖 OpenAI request/parse/failure 边界；真实 provider smoke 仍需显式环境配置后单独执行。
+
 ## 2. 为什么单独成主线
 
 生成能力必须和业务状态分离。OpenAI SDK / OpenAI Agents SDK 只负责规划、生成、审查和工具调用，不应成为项目、节点和产物状态真源。
