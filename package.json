@@ -9,7 +9,8 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "test:stage1": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage1-contract.test.ts"
+    "test:stage1": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage1-contract.test.ts",
+    "test:stage2": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage2-workflow-lite.test.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",

@@ -42,6 +42,24 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapArtifact(artifact);
     },
 
+    async approveArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
+      const artifact = await repository.approveArtifact(projectId, artifactId);
+      return mapArtifact(artifact);
+    },
+
+    async getApprovedInputs(projectId: string, nodeKey: WorkflowNodeRecord["key"]): Promise<ArtifactRecord[]> {
+      const node = await repository.getNode(projectId, nodeKey);
+      if (!node) {
+        throw new Error(`Workflow node not found: ${nodeKey}`);
+      }
+
+      const upstreamNodeKeys = parseJsonArray(node.upstreamNodeKeysJson);
+      const artifacts = await repository.getApprovedArtifactsByNodeKeys(projectId, upstreamNodeKeys);
+      return artifacts
+        .map(mapArtifact)
+        .sort((left, right) => upstreamNodeKeys.indexOf(left.nodeKey) - upstreamNodeKeys.indexOf(right.nodeKey));
+    },
+
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
       const messages = await repository.getMessages(projectId);
       return messages.map(mapMessage);
