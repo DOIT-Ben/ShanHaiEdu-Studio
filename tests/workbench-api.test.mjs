@@ -121,39 +121,110 @@ function loadWorkbenchApiModule() {
 test("API client uses the shared workbench contract paths", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
-  const snapshot = {
-    project: seedProjects[0],
-    messages: seedMessages,
-    artifacts: seedArtifacts,
-    activeArtifactKey: "intro-video-plan",
+  const serverProject = {
+    id: "project-a",
+    title: "五年级百分数公开课",
+    status: "active",
+    currentNodeKey: "requirement_spec",
+    grade: "五年级",
+    subject: "数学",
+    textbookVersion: "人教版",
+    lessonTopic: "百分数",
+    createdAt: "2026-07-07T00:00:00.000Z",
+    updatedAt: "2026-07-07T00:00:00.000Z",
+  };
+  const serverSnapshot = {
+    project: serverProject,
+    messages: [
+      {
+        id: "m1",
+        projectId: "project-a",
+        role: "teacher",
+        content: "我想做百分数公开课",
+        artifactRefs: [],
+        createdAt: "2026-07-07T00:00:00.000Z",
+      },
+    ],
+    nodes: [
+      {
+        id: "n1",
+        projectId: "project-a",
+        key: "requirement_spec",
+        title: "需求规格",
+        status: "needs_review",
+        order: 1,
+        upstreamNodeKeys: [],
+        approvedArtifactId: null,
+        staleReason: null,
+        updatedAt: "2026-07-07T00:00:00.000Z",
+      },
+    ],
+    artifacts: [
+      {
+        id: "a1",
+        projectId: "project-a",
+        nodeKey: "requirement_spec",
+        title: "需求规格说明书",
+        kind: "requirement_spec",
+        status: "needs_review",
+        summary: "已整理公开课目标。",
+        markdownContent: "## 项目概述\n- 百分数公开课",
+        structuredContent: { generationMode: "deterministic_draft", nextSuggestedAction: "查看并确认这份草稿" },
+        version: 1,
+        isApproved: false,
+        createdAt: "2026-07-07T00:00:00.000Z",
+        updatedAt: "2026-07-07T00:00:00.000Z",
+      },
+    ],
+    agentRuns: [],
   };
   const client = createWorkbenchApiClient({
     baseUrl: "https://example.test",
     fetcher: async (url, init) => {
       calls.push({ url: String(url), init });
+      if (String(url).endsWith("/projects") && (!init || init.method === "GET")) {
+        return { ok: true, json: async () => ({ projects: [serverProject] }) };
+      }
+      if (String(url).endsWith("/projects") && init?.method === "POST") {
+        return { ok: true, json: async () => ({ project: serverProject }) };
+      }
       return {
         ok: true,
-        json: async () => (String(url).endsWith("/projects") ? seedProjects : snapshot),
+        json: async () => serverSnapshot,
       };
     },
   });
 
-  await client.listProjects();
-  await client.getProjectSnapshot("project-a");
+  const projects = await client.listProjects();
+  const snapshot = await client.getProjectSnapshot("project-a");
+  const afterCreate = await client.createProject();
   await client.sendMessage("project-a", "我想做百分数公开课", "导入视频方案：生活情境");
   await client.approveArtifact("project-a", "intro-video-plan");
   await client.regenerateArtifact("project-a", "intro-video-plan");
 
+  assert.equal(projects[0].currentStep, "需求规格");
+  assert.equal(snapshot.messages[0].speaker, "teacher");
+  assert.equal(snapshot.artifacts[0].key, "requirement_spec");
+  assert.equal(snapshot.artifacts[0].actions.canConfirm, true);
+  assert.equal(snapshot.artifacts[0].content["内容摘要"], "## 项目概述\n- 百分数公开课");
+  assert.equal("generationMode" in snapshot.artifacts[0].content, false);
+  assert.equal(snapshot.activeArtifactKey, "requirement_spec");
+  assert.equal(afterCreate.project.id, "project-a");
   assert.equal(calls[0].url, "https://example.test/api/workbench/projects");
   assert.equal(calls[1].url, "https://example.test/api/workbench/projects/project-a/snapshot");
-  assert.equal(calls[2].url, "https://example.test/api/workbench/projects/project-a/messages");
-  assert.equal(calls[2].init.method, "POST");
-  assert.deepEqual(JSON.parse(calls[2].init.body), {
+  assert.equal(calls[2].url, "https://example.test/api/workbench/projects");
+  assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/messages");
+  assert.equal(calls[4].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[4].init.body), {
     body: "我想做百分数公开课",
     reference: "导入视频方案：生活情境",
   });
-  assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");
-  assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/regenerate");
+  assert.equal(calls[5].url, "https://example.test/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[6].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");
+  assert.equal(calls[7].url, "https://example.test/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[8].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/regenerate");
+  assert.equal(calls[9].url, "https://example.test/api/workbench/projects/project-a/snapshot");
 });
 
 test("API client normalizes failed responses to teacher-facing errors", async () => {

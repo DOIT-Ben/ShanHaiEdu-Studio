@@ -28,6 +28,11 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
+    env: {
+      ...process.env,
+      DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
+      NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE ?? "dev",
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: "pipe",

@@ -42,6 +42,11 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapArtifact(artifact);
     },
 
+    async approveArtifact(projectId: string, nodeKey: SaveArtifactInput["nodeKey"]): Promise<ArtifactRecord> {
+      const artifact = await repository.approveArtifact(projectId, nodeKey);
+      return mapArtifact(artifact);
+    },
+
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
       const messages = await repository.getMessages(projectId);
       return messages.map(mapMessage);

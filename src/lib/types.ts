@@ -3,13 +3,16 @@ import type { LucideIcon } from "lucide-react";
 export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale";
 
 export type ArtifactKind =
+  | "requirement_spec"
   | "textbook_evidence"
   | "lesson_plan"
+  | "ppt_outline"
   | "intro_video_plan"
   | "ppt_draft"
   | "image_prompts"
   | "video_storyboard"
-  | "final_delivery";
+  | "final_delivery"
+  | "final_delivery_checklist";
 
 export type ProjectStatus = "active" | "review" | "blocked" | "done";
 

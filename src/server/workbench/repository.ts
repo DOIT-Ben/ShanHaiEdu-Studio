@@ -83,6 +83,37 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async approveArtifact(projectId: string, nodeKey: SaveArtifactInput["nodeKey"]) {
+      return client.$transaction(async (tx) => {
+        const artifact = await tx.artifact.findFirst({
+          where: { projectId, nodeKey },
+          orderBy: { version: "desc" },
+        });
+
+        if (!artifact) {
+          throw new Error(`Artifact not found for node: ${nodeKey}`);
+        }
+
+        const approvedArtifact = await tx.artifact.update({
+          where: { id: artifact.id },
+          data: {
+            status: "approved",
+            isApproved: true,
+          },
+        });
+
+        await tx.workflowNode.update({
+          where: { projectId_key: { projectId, key: nodeKey } },
+          data: {
+            status: "approved",
+            approvedArtifactId: approvedArtifact.id,
+          },
+        });
+
+        return approvedArtifact;
+      });
+    },
+
     async getMessages(projectId: string) {
       return client.conversationMessage.findMany({
         where: { projectId },

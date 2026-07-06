@@ -35,6 +35,8 @@ export function useWorkbenchController() {
     setMessages(snapshot.messages);
     setArtifacts(snapshot.artifacts);
     setActiveArtifactKey(snapshot.activeArtifactKey);
+    setDetailItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
+    setSidePanelItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
     setProjects((current) => current.map((project) => (project.id === snapshot.project.id ? snapshot.project : project)));
     setErrorMessage(null);
     setLoadState("ready");
