@@ -1,12 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { BookOpen, FileText, Image, PackageCheck, Presentation, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArtifactPreviewCard } from "@/components/artifacts/ArtifactPreviewCard";
 import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
 
 const iconByTitle = {
@@ -26,6 +23,8 @@ type ArtifactNodeCardProps = {
   onCopy: (item: ArtifactItem) => void;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
+  onPreviewStart?: (item: ArtifactItem) => void;
+  onPreviewEnd?: () => void;
 };
 
 export function ArtifactNodeCard({
@@ -35,21 +34,11 @@ export function ArtifactNodeCard({
   onCopy,
   onUseAsInput,
   onOpen,
+  onPreviewStart,
+  onPreviewEnd,
 }: ArtifactNodeCardProps) {
   const meta = getArtifactStatusMeta(item.status);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const closeTimer = useRef<number | null>(null);
   const Icon = iconByTitle[item.title as keyof typeof iconByTitle] ?? FileText;
-
-  function openPreview() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    setPreviewOpen(true);
-  }
-
-  function closePreviewSoon() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setPreviewOpen(false), 360);
-  }
 
   if (variant === "drawer") {
     return (
@@ -76,45 +65,28 @@ export function ArtifactNodeCard({
   }
 
   return (
-    <Popover open={previewOpen} onOpenChange={setPreviewOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${item.title}，${meta.label}`}
-          onMouseEnter={openPreview}
-          onMouseLeave={closePreviewSoon}
-          onFocus={openPreview}
-          onBlur={closePreviewSoon}
-          onClick={() => {
-            setPreviewOpen(false);
-            onOpen(item);
-          }}
-          className={cn(
-            "group flex h-10 w-10 items-center justify-center rounded-xl outline-none transition duration-150 ease-out hover:-translate-x-0.5 hover:bg-[#f3f3f3] focus:ring-2 focus:ring-ring/35",
-            active && "bg-[#eeeeee]",
-          )}
-        >
-          <span
-            className={cn(
-              "relative flex h-7 w-7 items-center justify-center rounded-full border bg-card transition group-hover:border-input",
-              active && "border-input bg-card shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
-            )}
-          >
-            <Icon className={cn("h-3.5 w-3.5", active ? "text-foreground" : "text-muted-foreground")} />
-            {active && <span className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-card", meta.dot)} />}
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="left"
-        align="center"
-        sideOffset={12}
-        className="artifact-preview-popover w-[350px] border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.08)]"
-        onMouseEnter={openPreview}
-        onMouseLeave={closePreviewSoon}
+    <button
+      type="button"
+      aria-label={`${item.title}，${meta.label}`}
+      onMouseEnter={() => onPreviewStart?.(item)}
+      onMouseLeave={onPreviewEnd}
+      onFocus={() => onPreviewStart?.(item)}
+      onBlur={onPreviewEnd}
+      onClick={() => onOpen(item)}
+      className={cn(
+        "group flex h-10 w-10 items-center justify-center rounded-xl outline-none transition duration-150 ease-out hover:-translate-x-0.5 hover:bg-[#f3f3f3] focus:ring-2 focus:ring-ring/35",
+        active && "bg-[#eeeeee]",
+      )}
+    >
+      <span
+        className={cn(
+          "relative flex h-7 w-7 items-center justify-center rounded-full border bg-card transition group-hover:border-input",
+          active && "border-input bg-card shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
+        )}
       >
-        <ArtifactPreviewCard item={item} onCopy={onCopy} onUseAsInput={onUseAsInput} onOpen={onOpen} />
-      </PopoverContent>
-    </Popover>
+        <Icon className={cn("h-3.5 w-3.5", active ? "text-foreground" : "text-muted-foreground")} />
+        {active && <span className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-card", meta.dot)} />}
+      </span>
+    </button>
   );
 }
