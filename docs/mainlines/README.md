@@ -88,4 +88,6 @@ Backend contract skeleton
 - `docs\mainlines\frontend-api-backed-workbench.md`
 - `docs\mainlines\agent-runtime-adapter.md`
 - `docs\mainlines\e2e-verification.md`
+- `docs\mainlines\agent-workflow-runtime-promptpack-governance.md`
 - `docs\handoffs\parallel-mainlines\`
+- `SHANHAIEDU_LEGACY_RETROSPECTIVE.md`：初代 ShanHaiEdu 资产吸收、缺陷避坑、新增主线建议；四条 MVP 主线 Stage 1 收尾和集成审查时必须读取。

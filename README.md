@@ -30,6 +30,7 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\e2e-verification
 - `原始需求记录_V1.md`：用户原始需求记录。
 - `AGENTS.md`：项目长期工程准则。
 - `docs\mvp-to-production-agent-architecture.md`：MVP 到生产架构方案。
+- `SHANHAIEDU_LEGACY_RETROSPECTIVE.md`：初代 ShanHaiEdu 系统复盘、可复用资产、缺陷避坑和后续新增主线建议。
 - `docs\private-api-ledger.md`：私有 API 台账位置、用途和安全边界。
 
 ## 本地运行
