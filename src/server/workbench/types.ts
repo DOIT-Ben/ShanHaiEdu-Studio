@@ -116,6 +116,7 @@ export type SaveArtifactInput = {
 
 export type RegenerateArtifactInput = {
   title?: string;
+  expectedLatestVersion?: number;
   summary: string;
   markdownContent: string;
   structuredContent?: Record<string, unknown>;

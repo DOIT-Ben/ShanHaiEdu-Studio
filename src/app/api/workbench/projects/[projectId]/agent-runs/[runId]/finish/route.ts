@@ -18,7 +18,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ run });
   } catch (error) {
     const message = error instanceof Error ? error.message : "AgentRun finish failed";
-    const status = message.includes("not found") ? 404 : 400;
+    const status = message.includes("not found") ? 404 : message.includes("already finished") ? 409 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

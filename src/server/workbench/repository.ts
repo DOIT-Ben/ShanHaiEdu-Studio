@@ -172,6 +172,12 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           orderBy: { version: "desc" },
         });
 
+        if (input.expectedLatestVersion !== undefined && latest?.version !== input.expectedLatestVersion) {
+          throw new Error(
+            `Artifact version conflict: expected latest version ${input.expectedLatestVersion}, received ${latest?.version ?? "none"}`,
+          );
+        }
+
         const artifact = await tx.artifact.create({
           data: {
             projectId,
@@ -243,6 +249,16 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           throw new Error(`AgentRun not found: ${runId}`);
         }
 
+        if (existing.status !== "running") {
+          throw new Error(`AgentRun already finished: ${runId}`);
+        }
+
+        const latestRun = await tx.agentRun.findFirst({
+          where: { projectId, nodeKey: existing.nodeKey },
+          orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+        });
+        const isLatestRun = latestRun?.id === runId;
+
         const run = await tx.agentRun.update({
           where: { id: runId },
           data: {
@@ -252,7 +268,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           },
         });
 
-        if (input.status === "failed") {
+        if (input.status === "failed" && isLatestRun) {
           await tx.workflowNode.update({
             where: { projectId_key: { projectId, key: existing.nodeKey } },
             data: { status: "failed" },

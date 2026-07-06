@@ -13,6 +13,7 @@ export async function POST(request: Request, context: RouteContext) {
     const body = await request.json();
     const artifact = await service.regenerateArtifact(projectId, artifactId, {
       title: optionalString(body.title),
+      expectedLatestVersion: optionalNumber(body.expectedLatestVersion),
       summary: String(body.summary ?? ""),
       markdownContent: String(body.markdownContent ?? ""),
       structuredContent: typeof body.structuredContent === "object" && body.structuredContent ? body.structuredContent : {},
@@ -20,11 +21,15 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ artifact }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Artifact regenerate failed";
-    const status = message.includes("not found") ? 404 : 400;
+    const status = message.includes("not found") ? 404 : message.includes("version conflict") ? 409 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }
 
 function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function optionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
