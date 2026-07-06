@@ -69,11 +69,12 @@ export function ArtifactRail({
   }
 
   return (
-    <aside className="flex h-full items-center justify-center border-l bg-background">
-      <div className="flex flex-col items-center gap-3 rounded-full border bg-card px-3 py-5 shadow-lg">
-        <ListFilter className="mb-1 h-4 w-4 text-muted-foreground" />
+    <aside className="flex h-full items-center justify-center border-l bg-card">
+      <div className="relative flex w-[104px] flex-col gap-1 rounded-[28px] border bg-card px-2 py-4 shadow-lg">
+        <ListFilter className="mx-auto mb-2 h-4 w-4 text-muted-foreground" />
+        <span className="absolute left-[25px] top-14 bottom-5 w-px bg-border" />
         {visibleItems.map((item, index) => (
-          <div key={item.key} className="flex flex-col items-center">
+          <div key={item.key} className="relative z-10">
             <ArtifactNodeCard
               item={item}
               active={item.key === activeKey}
@@ -81,11 +82,9 @@ export function ArtifactRail({
               onUseAsInput={onUseAsInput}
               onOpen={onOpen}
             />
-            {index < visibleItems.length - 1 && <span className="my-1 h-3 w-px bg-border" />}
           </div>
         ))}
       </div>
     </aside>
   );
 }
-
