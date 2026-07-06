@@ -93,6 +93,11 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           throw new Error(`Artifact not found: ${artifactId}`);
         }
 
+        const previousApproved = await tx.artifact.findFirst({
+          where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
+        });
+        const shouldPropagateStale = previousApproved?.id !== artifactId;
+
         await tx.artifact.updateMany({
           where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
           data: { isApproved: false },
@@ -105,8 +110,35 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
         await tx.workflowNode.update({
           where: { projectId_key: { projectId, key: existing.nodeKey } },
-          data: { status: "approved", approvedArtifactId: artifact.id },
+          data: { status: "approved", approvedArtifactId: artifact.id, staleReason: null },
         });
+        const upstreamNode = await tx.workflowNode.findUnique({
+          where: { projectId_key: { projectId, key: existing.nodeKey } },
+        });
+
+        const downstreamNodes = await tx.workflowNode.findMany({
+          where: {
+            projectId,
+            status: "approved",
+            approvedArtifactId: { not: null },
+          },
+        });
+        const staleNodeIds = downstreamNodes
+          .filter((node) => {
+            const upstreamNodeKeys = JSON.parse(node.upstreamNodeKeysJson) as unknown;
+            return Array.isArray(upstreamNodeKeys) && upstreamNodeKeys.includes(existing.nodeKey);
+          })
+          .map((node) => node.id);
+
+        if (shouldPropagateStale && staleNodeIds.length > 0) {
+          await tx.workflowNode.updateMany({
+            where: { id: { in: staleNodeIds } },
+            data: {
+              status: "stale",
+              staleReason: `「${upstreamNode?.title ?? existing.nodeKey}」已更新确认，需要重新检查相关内容。`,
+            },
+          });
+        }
 
         return artifact;
       });
