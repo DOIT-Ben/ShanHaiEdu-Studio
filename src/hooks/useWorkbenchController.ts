@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState, WorkbenchSnapshot } from "@/lib/types";
 
@@ -151,8 +152,13 @@ export function useWorkbenchController() {
 
   async function confirmArtifact(item: ArtifactItem) {
     if (!activeProjectId) return;
+    const artifactKey = resolveArtifactActionKey(item, "confirm");
+    if (!artifactKey) {
+      setNotice(`「${item.title}」暂时没有确认成功，请稍后再试。`);
+      return;
+    }
     try {
-      const snapshot = await dataSource.approveArtifact(activeProjectId, item.key);
+      const snapshot = await dataSource.approveArtifact(activeProjectId, artifactKey);
       applySnapshot(snapshot);
       setNotice(`已确认「${item.title}」，下一步会使用它继续生成。`);
     } catch {
@@ -162,8 +168,13 @@ export function useWorkbenchController() {
 
   async function regenerateArtifact(item: ArtifactItem) {
     if (!activeProjectId) return;
+    const artifactKey = resolveArtifactActionKey(item, "regenerate");
+    if (!artifactKey) {
+      setNotice(`「${item.title}」暂时没有开始重做，请稍后再试。`);
+      return;
+    }
     try {
-      const snapshot = await dataSource.regenerateArtifact(activeProjectId, item.key);
+      const snapshot = await dataSource.regenerateArtifact(activeProjectId, artifactKey);
       applySnapshot(snapshot);
       setNotice(`已保留「${item.title}」旧内容，新的版本完成后再由你确认是否采用。`);
     } catch {

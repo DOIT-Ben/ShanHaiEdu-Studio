@@ -73,7 +73,8 @@
 
 - 已完成 Stage 2 raw contract 适配，收尾见 `docs\stages\frontend-api-backed-stage2-closeout.md`。
 - 前端 API client 已能把 Backend Workflow Lite Stage 1 raw snapshot 映射为 UI view model。
-- Stage 3 前需拆分 `workbench-api.ts` 映射层，避免继续接动作逻辑时越过 500 行警戒线。
+- 已完成 Stage 3 产物动作标识边界，收尾见 `docs\stages\frontend-api-backed-stage3-closeout.md`。
+- 下一步进入 Stage 4：集中回归复制、作为输入、详情、确认、重做、桌面和窄屏体验。
 
 ### 阶段 3：产物动作接入
 
@@ -89,6 +90,12 @@
 
 - 操作后刷新不丢状态。
 - 右侧节点 hover 与详情侧栏不冲突。
+
+当前状态：
+
+- 已完成。前端确认动作优先使用 `artifactId`，动作后重新读取 snapshot。
+- `workbench-api.ts` 已拆出 mapper，避免继续越过行数债务。
+- 重做真实版本合同仍待后端主线明确，前端不伪装为生产闭环。
 
 ### 阶段 4：响应式与 polish 回归
 

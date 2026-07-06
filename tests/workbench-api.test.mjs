@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = process.cwd();
 const apiSourcePath = path.join(root, "src", "lib", "workbench-api.ts");
+const actionsSourcePath = path.join(root, "src", "lib", "workbench-actions.ts");
 
 const seedProjects = [
   {
@@ -158,8 +159,8 @@ const backendSnapshot = {
 
 function loadWorkbenchApiModule() {
   const ts = require("typescript");
-  const source = readFileSync(apiSourcePath, "utf8");
-  const compiled = ts.transpileModule(source, {
+  const cache = new Map();
+  const compileModule = (filename) => ts.transpileModule(readFileSync(filename, "utf8"), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2020,
@@ -167,7 +168,6 @@ function loadWorkbenchApiModule() {
     },
   }).outputText;
 
-  const module = { exports: {} };
   const requireStub = (id) => {
     if (id === "@/lib/mock-data") {
       return {
@@ -176,15 +176,54 @@ function loadWorkbenchApiModule() {
         artifacts: seedArtifacts,
       };
     }
+    if (id === "@/lib/workbench-mappers") {
+      const mapperPath = path.join(root, "src", "lib", "workbench-mappers.ts");
+      if (cache.has(mapperPath)) return cache.get(mapperPath).exports;
+      const mapperModule = { exports: {} };
+      cache.set(mapperPath, mapperModule);
+      vm.runInNewContext(compileModule(mapperPath), {
+        module: mapperModule,
+        exports: mapperModule.exports,
+        require: requireStub,
+        URL,
+        structuredClone,
+        console,
+      });
+      return mapperModule.exports;
+    }
     throw new Error(`Unexpected import in workbench-api test: ${id}`);
   };
 
-  vm.runInNewContext(compiled, {
+  const module = { exports: {} };
+  vm.runInNewContext(compileModule(apiSourcePath), {
     module,
     exports: module.exports,
     require: requireStub,
     URL,
     structuredClone,
+    console,
+  });
+
+  return module.exports;
+}
+
+function loadWorkbenchActionsModule() {
+  const ts = require("typescript");
+  const compiled = ts.transpileModule(readFileSync(actionsSourcePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+  }).outputText;
+
+  const module = { exports: {} };
+  vm.runInNewContext(compiled, {
+    module,
+    exports: module.exports,
+    require: () => {
+      throw new Error("Unexpected import in workbench-actions test");
+    },
     console,
   });
 
@@ -209,7 +248,6 @@ test("API client uses the shared workbench contract paths", async () => {
   await client.getProjectSnapshot("project-a");
   await client.sendMessage("project-a", "我想做百分数公开课", "导入视频方案：生活情境");
   await client.approveArtifact("project-a", "intro-video-plan");
-  await client.regenerateArtifact("project-a", "intro-video-plan");
 
   assert.equal(calls[0].url, "https://example.test/api/workbench/projects");
   assert.equal(calls[1].url, "https://example.test/api/workbench/projects/project-a/snapshot");
@@ -222,7 +260,7 @@ test("API client uses the shared workbench contract paths", async () => {
   });
   assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/snapshot");
   assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");
-  assert.equal(calls[5].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/regenerate");
+  assert.equal(calls[5].url, "https://example.test/api/workbench/projects/project-a/snapshot");
 });
 
 test("API client normalizes Backend Workflow Lite project lists and snapshots", async () => {
@@ -259,6 +297,41 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
+test("API client does not expose backend-only structured labels in visible artifact fields", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const snapshotWithBackendOnlyFields = {
+    ...backendSnapshot,
+    artifacts: [
+      {
+        ...backendArtifact,
+        structuredContent: {
+          "课题": "百分数",
+          "课堂问题": ["生活中哪里见过百分数？"],
+          schema: "internal-schema",
+          node_id: "node-requirement",
+          provider: "internal-provider",
+        },
+      },
+    ],
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async () => ({
+      ok: true,
+      json: async () => snapshotWithBackendOnlyFields,
+    }),
+  });
+
+  const snapshot = await client.getProjectSnapshot("backend-project-a");
+  const requirement = snapshot.artifacts.find((item) => item.nodeKey === "requirement_spec");
+  const visibleLabels = [...requirement.previewFields.map((field) => field.label), ...Object.keys(requirement.content)].join("\n");
+
+  assert.equal(visibleLabels.includes("schema"), false);
+  assert.equal(visibleLabels.includes("node_id"), false);
+  assert.equal(visibleLabels.includes("provider"), false);
+  assert.equal(requirement.content["课题"], "百分数");
+  assert.deepEqual(requirement.content["课堂问题"], ["生活中哪里见过百分数？"]);
+});
+
 test("API client creates projects through backend shape and then reads a snapshot", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
@@ -278,6 +351,72 @@ test("API client creates projects through backend shape and then reads a snapsho
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[1].url, "/api/workbench/projects/backend-project-a/snapshot");
   assert.equal(snapshot.project.id, "backend-project-a");
+});
+
+test("API client approves by artifact id and refreshes the project snapshot", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => (init?.method === "POST" ? { artifact: { ...backendArtifact, status: "approved", isApproved: true } } : backendSnapshot),
+      };
+    },
+  });
+
+  const snapshot = await client.approveArtifact("project-a", "artifact-requirement-v1");
+
+  assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-requirement-v1/approve");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[1].url, "/api/workbench/projects/project-a/snapshot");
+  assert.equal(snapshot.project.id, "backend-project-a");
+  assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
+});
+
+test("API client keeps regenerate behind an explicit backend contract boundary", async () => {
+  const { createWorkbenchApiClient, WorkbenchApiError } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      throw new Error("fetch should not be called for unfinished regenerate contract");
+    },
+  });
+
+  await assert.rejects(() => client.regenerateArtifact("project-a", "artifact-requirement-v1"), (error) => {
+    assert.ok(error instanceof WorkbenchApiError);
+    assert.equal(error.status, 501);
+    assert.equal(error.userMessage, "这个内容暂时还不能重做，请稍后再试。");
+    return true;
+  });
+  assert.equal(calls.length, 0);
+});
+
+test("artifact action resolver blocks placeholders and prefers real artifact ids", () => {
+  const { resolveArtifactActionKey } = loadWorkbenchActionsModule();
+  const placeholder = {
+    ...seedArtifacts[1],
+    key: "node-lesson",
+    artifactId: undefined,
+    actions: { ...seedArtifacts[1].actions, canConfirm: false },
+  };
+  const backendArtifactItem = {
+    ...seedArtifacts[1],
+    key: "artifact-requirement-v1",
+    artifactId: "artifact-requirement-v1",
+    actions: { ...seedArtifacts[1].actions, canConfirm: true },
+  };
+  const developmentArtifactItem = {
+    ...seedArtifacts[1],
+    artifactId: undefined,
+    actions: { ...seedArtifacts[1].actions, canConfirm: true },
+  };
+
+  assert.equal(resolveArtifactActionKey(placeholder, "confirm"), null);
+  assert.equal(resolveArtifactActionKey(backendArtifactItem, "confirm"), "artifact-requirement-v1");
+  assert.equal(resolveArtifactActionKey(developmentArtifactItem, "confirm"), "intro-video-plan");
 });
 
 test("API client normalizes failed responses to teacher-facing errors", async () => {
