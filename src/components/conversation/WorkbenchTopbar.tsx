@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 
 export function WorkbenchTopbar() {
   return (
-    <div className="flex items-center justify-between gap-4 px-8 py-6">
-      <nav className="flex min-w-0 items-center gap-4 text-sm text-muted-foreground" aria-label="当前位置">
-        <span>ShanHaiEdu</span>
-        <span>/</span>
-        <span>公开课备课</span>
-        <span>/</span>
+    <div className="flex items-center justify-between gap-4 px-6 py-6 lg:px-8">
+      <nav className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden whitespace-nowrap text-sm text-muted-foreground" aria-label="当前位置">
+        <span className="shrink-0">ShanHaiEdu</span>
+        <span className="shrink-0">/</span>
+        <span className="shrink-0">公开课备课</span>
+        <span className="shrink-0">/</span>
         <span className="truncate font-medium text-foreground">表内乘法（一）</span>
       </nav>
       <div className="flex shrink-0 items-center gap-2">

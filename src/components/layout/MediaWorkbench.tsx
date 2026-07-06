@@ -4,6 +4,7 @@ import { ListTree } from "lucide-react";
 import { chatMessages, projects } from "@/lib/mock-data";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
+import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
 import { ConversationWorkbench } from "@/components/conversation/ConversationWorkbench";
 import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
 import { Button } from "@/components/ui/button";
@@ -59,13 +60,23 @@ export function MediaWorkbench() {
               onRecover={controller.showRecovery}
             />
           </div>
-          <div className="hidden w-16 shrink-0 lg:block 2xl:w-32">
+          <ArtifactSidePanel
+            item={controller.sidePanelItem}
+            open={controller.sidePanelOpen}
+            width={controller.sidePanelWidth}
+            onWidthChange={controller.setSidePanelWidth}
+            onClose={() => controller.setSidePanelOpen(false)}
+            onCopy={controller.copyArtifact}
+            onUseAsInput={controller.useAsInput}
+            onOpenDetail={controller.openDetail}
+          />
+          <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
             <ArtifactRail
               items={controller.artifacts}
               activeKey={controller.activeArtifact.key}
               onCopy={controller.copyArtifact}
               onUseAsInput={controller.useAsInput}
-              onOpen={controller.openDetail}
+              onOpen={controller.openSidePanel}
               onRegenerate={controller.regenerateArtifact}
             />
           </div>

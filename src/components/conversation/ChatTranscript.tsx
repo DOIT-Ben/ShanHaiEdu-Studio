@@ -8,22 +8,33 @@ import { Button } from "@/components/ui/button";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
+  registerMessage?: (id: string, node: HTMLElement | null) => void;
 };
 
-export function ChatTranscript({ messages }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, registerMessage }: ChatTranscriptProps) {
   return (
     <div className="space-y-10">
-      {messages.slice(0, 2).map((message) => {
+      {messages.map((message) => {
         const assistant = message.speaker === "assistant";
-        return assistant ? <AssistantMessage key={message.id} message={message} /> : <TeacherMessage key={message.id} message={message} />;
+        return assistant ? (
+          <AssistantMessage key={message.id} message={message} registerMessage={registerMessage} />
+        ) : (
+          <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
+        );
       })}
     </div>
   );
 }
 
-function TeacherMessage({ message }: { message: ChatMessage }) {
+function TeacherMessage({
+  message,
+  registerMessage,
+}: {
+  message: ChatMessage;
+  registerMessage?: (id: string, node: HTMLElement | null) => void;
+}) {
   return (
-    <article className="flex justify-end">
+    <article ref={(node) => registerMessage?.(message.id, node)} className="scroll-mt-24 flex justify-end">
       <div className="max-w-[760px] rounded-2xl bg-[#f3f3f3] px-5 py-3.5 text-sm leading-7 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.025)]">
         {message.body}
       </div>
@@ -31,9 +42,15 @@ function TeacherMessage({ message }: { message: ChatMessage }) {
   );
 }
 
-function AssistantMessage({ message }: { message: ChatMessage }) {
+function AssistantMessage({
+  message,
+  registerMessage,
+}: {
+  message: ChatMessage;
+  registerMessage?: (id: string, node: HTMLElement | null) => void;
+}) {
   return (
-    <article className="group max-w-[820px]">
+    <article ref={(node) => registerMessage?.(message.id, node)} className="group scroll-mt-24 max-w-[820px]">
       <div className="mb-3 flex items-center gap-3 text-sm">
         <span className="font-medium">ShanHaiEdu AI</span>
         <span className="text-muted-foreground">10:24</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import type { KeyboardEvent } from "react";
 import { CornerDownLeft, Paperclip, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +14,12 @@ type PromptComposerProps = {
 };
 
 export function PromptComposer({ value, reference, onChange, onClearReference, onSend }: PromptComposerProps) {
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    onSend();
+  }
+
   return (
     <div className="bg-card px-8 pb-4 pt-3">
       <div className="mx-auto w-full max-w-[980px]">
@@ -38,6 +45,7 @@ export function PromptComposer({ value, reference, onChange, onClearReference, o
             name="lesson-workbench-prompt"
             value={value}
             onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="继续描述备课目标，或引用右侧产物继续生成"
             className="min-h-20 border-0 bg-transparent px-2 py-1 text-sm shadow-none focus:ring-0"
           />

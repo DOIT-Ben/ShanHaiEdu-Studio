@@ -18,6 +18,9 @@ export function useWorkbenchController() {
   const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
+  const [sidePanelItem, setSidePanelItem] = useState<ArtifactItem | null>(null);
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [sidePanelWidth, setSidePanelWidth] = useState(380);
   const [artifacts, setArtifacts] = useState(initialArtifacts);
 
   const activeArtifact = useMemo(() => artifacts.find((item) => item.key === "intro-video-plan") ?? artifacts[0], [artifacts]);
@@ -25,6 +28,11 @@ export function useWorkbenchController() {
   function openDetail(item: ArtifactItem) {
     setDetailItem(item);
     setDetailOpen(true);
+  }
+
+  function openSidePanel(item: ArtifactItem) {
+    setSidePanelItem(item);
+    setSidePanelOpen(true);
   }
 
   async function copyArtifact(item: ArtifactItem) {
@@ -43,6 +51,7 @@ export function useWorkbenchController() {
     setInput((current) => (current ? `${current}\n\n请基于：${text}` : `请基于：${text}`));
     setNotice(`已把「${item.title}」插入为下一步输入。`);
     setRailOpen(false);
+    setSidePanelOpen(false);
   }
 
   function confirmArtifact(item: ArtifactItem) {
@@ -85,9 +94,15 @@ export function useWorkbenchController() {
     setDetailOpen,
     railOpen,
     setRailOpen,
+    sidePanelItem,
+    sidePanelOpen,
+    setSidePanelOpen,
+    sidePanelWidth,
+    setSidePanelWidth,
     artifacts,
     activeArtifact,
     openDetail,
+    openSidePanel,
     copyArtifact,
     useAsInput,
     confirmArtifact,
@@ -96,4 +111,3 @@ export function useWorkbenchController() {
     showRecovery,
   };
 }
-

@@ -115,6 +115,28 @@ button:active {
   overflow: hidden;
 }
 
+.artifact-preview-popover {
+  animation: artifact-preview-in 180ms var(--ease-out);
+  transform-origin: right center;
+}
+
+@keyframes artifact-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-preview-popover {
+    animation: none;
+  }
+}
+
 @media (max-width: 1023px) {
   .title-lg {
     font-size: 16px;
