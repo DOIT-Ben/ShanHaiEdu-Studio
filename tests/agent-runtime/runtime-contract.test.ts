@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
 import type { AgentRuntime, AgentRuntimeInput } from "../../src/server/agent-runtime/types";
+import { expectSucceeded } from "./test-helpers";
 
 function input(): AgentRuntimeInput {
   return {
@@ -27,7 +28,7 @@ async function runRuntime(runtime: AgentRuntime) {
 
 describe("AgentRuntime contract", () => {
   it("returns assistant message, artifact draft, next action and run metadata", async () => {
-    const result = await runRuntime(new DeterministicRuntime());
+    const result = expectSucceeded(await runRuntime(new DeterministicRuntime()));
 
     expect(result.status).toBe("succeeded");
     expect(result.assistantMessage).toEqual({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
 import type { AgentRuntimeInput, AgentRuntimeTask } from "../../src/server/agent-runtime/types";
+import { expectSucceeded } from "./test-helpers";
 
 const forbiddenTeacherTerms = [
   "provider",
@@ -52,8 +53,8 @@ describe("DeterministicRuntime", () => {
     const runtime = new DeterministicRuntime();
     const input = makeInput(task);
 
-    const first = await runtime.run(input);
-    const second = await runtime.run(input);
+    const first = expectSucceeded(await runtime.run(input));
+    const second = expectSucceeded(await runtime.run(input));
 
     expect(first).toEqual(second);
     expect(first.status).toBe("succeeded");
@@ -70,7 +71,7 @@ describe("DeterministicRuntime", () => {
 
   it("keeps teacher-facing text free of engineering terms", async () => {
     const runtime = new DeterministicRuntime();
-    const result = await runtime.run(makeInput("lesson_plan"));
+    const result = expectSucceeded(await runtime.run(makeInput("lesson_plan")));
     const teacherText = [
       result.assistantMessage.title,
       result.assistantMessage.body,
@@ -86,7 +87,7 @@ describe("DeterministicRuntime", () => {
 
   it("keeps intro video as an independent hook connected by course anchor", async () => {
     const runtime = new DeterministicRuntime();
-    const result = await runtime.run(makeInput("intro_video_plan"));
+    const result = expectSucceeded(await runtime.run(makeInput("intro_video_plan")));
 
     expect(result.artifactDraft.markdown).toContain("课程锚点");
     expect(result.artifactDraft.markdown).toContain("不提前讲解百分数定义");

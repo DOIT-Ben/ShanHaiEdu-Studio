@@ -63,7 +63,7 @@ export class OpenAIRuntime implements AgentRuntime {
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     try {
       const response = await this.client.responses.create(buildOpenAIResponseRequest(input, this.model));
-      const parsed = parseStructuredOutput(response.output_text);
+      const parsed = parseStructuredOutput(response.output_text, input.task);
       const artifactDraft: AgentArtifactDraft = {
         nodeKey: input.task,
         kind: input.task,
@@ -138,6 +138,7 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, model: stri
         nodeKey: artifact.nodeKey,
         title: artifact.title,
         summary: artifact.summary,
+        markdownExcerpt: createMarkdownExcerpt(artifact.markdown),
       })),
     }),
     text: {
@@ -151,7 +152,7 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, model: stri
   };
 }
 
-function parseStructuredOutput(outputText: string | undefined): StructuredRuntimeOutput {
+function parseStructuredOutput(outputText: string | undefined, task: AgentRuntimeTask): StructuredRuntimeOutput {
   if (!outputText) {
     throw new Error("Missing model output");
   }
@@ -163,6 +164,7 @@ function parseStructuredOutput(outputText: string | undefined): StructuredRuntim
   assertNonEmptyString(parsed.artifactDraft?.summary);
   assertNonEmptyString(parsed.artifactDraft?.markdown);
   assertNonEmptyString(parsed.nextSuggestedAction?.label);
+  assertMarkdownMeetsTaskGuidance(parsed.artifactDraft.markdown, task);
 
   return parsed as StructuredRuntimeOutput;
 }
@@ -171,6 +173,20 @@ function assertNonEmptyString(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error("Invalid model output");
   }
+}
+
+function assertMarkdownMeetsTaskGuidance(markdown: string, task: AgentRuntimeTask): void {
+  const guidance = taskGuidance[task];
+  const missingField = guidance.requiredFields.find((field) => !markdown.includes(field));
+
+  if (missingField || !markdown.includes("## 自检清单")) {
+    throw new Error("Model output missed required teacher review sections");
+  }
+}
+
+function createMarkdownExcerpt(markdown: string): string {
+  const normalized = markdown.replace(/\s+/g, " ").trim();
+  return normalized.length > 1200 ? `${normalized.slice(0, 1200)}...` : normalized;
 }
 
 const runtimeOutputJsonSchema = {
