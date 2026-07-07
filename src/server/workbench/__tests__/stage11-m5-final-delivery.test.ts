@@ -45,8 +45,8 @@ describe("Local Real MVP M5 final delivery loop", () => {
     expect(finalDelivery.markdownContent).toContain("公开课教案");
     expect(finalDelivery.markdownContent).toContain("PPT 大纲与逐页脚本");
     expect(finalDelivery.markdownContent).toContain("导入视频方案");
-    expect(finalDelivery.markdownContent).toContain("待生成");
-    expect(finalDelivery.markdownContent).toContain("PPTX、图片文件和视频成片如果未真实生成，交付时必须标记为待生成。");
+    expect(finalDelivery.markdownContent).toContain("PPT 大纲可下载最小 PPTX 文件");
+    expect(finalDelivery.markdownContent).toContain("图片文件、视频成片、动画和视觉精修仍待生成或完善");
     expect(finalDelivery.markdownContent).not.toContain("PPTX 文件已生成");
     expect(finalDelivery.markdownContent).not.toContain("图片文件已生成");
     expect(finalDelivery.markdownContent).not.toContain("视频成片已生成");

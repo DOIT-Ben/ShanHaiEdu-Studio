@@ -16,12 +16,12 @@ const finalDeliveryArtifact = {
   updatedAt: "07-07 12:30",
   sourceTitles: ["需求规格说明书", "公开课教案", "PPT 大纲与逐页脚本", "导入视频方案"],
   previewFields: [
-    { label: "已形成材料", value: "需求规格、教案、PPT 大纲、导入视频方案" },
-    { label: "待确认事项", value: "PPTX、图片文件和视频成片如果未真实生成，交付时必须标记为待生成。" },
+    { label: "已形成材料", value: "需求规格、教案、PPT 大纲、导入视频方案、最小 PPTX 下载入口" },
+    { label: "待确认事项", value: "图片文件、视频成片、动画和视觉精修仍待生成或完善。" },
   ],
   content: {
-    已形成材料: ["需求规格说明书", "公开课教案", "PPT 大纲与逐页脚本", "导入视频方案"],
-    待确认事项: "PPTX、图片文件和视频成片如果未真实生成，交付时必须标记为待生成。",
+    已形成材料: ["需求规格说明书", "公开课教案", "PPT 大纲与逐页脚本", "导入视频方案", "PPT 大纲可下载最小 PPTX 文件"],
+    待确认事项: "图片文件、视频成片、动画和视觉精修仍待生成或完善。",
   },
 };
 
@@ -34,11 +34,13 @@ test("builds a safe Markdown download for the final delivery artifact", () => {
   assert.match(download.markdown, /^# 最终交付清单/m);
   assert.match(download.markdown, /汇总本节公开课已形成材料和待确认事项。/);
   assert.match(download.markdown, /## 关键字段/);
-  assert.match(download.markdown, /- 已形成材料：需求规格、教案、PPT 大纲、导入视频方案/);
+  assert.match(download.markdown, /- 已形成材料：需求规格、教案、PPT 大纲、导入视频方案、最小 PPTX 下载入口/);
   assert.match(download.markdown, /## 正文/);
   assert.match(download.markdown, /### 已形成材料/);
   assert.match(download.markdown, /- 需求规格说明书/);
   assert.match(download.markdown, /### 待确认事项/);
+  assert.match(download.markdown, /PPT 大纲可下载最小 PPTX 文件/);
+  assert.match(download.markdown, /图片文件、视频成片、动画和视觉精修仍待生成或完善/);
   assert.match(download.markdown, /## 上游来源/);
   assert.match(download.markdown, /需求规格说明书、公开课教案、PPT 大纲与逐页脚本、导入视频方案/);
   assert.match(download.markdown, /更新时间：07-07 12:30/);

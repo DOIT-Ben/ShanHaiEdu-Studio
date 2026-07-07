@@ -119,7 +119,8 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByText("最终交付清单").first()).toBeVisible();
     await expect(page.getByText("已形成材料").first()).toBeVisible();
     await expect(page.getByText("待确认事项").first()).toBeVisible();
-    await expect(page.getByText("PPTX、图片文件和视频成片如果未真实生成，交付时必须标记为待生成。").first()).toBeVisible();
+    await expect(page.getByText("PPT 大纲可下载最小 PPTX 文件").first()).toBeVisible();
+    await expect(page.getByText("图片文件、视频成片、动画和视觉精修仍待生成或完善").first()).toBeVisible();
     await expect(page.getByText("PPTX 文件已生成")).toBeHidden();
     await expect(page.getByText("图片文件已生成")).toBeHidden();
     await expect(page.getByText("视频成片已生成")).toBeHidden();
@@ -133,6 +134,8 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     expect(markdownText).toContain("# 最终交付清单");
     expect(markdownText).toContain("已形成材料");
     expect(markdownText).toContain("待确认事项");
+    expect(markdownText).toContain("PPT 大纲可下载最小 PPTX 文件");
+    expect(markdownText).toContain("图片文件、视频成片、动画和视觉精修仍待生成或完善");
     expect(markdownText).not.toMatch(/PPTX 文件已生成|图片文件已生成|视频成片已生成/);
     await page.getByRole("button", { name: "复制" }).click();
     await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
