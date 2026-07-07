@@ -42,6 +42,12 @@ const videoDownload = {
   buffer: Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(24)]),
 };
 
+const imageDownload = {
+  filename: "provider-output-name.png",
+  buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]),
+  mime: "image/png",
+};
+
 test("builds a real final material ZIP package", async () => {
   const { buildFinalMaterialPackageDownload } = loadArtifactPackageModule();
   const download = await buildFinalMaterialPackageDownload({
@@ -91,6 +97,28 @@ test("includes an existing intro video asset in the final material ZIP package",
   assert.equal(video.equals(videoDownload.buffer), true);
   assert.equal(video.subarray(4, 8).toString("utf8"), "ftyp");
   assert.doesNotMatch(readme, /视频成片已生成/);
+});
+
+test("includes an existing classroom visual image asset in the final material ZIP package", async () => {
+  const { buildFinalMaterialPackageDownload } = loadArtifactPackageModule();
+  const download = await buildFinalMaterialPackageDownload({
+    finalDelivery: finalDeliveryArtifact,
+    pptx: pptxDownload,
+    image: imageDownload,
+  });
+
+  const entries = unzipEntries(download.buffer);
+  assert.equal(entries.has("README.md"), true);
+  assert.equal(entries.has("classroom-visual.png"), true);
+
+  const readme = entries.get("README.md").toString("utf8");
+  const image = entries.get("classroom-visual.png");
+
+  assert.match(readme, /已包含课堂视觉图/);
+  assert.match(readme, /核对视觉准确性、版权和课堂适配/);
+  assert.equal(image.equals(imageDownload.buffer), true);
+  assert.equal(image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), true);
+  assert.doesNotMatch(readme, /图片文件已生成/);
 });
 
 test("refuses to package non-final-delivery artifacts", async () => {

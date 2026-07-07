@@ -63,6 +63,29 @@ describe("Local Real MVP M13 final material package route", () => {
         },
       },
     });
+    const imageBuffer = buildTinyPng();
+    const imageOutput = writeFixtureImage(imageBuffer);
+    await createWorkbenchService().saveArtifact(projectId, {
+      nodeKey: "ppt_draft",
+      kind: "ppt_draft",
+      title: "真实课堂视觉图",
+      status: "needs_review",
+      summary: "已生成本地课堂视觉图。",
+      markdownContent: "图片说明。",
+      structuredContent: {
+        storage: {
+          imageAsset: {
+            localOutput: imageOutput,
+            fileName: "percentage-classroom-visual.png",
+            bytes: imageBuffer.length,
+            sha256: "fake-image-sha256",
+            mime: "image/png",
+            generationMode: "image_generated",
+            sourceArtifactId: "source-artifact",
+          },
+        },
+      },
+    });
 
     const packageResponse = await getPackageRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId, artifactId: finalDelivery.id }),
@@ -78,6 +101,11 @@ describe("Local Real MVP M13 final material package route", () => {
     const video = Buffer.from(await videoEntry!.async("nodebuffer"));
     expect(video.equals(videoBuffer)).toBe(true);
     expect(video.subarray(4, 8).toString("utf8")).toBe("ftyp");
+    const imageEntry = zip.file("classroom-visual.png");
+    expect(imageEntry).toBeTruthy();
+    const image = Buffer.from(await imageEntry!.async("nodebuffer"));
+    expect(image.equals(imageBuffer)).toBe(true);
+    expect(image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe(true);
 
     const nonFinalResponse = await getPackageRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId, artifactId: pptOutline.id }),
@@ -104,10 +132,22 @@ function buildTinyMp4() {
   return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(32)]);
 }
 
+function buildTinyPng() {
+  return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+}
+
 function writeFixtureVideo(buffer: Buffer) {
   const dir = path.join(process.cwd(), ".tmp", "stage13-video-package-test");
   mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, "percentage-intro.mp4");
+  writeFileSync(filePath, buffer);
+  return path.relative(process.cwd(), filePath).replaceAll("\\", "/");
+}
+
+function writeFixtureImage(buffer: Buffer) {
+  const dir = path.join(process.cwd(), ".tmp", "stage13-image-package-test");
+  mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, "percentage-classroom-visual.png");
   writeFileSync(filePath, buffer);
   return path.relative(process.cwd(), filePath).replaceAll("\\", "/");
 }

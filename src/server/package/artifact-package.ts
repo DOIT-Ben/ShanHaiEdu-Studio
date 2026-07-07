@@ -26,6 +26,7 @@ const zipMimeType = "application/zip";
 export async function buildFinalMaterialPackageDownload(input: {
   finalDelivery: MaterialPackageArtifact;
   pptx: PackagePart;
+  image?: PackagePart | null;
   video?: PackagePart | null;
 }): Promise<MaterialPackageDownload> {
   if (input.finalDelivery.nodeKey !== "final_delivery" && input.finalDelivery.kind !== "final_delivery") {
@@ -37,9 +38,18 @@ export async function buildFinalMaterialPackageDownload(input: {
   }
 
   const zip = new JSZip();
-  zip.file("README.md", buildReadme(input.finalDelivery, Boolean(input.video?.buffer?.length)));
+  zip.file(
+    "README.md",
+    buildReadme(input.finalDelivery, {
+      hasImage: Boolean(input.image?.buffer?.length),
+      hasVideo: Boolean(input.video?.buffer?.length),
+    }),
+  );
   zip.file("final-delivery.md", buildFinalDeliveryMarkdown(input.finalDelivery));
   zip.file("ppt-outline.pptx", input.pptx.buffer);
+  if (input.image?.buffer?.length) {
+    zip.file(imagePackageFilename(input.image), input.image.buffer);
+  }
   if (input.video?.buffer?.length) {
     zip.file("intro-video.mp4", input.video.buffer);
   }
@@ -63,22 +73,34 @@ export function materialPackageDownloadHeaders(filename: string) {
   };
 }
 
-function buildReadme(finalDelivery: MaterialPackageArtifact, hasVideo: boolean) {
+function buildReadme(finalDelivery: MaterialPackageArtifact, assets: { hasImage: boolean; hasVideo: boolean }) {
+  const includedItems = [
+    "最终交付清单",
+    "最小 PPTX 文件",
+    ...(assets.hasImage ? ["课堂视觉图"] : []),
+    ...(assets.hasVideo ? ["导入视频文件"] : []),
+  ];
+  const includedSummary =
+    includedItems.length === 2 ? `${includedItems[0]}和${includedItems[1]}` : includedItems.join("、");
+
   return [
     "# ShanHaiEdu 最终材料包",
     "",
-    hasVideo ? "本材料包包含最终交付清单、最小 PPTX 文件和导入视频文件。" : "本材料包包含最终交付清单和最小 PPTX 文件。",
+    `本材料包包含${includedSummary}。`,
     "",
     "## 已包含",
     "",
     "- final-delivery.md：最终交付清单正文。",
     "- ppt-outline.pptx：根据 PPT 大纲与逐页脚本生成的最小 PPTX 文件。",
-    ...(hasVideo ? ["- intro-video.mp4：基于导入视频方案生成的本地导入视频文件。"] : []),
+    ...(assets.hasImage ? ["- classroom-visual.png / classroom-visual.jpg：基于 PPT 视觉需求生成的本地课堂视觉图。"] : []),
+    ...(assets.hasVideo ? ["- intro-video.mp4：基于导入视频方案生成的本地导入视频文件。"] : []),
     "",
     "## 仍需教师核对",
     "",
     "- 当前 PPTX 只保证根据文本大纲生成可打开、可阅读的最小文件。",
-    hasVideo ? "- 已包含导入视频文件；正式授课前请核对视频质量、节奏和课堂锚点。" : "- 图片文件、视频成片、动画和视觉精修仍待生成或完善。",
+    ...(assets.hasImage ? ["- 已包含课堂视觉图；正式授课前请核对视觉准确性、版权和课堂适配。"] : []),
+    ...(assets.hasVideo ? ["- 已包含导入视频文件；正式授课前请核对视频质量、节奏和课堂锚点。"] : []),
+    ...missingAssetNotes(assets),
     "- 正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
     "",
     `来源：${finalDelivery.title}`,
@@ -90,6 +112,27 @@ function buildReadme(finalDelivery: MaterialPackageArtifact, hasVideo: boolean) 
 function buildFinalDeliveryMarkdown(finalDelivery: MaterialPackageArtifact) {
   const body = finalDelivery.markdownContent.trim() || `# ${finalDelivery.title}\n\n${finalDelivery.summary}`;
   return `${body}\n`;
+}
+
+function imagePackageFilename(image: PackagePart) {
+  const lower = image.filename.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "classroom-visual.jpg";
+  }
+  return "classroom-visual.png";
+}
+
+function missingAssetNotes(assets: { hasImage: boolean; hasVideo: boolean }) {
+  if (!assets.hasImage && !assets.hasVideo) {
+    return ["- 图片文件、视频成片、动画和视觉精修仍待生成或完善。"];
+  }
+  if (!assets.hasImage) {
+    return ["- 图片文件、动画和视觉精修仍待生成或完善。"];
+  }
+  if (!assets.hasVideo) {
+    return ["- 视频成片、动画和视觉精修仍待生成或完善。"];
+  }
+  return ["- 动画和视觉精修仍待生成或完善。"];
 }
 
 function safeFileSegment(value: string) {
