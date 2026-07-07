@@ -5,6 +5,8 @@ import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState, WorkbenchSnapshot } from "@/lib/types";
 
+const activeProjectStorageKey = "shanhai.activeProjectId";
+
 export function useWorkbenchController() {
   const dataSource = useMemo(() => createDefaultWorkbenchDataSource(), []);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -33,6 +35,7 @@ export function useWorkbenchController() {
 
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
     setActiveProjectId(snapshot.project.id);
+    window.localStorage.setItem(activeProjectStorageKey, snapshot.project.id);
     setMessages(snapshot.messages);
     setArtifacts(snapshot.artifacts);
     setActiveArtifactKey(snapshot.activeArtifactKey);
@@ -66,15 +69,17 @@ export function useWorkbenchController() {
         const nextProjects = await dataSource.listProjects();
         if (!active) return;
         setProjects(nextProjects);
-        const firstProjectId = nextProjects[0]?.id;
-        if (!firstProjectId) {
+        const storedProjectId = window.localStorage.getItem(activeProjectStorageKey);
+        const nextProjectId = nextProjects.some((project) => project.id === storedProjectId) ? storedProjectId : nextProjects[0]?.id;
+        if (!nextProjectId) {
           setMessages([]);
           setArtifacts([]);
           setActiveProjectId("");
+          window.localStorage.removeItem(activeProjectStorageKey);
           setLoadState("ready");
           return;
         }
-        const snapshot = await dataSource.getProjectSnapshot(firstProjectId);
+        const snapshot = await dataSource.getProjectSnapshot(nextProjectId);
         if (active) applySnapshot(snapshot);
       } catch (error) {
         if (!active) return;
