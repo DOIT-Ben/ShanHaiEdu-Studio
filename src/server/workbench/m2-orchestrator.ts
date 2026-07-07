@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
 import { DeterministicRuntime } from "@/server/agent-runtime";
-import type { ArtifactRecord } from "./types";
+import type { ArtifactRecord, WorkflowNodeKey } from "./types";
 import { createWorkbenchService } from "./service";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
-type M2RuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan">;
+type LocalRealMvpRuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan" | "ppt_outline">;
 
 const runtime = new DeterministicRuntime();
 
@@ -26,17 +26,22 @@ export async function advanceM2AfterApproval(
       await generateNextArtifactIfMissing(projectId, "lesson_plan", service, agentRuntime, approvedInputs);
     }
   }
+
+  if (approvedArtifact.nodeKey === "lesson_plan") {
+    await generateNextArtifactIfMissing(projectId, "ppt_outline", service, agentRuntime, [approvedArtifact]);
+  }
 }
 
 async function generateNextArtifactIfMissing(
   projectId: string,
-  task: M2RuntimeTask,
+  task: LocalRealMvpRuntimeTask,
   service: WorkbenchService,
   agentRuntime: AgentRuntime,
   approvedInputs: ArtifactRecord[],
 ) {
+  const nodeKey = workflowNodeKeyForTask(task);
   const snapshot = await service.getProjectSnapshot(projectId);
-  const existing = snapshot.artifacts.some((artifact) => artifact.nodeKey === task && ["needs_review", "approved", "stale"].includes(artifact.status));
+  const existing = snapshot.artifacts.some((artifact) => artifact.nodeKey === nodeKey && ["needs_review", "approved", "stale"].includes(artifact.status));
   if (existing) return;
 
   const project = await service.getProject(projectId);
@@ -59,8 +64,8 @@ async function generateNextArtifactIfMissing(
   if (result.status !== "succeeded") return;
 
   await service.saveArtifact(projectId, {
-    nodeKey: task,
-    kind: task,
+    nodeKey,
+    kind: nodeKey,
     title: result.artifactDraft.title,
     status: "needs_review",
     summary: result.artifactDraft.summary,
@@ -70,6 +75,10 @@ async function generateNextArtifactIfMissing(
       nextSuggestedAction: result.nextSuggestedAction.label,
     },
   });
+}
+
+function workflowNodeKeyForTask(task: LocalRealMvpRuntimeTask): WorkflowNodeKey {
+  return task === "ppt_outline" ? "ppt_draft" : task;
 }
 
 function toApprovedArtifactInput(artifact: ArtifactRecord): ApprovedArtifactInput {

@@ -65,7 +65,7 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   lesson_plan: "教案",
   ppt_outline: "PPT 大纲",
   intro_video_plan: "导入",
-  ppt_draft: "PPT",
+  ppt_draft: "PPT 大纲",
   image_prompts: "图片",
   video_storyboard: "视频",
   final_delivery: "交付",

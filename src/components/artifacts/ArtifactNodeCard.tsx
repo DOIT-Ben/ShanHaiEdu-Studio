@@ -9,6 +9,8 @@ import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
 const iconByTitle = {
   教材证据包: BookOpen,
   教案: FileText,
+  "PPT 大纲": Presentation,
+  "PPT 大纲与逐页脚本": Presentation,
   导入视频策划卡: Video,
   "PPT 草稿": Presentation,
   图片提示词: Image,
