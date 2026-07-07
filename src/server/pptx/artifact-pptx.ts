@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import pptxgen from "pptxgenjs";
+import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
 
 type PptxDownload = {
   filename: string;
@@ -112,10 +112,8 @@ function readStoredCozePptx(structuredContent: Record<string, unknown>): PptxDow
   const metadata = cozePptx as { localOutput?: unknown; fileName?: unknown };
   if (typeof metadata.localOutput !== "string" || typeof metadata.fileName !== "string") return null;
 
-  const root = process.cwd();
-  const absolutePath = path.resolve(/* turbopackIgnore: true */ root, metadata.localOutput);
-  const tmpRoot = path.resolve(/* turbopackIgnore: true */ root, ".tmp");
-  if (!absolutePath.startsWith(`${tmpRoot}${path.sep}`) && absolutePath !== tmpRoot) {
+  const absolutePath = resolveLocalArtifactOutput(metadata.localOutput);
+  if (!absolutePath) {
     throw new Error("Stored PPTX path is outside the local artifact storage.");
   }
   if (!existsSync(absolutePath)) {

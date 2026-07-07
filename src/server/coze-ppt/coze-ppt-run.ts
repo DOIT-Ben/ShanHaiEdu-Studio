@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
+import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
 export type CozePptGenerationResult = {
@@ -19,8 +20,6 @@ type CozePptConfig = {
   timeoutMs: number;
   deadlineSeconds: number;
 };
-
-const outputRoot = path.resolve(process.cwd(), ".tmp", "coze-ppt-artifacts");
 
 export async function generateCozePptFromArtifact(input: {
   project: ProjectRecord;
@@ -52,14 +51,16 @@ export async function generateCozePptFromArtifact(input: {
     throw new Error("invalid_coze_pptx");
   }
 
-  mkdirSync(outputRoot, { recursive: true });
   const outputName = `${input.project.id}-${Date.now()}-${result.fileName}`;
-  const outputPath = path.join(outputRoot, outputName);
-  writeFileSync(outputPath, pptxBuffer);
+  const stored = writeLocalArtifact({
+    category: "coze-ppt-artifacts",
+    fileName: outputName,
+    buffer: pptxBuffer,
+  });
 
   return {
     fileName: result.fileName,
-    localOutput: path.relative(process.cwd(), outputPath).replaceAll("\\", "/"),
+    localOutput: stored.localOutput,
     bytes: pptxBuffer.length,
     sha256: createHash("sha256").update(pptxBuffer).digest("hex"),
     pptxValid: true,

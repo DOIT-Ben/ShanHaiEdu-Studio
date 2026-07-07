@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
 type ImageAsset = {
@@ -21,9 +21,9 @@ export function buildStoredImageDownload(artifact: ArtifactRecord): ImageDownloa
     throw new Error("stored_image_asset_not_found");
   }
 
-  const absolutePath = resolveTmpLocalOutput(localOutput);
+  const absolutePath = resolveLocalArtifactOutput(localOutput);
   if (!absolutePath) {
-    throw new Error("stored_image_path_outside_tmp");
+    throw new Error("stored_image_path_outside_storage");
   }
   if (!existsSync(absolutePath)) {
     throw new Error("stored_image_file_not_found");
@@ -57,20 +57,6 @@ function readImageAsset(artifact: ArtifactRecord): ImageAsset {
     throw new Error("stored_image_asset_not_found");
   }
   return imageAsset as ImageAsset;
-}
-
-function resolveTmpLocalOutput(localOutput: string) {
-  const normalized = localOutput.replaceAll("\\", "/").replace(/^\.?\//, "");
-  if (!normalized.startsWith(".tmp/")) {
-    return null;
-  }
-
-  const relativeUnderTmp = normalized.slice(".tmp/".length);
-  if (!relativeUnderTmp || relativeUnderTmp.split("/").some((segment) => segment === "..")) {
-    return null;
-  }
-
-  return path.join(/*turbopackIgnore: true*/ process.cwd(), ".tmp", ...relativeUnderTmp.split("/"));
 }
 
 function validateImageBuffer(

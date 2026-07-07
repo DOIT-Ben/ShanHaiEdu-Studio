@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
 type VideoAsset = {
@@ -22,9 +22,9 @@ export function buildStoredVideoDownload(artifact: ArtifactRecord): VideoDownloa
     throw new Error("stored_video_asset_not_found");
   }
 
-  const absolutePath = resolveTmpLocalOutput(localOutput);
+  const absolutePath = resolveLocalArtifactOutput(localOutput);
   if (!absolutePath) {
-    throw new Error("stored_video_path_outside_tmp");
+    throw new Error("stored_video_path_outside_storage");
   }
   if (!existsSync(absolutePath)) {
     throw new Error("stored_video_file_not_found");
@@ -56,20 +56,6 @@ function readVideoAsset(artifact: ArtifactRecord): VideoAsset {
     throw new Error("stored_video_asset_not_found");
   }
   return videoAsset as VideoAsset;
-}
-
-function resolveTmpLocalOutput(localOutput: string) {
-  const normalized = localOutput.replaceAll("\\", "/").replace(/^\.?\//, "");
-  if (!normalized.startsWith(".tmp/")) {
-    return null;
-  }
-
-  const relativeUnderTmp = normalized.slice(".tmp/".length);
-  if (!relativeUnderTmp || relativeUnderTmp.split("/").some((segment) => segment === "..")) {
-    return null;
-  }
-
-  return path.join(/*turbopackIgnore: true*/ process.cwd(), ".tmp", ...relativeUnderTmp.split("/"));
 }
 
 function validateMp4Buffer(buffer: Buffer) {

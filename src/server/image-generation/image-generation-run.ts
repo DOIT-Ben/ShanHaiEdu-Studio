@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
 export type ImageGenerationResult = {
@@ -20,7 +19,6 @@ type ImageProviderConfig = {
   timeoutMs: number;
 };
 
-const outputRoot = path.resolve(process.cwd(), ".tmp", "image-artifacts");
 const channelEnvMap = {
   primary: {
     apiKey: "IMAGEGEN_MYSELF_PRIMARY_API_KEY",
@@ -77,14 +75,16 @@ export async function generateImageFromArtifact(input: {
     throw new Error("invalid_image_output");
   }
 
-  mkdirSync(outputRoot, { recursive: true });
   const fileName = `${sanitizeFileSegment(input.project.id)}-${Date.now()}-classroom-visual${validation.extension}`;
-  const outputPath = path.join(outputRoot, fileName);
-  writeFileSync(outputPath, buffer);
+  const stored = writeLocalArtifact({
+    category: "image-artifacts",
+    fileName,
+    buffer,
+  });
 
   return {
     fileName,
-    localOutput: path.relative(process.cwd(), outputPath).replaceAll("\\", "/"),
+    localOutput: stored.localOutput,
     bytes: buffer.length,
     sha256: createHash("sha256").update(buffer).digest("hex"),
     imageValid: true,

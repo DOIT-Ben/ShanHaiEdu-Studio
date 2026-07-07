@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = process.cwd();
 const sourcePath = path.join(root, "src", "server", "pptx", "artifact-pptx.ts");
+const storageSourcePath = path.join(root, "src", "server", "artifact-storage", "local-artifact-storage.ts");
 
 const pptArtifact = {
   key: "ppt-artifact-v1",
@@ -75,12 +76,40 @@ function loadArtifactPptxModule() {
   }).outputText;
 
   const module = { exports: {} };
+  const requireShim = (specifier) => {
+    if (specifier === "@/server/artifact-storage/local-artifact-storage") return loadArtifactStorageModule();
+    return require(specifier);
+  };
+  vm.runInNewContext(compiled, {
+    module,
+    exports: module.exports,
+    require: requireShim,
+    Buffer,
+    console,
+    process,
+  });
+  return module.exports;
+}
+
+function loadArtifactStorageModule() {
+  assert.equal(existsSync(storageSourcePath), true, "src/server/artifact-storage/local-artifact-storage.ts should exist");
+  const ts = require("typescript");
+  const compiled = ts.transpileModule(readFileSync(storageSourcePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+  }).outputText;
+
+  const module = { exports: {} };
   vm.runInNewContext(compiled, {
     module,
     exports: module.exports,
     require,
     Buffer,
     console,
+    process,
   });
   return module.exports;
 }

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
 export type VideoGenerationResult = {
@@ -23,8 +22,6 @@ type VideoProviderConfig = {
   maxPolls: number;
 };
 
-const outputRoot = path.resolve(process.cwd(), ".tmp", "video-artifacts");
-
 export async function generateVideoFromArtifact(input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
@@ -40,14 +37,16 @@ export async function generateVideoFromArtifact(input: {
     throw new Error("invalid_video_output");
   }
 
-  mkdirSync(outputRoot, { recursive: true });
   const fileName = `${sanitizeFileSegment(input.project.id)}-${Date.now()}-intro-video.mp4`;
-  const outputPath = path.join(outputRoot, fileName);
-  writeFileSync(outputPath, videoBuffer);
+  const stored = writeLocalArtifact({
+    category: "video-artifacts",
+    fileName,
+    buffer: videoBuffer,
+  });
 
   return {
     fileName,
-    localOutput: path.relative(process.cwd(), outputPath).replaceAll("\\", "/"),
+    localOutput: stored.localOutput,
     bytes: videoBuffer.length,
     sha256: createHash("sha256").update(videoBuffer).digest("hex"),
     videoValid: true,

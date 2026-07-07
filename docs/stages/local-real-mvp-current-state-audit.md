@@ -4,7 +4,7 @@
 
 ## 1. 审计目标
 
-本审计用于收口 `mainline/local-real-mvp` 在 M0-M27 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
+本审计用于收口 `mainline/local-real-mvp` 在 M0-M28 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
 
 当前审计不新增产品能力、不变更代码、不执行部署、不 push、不删除旧 worktree。
 
@@ -47,6 +47,7 @@
 - `docs\stages\local-real-mvp-m25-material-package-image-asset-report.md`
 - `docs\stages\local-real-mvp-m26-teacher-real-generation-entry-report.md`
 - `docs\stages\local-real-mvp-m27-real-generation-browser-linkage-report.md`
+- `docs\stages\local-real-mvp-m28-artifact-storage-prep-report.md`
 
 ## 3. 已完成能力
 
@@ -507,11 +508,31 @@ M27 同时补齐了教师界面的本地素材下载入口：
 - `npm run test:e2e:stage2` 通过：Chromium desktop 2 passed。
 - `npm run test:e2e:stage8` 通过：Chromium narrow 与 Firefox desktop 共 4 passed。
 
+### 3.25 M28 素材存储生产准备
+
+M28 已把真实 PPTX、图片和视频素材保存路径从分散的 `.tmp` 拼接，推进到统一的 ArtifactStorage 边界：
+
+- 新增 `src\server\artifact-storage\local-artifact-storage.ts`。
+- 未配置 `ARTIFACT_STORAGE_ROOT` 时继续写入 `.tmp\<category>`，保持本地开发和既有 E2E 兼容。
+- 配置 `ARTIFACT_STORAGE_ROOT` 后，新生成素材写入固定存储根目录。
+- 配置模式下 artifact metadata 保存 `artifact-storage/<category>/<filename>` 逻辑 key，不保存机器绝对路径。
+- PPTX、图片和视频下载 helper 统一通过 `resolveLocalArtifactOutput` 解析旧 `.tmp/...` metadata 和新 `artifact-storage/...` metadata。
+- 路径解析拒绝空路径、绝对路径、盘符路径、`..`、`.` 和非允许前缀。
+
+最近一次 M28 验收记录显示：
+
+- `node --test tests\artifact-storage.test.mjs` 通过：2 tests passed。
+- `node --test tests\artifact-pptx-download.test.mjs` 通过：2 tests passed。
+- `npx vitest run src/server/image-generation/__tests__/image-download-route.test.ts src/server/video-generation/__tests__/video-download-route.test.ts src/server/coze-ppt/__tests__/coze-ppt-artifact-adapter.test.ts --maxWorkers=1` 通过：3 files / 8 tests passed。
+- `npm test` 通过：Node 43 tests passed；Vitest 21 files / 81 tests passed。
+- `npm run build` 通过；仍有 1 条 Turbopack output tracing warning，风险已集中在服务端 storage/download 路径。
+- `node scripts\run-stage27-e2e.mjs` 通过：Chromium desktop 1 passed。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown、最小 PPTX、可选导入视频和可选课堂视觉图的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX，教师界面已具备触发真实 PPTX 的入口，浏览器专项已验证触发、刷新和下载联动。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，已具备后端 artifact adapter 保存本地图片 metadata、后端本地图片下载 route、最终材料包图片资产集成能力、教师界面触发入口和浏览器下载联动验证。视频真实 API 阶段已通过固定 `octo` 通道完成服务端 submit/query/download live smoke，已具备后端 artifact adapter 保存本地 MP4 metadata、后端本地 MP4 下载 route、最终材料包视频资产集成能力、教师界面触发入口和浏览器下载联动验证。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown、最小 PPTX、可选导入视频和可选课堂视觉图的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX，教师界面已具备触发真实 PPTX 的入口，浏览器专项已验证触发、刷新和下载联动。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，已具备后端 artifact adapter 保存本地图片 metadata、后端本地图片下载 route、最终材料包图片资产集成能力、教师界面触发入口和浏览器下载联动验证。视频真实 API 阶段已通过固定 `octo` 通道完成服务端 submit/query/download live smoke，已具备后端 artifact adapter 保存本地 MP4 metadata、后端本地 MP4 下载 route、最终材料包视频资产集成能力、教师界面触发入口和浏览器下载联动验证。真实 PPTX、图片和视频素材已具备可配置部署卷的本地 ArtifactStorage 准备，metadata 可避免保存机器绝对路径。
 
 当前不能表述为：
 
@@ -521,11 +542,12 @@ M27 同时补齐了教师界面的本地素材下载入口：
 - 视频在线播放、Range 请求、生产队列或视频质量验收已完成。
 - 已具备账号、权限或生产级多人协作。
 - 已完成生产部署或公网发布。
+- 已完成对象存储、CDN、素材生命周期清理或部署运维。
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 97%-98%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、真实 Coze PPT smoke、Coze PPT artifact adapter、图片真实 API smoke、图片 artifact adapter、图片下载 route、材料包图片资产集成、视频真实 API smoke、视频 artifact adapter、视频下载 route、材料包视频资产集成、教师 UI 真实生成入口、真实生成浏览器联动、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 68%-75%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke、图片 artifact adapter、图片下载 route、图片材料包集成、视频 live smoke、视频 artifact adapter、视频下载 route、视频材料包集成、教师 UI 真实生成入口与浏览器联动验证已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、长任务队列、账号权限、生产部署、安全与运维仍未完成。
+- 内部骨架成熟度：约 98%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、真实 Coze PPT smoke、Coze PPT artifact adapter、图片真实 API smoke、图片 artifact adapter、图片下载 route、材料包图片资产集成、视频真实 API smoke、视频 artifact adapter、视频下载 route、视频材料包资产集成、教师 UI 真实生成入口、真实生成浏览器联动、统一本地素材存储边界、阶段测试与文档闭环已经成形。
+- 生产就绪度：约 70%-76%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke、图片 artifact adapter、图片下载 route、图片材料包集成、视频 live smoke、视频 artifact adapter、视频下载 route、视频材料包集成、教师 UI 真实生成入口、浏览器联动验证和可配置部署卷准备已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、长任务队列、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
@@ -533,11 +555,11 @@ M27 同时补齐了教师界面的本地素材下载入口：
 - 业务工作流节点仍主要使用 deterministic runtime，真实模型尚未全面接入节点生成链路。
 - M15 已纳入教材 PDF fixture；后续外发、部署或公开演示前需单独确认版权和发布边界。
 - Coze PPT `/run` smoke、artifact adapter 和教师 UI 显式触发入口已通过，但尚未完成 Coze 官方 OpenAPI 主链路。
-- Coze PPT 本地文件当前存储在 `.tmp`，生产部署前必须替换为部署卷或对象存储。
+- Coze PPT、图片和视频素材已支持可配置部署卷准备；但对象存储、CDN、备份、清理和生命周期策略仍未完成。
 - M18 图片 live smoke 已通过，M19 已接入后端 artifact adapter，M24 已提供图片下载 route，M25 已提供最终材料包图片资产，M26 已提供教师 UI 入口，M27 已通过浏览器下载联动；但当前尚未提供 PPTX 内嵌图片。
 - M18 `primary` 图片通道曾返回 403，当前固定通道为 `free`；后续切换通道必须重新跑 smoke。
 - M20 视频 live smoke 已通过，M21 已接入后端 artifact adapter，M22 已提供视频下载 route，M23 已集成最终材料包视频资产，M26 已提供教师 UI 入口，M27 已通过浏览器下载联动；但当前尚未提供生产队列、对象存储或质量验收。
-- M22 构建仍有 1 条 Turbopack output tracing warning，指向运行时本地视频文件读取；本地 MVP 可用，但生产部署前应随存储方案一并处理。
+- M28 构建仍有 1 条 Turbopack output tracing warning，风险已集中在服务端 storage/download 路径；本地 MVP 可用，但生产部署前应结合实际部署方式继续复查。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown、最小 PPTX、可选图片与可选视频，但不包含动画或视觉精修资产。
@@ -549,13 +571,13 @@ M27 同时补齐了教师界面的本地素材下载入口：
 
 优先级从高到低：
 
-1. 做生产存储准备：将 `.tmp` 中的 PPTX、图片和视频本地文件迁移到部署卷或对象存储策略。
-2. 做账号/权限系统规划与最小实现，先定义本地 MVP 的用户、角色、项目访问和会话边界。
-3. 做长任务队列与状态恢复规划，覆盖 PPT、图片、视频生成的耗时、失败、重试和刷新恢复。
+1. 做账号/权限系统规划与最小实现，先定义本地 MVP 的用户、角色、项目访问和会话边界。
+2. 做长任务队列与状态恢复规划，覆盖 PPT、图片、视频生成的耗时、失败、重试和刷新恢复。
+3. 做生产部署 runbook 与环境检查，覆盖 `ARTIFACT_STORAGE_ROOT`、数据库、密钥加载、构建 warning 和回滚策略。
 4. 做 WebKit、真实移动设备或触摸手势专项验证。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过，M20 视频真实 API live smoke 已通过，M21 视频后端 artifact adapter 已通过，M22 视频下载 route 已通过，M23 最终材料包视频资产集成已通过，M24 图片下载 route 已通过，M25 最终材料包图片资产集成已通过，M26 教师 UI 真实生成入口已通过，M27 真实生成浏览器联动验证已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过，M20 视频真实 API live smoke 已通过，M21 视频后端 artifact adapter 已通过，M22 视频下载 route 已通过，M23 最终材料包视频资产集成已通过，M24 图片下载 route 已通过，M25 最终材料包图片资产集成已通过，M26 教师 UI 真实生成入口已通过，M27 真实生成浏览器联动验证已通过，M28 素材存储生产准备已通过。
 
-因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke、后端 artifact、教师触发入口与浏览器下载联动可用 + 图片真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 视频真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用”的候选状态继续推进，但不能作为“账号权限和生产部署已完成”的最终状态。
+因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke、后端 artifact、教师触发入口与浏览器下载联动可用 + 图片真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 视频真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 真实素材可配置部署卷准备可用”的候选状态继续推进，但不能作为“账号权限、长任务队列和生产部署已完成”的最终状态。
