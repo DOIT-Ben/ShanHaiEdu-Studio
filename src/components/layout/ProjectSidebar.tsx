@@ -18,9 +18,10 @@ type ProjectSidebarProps = {
   collapsed?: boolean;
   onToggle?: () => void;
   onSelect: (id: string) => void;
+  onCreateProject?: () => void;
 };
 
-export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect }: ProjectSidebarProps) {
+export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect, onCreateProject }: ProjectSidebarProps) {
   return (
     <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f8f8f9] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
       <button
@@ -46,7 +47,11 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         </div>
         {!collapsed && (
           <>
-            <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#eeeeef]" variant="ghost">
+            <Button
+              className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#eeeeef]"
+              variant="ghost"
+              onClick={onCreateProject}
+            >
               <Plus className="h-4 w-4" />
               新建项目
             </Button>

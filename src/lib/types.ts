@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale";
 
 export type ArtifactKind =
+  | "requirement_spec"
   | "textbook_evidence"
   | "lesson_plan"
   | "intro_video_plan"
@@ -32,6 +33,9 @@ export type ArtifactActionState = {
 
 export type ArtifactItem = {
   key: string;
+  artifactId?: string;
+  nodeKey?: ArtifactKind;
+  version?: number;
   kind: ArtifactKind;
   title: string;
   status: ArtifactStatus;
@@ -51,6 +55,24 @@ export type ChatMessage = {
   body: string;
   tone?: "normal" | "focus" | "warning" | "error";
 };
+
+export type WorkbenchSnapshot = {
+  project: ProjectItem;
+  messages: ChatMessage[];
+  artifacts: ArtifactItem[];
+  activeArtifactKey: string;
+};
+
+export type WorkbenchDataSource = {
+  listProjects: () => Promise<ProjectItem[]>;
+  createProject: () => Promise<WorkbenchSnapshot>;
+  getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
+  sendMessage: (projectId: string, body: string, reference: string | null) => Promise<WorkbenchSnapshot>;
+  approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+  regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+};
+
+export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 
 export type StepDefinition = {
   key: ArtifactKind;
