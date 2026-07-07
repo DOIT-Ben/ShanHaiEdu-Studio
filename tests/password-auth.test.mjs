@@ -142,10 +142,12 @@ function createFakeAuthDb() {
   const localUsers = [];
   const authSessions = [];
   const auditLogs = [];
+  const csrfTokens = [];
   return {
     localUsers,
     authSessions,
     auditLogs,
+    csrfTokens,
     localUser: {
       async findUnique({ where }) {
         if (where.email) return localUsers.find((entry) => entry.email === where.email) ?? null;
@@ -175,16 +177,39 @@ function createFakeAuthDb() {
             (candidate) =>
               candidate.sessionTokenHash === where.sessionTokenHash &&
               candidate.revokedAt === null &&
-              candidate.expiresAt > where.expiresAt.gt,
+              (!where.expiresAt || candidate.expiresAt > where.expiresAt.gt),
           ) ?? null;
         if (!entry) return null;
         const user = localUsers.find((candidate) => candidate.id === entry.userId) ?? null;
         return include?.user ? { ...entry, user } : entry;
       },
+      async update({ where, data }) {
+        const entry = authSessions.find((candidate) => candidate.id === where.id);
+        if (!entry) throw new Error("AuthSession not found");
+        Object.assign(entry, data);
+        return entry;
+      },
       async updateMany({ where, data }) {
         let count = 0;
         for (const entry of authSessions) {
           if (entry.sessionTokenHash === where.sessionTokenHash && entry.revokedAt === null) {
+            Object.assign(entry, data);
+            count += 1;
+          }
+        }
+        return { count };
+      },
+    },
+    csrfToken: {
+      async create({ data }) {
+        const entry = { id: `csrf_${csrfTokens.length + 1}`, ...data, consumedAt: data.consumedAt ?? null, createdAt: new Date() };
+        csrfTokens.push(entry);
+        return entry;
+      },
+      async updateMany({ where, data }) {
+        let count = 0;
+        for (const entry of csrfTokens) {
+          if (entry.sessionId === where.sessionId && entry.consumedAt === where.consumedAt) {
             Object.assign(entry, data);
             count += 1;
           }
@@ -216,11 +241,18 @@ function loadPasswordAuthModule(db) {
       "node:crypto": require("node:crypto"),
       "@/server/auth/actor": actor,
     }),
+    "@/server/db/client": { prisma: db },
     "node:crypto": require("node:crypto"),
   });
   const auditLog = loadTsModule(path.join(root, "src", "server", "auth", "audit-log.ts"), {});
+  const csrf = loadTsModule(path.join(root, "src", "server", "auth", "csrf.ts"), {
+    "node:crypto": require("node:crypto"),
+    "@/server/auth/actor": actor,
+    "@/server/db/client": { prisma: db },
+  });
   return loadTsModule(path.join(root, "src", "server", "auth", "password-auth.ts"), {
     "@/server/auth/audit-log": auditLog,
+    "@/server/auth/csrf": csrf,
     "@/server/auth/password": password,
     "@/server/auth/session": session,
     "@/server/db/client": { prisma: db },

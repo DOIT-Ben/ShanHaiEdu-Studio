@@ -27,10 +27,91 @@ test("csrf gate applies only to public auth write methods", () => {
   assert.equal(csrf.requiresCsrfToken({ method: "POST", authMode: "local" }), false);
 });
 
+test("csrf token issue and validation use the persisted session-bound hash", async () => {
+  const csrf = loadCsrfModule();
+  const db = createFakeDb();
+  const issued = await csrf.issueCsrfToken({
+    sessionId: "session-public-a",
+    userId: "user-a",
+    expiresAt: new Date(Date.now() + 60_000),
+    db,
+    nonce: "persisted-nonce",
+  });
+
+  assert.equal(issued.token, "persisted-nonce");
+  assert.equal(db.csrfTokens.length, 1);
+  assert.notEqual(db.csrfTokens[0].tokenHash, issued.token);
+  assert.equal(
+    await csrf.validateCsrfToken({
+      sessionId: "session-public-a",
+      userId: "user-a",
+      token: "persisted-nonce",
+      db,
+    }),
+    true,
+  );
+  assert.equal(
+    await csrf.validateCsrfToken({
+      sessionId: "session-public-b",
+      userId: "user-a",
+      token: "persisted-nonce",
+      db,
+    }),
+    false,
+  );
+  assert.equal(
+    await csrf.validateCsrfToken({
+      sessionId: "session-public-a",
+      userId: "user-a",
+      token: "wrong-nonce",
+      db,
+    }),
+    false,
+  );
+
+  db.csrfTokens[0].expiresAt = new Date(Date.now() - 60_000);
+  assert.equal(
+    await csrf.validateCsrfToken({
+      sessionId: "session-public-a",
+      userId: "user-a",
+      token: "persisted-nonce",
+      db,
+    }),
+    false,
+  );
+});
+
+function createFakeDb() {
+  const csrfTokens = [];
+  return {
+    csrfTokens,
+    csrfToken: {
+      async create({ data }) {
+        const row = { id: `csrf_${csrfTokens.length + 1}`, ...data, consumedAt: data.consumedAt ?? null, createdAt: new Date() };
+        csrfTokens.push(row);
+        return row;
+      },
+      async findFirst({ where }) {
+        return (
+          csrfTokens.find(
+            (entry) =>
+              entry.sessionId === where.sessionId &&
+              entry.userId === where.userId &&
+              entry.tokenHash === where.tokenHash &&
+              entry.consumedAt === where.consumedAt &&
+              entry.expiresAt > where.expiresAt.gt,
+          ) ?? null
+        );
+      },
+    },
+  };
+}
+
 function loadCsrfModule() {
   return loadTsModule(path.join(root, "src", "server", "auth", "csrf.ts"), {
     "node:crypto": require("node:crypto"),
     "@/server/auth/actor": loadTsModule(path.join(root, "src", "server", "auth", "actor.ts"), {}),
+    "@/server/db/client": { prisma: {} },
   });
 }
 

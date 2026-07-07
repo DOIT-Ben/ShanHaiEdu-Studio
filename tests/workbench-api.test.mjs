@@ -177,6 +177,12 @@ function loadWorkbenchApiModule() {
         artifacts: seedArtifacts,
       };
     }
+    if (id === "@/lib/csrf-token") {
+      return {
+        getWorkbenchCsrfToken: () => null,
+        setWorkbenchCsrfToken: () => {},
+      };
+    }
     if (id === "@/lib/workbench-mappers") {
       const mapperPath = path.join(root, "src", "lib", "workbench-mappers.ts");
       if (cache.has(mapperPath)) return cache.get(mapperPath).exports;
@@ -188,6 +194,7 @@ function loadWorkbenchApiModule() {
         require: requireStub,
         URL,
         structuredClone,
+        process: { env: {} },
         console,
       });
       return mapperModule.exports;
@@ -202,6 +209,7 @@ function loadWorkbenchApiModule() {
     require: requireStub,
     URL,
     structuredClone,
+    process: { env: {} },
     console,
   });
 

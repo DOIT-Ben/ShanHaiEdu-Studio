@@ -1,4 +1,5 @@
 import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as seedProjects } from "@/lib/mock-data";
+import { getWorkbenchCsrfToken } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSnapshot } from "@/lib/types";
@@ -61,9 +62,14 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
   const fetcher = options.fetcher ?? fetch;
 
   function request<T>(path: string, init?: RequestInit) {
+    const headers = {
+      "content-type": "application/json",
+      ...csrfHeader(init?.method),
+      ...(init?.headers ?? {}),
+    };
     return fetcher(endpoint(baseUrl, path), {
-      headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
       ...init,
+      headers,
     }).then((response) => parseResponse<T>(response));
   }
 
@@ -107,6 +113,17 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
   };
+}
+
+function csrfHeader(method?: string): Record<string, string> {
+  if (process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE !== "password") return {};
+  if (!isWriteMethod(method ?? "GET")) return {};
+  const token = getWorkbenchCsrfToken();
+  return token ? { "x-shanhai-csrf": token } : {};
+}
+
+function isWriteMethod(method: string) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
 }
 
 export function artifactText(item: ArtifactItem) {

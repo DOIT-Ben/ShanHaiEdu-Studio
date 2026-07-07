@@ -1,3 +1,5 @@
+import { setWorkbenchCsrfToken } from "@/lib/csrf-token";
+
 export type PasswordAuthUser = {
   id: string;
   email: string | null;
@@ -9,6 +11,7 @@ export type PasswordAuthUser = {
 export type PasswordAuthState = {
   authenticated: boolean;
   user: PasswordAuthUser | null;
+  csrfToken?: string;
 };
 
 export type PasswordAuthClientOptions = {
@@ -50,6 +53,7 @@ export function createPasswordAuthClient(options: PasswordAuthClientOptions = {}
       const message = typeof body?.error === "string" ? body.error : "暂时没有处理成功，请稍后再试。";
       throw new PasswordAuthClientError(message, response.status);
     }
+    captureCsrfToken(body);
     return body as T;
   }
 
@@ -75,4 +79,16 @@ export function createPasswordAuthClient(options: PasswordAuthClientOptions = {}
       });
     },
   };
+}
+
+function captureCsrfToken(body: unknown) {
+  if (!body || typeof body !== "object") return;
+  const state = body as { authenticated?: unknown; csrfToken?: unknown };
+  if (typeof state.csrfToken === "string") {
+    setWorkbenchCsrfToken(state.csrfToken);
+    return;
+  }
+  if (state.authenticated === false) {
+    setWorkbenchCsrfToken(null);
+  }
 }

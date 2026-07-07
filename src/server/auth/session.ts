@@ -1,6 +1,7 @@
 import type { AuthMode } from "@/server/auth/actor";
-import { createWorkbenchActor, type WorkbenchActor } from "@/server/auth/actor";
+import { createWorkbenchActor, type ProjectMembershipRole, type WorkbenchActor } from "@/server/auth/actor";
 import { createLocalSessionSetCookieHeader, resolveLocalWorkbenchActor } from "@/server/auth/local-session";
+import { prisma } from "@/server/db/client";
 import { createHash, randomBytes } from "node:crypto";
 
 export const publicWorkbenchSessionCookieName = "shanhai_session";
@@ -10,11 +11,23 @@ export type PublicWorkbenchSession = {
   expiresAt: Date;
 };
 
+export type PublicWorkbenchSessionRecord = {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+};
+
+export type ResolveWorkbenchSessionOptions = {
+  db?: typeof prisma;
+  now?: () => Date;
+};
+
 export type ResolvedWorkbenchSession =
   | {
       actor: WorkbenchActor;
       authMode: AuthMode;
       isNewSession: boolean;
+      publicSession?: PublicWorkbenchSessionRecord;
       setCookieHeader?: string;
     }
   | {
@@ -24,7 +37,10 @@ export type ResolvedWorkbenchSession =
       reason: "missing_public_session";
     };
 
-export function resolveWorkbenchSession(request: Request): ResolvedWorkbenchSession {
+export async function resolveWorkbenchSession(
+  request: Request,
+  options: ResolveWorkbenchSessionOptions = {},
+): Promise<ResolvedWorkbenchSession> {
   const authMode = resolveAuthMode();
   if (authMode === "local") {
     const localSession = resolveLocalWorkbenchActor(request);
@@ -41,14 +57,42 @@ export function resolveWorkbenchSession(request: Request): ResolvedWorkbenchSess
     return { actor: null, authMode, isNewSession: false, reason: "missing_public_session" };
   }
 
+  const db = options.db ?? prisma;
+  const session = await db.authSession.findFirst({
+    where: {
+      sessionTokenHash: hashPublicSessionToken(sessionId),
+      authMode,
+      revokedAt: null,
+      expiresAt: { gt: options.now?.() ?? new Date() },
+    },
+    include: {
+      user: {
+        include: {
+          memberships: true,
+        },
+      },
+    },
+  });
+
+  if (!session?.user || session.user.authMode !== authMode) {
+    return { actor: null, authMode, isNewSession: false, reason: "missing_public_session" };
+  }
+
   return {
     actor: createWorkbenchActor({
-      userId: `session:${sessionId}`,
-      displayName: "已登录教师",
+      userId: session.user.id,
+      displayName: session.user.displayName,
       authMode,
+      role: session.user.role === "admin" ? "admin" : "teacher",
+      projectRoles: toProjectRoles(session.user.memberships ?? []),
     }),
     authMode,
     isNewSession: false,
+    publicSession: {
+      id: session.id,
+      userId: session.user.id,
+      expiresAt: session.expiresAt,
+    },
   };
 }
 
@@ -124,4 +168,18 @@ function isSecureRequest(request?: Request) {
   if (!request) return false;
   if (new URL(request.url).protocol === "https:") return true;
   return request.headers.get("x-forwarded-proto")?.toLowerCase().split(",")[0]?.trim() === "https";
+}
+
+function toProjectRoles(memberships: Array<{ projectId: string; role: string }>) {
+  const roles: Record<string, ProjectMembershipRole> = {};
+  for (const membership of memberships) {
+    const role = normalizeProjectMembershipRole(membership.role);
+    if (role) roles[membership.projectId] = role;
+  }
+  return roles;
+}
+
+function normalizeProjectMembershipRole(role: string): ProjectMembershipRole | null {
+  if (role === "owner" || role === "editor" || role === "viewer") return role;
+  return null;
 }

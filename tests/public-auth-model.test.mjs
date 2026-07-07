@@ -37,6 +37,7 @@ test("public session cookie is opaque and separate from the local user cookie", 
       "@/server/auth/actor": loadTsModule(path.join(root, "src", "server", "auth", "actor.ts"), {}),
     }),
     "@/server/auth/actor": loadTsModule(path.join(root, "src", "server", "auth", "actor.ts"), {}),
+    "@/server/db/client": { prisma: {} },
     "node:crypto": require("node:crypto"),
   });
 

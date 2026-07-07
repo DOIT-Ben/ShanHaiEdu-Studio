@@ -99,9 +99,17 @@ test("next config defines baseline security headers", async () => {
 });
 
 function loadAuthRouteModule() {
+  const db = {};
+  const actor = loadActorModule();
+  const csrf = loadTsModule(path.join(root, "src", "server", "auth", "csrf.ts"), {
+    "node:crypto": require("node:crypto"),
+    "@/server/auth/actor": actor,
+    "@/server/db/client": { prisma: db },
+  });
   return loadTsModule(path.join(root, "src", "server", "auth", "workbench-route.ts"), {
     "@/server/auth/local-session": loadLocalSessionModule(),
-    "@/server/auth/session": loadSessionModule(),
+    "@/server/auth/session": loadSessionModule(db),
+    "@/server/auth/csrf": csrf,
     "@/server/workbench/service": {
       createWorkbenchService: () => ({}),
     },
@@ -128,10 +136,11 @@ function loadActorModule() {
   return loadTsModule(path.join(root, "src", "server", "auth", "actor.ts"), {});
 }
 
-function loadSessionModule() {
+function loadSessionModule(db = {}) {
   return loadTsModule(path.join(root, "src", "server", "auth", "session.ts"), {
     "@/server/auth/local-session": loadLocalSessionModule(),
     "@/server/auth/actor": loadActorModule(),
+    "@/server/db/client": { prisma: db },
     "node:crypto": require("node:crypto"),
   });
 }

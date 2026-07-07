@@ -36,11 +36,14 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
     async createProject(input: CreateProjectInput) {
       return client.$transaction(async (tx) => {
         if (input.ownerUserId) {
-          await tx.localUser.upsert({
+          const existingOwner = await tx.localUser.findUnique({
             where: { id: input.ownerUserId },
-            update: { displayName: "本地教师", role: "teacher", authMode: "local" },
-            create: { id: input.ownerUserId, displayName: "本地教师", role: "teacher", authMode: "local" },
           });
+          if (!existingOwner) {
+            await tx.localUser.create({
+              data: { id: input.ownerUserId, displayName: "本地教师", role: "teacher", authMode: "local" },
+            });
+          }
         }
 
         const project = await tx.project.create({

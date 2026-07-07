@@ -65,4 +65,37 @@ describe("Local Real MVP M29 local auth access", () => {
 
     expect(snapshot.project.id).toBe(legacyProject.id);
   });
+
+  it("does not downgrade an existing password user when creating an owned project", async () => {
+    const passwordActor = {
+      userId: "stage29-password-user",
+      role: "teacher" as const,
+      displayName: "公网教师",
+      authMode: "password" as const,
+      isAdmin: false,
+      projectRoles: {},
+    };
+    await prisma.localUser.upsert({
+      where: { id: passwordActor.userId },
+      update: { displayName: passwordActor.displayName, role: "teacher", authMode: "password" },
+      create: {
+        id: passwordActor.userId,
+        displayName: passwordActor.displayName,
+        role: "teacher",
+        authMode: "password",
+        email: "stage29-password-user@example.test",
+      },
+    });
+
+    const service = createWorkbenchService(undefined, passwordActor);
+    const project = await service.createProject({ title: "M40 password owner project" });
+    const persistedUser = await prisma.localUser.findUnique({ where: { id: passwordActor.userId } });
+    const persistedMembership = await prisma.projectMembership.findUnique({
+      where: { projectId_userId: { projectId: project.id, userId: passwordActor.userId } },
+    });
+
+    expect(persistedUser?.authMode).toBe("password");
+    expect(persistedUser?.displayName).toBe("公网教师");
+    expect(persistedMembership?.role).toBe("owner");
+  });
 });

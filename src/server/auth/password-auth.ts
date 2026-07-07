@@ -1,4 +1,5 @@
 import { createAuditLogEntry } from "@/server/auth/audit-log";
+import { issueCsrfToken } from "@/server/auth/csrf";
 import { hashPassword, type PasswordHashOptions, verifyPassword } from "@/server/auth/password";
 import {
   createPublicSessionClearCookieHeader,
@@ -21,6 +22,7 @@ export type PasswordUserSummary = {
 export type PasswordAuthResult = {
   user: PasswordUserSummary;
   session: PublicWorkbenchSession;
+  csrfToken: string;
   setCookieHeader: string;
 };
 
@@ -136,9 +138,17 @@ export async function getCurrentPasswordUser(request: Request, options: Password
     return { authenticated: false, user: null };
   }
 
+  const csrf = await issueCsrfToken({
+    sessionId: session.id,
+    userId: session.user.id,
+    expiresAt: session.expiresAt,
+    db,
+  });
+
   return {
     authenticated: true,
     user: toPasswordUserSummary(session.user as StoredPasswordUser),
+    csrfToken: csrf.token,
   };
 }
 
@@ -149,17 +159,31 @@ export async function logoutPasswordSession(request: Request, options: PasswordA
   let revoked = false;
 
   if (token) {
-    const result = await db.authSession.updateMany({
+    const session = await db.authSession.findFirst({
       where: {
         sessionTokenHash: hashPublicSessionToken(token),
         revokedAt: null,
       },
-      data: {
-        revokedAt: now,
-        updatedAt: now,
-      },
     });
-    revoked = result.count > 0;
+    if (session) {
+      await db.authSession.update({
+        where: { id: session.id },
+        data: {
+          revokedAt: now,
+          updatedAt: now,
+        },
+      });
+      await db.csrfToken.updateMany({
+        where: {
+          sessionId: session.id,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: now,
+        },
+      });
+      revoked = true;
+    }
   }
 
   if (revoked) {
@@ -227,7 +251,7 @@ async function createPasswordSession(user: StoredPasswordUser, options: Password
     expiresAt: new Date(now.getTime() + sessionTtlMs),
   };
 
-  await db.authSession.create({
+  const storedSession = await db.authSession.create({
     data: {
       userId: user.id,
       sessionTokenHash: hashPublicSessionToken(token),
@@ -237,10 +261,17 @@ async function createPasswordSession(user: StoredPasswordUser, options: Password
       updatedAt: now,
     },
   });
+  const csrf = await issueCsrfToken({
+    sessionId: storedSession.id,
+    userId: user.id,
+    expiresAt: session.expiresAt,
+    db,
+  });
 
   return {
     user: toPasswordUserSummary(user),
     session,
+    csrfToken: csrf.token,
     setCookieHeader: createPublicSessionSetCookieHeader(session, options.request),
   };
 }

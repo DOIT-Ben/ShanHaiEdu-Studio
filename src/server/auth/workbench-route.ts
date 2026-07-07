@@ -1,6 +1,7 @@
 import {
   type WorkbenchActor,
 } from "@/server/auth/local-session";
+import { publicCsrfHeaderName, requiresCsrfToken, validateCsrfToken } from "@/server/auth/csrf";
 import { resolveWorkbenchSession } from "@/server/auth/session";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { NextResponse } from "next/server";
@@ -18,9 +19,23 @@ export async function withLocalWorkbenchActor(
     return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
   }
 
-  const session = resolveWorkbenchSession(request);
+  const session = await resolveWorkbenchSession(request);
   if (!session.actor) {
     return NextResponse.json({ error: "请先登录后再继续。" }, { status: 401 });
+  }
+
+  if (requiresCsrfToken({ method: request.method, authMode: session.authMode })) {
+    if (!session.publicSession) {
+      return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
+    }
+    const isValidCsrf = await validateCsrfToken({
+      sessionId: session.publicSession.id,
+      userId: session.actor.userId,
+      token: request.headers.get(publicCsrfHeaderName),
+    });
+    if (!isValidCsrf) {
+      return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
+    }
   }
 
   const response = await handler({

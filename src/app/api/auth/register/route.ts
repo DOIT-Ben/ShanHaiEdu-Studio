@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     }
     const result = await registerPasswordUser(body, { request });
     return NextResponse.json(
-      { authenticated: true, user: result.user },
+      { authenticated: true, user: result.user, csrfToken: result.csrfToken },
       { status: 201, headers: { "set-cookie": result.setCookieHeader } },
     );
   } catch (error) {
