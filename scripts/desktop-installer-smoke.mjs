@@ -96,10 +96,22 @@ async function runExeHttpSmoke(exePath, cwd, port, id) {
     });
   }
 
+  return runExeHttpSmokeWithEnv(exePath, cwd, port, id);
+}
+
+async function runExeHttpSmokeWithEnv(exePath, cwd, port, id, extraEnv = {}) {
+  if (!existsSync(exePath)) {
+    return buildCheck(id, false, {
+      message: "Executable is missing.",
+      missing: [exePath],
+    });
+  }
+
   const child = spawn(exePath, [], {
     cwd: path.dirname(exePath),
     env: {
       ...process.env,
+      ...extraEnv,
       SHANHAI_DESKTOP_PORT: String(port),
       DATABASE_URL: `file:./test-results/stage35-desktop-smoke-${port}.db`,
       ARTIFACT_STORAGE_ROOT: path.join(cwd, "artifact-storage-root"),
@@ -144,6 +156,8 @@ async function runSilentInstallSmoke(installerPath, cwd, port, installerTimeoutM
   const installedExe = path.join(installDir, appExeName);
   const installedServer = path.join(installDir, "resources", "app", "desktop-bundle", "server.js");
   const uninstaller = path.join(installDir, `Uninstall ${appExeName}`);
+  const userDataDir = path.join(cwd, "test-results", "stage37-user-data");
+  const shortcutPath = resolveStartMenuShortcutPath();
   const installExited = await waitForProcessExit(installProcess, installerTimeoutMs);
   if (!installExited && !installProcess.killed && installProcess.exitCode === null) {
     installProcess.kill();
@@ -152,17 +166,34 @@ async function runSilentInstallSmoke(installerPath, cwd, port, installerTimeoutM
   const installedExeOk = existsSync(installedExe);
   const installedServerOk = existsSync(installedServer);
   const uninstallerOk = existsSync(uninstaller);
+  const registryBeforeUninstallOk = await checkUninstallRegistryEntry(installDir);
+  const startMenuShortcutBeforeUninstallOk = existsSync(shortcutPath);
   let installedExeHttpCheck = null;
   let uninstallCode = null;
 
   if (installedExeOk && installedServerOk) {
-    installedExeHttpCheck = await runExeHttpSmoke(installedExe, cwd, port, "installed-exe-http");
+    mkdirSync(userDataDir, { recursive: true });
+    installedExeHttpCheck = await runExeHttpSmokeWithEnv(installedExe, cwd, port, "installed-exe-http", {
+      SHANHAI_DESKTOP_USER_DATA_DIR: userDataDir,
+    });
   }
+
+  const userDataOk = checkDesktopUserData(userDataDir);
 
   if (uninstallerOk) {
     const uninstall = await execFileAsync(uninstaller, ["/S"], { cwd: installDir, timeoutMs: 60_000 });
     uninstallCode = uninstall.code;
   }
+
+  const cleanupState = await waitForUninstallCleanup({
+    installDir,
+    shortcutPath,
+    coreFiles: [installedExe, installedServer, uninstaller],
+    timeoutMs: 60_000,
+  });
+  const registryAfterUninstallOk = cleanupState.registryAfterUninstallOk;
+  const startMenuShortcutAfterUninstallOk = cleanupState.startMenuShortcutAfterUninstallOk;
+  const coreFilesAfterUninstallOk = cleanupState.coreFilesAfterUninstallOk;
 
   const checks = summarizeSilentInstallState({
     installExited,
@@ -180,6 +211,16 @@ async function runSilentInstallSmoke(installerPath, cwd, port, installerTimeoutM
   if (installedExeHttpCheck) {
     checks.splice(3, 0, installedExeHttpCheck);
   }
+  checks.push(
+    ...summarizeInstallExperienceState({
+      registryBeforeUninstallOk,
+      startMenuShortcutBeforeUninstallOk,
+      userDataOk,
+      registryAfterUninstallOk,
+      startMenuShortcutAfterUninstallOk,
+      coreFilesAfterUninstallOk,
+    }),
+  );
 
   await stopMatchingDesktopProcesses(cwd);
   return { checks };
@@ -221,6 +262,36 @@ export function summarizeSilentInstallState({
           ? "Silent uninstall exited with 0."
           : "Silent uninstall failed.",
       missing: uninstallerOk ? [] : [missing.uninstaller],
+    }),
+  ];
+}
+
+export function summarizeInstallExperienceState({
+  registryBeforeUninstallOk,
+  startMenuShortcutBeforeUninstallOk,
+  userDataOk,
+  registryAfterUninstallOk,
+  startMenuShortcutAfterUninstallOk,
+  coreFilesAfterUninstallOk,
+}) {
+  return [
+    buildCheck("uninstall-registry-entry", registryBeforeUninstallOk, {
+      message: registryBeforeUninstallOk ? "Windows uninstall registry entry is present." : "Windows uninstall registry entry is missing.",
+    }),
+    buildCheck("start-menu-shortcut", startMenuShortcutBeforeUninstallOk, {
+      message: startMenuShortcutBeforeUninstallOk ? "Start menu shortcut is present." : "Start menu shortcut is missing.",
+    }),
+    buildCheck("desktop-user-data", userDataOk, {
+      message: userDataOk ? "Desktop user data directories are present." : "Desktop user data directories are missing.",
+    }),
+    buildCheck("uninstall-removes-registry", !registryAfterUninstallOk, {
+      message: registryAfterUninstallOk ? "Windows uninstall registry entry remains after uninstall." : "Windows uninstall registry entry was removed.",
+    }),
+    buildCheck("uninstall-removes-start-menu", !startMenuShortcutAfterUninstallOk, {
+      message: startMenuShortcutAfterUninstallOk ? "Start menu shortcut remains after uninstall." : "Start menu shortcut was removed.",
+    }),
+    buildCheck("uninstall-removes-core-files", !coreFilesAfterUninstallOk, {
+      message: coreFilesAfterUninstallOk ? "Installed core files remain after uninstall." : "Installed core files were removed.",
     }),
   ];
 }
@@ -306,6 +377,40 @@ function waitForHttpOk(url, timeoutMs) {
     };
     attempt();
   });
+}
+
+async function checkUninstallRegistryEntry(installDir) {
+  const escapedInstallDir = installDir.replaceAll("'", "''");
+  const result = await execFileAsync("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    `$paths=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'); $found=$false; foreach($base in $paths){ Get-ChildItem $base -ErrorAction SilentlyContinue | ForEach-Object { $p=Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue; if($p.DisplayName -like 'ShanHaiEdu Studio*' -and (($p.InstallLocation -eq '${escapedInstallDir}') -or ($p.UninstallString -like '*stage35-install*') -or ($p.QuietUninstallString -like '*stage35-install*'))) { $found=$true } } }; if($found){ exit 0 } else { exit 3 }`,
+  ]);
+  return result.code === 0;
+}
+
+async function waitForUninstallCleanup({ installDir, shortcutPath, coreFiles, timeoutMs }) {
+  const startedAt = Date.now();
+  while (true) {
+    const registryAfterUninstallOk = await checkUninstallRegistryEntry(installDir);
+    const startMenuShortcutAfterUninstallOk = existsSync(shortcutPath);
+    const coreFilesAfterUninstallOk = coreFiles.some((filePath) => existsSync(filePath));
+    if (!registryAfterUninstallOk && !startMenuShortcutAfterUninstallOk && !coreFilesAfterUninstallOk) {
+      return { registryAfterUninstallOk, startMenuShortcutAfterUninstallOk, coreFilesAfterUninstallOk };
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      return { registryAfterUninstallOk, startMenuShortcutAfterUninstallOk, coreFilesAfterUninstallOk };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+function resolveStartMenuShortcutPath() {
+  return path.join(process.env.APPDATA ?? "", "Microsoft", "Windows", "Start Menu", "Programs", "ShanHaiEdu Studio.lnk");
+}
+
+function checkDesktopUserData(userDataDir) {
+  return existsSync(path.join(userDataDir, "data")) && existsSync(path.join(userDataDir, "artifact-storage-root"));
 }
 
 async function stopProcessTree(pid) {

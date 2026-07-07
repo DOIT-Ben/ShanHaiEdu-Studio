@@ -10,6 +10,8 @@ const repoRoot = path.resolve(desktopDir, "..");
 let serverProcess = null;
 let mainWindow = null;
 
+configureDesktopUserDataPath();
+
 async function createMainWindow() {
   const port = resolveConfiguredDesktopPort() ?? (await findOpenPort());
   const appPaths = ensureDesktopDataPaths();
@@ -40,6 +42,13 @@ async function createMainWindow() {
   });
 
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+}
+
+function configureDesktopUserDataPath() {
+  const configuredUserData = process.env.SHANHAI_DESKTOP_USER_DATA_DIR?.trim();
+  if (!configuredUserData) return;
+  mkdirSync(configuredUserData, { recursive: true });
+  app.setPath("userData", configuredUserData);
 }
 
 function ensureDesktopDataPaths() {

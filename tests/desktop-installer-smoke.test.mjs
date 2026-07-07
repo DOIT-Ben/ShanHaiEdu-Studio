@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   resolveInstallerTimeoutMs,
   runDesktopInstallerSmoke,
+  summarizeInstallExperienceState,
   summarizeSilentInstallState,
 } from "../scripts/desktop-installer-smoke.mjs";
 
@@ -77,6 +78,29 @@ test("silent installer timeout defaults to a full extraction window", () => {
   assert.equal(resolveInstallerTimeoutMs("120000"), 120_000);
   assert.equal(resolveInstallerTimeoutMs("1000"), 600_000);
   assert.equal(resolveInstallerTimeoutMs("not-a-number"), 600_000);
+});
+
+test("install experience diagnostics cover system entrypoints and uninstall residue", () => {
+  const result = summarizeInstallExperienceState({
+    registryBeforeUninstallOk: true,
+    startMenuShortcutBeforeUninstallOk: true,
+    userDataOk: true,
+    registryAfterUninstallOk: false,
+    startMenuShortcutAfterUninstallOk: false,
+    coreFilesAfterUninstallOk: false,
+  });
+
+  assert.deepEqual(
+    result.map((item) => [item.id, item.ok]),
+    [
+      ["uninstall-registry-entry", true],
+      ["start-menu-shortcut", true],
+      ["desktop-user-data", true],
+      ["uninstall-removes-registry", true],
+      ["uninstall-removes-start-menu", true],
+      ["uninstall-removes-core-files", true],
+    ],
+  );
 });
 
 function createInstallerSmokeFixture() {

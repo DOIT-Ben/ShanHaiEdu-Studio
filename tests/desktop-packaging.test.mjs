@@ -32,6 +32,8 @@ test("desktop packaging uses Electron without exposing Node APIs in preload", ()
 
   const main = readFileSync(path.join(root, "desktop", "electron-main.mjs"), "utf8");
   assert.match(main, /SHANHAI_DESKTOP_PORT/);
+  assert.match(main, /SHANHAI_DESKTOP_USER_DATA_DIR/);
+  assert.match(main, /app\.setPath\(["']userData["']/);
   assert.match(main, /ELECTRON_RUN_AS_NODE/);
 });
 
