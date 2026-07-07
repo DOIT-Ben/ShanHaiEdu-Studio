@@ -4,6 +4,11 @@ out/
 dist/
 *.log
 *.tsbuildinfo
+.env
+dev.db
+dev.db-journal
+prisma/*.db
+prisma/*.db-journal
 
 # Local verification screenshots
 chrome-*.png
@@ -13,3 +18,5 @@ mobile-*.png
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip
 ShanHaiEdu-API-Ledger-Standalone/
+
+/src/generated/prisma
