@@ -4,8 +4,12 @@ import { test } from "node:test";
 
 import {
   buildVideoEndpointUrl,
+  buildVideoQueryUrl,
+  classifyVideoWaitFailure,
   extractTaskId,
   extractVideoResultUrl,
+  resolveVideoTaskId,
+  summarizeVideoTaskPayload,
   normalizeVideoStatus,
   validateMp4Buffer,
 } from "../scripts/video-smoke.mjs";
@@ -38,6 +42,45 @@ test("builds video submit endpoint from root, v1, or full endpoint base urls", (
   assert.equal(buildVideoEndpointUrl("https://video.example.test"), "https://video.example.test/v1/videos");
   assert.equal(buildVideoEndpointUrl("https://video.example.test/v1"), "https://video.example.test/v1/videos");
   assert.equal(buildVideoEndpointUrl("https://video.example.test/v1/videos"), "https://video.example.test/v1/videos");
+});
+
+test("builds video query endpoint without exposing raw task ids in public output", () => {
+  assert.equal(buildVideoQueryUrl("https://video.example.test/v1", "task id/1"), "https://video.example.test/v1/videos/task%20id%2F1");
+});
+
+test("resolves video resume task id from explicit env before cached task metadata", () => {
+  assert.deepEqual(resolveVideoTaskId({ VIDEO_SMOKE_TASK_ID: " explicit-task " }, { taskId: "cached-task" }), {
+    taskId: "explicit-task",
+    source: "env",
+  });
+  assert.deepEqual(resolveVideoTaskId({}, { taskId: " cached-task " }), {
+    taskId: "cached-task",
+    source: "cache",
+  });
+  assert.equal(resolveVideoTaskId({}, null), null);
+});
+
+test("summarizes video task payload without leaking task ids or result urls", () => {
+  const summary = summarizeVideoTaskPayload({
+    id: "secret-task-id",
+    status: "queued",
+    progress: 0,
+    result: { url: "https://video.example.test/private/result.mp4" },
+  });
+
+  assert.deepEqual(summary, {
+    status: "processing",
+    progress: 0,
+    hasResultUrl: true,
+  });
+  assert.doesNotMatch(JSON.stringify(summary), /secret-task-id/);
+  assert.doesNotMatch(JSON.stringify(summary), /https:\/\/video\.example\.test/);
+});
+
+test("classifies long-running queued video tasks as stuck instead of generic timeout", () => {
+  assert.equal(classifyVideoWaitFailure({ lastStatus: "processing", hasTaskId: true }), "video_task_stuck");
+  assert.equal(classifyVideoWaitFailure({ lastStatus: "unknown", hasTaskId: true }), "video_task_timeout");
+  assert.equal(classifyVideoWaitFailure({ lastStatus: "processing", hasTaskId: false }), "video_task_timeout");
 });
 
 test("validates MP4 buffers by ftyp box", () => {

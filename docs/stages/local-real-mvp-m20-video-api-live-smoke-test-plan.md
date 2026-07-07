@@ -21,6 +21,10 @@ node --test tests\video-smoke-script.test.mjs
 - 能从 `id`、`task_id`、`data.id`、`data.task_id` 中解析任务 id。
 - 能兼容成功、处理中和失败状态。
 - 能从台账列出的 URL 字段中解析结果 URL，但不打印 URL。
+- 能从根地址、`/v1` 地址和完整 `/v1/videos` endpoint 构建 query endpoint，并正确编码任务 id。
+- 能优先使用 `VIDEO_SMOKE_TASK_ID` 复查显式任务，其次使用 `.tmp\video-smoke\last-task.json` 缓存任务。
+- 能生成只包含 `status`、`progress`、`hasResultUrl` 的脱敏任务摘要，不泄露任务 id 或远程结果 URL。
+- 能把已获取 task id 且长期处于处理中状态的任务归类为 `video_task_stuck`，而不是泛化 timeout。
 - 能识别 MP4 `ftyp` box。
 - 缺少所选通道需要的 API key 或 base URL 时脚本 exit 非 0。
 - 缺 env 输出不包含 key、Bearer、远程 URL 或堆栈。
@@ -87,5 +91,6 @@ git check-ignore -v .env .tmp
 
 - 如果 submit 返回 401/403，只记录脱敏状态，不打印 key。
 - 如果 query 超时或任务失败，记录 `video_task_timeout` 或 `video_task_failed`，不把 submit 成功当完成。
+- 如果 query 已有 task id 且长期停留在排队或处理中，记录 `video_task_stuck`，并保留 `.tmp\video-smoke\last-task.json` 供后续复查。
 - 如果下载/解码不是 MP4，记录 `invalid_video_output`，不把任务成功当完成。
 - 如果 live smoke 超时，记录 timeout，并保留现有 MVP 状态不变。

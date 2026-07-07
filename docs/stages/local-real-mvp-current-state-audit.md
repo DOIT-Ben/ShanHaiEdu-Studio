@@ -348,11 +348,29 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 - `npm test` 通过：Node 26 tests passed；Vitest 18 files / 73 tests passed。
 - `npm run build` 通过，新增 `/image` 动态 route。
 
+### 3.17 M20 视频真实 API live smoke
+
+M20 已把视频能力从台账 frozen 状态推进到服务端真实 live smoke：
+
+- 新增 `scripts\video-smoke.mjs`，支持异步视频任务 submit/query/download。
+- 新增 `tests\video-smoke-script.test.mjs`，覆盖任务 id 解析、状态归一、结果 URL 解析、query endpoint 拼接、可恢复任务选择、脱敏状态摘要、stuck 分类、MP4 校验和失败输出脱敏。
+- 脚本支持 `VIDEO_SMOKE_TASK_ID` 或 `.tmp\video-smoke\last-task.json` 复查已有任务，避免排障时重复 submit。
+- 持续排队任务会分类为 `video_task_stuck`，不再只给泛化 timeout。
+- 真实 live smoke 已通过固定视频通道完成 submit/query/download，本地 MP4 文件保存到 `.tmp\video-smoke\`，并记录 bytes、sha256、mime 和 `videoValid=true`。
+- 脚本输出不包含 key、token、私有端点、任务 id、远程视频 URL 或完整 provider 响应。
+
+最近一次 M20 验收记录显示：
+
+- `node --test tests\video-smoke-script.test.mjs` 红灯后绿灯：11 tests passed。
+- `node scripts\video-smoke.mjs` 通过：`ok=true`、`provider=video_generation`、`channel=octo`、`model=omni_flash-10s`、`taskStatus=completed`、`bytes=2511817`、`videoValid=true`、`mime=video/mp4`。
+- `npm test` 通过：Node 37 tests passed；Vitest 18 files / 73 tests passed。
+- `npm run build` 通过。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，并已具备后端 artifact adapter 保存本地图片 metadata 的能力。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，并已具备后端 artifact adapter 保存本地图片 metadata 的能力。视频真实 API 阶段已通过固定 `octo` 通道完成服务端 submit/query/download live smoke，并保存本地 MP4 metadata 级证据。
 
 当前不能表述为：
 
@@ -360,14 +378,14 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 - Coze 官方 OpenAPI 主链路已完成。
 - 教师 UI 已暴露真实 Coze PPT 生成按钮。
 - PPTX 已完成图片、动画和视觉精修。
-- 视频成片已生成。
+- 视频 artifact adapter、材料包视频资产或教师 UI 真实视频生成入口已完成。
 - 已具备账号、权限或生产级多人协作。
 - 已完成生产部署或公网发布。
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 89%-93%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、真实 Coze PPT smoke、Coze PPT artifact adapter、图片真实 API smoke、图片 artifact adapter、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 51%-59%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke 与图片 artifact adapter 已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、图片下载/材料包集成、视频生成、账号权限、生产部署、安全与运维仍未完成。
+- 内部骨架成熟度：约 90%-94%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、真实 Coze PPT smoke、Coze PPT artifact adapter、图片真实 API smoke、图片 artifact adapter、视频真实 API smoke、阶段测试与文档闭环已经成形。
+- 生产就绪度：约 55%-63%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke、图片 artifact adapter 与视频 live smoke 已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、图片下载/材料包集成、视频 artifact adapter、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
@@ -378,7 +396,7 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 - Coze PPT 本地文件当前存储在 `.tmp`，生产部署前必须替换为部署卷或对象存储。
 - M18 图片 live smoke 已通过，M19 已接入后端 artifact adapter；但当前尚未提供图片下载 route、最终材料包图片资产、PPTX 内嵌图片或教师 UI 入口。
 - M18 `primary` 图片通道曾返回 403，当前固定通道为 `free`；后续切换通道必须重新跑 smoke。
-- M20 已新增视频 smoke 脚本并完成真实 submit/query 探针；当前固定视频通道返回 task id 且 query 可访问，但任务在本轮窗口内停留 `queued`，尚未完成 download 和 MP4 校验。
+- M20 视频 live smoke 已通过，但当前只证明服务端 smoke 级 submit/query/download 和 MP4 校验；尚未提供视频 artifact adapter、材料包视频资产、教师 UI 入口、生产队列或质量验收。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown 与最小 PPTX，但不包含图片、视频、动画或视觉精修资产。
@@ -390,13 +408,13 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 
 优先级从高到低：
 
-1. 继续 M20：视频真实 API live smoke，优先补 retry/stuck 记录并择机重跑单任务；若仍持续 `queued`，切换备用视频模型或 provider 做同等脱敏 smoke。
+1. 进入 M21：视频后端 artifact adapter，按服务端 route、`.tmp` 存储约束、脱敏响应、失败恢复和未来队列边界推进。
 2. 做图片后续文件能力拆分：图片下载 route、材料包集成、PPTX 内嵌图片分别按产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
 3. 做 WebKit、真实移动设备或触摸手势专项验证。
 4. 在进入多人或部署前，先定义账号/权限、数据库迁移和长任务队列触发条件。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过，M20 视频真实 API live smoke 已通过。
 
-因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke 与后端 artifact 能力可用 + 图片真实 API smoke 与后端 artifact 能力可用”的候选状态继续推进，但不能作为“图片下载/材料包完整集成、视频生产 MVP、账号权限和生产部署已完成”的最终状态。
+因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke 与后端 artifact 能力可用 + 图片真实 API smoke 与后端 artifact 能力可用 + 视频真实 API smoke 可用”的候选状态继续推进，但不能作为“图片下载/材料包完整集成、视频生产链路、账号权限和生产部署已完成”的最终状态。

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(root, ".tmp", "video-smoke");
+const lastTaskPath = path.join(outputDir, "last-task.json");
 
 if (process.env.SHANHAI_VIDEO_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -71,6 +72,35 @@ export function buildVideoQueryUrl(baseUrl, taskId) {
   return `${buildVideoEndpointUrl(baseUrl)}/${encodeURIComponent(taskId)}`;
 }
 
+export function resolveVideoTaskId(env, cachedTask) {
+  const explicitTaskId = env.VIDEO_SMOKE_TASK_ID?.trim();
+  if (explicitTaskId) {
+    return { taskId: explicitTaskId, source: "env" };
+  }
+
+  const cachedTaskId = cachedTask && typeof cachedTask === "object" ? cachedTask.taskId?.trim() : "";
+  if (cachedTaskId) {
+    return { taskId: cachedTaskId, source: "cache" };
+  }
+
+  return null;
+}
+
+export function summarizeVideoTaskPayload(payload) {
+  return {
+    status: normalizeVideoStatus(readStatus(payload)),
+    progress: readProgress(payload),
+    hasResultUrl: hasVideoResultUrl(payload),
+  };
+}
+
+export function classifyVideoWaitFailure({ lastStatus, hasTaskId }) {
+  if (hasTaskId && normalizeVideoStatus(lastStatus) === "processing") {
+    return "video_task_stuck";
+  }
+  return "video_task_timeout";
+}
+
 export function validateMp4Buffer(buffer) {
   if (buffer.length < 12) {
     return { valid: false, mime: "application/octet-stream", extension: ".bin" };
@@ -123,8 +153,13 @@ async function runVideoSmoke() {
     process.exit(2);
   }
 
-  const submitPayload = await submitVideoTask(config);
-  const taskId = extractTaskId(submitPayload);
+  const cachedTask = process.env.VIDEO_SMOKE_RESUME_LAST === "1" ? readCachedVideoTask() : null;
+  const resumeTask = resolveVideoTaskId(process.env, cachedTask);
+  const submitPayload = resumeTask ? null : await submitVideoTask(config);
+  const taskId = resumeTask?.taskId || extractTaskId(submitPayload);
+  const taskSource = resumeTask?.source || "submit";
+  saveCachedVideoTask({ taskId, config, status: "submitted" });
+
   const completedPayload = await pollVideoTask(config, taskId);
   const videoUrl = extractVideoResultUrl(completedPayload);
   const videoBuffer = await downloadVideo(videoUrl, config.timeoutMs);
@@ -144,6 +179,7 @@ async function runVideoSmoke() {
       provider: "video_generation",
       channel: config.channel,
       model: config.model,
+      taskSource,
       taskStatus: "completed",
       fileName,
       localOutput: path.relative(root, outputPath).replaceAll("\\", "/"),
@@ -181,6 +217,7 @@ async function submitVideoTask(config) {
 }
 
 async function pollVideoTask(config, taskId) {
+  let lastSummary = null;
   for (let attempt = 0; attempt < config.maxPolls; attempt += 1) {
     const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId), {
       method: "GET",
@@ -196,7 +233,9 @@ async function pollVideoTask(config, taskId) {
     }
 
     const payload = await response.json();
-    const status = normalizeVideoStatus(readStatus(payload));
+    lastSummary = summarizeVideoTaskPayload(payload);
+    saveCachedVideoTask({ taskId, config, status: lastSummary.status, progress: lastSummary.progress });
+    const status = lastSummary.status;
     if (status === "completed") {
       return payload;
     }
@@ -206,7 +245,10 @@ async function pollVideoTask(config, taskId) {
     await sleep(config.pollIntervalMs);
   }
 
-  throw new Error("video_task_timeout");
+  throw createVideoSmokeError(
+    classifyVideoWaitFailure({ lastStatus: lastSummary?.status, hasTaskId: Boolean(taskId) }),
+    lastSummary,
+  );
 }
 
 function readStatus(payload) {
@@ -214,6 +256,64 @@ function readStatus(payload) {
   const data = value.data && typeof value.data === "object" ? value.data : {};
   const result = value.result && typeof value.result === "object" ? value.result : {};
   return value.status || value.state || data.status || data.state || result.status || result.state;
+}
+
+function readProgress(payload) {
+  const value = payload && typeof payload === "object" ? payload : {};
+  const data = value.data && typeof value.data === "object" ? value.data : {};
+  const result = value.result && typeof value.result === "object" ? value.result : {};
+  const progress = value.progress ?? data.progress ?? result.progress;
+  if (typeof progress === "number" && Number.isFinite(progress)) {
+    return progress;
+  }
+  if (typeof progress === "string" && progress.trim()) {
+    const parsed = Number.parseFloat(progress);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function hasVideoResultUrl(payload) {
+  try {
+    extractVideoResultUrl(payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readCachedVideoTask() {
+  if (!existsSync(lastTaskPath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(readFileSync(lastTaskPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedVideoTask({ taskId, config, status, progress }) {
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(
+    lastTaskPath,
+    JSON.stringify(
+      {
+        taskId,
+        channel: config.channel,
+        model: config.model,
+        size: config.size,
+        status,
+        progress: progress ?? null,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function downloadVideo(url, timeoutMs) {
@@ -243,17 +343,25 @@ if (isMainModule()) {
   try {
     await runVideoSmoke();
   } catch (error) {
+    const taskSummary = error && typeof error === "object" ? error.publicSummary : null;
     console.log(
       JSON.stringify({
         ok: false,
         code: "video_smoke_failed",
         provider: "video_generation",
         reason: safeErrorReason(error),
+        taskSummary,
         message: "Video smoke failed; check credentials, provider status, task lifecycle, download contract, and MP4 validity.",
       }),
     );
     process.exit(1);
   }
+}
+
+function createVideoSmokeError(reason, publicSummary) {
+  const error = new Error(reason);
+  error.publicSummary = publicSummary || null;
+  return error;
 }
 
 function safeErrorReason(error) {
