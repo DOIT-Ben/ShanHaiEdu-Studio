@@ -1,7 +1,8 @@
 "use client";
 
-import { Clipboard, Download, Eye, Image as ImageIcon, SendToBack } from "lucide-react";
+import { Clipboard, Download, Eye, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
+import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +21,8 @@ type ArtifactDetailSheetProps = {
   onUseAsInput: (item: ArtifactItem) => void;
   onConfirm: (item: ArtifactItem) => void;
   onRegenerate: (item: ArtifactItem) => void;
+  onGenerateRealAsset: (item: ArtifactItem, assetKind: RealAssetKind) => void;
+  realAssetGenerationKey: string | null;
 };
 
 function PreviewThumb({ label }: { label: string }) {
@@ -40,12 +43,23 @@ export function ArtifactDetailSheet({
   onUseAsInput,
   onConfirm,
   onRegenerate,
+  onGenerateRealAsset,
+  realAssetGenerationKey,
 }: ArtifactDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="max-w-[520px]">
         {item && (
-          <ArtifactDetailContent projectId={projectId} item={item} onCopy={onCopy} onUseAsInput={onUseAsInput} onConfirm={onConfirm} onRegenerate={onRegenerate} />
+          <ArtifactDetailContent
+            projectId={projectId}
+            item={item}
+            onCopy={onCopy}
+            onUseAsInput={onUseAsInput}
+            onConfirm={onConfirm}
+            onRegenerate={onRegenerate}
+            onGenerateRealAsset={onGenerateRealAsset}
+            realAssetGenerationKey={realAssetGenerationKey}
+          />
         )}
       </SheetContent>
     </Sheet>
@@ -59,6 +73,8 @@ function ArtifactDetailContent({
   onUseAsInput,
   onConfirm,
   onRegenerate,
+  onGenerateRealAsset,
+  realAssetGenerationKey,
 }: {
   projectId: string;
   item: ArtifactItem;
@@ -66,11 +82,14 @@ function ArtifactDetailContent({
   onUseAsInput: (item: ArtifactItem) => void;
   onConfirm: (item: ArtifactItem) => void;
   onRegenerate: (item: ArtifactItem) => void;
+  onGenerateRealAsset: (item: ArtifactItem, assetKind: RealAssetKind) => void;
+  realAssetGenerationKey: string | null;
 }) {
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
   const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
   const { canDownloadPptx, downloadPptx, downloadPptxLabel } = useArtifactPptxDownload(projectId, item);
   const { canDownloadPackage, downloadPackage, downloadPackageLabel } = useFinalPackageDownload(projectId, item);
+  const realAssetActions = getRealAssetGenerationActions(item);
 
   return (
     <>
@@ -167,10 +186,17 @@ function ArtifactDetailContent({
             {downloadPackageLabel}
           </Button>
         )}
-        <Button variant="secondary">
-          <ImageIcon className="h-4 w-4" />
-          查看图片
-        </Button>
+        {realAssetActions.map((action) => {
+          const actionKey = `${item.artifactId}:${action.kind}`;
+          const pending = realAssetGenerationKey === actionKey;
+          const Icon = action.kind === "pptx" ? FileDown : action.kind === "image" ? ImageIcon : Video;
+          return (
+            <Button key={action.kind} variant="secondary" disabled={Boolean(realAssetGenerationKey)} onClick={() => onGenerateRealAsset(item, action.kind)}>
+              <Icon className="h-4 w-4" />
+              {pending ? action.pendingLabel : action.label}
+            </Button>
+          );
+        })}
         {item.actions.canConfirm && <Button onClick={() => onConfirm(item)}>确认使用</Button>}
         {item.actions.canRegenerate && (
           <Button variant="ghost" onClick={() => onRegenerate(item)}>

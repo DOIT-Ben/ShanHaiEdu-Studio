@@ -126,6 +126,8 @@ export function MediaWorkbench() {
         onUseAsInput={controller.useAsInput}
         onConfirm={controller.confirmArtifact}
         onRegenerate={controller.regenerateArtifact}
+        onGenerateRealAsset={controller.generateRealAsset}
+        realAssetGenerationKey={controller.realAssetGenerationKey}
       />
     </TooltipProvider>
   );

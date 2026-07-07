@@ -1,5 +1,6 @@
 import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as seedProjects } from "@/lib/mock-data";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
+import type { RealAssetKind } from "@/lib/artifact-real-assets";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -98,6 +99,11 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
           summary: "请重新生成这一版内容。",
           markdownContent: "# 重做草稿\n\n- 已保留旧版本。\n- 新版本完成后请重新确认是否采用。",
         }),
+      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+    },
+    generateRealAsset(projectId, artifactId, assetKind) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactId}/${realAssetRouteSegment(assetKind)}`, {
+        method: "POST",
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
   };
@@ -234,7 +240,29 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       touchProject(projectId, "等待确认");
       return snapshot(projectId);
     },
+    async generateRealAsset(projectId, artifactKey, assetKind) {
+      const current = ensureSnapshot(projectId);
+      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
+      current.artifacts = current.artifacts.map((item) =>
+        item.key === artifactKey || item.artifactId === artifactKey
+          ? {
+              ...item,
+              status: "needs_review",
+              updatedAt: "刚刚",
+              summary: `${item.summary} 已请求生成真实素材，完成后请核对再用于授课。`,
+            }
+          : item,
+      );
+      current.activeArtifactKey = artifactKey;
+      touchProject(projectId, assetKind === "video" ? "生成导入视频" : "生成课堂素材");
+      return snapshot(projectId);
+    },
   };
+}
+
+function realAssetRouteSegment(assetKind: RealAssetKind) {
+  if (assetKind === "pptx") return "coze-ppt";
+  return assetKind;
 }
 
 export function createDefaultWorkbenchDataSource(): WorkbenchDataSource {

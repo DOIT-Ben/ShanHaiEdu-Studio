@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { RealAssetKind } from "@/lib/artifact-real-assets";
 
 export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale";
 
@@ -72,6 +73,7 @@ export type WorkbenchDataSource = {
   sendMessage: (projectId: string, body: string, reference: string | null) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+  generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind) => Promise<WorkbenchSnapshot>;
 };
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";

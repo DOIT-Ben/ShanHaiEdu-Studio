@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState, WorkbenchSnapshot } from "@/lib/types";
@@ -26,6 +27,7 @@ export function useWorkbenchController() {
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [activeArtifactKey, setActiveArtifactKey] = useState("");
+  const [realAssetGenerationKey, setRealAssetGenerationKey] = useState<string | null>(null);
 
   const activeArtifact = useMemo(
     () => artifacts.find((item) => item.key === activeArtifactKey) ?? artifacts[0] ?? null,
@@ -192,6 +194,30 @@ export function useWorkbenchController() {
     }
   }
 
+  async function generateRealAsset(item: ArtifactItem, assetKind: RealAssetKind) {
+    if (!activeProjectId || !item.artifactId) {
+      setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
+      return;
+    }
+    const action = getRealAssetGenerationActions(item).find((candidate) => candidate.kind === assetKind);
+    if (!action) {
+      setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
+      return;
+    }
+
+    const nextGenerationKey = `${item.artifactId}:${assetKind}`;
+    setRealAssetGenerationKey(nextGenerationKey);
+    try {
+      const snapshot = await dataSource.generateRealAsset(activeProjectId, item.artifactId, assetKind);
+      applySnapshot(snapshot);
+      setNotice(action.successNotice);
+    } catch {
+      setNotice(action.failureNotice);
+    } finally {
+      setRealAssetGenerationKey(null);
+    }
+  }
+
   async function sendPrompt() {
     if (!input.trim() && !reference) {
       flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
@@ -255,6 +281,8 @@ export function useWorkbenchController() {
     useAsInput,
     confirmArtifact,
     regenerateArtifact,
+    generateRealAsset,
+    realAssetGenerationKey,
     sendPrompt,
     showRecovery,
   };

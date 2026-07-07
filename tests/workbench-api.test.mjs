@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const root = process.cwd();
 const apiSourcePath = path.join(root, "src", "lib", "workbench-api.ts");
 const actionsSourcePath = path.join(root, "src", "lib", "workbench-actions.ts");
+const realAssetActionsSourcePath = path.join(root, "src", "lib", "artifact-real-assets.ts");
 
 const seedProjects = [
   {
@@ -230,6 +231,29 @@ function loadWorkbenchActionsModule() {
   return module.exports;
 }
 
+function loadRealAssetActionsModule() {
+  const ts = require("typescript");
+  const compiled = ts.transpileModule(readFileSync(realAssetActionsSourcePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+  }).outputText;
+
+  const module = { exports: {} };
+  vm.runInNewContext(compiled, {
+    module,
+    exports: module.exports,
+    require: () => {
+      throw new Error("Unexpected import in artifact-real-assets test");
+    },
+    console,
+  });
+
+  return module.exports;
+}
+
 test("API client uses the shared workbench contract paths", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
@@ -404,6 +428,37 @@ test("API client regenerates artifacts through the backend route and refreshes t
   assert.equal(snapshot.project.id, "backend-project-a");
 });
 
+test("API client triggers real asset generation through backend routes and refreshes the snapshot", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () =>
+          init?.method === "POST"
+            ? { artifact: { ...backendArtifact, status: "needs_review", isApproved: false, version: 2 } }
+            : backendSnapshot,
+      };
+    },
+  });
+
+  await client.generateRealAsset("project-a", "artifact-ppt-v1", "pptx");
+  await client.generateRealAsset("project-a", "artifact-ppt-v1", "image");
+  await client.generateRealAsset("project-a", "artifact-video-plan-v1", "video");
+
+  assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-ppt-v1/coze-ppt");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[1].url, "/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[2].url, "/api/workbench/projects/project-a/artifacts/artifact-ppt-v1/image");
+  assert.equal(calls[2].init.method, "POST");
+  assert.equal(calls[3].url, "/api/workbench/projects/project-a/snapshot");
+  assert.equal(calls[4].url, "/api/workbench/projects/project-a/artifacts/artifact-video-plan-v1/video");
+  assert.equal(calls[4].init.method, "POST");
+  assert.equal(calls[5].url, "/api/workbench/projects/project-a/snapshot");
+});
+
 test("artifact action resolver blocks placeholders and prefers real artifact ids", () => {
   const { resolveArtifactActionKey } = loadWorkbenchActionsModule();
   const placeholder = {
@@ -427,6 +482,48 @@ test("artifact action resolver blocks placeholders and prefers real artifact ids
   assert.equal(resolveArtifactActionKey(placeholder, "confirm"), null);
   assert.equal(resolveArtifactActionKey(backendArtifactItem, "confirm"), "artifact-requirement-v1");
   assert.equal(resolveArtifactActionKey(developmentArtifactItem, "confirm"), "intro-video-plan");
+});
+
+test("real asset generation actions are teacher-facing and scoped to supported artifacts", () => {
+  const { getRealAssetGenerationActions } = loadRealAssetActionsModule();
+  const pptArtifact = {
+    ...seedArtifacts[1],
+    key: "artifact-ppt-v1",
+    artifactId: "artifact-ppt-v1",
+    nodeKey: "ppt_draft",
+    kind: "ppt_draft",
+    title: "PPT 大纲与逐页脚本",
+  };
+  const videoArtifact = {
+    ...seedArtifacts[1],
+    key: "artifact-video-plan-v1",
+    artifactId: "artifact-video-plan-v1",
+    nodeKey: "intro_video_plan",
+    kind: "intro_video_plan",
+    title: "导入视频方案",
+  };
+  const finalDeliveryArtifact = {
+    ...seedArtifacts[1],
+    key: "artifact-final-v1",
+    artifactId: "artifact-final-v1",
+    nodeKey: "final_delivery",
+    kind: "final_delivery",
+    title: "最终交付清单",
+  };
+
+  const pptActions = getRealAssetGenerationActions(pptArtifact);
+  assert.equal(pptActions.map((action) => action.kind).join(","), "pptx,image");
+  assert.equal(pptActions.map((action) => action.label).join(","), "生成真实 PPTX,生成课堂视觉图");
+  assert.match(pptActions[0].successNotice, /真实 PPTX/);
+  assert.match(pptActions[1].successNotice, /课堂视觉图/);
+
+  const videoActions = getRealAssetGenerationActions(videoArtifact);
+  assert.equal(videoActions.map((action) => action.kind).join(","), "video");
+  assert.equal(videoActions.map((action) => action.label).join(","), "生成导入视频");
+
+  assert.equal(getRealAssetGenerationActions(finalDeliveryArtifact).length, 0);
+  const visibleText = [...pptActions, ...videoActions].flatMap((action) => [action.label, action.pendingLabel, action.successNotice, action.failureNotice]).join("\n");
+  assert.equal(/schema|manifest|provider|node_id|storage|API|debug|local path/i.test(visibleText), false);
 });
 
 test("API client normalizes failed responses to teacher-facing errors", async () => {
@@ -478,4 +575,9 @@ test("development adapter updates snapshots without pretending to be production 
   const regeneratedIntro = afterRegenerate.artifacts.find((item) => item.key === "intro-video-plan");
   assert.equal(regeneratedIntro.status, "needs_review");
   assert.match(regeneratedIntro.updatedAt, /刚刚/);
+
+  const afterGenerate = await adapter.generateRealAsset("project-a", "intro-video-plan", "video");
+  const generatedIntro = afterGenerate.artifacts.find((item) => item.key === "intro-video-plan");
+  assert.equal(generatedIntro.status, "needs_review");
+  assert.match(generatedIntro.summary, /真实素材/);
 });
