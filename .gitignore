@@ -4,6 +4,9 @@ out/
 dist/
 *.log
 *.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
 .env
 dev.db
 dev.db-journal

@@ -77,6 +77,34 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
     });
   });
 
+  it("approves the latest artifact and exposes it through the node snapshot", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "确认产物项目" });
+
+    const artifact = await service.saveArtifact(project.id, {
+      nodeKey: "requirement_spec",
+      kind: "requirement_spec",
+      title: "需求规格说明书",
+      status: "needs_review",
+      summary: "等待教师确认。",
+      markdownContent: "## 需求规格",
+      structuredContent: {},
+    });
+
+    await service.approveArtifact(project.id, "requirement_spec");
+
+    const snapshot = await service.getProjectSnapshot(project.id);
+    expect(snapshot.artifacts[0]).toMatchObject({
+      id: artifact.id,
+      status: "approved",
+      isApproved: true,
+    });
+    expect(snapshot.nodes.find((node) => node.key === "requirement_spec")).toMatchObject({
+      status: "approved",
+      approvedArtifactId: artifact.id,
+    });
+  });
+
   it("keeps two projects isolated in snapshots", async () => {
     const service = createWorkbenchService();
     const projectA = await service.createProject({ title: "A 项目" });

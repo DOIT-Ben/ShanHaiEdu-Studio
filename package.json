@@ -8,7 +8,15 @@
     "test": "node --test tests/*.test.mjs && vitest run",
     "start": "next start",
     "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:stage1": "playwright test tests/e2e/stage1-foundation.spec.ts --project=chromium-desktop",
+    "test:e2e:stage2:preflight": "node scripts/e2e-stage2-preflight.mjs",
+    "test:e2e:stage2": "node scripts/run-stage2-e2e.mjs",
+    "test:e2e:stage3:preflight": "node scripts/e2e-stage3-preflight.mjs",
+    "test:e2e:report": "playwright show-report playwright-report",
+    "playwright:install": "playwright install chromium",
     "db:generate": "prisma generate",
+    "db:init": "node scripts/init-sqlite-schema.mjs",
     "db:push": "prisma db push",
     "test:stage1": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage1-contract.test.ts",
     "test:stage2": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage2-workflow-lite.test.ts",
@@ -40,6 +48,7 @@
     "tailwindcss": "^4.1.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
