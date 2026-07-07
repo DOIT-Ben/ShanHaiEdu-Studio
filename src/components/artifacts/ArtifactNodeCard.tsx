@@ -46,6 +46,7 @@ export function ArtifactNodeCard({
     return (
       <button
         type="button"
+        aria-label={`${item.title}，${meta.label}`}
         onClick={() => onOpen(item)}
         className={cn(
           "w-full rounded-md px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",

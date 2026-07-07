@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ListTree } from "lucide-react";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
@@ -13,6 +14,22 @@ import { useWorkbenchController } from "@/hooks/useWorkbenchController";
 
 export function MediaWorkbench() {
   const controller = useWorkbenchController();
+  const [projectSheetOpen, setProjectSheetOpen] = useState(false);
+
+  function selectProjectFromSheet(projectId: string) {
+    controller.selectProject(projectId);
+    setProjectSheetOpen(false);
+  }
+
+  function createProjectFromSheet() {
+    controller.createProject();
+    setProjectSheetOpen(false);
+  }
+
+  function openDetailFromRail(item: Parameters<typeof controller.openDetail>[0]) {
+    controller.openDetail(item);
+    controller.setRailOpen(false);
+  }
 
   return (
     <TooltipProvider delayDuration={180}>
@@ -30,7 +47,7 @@ export function MediaWorkbench() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b bg-card px-3 py-2 lg:hidden">
-              <Sheet>
+              <Sheet open={projectSheetOpen} onOpenChange={setProjectSheetOpen}>
                 <SheetTrigger asChild>
                   <Button variant="secondary" size="sm">项目</Button>
                 </SheetTrigger>
@@ -39,8 +56,8 @@ export function MediaWorkbench() {
                   <ProjectSidebar
                     projects={controller.projects}
                     activeProjectId={controller.activeProjectId}
-                    onSelect={controller.selectProject}
-                    onCreateProject={controller.createProject}
+                    onSelect={selectProjectFromSheet}
+                    onCreateProject={createProjectFromSheet}
                   />
                 </SheetContent>
               </Sheet>
@@ -95,7 +112,7 @@ export function MediaWorkbench() {
             activeKey={controller.activeArtifact?.key ?? ""}
             onCopy={controller.copyArtifact}
             onUseAsInput={controller.useAsInput}
-            onOpen={controller.openDetail}
+            onOpen={openDetailFromRail}
             onRegenerate={controller.regenerateArtifact}
           />
         </SheetContent>

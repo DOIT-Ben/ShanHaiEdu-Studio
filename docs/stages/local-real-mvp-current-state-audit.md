@@ -27,6 +27,7 @@
 - `docs\stages\local-real-mvp-m5-final-delivery-report.md`
 - `docs\stages\local-real-mvp-m6-openai-smoke-report.md`
 - `docs\stages\local-real-mvp-m7-local-concurrency-report.md`
+- `docs\stages\local-real-mvp-m8-browser-coverage-report.md`
 
 ## 3. 已完成能力
 
@@ -107,11 +108,29 @@ M7 已验证本地 1-2 人试用规模下的基础隔离：
 - `git diff --check` 通过。
 - 敏感信息扫描未命中密钥、token 或私钥文件特征。
 
+### 3.5 M8 浏览器覆盖
+
+M8 已验证同一 M1-M5 文本主链路可在更多本地浏览器环境运行：
+
+- `chromium-narrow`：390 x 844 窄屏视口通过完整 M1-M5 主链路。
+- `firefox-desktop`：Firefox desktop 通过完整 M1-M5 主链路。
+- 窄屏项目抽屉在新建或选择项目后会自动关闭，避免遮挡对话输入。
+- 窄屏产物抽屉节点具备“标题，状态”的可访问名称，打开详情后会自动关闭产物抽屉。
+- Stage 2 E2E 已适配桌面 rail 与窄屏抽屉两种真实路径。
+
+最近一次 M8 验收记录显示：
+
+- `npm run test:e2e:stage8` 通过：`chromium-narrow` 与 `firefox-desktop` 2 passed。
+- `npm test` 通过：Node 10 tests passed；Vitest 15 files / 68 tests passed。
+- `npm run build` 通过。
+- `npm run test:e2e:stage2` 通过：Chromium desktop 主链路未回归。
+- `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 文本 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态和当前项目选择可由后端与浏览器状态恢复支撑。
+> ShanHaiEdu 已具备本地 deterministic 文本 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过。
 
 当前不能表述为：
 
@@ -124,13 +143,13 @@ M7 已验证本地 1-2 人试用规模下的基础隔离：
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 65%-70%。核心 workflow、后端持久化、浏览器主链路、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 25%-35%。真实 provider、文件生成、账号权限、跨浏览器/窄屏、部署、安全与运维仍未完成。
+- 内部骨架成熟度：约 70%-75%。核心 workflow、后端持久化、浏览器主链路、窄屏/Firefox 覆盖、阶段测试与文档闭环已经成形。
+- 生产就绪度：约 30%-40%。真实 provider、文件生成、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
 - M6 live OpenAI smoke 缺少真实凭据，真实模型路径尚未证明。
-- 浏览器 E2E 当前主要覆盖 Chromium desktop，窄屏和多浏览器仍待专项验证。
+- 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前最终交付只到 Markdown 清单，不包含真实 PPTX、图片或视频文件。
 - 当前隔离是无账号本地工作台隔离，不是权限隔离。
 - SQLite 可继续支撑本地 MVP 试用，但不应被包装为生产级数据库方案。
@@ -141,12 +160,12 @@ M7 已验证本地 1-2 人试用规模下的基础隔离：
 优先级从高到低：
 
 1. 补验 M6 live OpenAI smoke：配置 `OPENAI_API_KEY` 后运行 `node scripts\openai-smoke.mjs`，只有返回 `ok=true`、`runtimeKind=openai`、`generationMode=model_generated` 时，才可标记真实模型 smoke 通过。
-2. 做 M8 浏览器覆盖扩展：窄屏、至少一个非 Chromium 浏览器或明确记录无法覆盖原因。
-3. 做真实文件能力拆分规划：PPTX、图片、视频分别按 provider readiness、产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
+2. 做真实文件能力拆分规划：PPTX、图片、视频分别按 provider readiness、产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
+3. 做 WebKit、真实移动设备或触摸手势专项验证。
 4. 在进入多人或部署前，先定义账号/权限、数据库迁移和长任务队列触发条件。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过。
 
 因此当前主线可以作为“本地 deterministic 文本 MVP 可用”的候选状态继续推进，但不能作为“真实模型与多媒体生产 MVP 已完成”的最终状态。
