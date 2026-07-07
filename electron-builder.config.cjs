@@ -18,5 +18,6 @@ module.exports = {
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,
+    runAfterFinish: false,
   },
 };

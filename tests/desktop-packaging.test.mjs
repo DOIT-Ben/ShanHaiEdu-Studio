@@ -42,6 +42,7 @@ test("electron builder config keeps binary artifacts out of git-scoped source", 
   assert.match(config, /appId:\s*["']cn\.shanhaiedu\.studio["']/);
   assert.match(config, /directories:\s*{/);
   assert.match(config, /output:\s*["']dist-desktop["']/);
+  assert.match(config, /runAfterFinish:\s*false/);
   assert.match(config, /desktop-bundle\/\*\*/);
   assert.doesNotMatch(config, /\.next\/standalone/);
 

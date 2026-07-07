@@ -11,6 +11,7 @@
     "desktop:smoke": "node scripts/desktop-smoke.mjs",
     "desktop:prepare": "node scripts/prepare-desktop-bundle.mjs",
     "desktop:pack": "npm run build && npm run desktop:prepare && electron-builder --win --config electron-builder.config.cjs",
+    "desktop:installer-smoke": "node scripts/desktop-installer-smoke.mjs",
     "test": "node scripts/run-tests.mjs",
     "start": "next start",
     "lint": "next lint",
