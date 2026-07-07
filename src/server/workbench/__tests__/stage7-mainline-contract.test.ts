@@ -12,6 +12,18 @@ import { POST as postProjectRoute } from "@/app/api/workbench/projects/route";
 import { createWorkbenchService } from "../service";
 
 describe("Backend Workflow Lite Stage 7 mainline contract", () => {
+  it("creates a default project when the browser client posts without a body", async () => {
+    const projectResponse = await postProjectRoute(
+      new Request("http://localhost/api/workbench/projects", {
+        method: "POST",
+      }),
+    );
+    const projectBody = await projectResponse.json();
+
+    expect(projectResponse.status).toBe(201);
+    expect(projectBody.project.title).toBe("未命名公开课项目");
+  });
+
   it("keeps the route envelopes stable across the backend workflow happy path", async () => {
     const projectResponse = await postProjectRoute(
       new Request("http://localhost/api/workbench/projects", {

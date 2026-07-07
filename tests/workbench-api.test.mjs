@@ -310,6 +310,8 @@ test("API client does not expose backend-only structured labels in visible artif
           schema: "internal-schema",
           node_id: "node-requirement",
           provider: "internal-provider",
+          generationMode: "deterministic_draft",
+          nextSuggestedAction: "查看并确认这份草稿",
         },
       },
     ],
@@ -328,6 +330,8 @@ test("API client does not expose backend-only structured labels in visible artif
   assert.equal(visibleLabels.includes("schema"), false);
   assert.equal(visibleLabels.includes("node_id"), false);
   assert.equal(visibleLabels.includes("provider"), false);
+  assert.equal(visibleLabels.includes("generationMode"), false);
+  assert.equal(visibleLabels.includes("nextSuggestedAction"), false);
   assert.equal(requirement.content["课题"], "百分数");
   assert.deepEqual(requirement.content["课堂问题"], ["生活中哪里见过百分数？"]);
 });

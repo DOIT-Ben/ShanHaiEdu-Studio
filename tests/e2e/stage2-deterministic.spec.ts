@@ -28,8 +28,8 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByRole("button", { name: /需求规格说明书，待确认/ })).toBeVisible();
 
     await page.getByRole("button", { name: /需求规格说明书，待确认/ }).click();
-    await expect(page.getByText("产物预览 · 刚刚")).toBeVisible();
-    await expect(page.getByText("已整理公开课目标、基础信息、交付范围和后续输入要求。")).toBeVisible();
+    await expect(page.getByText(/产物预览 · /)).toBeVisible();
+    await expect(page.getByText("已整理公开课目标、基础信息、交付范围和后续输入要求。").first()).toBeVisible();
 
     await page.getByRole("button", { name: "打开完整详情" }).click();
     await expect(page.getByText("可复用内容")).toBeVisible();

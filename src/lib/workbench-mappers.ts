@@ -145,6 +145,8 @@ function isVisibleStructuredLabel(label: string) {
     ["a", "pi"],
     ["de", "bug"],
     ["local", " ", "path"],
+    ["generation", "mode"],
+    ["next", "suggested", "action"],
   ].map((parts) => parts.join(""));
   return !internalTerms.some((term) => lower.includes(term));
 }

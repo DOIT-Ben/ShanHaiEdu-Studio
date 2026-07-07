@@ -9,7 +9,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body = await parseOptionalProjectBody(request);
   const project = await service.createProject({
     title: String(body.title ?? "未命名公开课项目"),
     grade: optionalString(body.grade),
@@ -19,6 +19,13 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ project }, { status: 201 });
+}
+
+async function parseOptionalProjectBody(request: Request): Promise<Record<string, unknown>> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  const body = JSON.parse(text) as unknown;
+  return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
 function optionalString(value: unknown) {
