@@ -12,7 +12,7 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await page.getByPlaceholder(composerPlaceholder).waitFor({ state: "visible" });
   });
 
-  test("creates a project, generates requirement, lesson text artifacts, and restores after refresh", async ({ page, context }, testInfo) => {
+  test("creates a project, generates lesson, PPT outline, intro video plan, and restores after refresh", async ({ page, context }, testInfo) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
     await page.getByRole("button", { name: "新建项目" }).click();
@@ -89,6 +89,30 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByText("已保留「PPT 大纲与逐页脚本」旧内容，新的版本完成后再由你确认是否采用。")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: /PPT 大纲与逐页脚本，待确认/ })).toBeVisible();
+    await page.getByRole("button", { name: /PPT 大纲与逐页脚本，待确认/ }).click();
+    await page.getByRole("button", { name: "打开完整详情" }).click();
+    await page.getByRole("button", { name: "确认使用" }).click();
+    await expect(page.getByText("已确认「PPT 大纲与逐页脚本」，下一步会使用它继续生成。")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /导入视频方案，待确认/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /导入视频方案，待确认/ }).click();
+    await expect(page.getByText("导入视频方案").first()).toBeVisible();
+    await page.getByRole("button", { name: "打开完整详情" }).click();
+    await expect(page.getByText("独立主题").first()).toBeVisible();
+    await expect(page.getByText("开场钩子与吸睛点").first()).toBeVisible();
+    await expect(page.getByText("课程锚点").first()).toBeVisible();
+    await expect(page.getByText("课堂落点问题").first()).toBeVisible();
+    await expect(page.getByText("视频文件已生成")).toBeHidden();
+    await expect(page.getByText("视频成片已生成")).toBeHidden();
+    await page.getByRole("button", { name: "复制" }).click();
+    await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
+    await page.getByRole("button", { name: "确认使用" }).click();
+    await expect(page.getByText("已确认「导入视频方案」，下一步会使用它继续生成。")).toBeVisible();
+    await page.getByRole("button", { name: "调整后重做" }).click();
+    await expect(page.getByText("已保留「导入视频方案」旧内容，新的版本完成后再由你确认是否采用。")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /导入视频方案，待确认/ })).toBeVisible();
 
     await page.reload();
     await page.getByPlaceholder(composerPlaceholder).waitFor({ state: "visible" });
@@ -97,7 +121,8 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByRole("button", { name: /需求规格说明书，已确认/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /教材证据包，已确认/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /公开课教案，已确认/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /PPT 大纲与逐页脚本，待确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /PPT 大纲与逐页脚本，已确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /导入视频方案，待确认/ })).toBeVisible();
 
     const visibleText = await getVisiblePageText(page);
     const matches = findUserVisibleEngineeringTerms(visibleText);

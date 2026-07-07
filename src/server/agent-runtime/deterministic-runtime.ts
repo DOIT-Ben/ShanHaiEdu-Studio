@@ -122,6 +122,11 @@ const taskTemplates: Record<AgentRuntimeTask, DraftTemplate> = {
         `用一个和${input.projectContext.topic}相关但不提前讲解${input.projectContext.topic}定义的生活悬念开场。`,
         "视频目标是吸引注意力，不替代教师授课。",
       ]),
+      section("开场钩子与吸睛点", [
+        "开场钩子：先呈现一个学生会想追问的反常或有趣现象，不给出数学结论。",
+        "吸睛点：用画面冲突、数量变化或角色疑问制造好奇心，让学生愿意进入课堂讨论。",
+        "第一句话只提出问题，不解释知识点定义、公式或解题步骤。",
+      ]),
       section("课程锚点", [
         `结尾问题：生活里的这些现象，为什么都能和${input.projectContext.topic}联系起来？`,
         "课堂落点问题：你观察到的现象里，哪些地方需要用今天的数学语言解释？",
