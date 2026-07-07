@@ -91,7 +91,7 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
       structuredContent: {},
     });
 
-    await service.approveArtifact(project.id, "requirement_spec");
+    await service.approveArtifact(project.id, artifact.id);
 
     const snapshot = await service.getProjectSnapshot(project.id);
     expect(snapshot.artifacts[0]).toMatchObject({

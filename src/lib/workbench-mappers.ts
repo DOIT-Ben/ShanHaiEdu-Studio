@@ -63,11 +63,13 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   requirement_spec: "需求规格",
   textbook_evidence: "教材",
   lesson_plan: "教案",
+  ppt_outline: "PPT 大纲",
   intro_video_plan: "导入",
   ppt_draft: "PPT",
   image_prompts: "图片",
   video_storyboard: "视频",
   final_delivery: "交付",
+  final_delivery_checklist: "交付清单",
 };
 
 function isBackendProjectList(value: unknown): value is { projects: BackendProjectRecord[] } {
