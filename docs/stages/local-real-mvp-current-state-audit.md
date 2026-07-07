@@ -34,6 +34,7 @@
 - `docs\stages\local-real-mvp-m12-final-delivery-pptx-awareness-report.md`
 - `docs\stages\local-real-mvp-m13-final-material-package-report.md`
 - `docs\stages\local-real-mvp-m14-ledger-openai-smoke-report.md`
+- `docs\stages\local-real-mvp-m15-ppt-sample-coze-readiness-report.md`
 
 ## 3. 已完成能力
 
@@ -252,15 +253,36 @@ M14 已把 M6 的 readiness 推进为真实 OpenAI-compatible live smoke：
 - worker 残留检查通过。
 - `git diff --check` 通过，无空白错误。
 
+### 3.12 M15 PPT 样本资产与 Coze readiness
+
+M15 已把用户指定的 PPT 提示词和教材 PDF 纳入项目 fixture：
+
+- `fixtures\ppt\template-a1-original-visual-strategy.md`
+- `fixtures\textbooks\sujiao-grade6-percentage.pdf`
+- `fixtures\ppt-sample-manifest.json`
+
+已验证的 readiness：
+
+- manifest 记录来源路径、项目内路径、size、sha256、用途和敏感性判断。
+- `tests\fixture-assets.test.mjs` 校验 fixture 存在、非空、PDF 头为 `%PDF`、size/hash 与 manifest 一致。
+- Coze PPT 关键变量已从私有台账安装到项目根 `.env`，只记录 present/missing，不打印真实 token 或端点值。
+
+最近一次 M15 验收记录显示：
+
+- `node --test tests\fixture-assets.test.mjs` 红灯后绿灯：1 test passed。
+- Coze env present/missing 检查通过：`COZE_API_BASE`、`COZE_API_TOKEN`、`COZE_PPT_BOT_ID`、`COZE_PPT_RUN_URL` 均 present。
+- `npm test` 通过：Node 18 tests passed；Vitest 16 files / 69 tests passed。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture 和 Coze env readiness。
 
 当前不能表述为：
 
 - 图片文件已生成。
+- Coze PPT API 已生成真实 PPTX 并接入工作流节点。
 - PPTX 已完成图片、动画和视觉精修。
 - 视频成片已生成。
 - 已具备账号、权限或生产级多人协作。
@@ -268,13 +290,15 @@ M14 已把 M6 的 readiness 推进为真实 OpenAI-compatible live smoke：
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 84%-88%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 38%-46%。真实文本 smoke 已通过，但业务节点真实模型接入、Coze PPT、图片/视频生成、账号权限、生产部署、安全与运维仍未完成。
+- 内部骨架成熟度：约 85%-89%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、阶段测试与文档闭环已经成形。
+- 生产就绪度：约 40%-48%。真实文本 smoke 已通过，Coze PPT 已具备样本与 env readiness，但业务节点真实模型接入、真实 Coze PPT 下载、图片/视频生成、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
 - M14 live OpenAI-compatible smoke 已通过，但 primary/third 台账通道当前返回 403，固定通道暂选 fallback。
 - 业务工作流节点仍主要使用 deterministic runtime，真实模型尚未全面接入节点生成链路。
+- M15 已纳入教材 PDF fixture；后续外发、部署或公开演示前需单独确认版权和发布边界。
+- Coze PPT 目前只是 env readiness，尚未完成真实 API 下载校验和工作流节点接入。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown 与最小 PPTX，但不包含图片、视频、动画或视觉精修资产。
@@ -286,13 +310,13 @@ M14 已把 M6 的 readiness 推进为真实 OpenAI-compatible live smoke：
 
 优先级从高到低：
 
-1. 进入 M15：PPT 样本资产 intake + Coze PPT API readiness，把指定提示词和教材纳入可复用样本，并验证 Coze PPT API 接线边界。
+1. 进入 M16：Coze PPT live smoke/adapter，使用 M15 fixture 调用真实 Coze PPT API，下载并校验 `.pptx`。
 2. 做真实文件能力拆分规划：PPTX 质量增强、图片、视频分别按 provider readiness、产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
 3. 做 WebKit、真实移动设备或触摸手势专项验证。
 4. 在进入多人或部署前，先定义账号/权限、数据库迁移和长任务队列触发条件。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过。
 
-因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用”的候选状态继续推进，但不能作为“Coze PPT、图片与视频生产 MVP 已完成”的最终状态。
+因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + PPT 真实生成样本/环境已准备”的候选状态继续推进，但不能作为“Coze PPT、图片与视频生产 MVP 已完成”的最终状态。
