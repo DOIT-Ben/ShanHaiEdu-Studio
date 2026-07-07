@@ -39,6 +39,7 @@
 - `docs\stages\local-real-mvp-m17-coze-ppt-artifact-adapter-report.md`
 - `docs\stages\local-real-mvp-m18-image-api-live-smoke-report.md`
 - `docs\stages\local-real-mvp-m19-image-artifact-adapter-report.md`
+- `docs\stages\local-real-mvp-m20-video-api-live-smoke-report.md`
 
 ## 3. 已完成能力
 
@@ -377,6 +378,7 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 - Coze PPT 本地文件当前存储在 `.tmp`，生产部署前必须替换为部署卷或对象存储。
 - M18 图片 live smoke 已通过，M19 已接入后端 artifact adapter；但当前尚未提供图片下载 route、最终材料包图片资产、PPTX 内嵌图片或教师 UI 入口。
 - M18 `primary` 图片通道曾返回 403，当前固定通道为 `free`；后续切换通道必须重新跑 smoke。
+- M20 已新增视频 smoke 脚本并完成真实 submit/query 探针；当前固定视频通道返回 task id 且 query 可访问，但任务在本轮窗口内停留 `queued`，尚未完成 download 和 MP4 校验。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown 与最小 PPTX，但不包含图片、视频、动画或视觉精修资产。
@@ -388,7 +390,7 @@ M19 已把 M18 的图片真实 API smoke 能力推进到后端 artifact 层：
 
 优先级从高到低：
 
-1. 进入 M20：视频真实 API readiness/live smoke，复用私有台账的视频 provider，先做服务端 smoke 和脱敏输出。
+1. 继续 M20：视频真实 API live smoke，优先补 retry/stuck 记录并择机重跑单任务；若仍持续 `queued`，切换备用视频模型或 provider 做同等脱敏 smoke。
 2. 做图片后续文件能力拆分：图片下载 route、材料包集成、PPTX 内嵌图片分别按产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
 3. 做 WebKit、真实移动设备或触摸手势专项验证。
 4. 在进入多人或部署前，先定义账号/权限、数据库迁移和长任务队列触发条件。
