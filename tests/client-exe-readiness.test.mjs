@@ -7,7 +7,7 @@ import { runClientExeReadiness } from "../scripts/client-exe-readiness.mjs";
 
 const root = process.cwd();
 
-test("client exe readiness passes web-to-exe prerequisites without pretending an exe exists", async () => {
+test("client exe readiness passes web-to-exe prerequisites when a desktop wrapper exists", async () => {
   const storageRoot = mkdtempSync(path.join(tmpdir(), "shanhai-client-exe-storage-"));
   const result = await runClientExeReadiness({
     cwd: root,
@@ -27,7 +27,7 @@ test("client exe readiness passes web-to-exe prerequisites without pretending an
       "loopback-origin-compatibility",
     ],
   );
-  assert.ok(result.warnings.some((item) => item.id === "desktop-wrapper-not-configured"));
+  assert.equal(result.warnings.length, 0);
 });
 
 test("client exe readiness fails when web packaging prerequisites are missing", async () => {
@@ -66,7 +66,49 @@ test("client exe readiness output does not leak configured local values", async 
   assert.equal(serialized.includes("do-not-print-openai-value"), false);
 });
 
+test("client exe readiness warns when web prerequisites exist but desktop wrapper is absent", async () => {
+  const fixture = createReadableReadinessFixture();
+  const result = await runClientExeReadiness({ cwd: fixture, env: {} });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.warnings.some((item) => item.id === "desktop-wrapper-not-configured"));
+});
+
 test("package exposes the client exe readiness command", async () => {
   const result = await runClientExeReadiness({ cwd: root, env: {} });
   assert.equal(result.checks.find((item) => item.id === "client-exe-preflight-script")?.ok, true);
 });
+
+function createReadableReadinessFixture() {
+  const fixture = mkdtempSync(path.join(tmpdir(), "shanhai-client-exe-ready-"));
+  writeFileSync(
+    path.join(fixture, "package.json"),
+    JSON.stringify(
+      {
+        scripts: {
+          build: "next build",
+          start: "next start",
+          "preflight:client-exe": "node scripts/client-exe-readiness.mjs",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(path.join(fixture, "next.config.ts"), 'const nextConfig = { output: "standalone" }; export default nextConfig;\n');
+  mkdirSync(path.join(fixture, "src", "server", "auth"), { recursive: true });
+  writeFileSync(
+    path.join(fixture, "src", "server", "auth", "workbench-route.ts"),
+    'const hosts = ["localhost", "127.0.0.1", "::1"];\nexport { hosts };\n',
+  );
+  for (const route of [
+    "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/pptx",
+    "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image",
+    "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video",
+    "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/package",
+  ]) {
+    mkdirSync(path.join(fixture, route), { recursive: true });
+    writeFileSync(path.join(fixture, route, "route.ts"), "export {};\n");
+  }
+  return fixture;
+}

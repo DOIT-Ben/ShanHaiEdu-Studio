@@ -77,8 +77,22 @@ npm run test:e2e:stage33
 通过标准：
 
 - `preflight:client-exe` 输出 `ok=true`。
-- 如果仍没有真实桌面打包工程，输出必须保留 `desktop-wrapper-not-configured` warning。
+- M34 后应识别到真实桌面打包工程，输出 `warnings=[]`。
 - Stage33 使用 `localhost` 入口完成新建项目、发送需求、刷新恢复和 Markdown 下载。
+
+真实 Windows 客户端候选包：
+
+```powershell
+npm run desktop:pack
+```
+
+通过标准：
+
+- 生成 `dist-desktop\ShanHaiEdu Studio Setup 0.1.0.exe`。
+- 生成 `dist-desktop\win-unpacked\ShanHaiEdu Studio.exe`。
+- `dist-desktop\` 与 `desktop-bundle\` 必须保持 git ignored。
+- 打包前必须经过 `desktop:prepare`，不得直接把 `.next\standalone` 整体交给 electron-builder。
+- 当前候选包未正式签名，不能作为生产发布版表述。
 
 ## 4. 本地生产启动候选流程
 
@@ -129,4 +143,4 @@ npm run start
 - 独立后台 worker、队列取消、重试退避、限流和监控。
 - 对象存储、CDN、备份、素材生命周期清理。
 - WebKit、客户端 exe 和真实设备专项验收。
-- 真实客户端 exe 打包工程、安装包、自动更新、窗口生命周期和系统权限验收。
+- 正式签名客户端安装包、自动更新、窗口生命周期、安装/卸载和系统权限验收。

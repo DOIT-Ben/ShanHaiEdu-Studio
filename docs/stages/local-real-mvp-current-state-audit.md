@@ -4,7 +4,7 @@
 
 ## 1. 审计目标
 
-本审计用于收口 `mainline/local-real-mvp` 在 M0-M33 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
+本审计用于收口 `mainline/local-real-mvp` 在 M0-M34 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
 
 当前审计不新增产品能力、不变更代码、不执行部署、不 push、不删除旧 worktree。
 
@@ -53,6 +53,7 @@
 - `docs\stages\local-real-mvp-m31-production-readiness-report.md`
 - `docs\stages\local-real-mvp-m32-auth-security-hardening-report.md`
 - `docs\stages\local-real-mvp-m33-client-exe-readiness-report.md`
+- `docs\stages\local-real-mvp-m34-real-client-exe-packaging-report.md`
 
 ## 3. 已完成能力
 
@@ -636,11 +637,33 @@ M33 已在 M31 本地生产准备和 M32 loopback 安全边界基础上补齐客
 - `npm test` 通过：Node 59 tests passed；Vitest 23 files / 88 tests passed。
 - `npm run build` 通过；仍有 1 条既有 Turbopack output tracing warning，指向 storage/download 路径。
 
+### 3.31 M34 真实客户端 exe 最小打包
+
+M34 已把 M33 的客户端验证准备推进为真实 Windows 客户端打包最小闭环：
+
+- 选择 Electron + electron-builder 作为首个 Windows exe MVP 路线。
+- 新增 Electron 主进程与空 preload。
+- 主进程启动 Next standalone server，并加载本地 loopback URL。
+- 新增 `desktop:prepare` 安全 bundle，过滤 `.env`、本地数据库、素材目录和测试/文档产物。
+- 新增 `desktop:smoke` 和 `desktop:pack`。
+- 生成本地未签名 Windows 候选安装包。
+- unpacked exe 已通过固定端口 smoke，`http://127.0.0.1:3127` 返回 200。
+
+最近一次 M34 验收记录显示：
+
+- `node --test tests\desktop-packaging.test.mjs` 通过：3 tests passed。
+- `npm run desktop:smoke` 通过：`ok=true`。
+- `npm run preflight:client-exe` 通过：`ok=true`，`warnings=[]`。
+- `npm run test:e2e:stage33` 通过：Chromium desktop 1 passed。
+- `npm test` 通过：Node 63 tests passed；Vitest 23 files / 88 tests passed。
+- `npm run desktop:pack` 通过：生成 `dist-desktop\ShanHaiEdu Studio Setup 0.1.0.exe` 和 `dist-desktop\win-unpacked\ShanHaiEdu Studio.exe`。
+- unpacked exe smoke 通过：本地 HTTP 200。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown、最小 PPTX、可选导入视频和可选课堂视觉图的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX，教师界面已具备触发真实 PPTX 的入口，浏览器专项已验证触发、刷新和下载联动。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，已具备后端 artifact adapter 保存本地图片 metadata、后端本地图片下载 route、最终材料包图片资产集成能力、教师界面触发入口和浏览器下载联动验证。视频真实 API 阶段已通过固定 `octo` 通道完成服务端 submit/query/download live smoke，已具备后端 artifact adapter 保存本地 MP4 metadata、后端本地 MP4 下载 route、最终材料包视频资产集成能力、教师界面触发入口和浏览器下载联动验证。真实 PPTX、图片和视频素材已具备可配置部署卷的本地 ArtifactStorage 准备，metadata 可避免保存机器绝对路径。本地浏览器会话已具备最小用户身份和项目访问边界，项目列表、项目读写、真实生成与下载 route 已按本地 actor 隔离，并具备跨站写入阻断、HTTPS Secure cookie 和基础安全响应头。真实 PPTX、图片和视频生成已具备持久化任务状态基础，可记录排队、运行、成功、失败和刷新恢复列表。当前已具备上线前本地生产准备检查、Next standalone 构建准备、本地生产 SQLite 初始化、素材存储根目录检查和客户端 exe 验证准备能力。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown、最小 PPTX、可选导入视频和可选课堂视觉图的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。PPT 真实生成阶段已具备固定提示词、教材 fixture、Coze env readiness，并已通过真实 Coze `/run` PPTX 下载 smoke；后端 artifact 层已能保存并优先下载本地真实 Coze PPTX，教师界面已具备触发真实 PPTX 的入口，浏览器专项已验证触发、刷新和下载联动。图片真实 API 阶段已通过固定 `free` 通道完成服务端 live smoke，已具备后端 artifact adapter 保存本地图片 metadata、后端本地图片下载 route、最终材料包图片资产集成能力、教师界面触发入口和浏览器下载联动验证。视频真实 API 阶段已通过固定 `octo` 通道完成服务端 submit/query/download live smoke，已具备后端 artifact adapter 保存本地 MP4 metadata、后端本地 MP4 下载 route、最终材料包视频资产集成能力、教师界面触发入口和浏览器下载联动验证。真实 PPTX、图片和视频素材已具备可配置部署卷的本地 ArtifactStorage 准备，metadata 可避免保存机器绝对路径。本地浏览器会话已具备最小用户身份和项目访问边界，项目列表、项目读写、真实生成与下载 route 已按本地 actor 隔离，并具备跨站写入阻断、HTTPS Secure cookie 和基础安全响应头。真实 PPTX、图片和视频生成已具备持久化任务状态基础，可记录排队、运行、成功、失败和刷新恢复列表。当前已具备上线前本地生产准备检查、Next standalone 构建准备、本地生产 SQLite 初始化、素材存储根目录检查、客户端 exe 验证准备和真实 Windows 客户端未签名候选包生成能力。
 
 当前不能表述为：
 
@@ -652,12 +675,12 @@ M33 已在 M31 本地生产准备和 M32 loopback 安全边界基础上补齐客
 - 已完成完整 CSP、HSTS、rate limit、正式登录风控或生产安全监控。
 - 已完成公网发布、域名、HTTPS 或远端生产部署。
 - 已完成对象存储、CDN、素材生命周期清理或部署运维。
-- 已完成真实客户端 exe 打包、安装、自动更新、窗口生命周期或系统权限验收。
+- 已完成正式签名客户端安装包、自动更新、安装/卸载、窗口生命周期或系统权限验收。
 
 当前成熟度判断：
 
 - 内部骨架成熟度：约 99%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、PPT 固定样本、真实 Coze PPT smoke、Coze PPT artifact adapter、图片真实 API smoke、图片 artifact adapter、图片下载 route、材料包图片资产集成、视频真实 API smoke、视频 artifact adapter、视频下载 route、视频材料包资产集成、教师 UI 真实生成入口、真实生成浏览器联动、统一本地素材存储边界、本地会话身份、项目访问边界、真实生成任务状态基础、上线前本地生产准备检查、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 85%-88%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke、图片 artifact adapter、图片下载 route、图片材料包集成、视频 live smoke、视频 artifact adapter、视频下载 route、视频材料包集成、教师 UI 真实生成入口、浏览器联动验证、可配置部署卷准备、本地权限最小闭环、账号安全加固、真实生成任务状态基础、Next standalone 准备、生产预检、本地生产 SQLite 初始化和客户端 exe 验证准备已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、独立 worker、公网正式认证、真实客户端 exe 打包、远端部署、安全与运维仍未完成。
+- 生产就绪度：约 87%-90%。真实文本 smoke、Coze PPT `/run` smoke、Coze PPT artifact adapter、图片 live smoke、图片 artifact adapter、图片下载 route、图片材料包集成、视频 live smoke、视频 artifact adapter、视频下载 route、视频材料包集成、教师 UI 真实生成入口、浏览器联动验证、可配置部署卷准备、本地权限最小闭环、账号安全加固、真实生成任务状态基础、Next standalone 准备、生产预检、本地生产 SQLite 初始化、客户端 exe 验证准备和真实 Windows 未签名候选包生成已通过，但业务节点真实模型全面接入、Coze 官方 OpenAPI 主链路、独立 worker、公网正式认证、正式签名客户端安装包、安装/卸载验收、远端部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
@@ -674,6 +697,7 @@ M33 已在 M31 本地生产准备和 M32 loopback 安全边界基础上补齐客
 - M31 已有本地生产预检和 runbook，但尚未在真实远端服务器、域名、HTTPS、进程守护或客户端 exe 容器内验证。
 - M32 已有跨站写入阻断和基础安全头，但仍不是公网正式认证；完整 CSP、HSTS、rate limit 和登录风控仍未完成。
 - M33 已有客户端 exe 验证准备和 localhost 容器等价 E2E，但没有真实 exe 打包工程，不能替代安装包验收。
+- M34 已有真实 Windows 未签名候选包和 unpacked exe smoke，但仍未做安装器安装/卸载验收、正式签名、自动更新、图标品牌和 asar 最佳实践。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown、最小 PPTX、可选图片与可选视频，但不包含动画或视觉精修资产。
@@ -685,13 +709,14 @@ M33 已在 M31 本地生产准备和 M32 loopback 安全边界基础上补齐客
 
 优先级从高到低：
 
-1. 做真实客户端 exe 打包路线规划，选择 Electron/Tauri/WebView2 之一并定义最小安装包验收。
-2. 做公网正式认证规划，覆盖密码/OAuth/SSO、CSRF token、管理员、共享协作和审计日志。
+1. 做客户端安装包验收，覆盖安装、启动、关闭、卸载、下载路径、用户数据目录和进程清理。
+2. 修 Next standalone tracing 根因，减少桌面打包对安全过滤脚本的依赖。
+3. 做公网正式认证规划，覆盖密码/OAuth/SSO、CSRF token、管理员、共享协作和审计日志。
 3. 做任务队列生产化规划，覆盖 worker、重试、取消、限流、监控和失败 repair。
 4. 做 WebKit、真实移动设备或触摸手势专项验证。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过，M20 视频真实 API live smoke 已通过，M21 视频后端 artifact adapter 已通过，M22 视频下载 route 已通过，M23 最终材料包视频资产集成已通过，M24 图片下载 route 已通过，M25 最终材料包图片资产集成已通过，M26 教师 UI 真实生成入口已通过，M27 真实生成浏览器联动验证已通过，M28 素材存储生产准备已通过，M29 本地账号权限最小闭环已通过，M30 真实生成任务队列基础已通过，M31 生产部署本地准备已通过，M32 账号权限安全加固已通过，M33 客户端 exe 验证准备已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过，M15 PPT 样本资产与 Coze readiness 已通过，M16 Coze PPT `/run` live smoke 已通过，M17 Coze PPT 后端 artifact adapter 已通过，M18 图片真实 API live smoke 已通过，M19 图片后端 artifact adapter 已通过，M20 视频真实 API live smoke 已通过，M21 视频后端 artifact adapter 已通过，M22 视频下载 route 已通过，M23 最终材料包视频资产集成已通过，M24 图片下载 route 已通过，M25 最终材料包图片资产集成已通过，M26 教师 UI 真实生成入口已通过，M27 真实生成浏览器联动验证已通过，M28 素材存储生产准备已通过，M29 本地账号权限最小闭环已通过，M30 真实生成任务队列基础已通过，M31 生产部署本地准备已通过，M32 账号权限安全加固已通过，M33 客户端 exe 验证准备已通过，M34 真实客户端 exe 最小打包已通过。
 
-因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke、后端 artifact、教师触发入口与浏览器下载联动可用 + 图片真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 视频真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 真实素材可配置部署卷准备可用 + 本地会话和项目访问边界可用 + 本地账号安全加固可用 + 真实生成持久化任务状态基础可用 + 上线前本地生产准备可用 + 客户端 exe 验证准备可用”的候选状态继续推进，但不能作为“真实客户端 exe 已打包、独立生产 worker、远端生产部署和公网正式认证已完成”的最终状态。
+因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用 + Coze PPT 真实 smoke、后端 artifact、教师触发入口与浏览器下载联动可用 + 图片真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 视频真实 API smoke、后端 artifact、下载、材料包、教师触发入口与浏览器下载联动可用 + 真实素材可配置部署卷准备可用 + 本地会话和项目访问边界可用 + 本地账号安全加固可用 + 真实生成持久化任务状态基础可用 + 上线前本地生产准备可用 + 客户端 exe 验证准备可用 + 真实 Windows 未签名候选包可生成”的候选状态继续推进，但不能作为“正式签名客户端已发布、独立生产 worker、远端生产部署和公网正式认证已完成”的最终状态。
