@@ -82,12 +82,33 @@ export type AgentRunRecord = {
 
 export type AgentRunStatus = "running" | "succeeded" | "failed";
 
+export type GenerationJobKind = "pptx" | "image" | "video";
+
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
+
+export type GenerationJobRecord = {
+  id: string;
+  projectId: string;
+  kind: GenerationJobKind;
+  sourceArtifactId: string;
+  status: GenerationJobStatus;
+  attempts: number;
+  maxAttempts: number;
+  resultArtifactId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
 export type ProjectSnapshot = {
   project: ProjectRecord;
   messages: ConversationMessageRecord[];
   nodes: WorkflowNodeRecord[];
   artifacts: ArtifactRecord[];
   agentRuns: AgentRunRecord[];
+  generationJobs: GenerationJobRecord[];
 };
 
 export type CreateProjectInput = {
@@ -131,4 +152,18 @@ export type StartAgentRunInput = {
 export type FinishAgentRunInput = {
   status: Exclude<AgentRunStatus, "running">;
   errorMessage?: string;
+};
+
+export type CreateGenerationJobInput = {
+  kind: GenerationJobKind;
+  sourceArtifactId: string;
+  maxAttempts?: number;
+};
+
+export type FinishGenerationJobInput = {
+  resultArtifactId: string;
+};
+
+export type FailGenerationJobInput = {
+  errorMessage: string;
 };

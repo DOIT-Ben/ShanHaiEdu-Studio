@@ -5,7 +5,10 @@ import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defa
 import type {
   AddMessageInput,
   CreateProjectInput,
+  CreateGenerationJobInput,
+  FailGenerationJobInput,
   FinishAgentRunInput,
+  FinishGenerationJobInput,
   RegenerateArtifactInput,
   SaveArtifactInput,
   StartAgentRunInput,
@@ -296,6 +299,85 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async createGenerationJob(projectId: string, input: CreateGenerationJobInput) {
+      return client.generationJob.create({
+        data: {
+          projectId,
+          kind: input.kind,
+          sourceArtifactId: input.sourceArtifactId,
+          status: "queued",
+          attempts: 0,
+          maxAttempts: input.maxAttempts ?? 2,
+        },
+      });
+    },
+
+    async startGenerationJob(projectId: string, jobId: string) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing) {
+          throw new Error(`GenerationJob not found: ${jobId}`);
+        }
+        if (existing.status !== "queued" && existing.status !== "failed") {
+          throw new Error(`GenerationJob cannot start from status: ${existing.status}`);
+        }
+        if (existing.attempts >= existing.maxAttempts) {
+          throw new Error(`GenerationJob attempts exhausted: ${jobId}`);
+        }
+        return tx.generationJob.update({
+          where: { id: jobId },
+          data: {
+            status: "running",
+            attempts: existing.attempts + 1,
+            startedAt: new Date(),
+            finishedAt: null,
+            errorMessage: null,
+          },
+        });
+      });
+    },
+
+    async finishGenerationJob(projectId: string, jobId: string, input: FinishGenerationJobInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing) {
+          throw new Error(`GenerationJob not found: ${jobId}`);
+        }
+        if (existing.status !== "running") {
+          throw new Error(`GenerationJob is not running: ${jobId}`);
+        }
+        return tx.generationJob.update({
+          where: { id: jobId },
+          data: {
+            status: "succeeded",
+            resultArtifactId: input.resultArtifactId,
+            finishedAt: new Date(),
+            errorMessage: null,
+          },
+        });
+      });
+    },
+
+    async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing) {
+          throw new Error(`GenerationJob not found: ${jobId}`);
+        }
+        if (existing.status !== "running") {
+          throw new Error(`GenerationJob is not running: ${jobId}`);
+        }
+        return tx.generationJob.update({
+          where: { id: jobId },
+          data: {
+            status: "failed",
+            errorMessage: input.errorMessage,
+            finishedAt: new Date(),
+          },
+        });
+      });
+    },
+
     async getMessages(projectId: string) {
       return client.conversationMessage.findMany({
         where: { projectId },
@@ -321,6 +403,13 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       return client.agentRun.findMany({
         where: { projectId },
         orderBy: { startedAt: "asc" },
+      });
+    },
+
+    async getGenerationJobs(projectId: string) {
+      return client.generationJob.findMany({
+        where: { projectId },
+        orderBy: { createdAt: "asc" },
       });
     },
   };

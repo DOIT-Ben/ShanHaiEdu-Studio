@@ -29,6 +29,7 @@ model Project {
   nodes           WorkflowNode[]
   artifacts       Artifact[]
   agentRuns       AgentRun[]
+  generationJobs  GenerationJob[]
 
   @@index([ownerUserId, updatedAt])
 }
@@ -104,4 +105,24 @@ model AgentRun {
   project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, nodeKey, startedAt])
+}
+
+model GenerationJob {
+  id               String    @id @default(cuid())
+  projectId        String
+  kind             String
+  sourceArtifactId String
+  status           String    @default("queued")
+  attempts         Int       @default(0)
+  maxAttempts      Int       @default(2)
+  resultArtifactId String?
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status, createdAt])
+  @@index([sourceArtifactId])
 }

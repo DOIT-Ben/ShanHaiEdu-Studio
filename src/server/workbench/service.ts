@@ -5,8 +5,12 @@ import type {
   AgentRunRecord,
   ArtifactRecord,
   ConversationMessageRecord,
+  CreateGenerationJobInput,
   CreateProjectInput,
+  FailGenerationJobInput,
   FinishAgentRunInput,
+  FinishGenerationJobInput,
+  GenerationJobRecord,
   ProjectRecord,
   ProjectSnapshot,
   RegenerateArtifactInput,
@@ -14,7 +18,7 @@ import type {
   StartAgentRunInput,
   WorkflowNodeRecord,
 } from "./types";
-import type { AgentRun, Artifact, ConversationMessage, Project, WorkflowNode } from "@/generated/prisma/client";
+import type { AgentRun, Artifact, ConversationMessage, GenerationJob, Project, WorkflowNode } from "@/generated/prisma/client";
 
 export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository(), actor?: WorkbenchActor) {
   async function ensureProjectAccess(projectId: string): Promise<Project> {
@@ -103,6 +107,40 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapAgentRun(run);
     },
 
+    async createGenerationJob(projectId: string, input: CreateGenerationJobInput): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId);
+      const sourceArtifact = await repository.getArtifact(projectId, input.sourceArtifactId);
+      if (!sourceArtifact) {
+        throw new Error(`Artifact not found: ${input.sourceArtifactId}`);
+      }
+      const job = await repository.createGenerationJob(projectId, input);
+      return mapGenerationJob(job);
+    },
+
+    async startGenerationJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId);
+      const job = await repository.startGenerationJob(projectId, jobId);
+      return mapGenerationJob(job);
+    },
+
+    async finishGenerationJob(projectId: string, jobId: string, input: FinishGenerationJobInput): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId);
+      const job = await repository.finishGenerationJob(projectId, jobId, input);
+      return mapGenerationJob(job);
+    },
+
+    async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId);
+      const job = await repository.failGenerationJob(projectId, jobId, input);
+      return mapGenerationJob(job);
+    },
+
+    async getGenerationJobs(projectId: string): Promise<GenerationJobRecord[]> {
+      await ensureProjectAccess(projectId);
+      const jobs = await repository.getGenerationJobs(projectId);
+      return jobs.map(mapGenerationJob);
+    },
+
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
       await ensureProjectAccess(projectId);
       const messages = await repository.getMessages(projectId);
@@ -117,11 +155,12 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
 
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
       const project = await ensureProjectAccess(projectId);
-      const [messages, nodes, artifacts, agentRuns] = await Promise.all([
+      const [messages, nodes, artifacts, agentRuns, generationJobs] = await Promise.all([
         repository.getMessages(projectId),
         repository.getNodes(projectId),
         repository.getArtifacts(projectId),
         repository.getAgentRuns(projectId),
+        repository.getGenerationJobs(projectId),
       ]);
 
       return {
@@ -130,6 +169,7 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
         nodes: nodes.map(mapNode),
         artifacts: artifacts.map(mapArtifact),
         agentRuns: agentRuns.map(mapAgentRun),
+        generationJobs: generationJobs.map(mapGenerationJob),
       };
     },
   };
@@ -209,6 +249,24 @@ function mapAgentRun(run: AgentRun): AgentRunRecord {
     startedAt: run.startedAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
     errorMessage: run.errorMessage,
+  };
+}
+
+function mapGenerationJob(job: GenerationJob): GenerationJobRecord {
+  return {
+    id: job.id,
+    projectId: job.projectId,
+    kind: job.kind as GenerationJobRecord["kind"],
+    sourceArtifactId: job.sourceArtifactId,
+    status: job.status as GenerationJobRecord["status"],
+    attempts: job.attempts,
+    maxAttempts: job.maxAttempts,
+    resultArtifactId: job.resultArtifactId,
+    errorMessage: job.errorMessage,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
+    startedAt: job.startedAt?.toISOString() ?? null,
+    finishedAt: job.finishedAt?.toISOString() ?? null,
   };
 }
 

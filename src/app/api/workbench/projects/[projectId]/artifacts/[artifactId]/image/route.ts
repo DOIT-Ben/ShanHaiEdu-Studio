@@ -27,12 +27,22 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   return withLocalWorkbenchActor(request, async ({ service }) => {
+    let projectId = "";
+    let jobId: string | null = null;
     try {
-      const { projectId, artifactId } = await context.params;
+      const params = await context.params;
+      projectId = params.projectId;
+      const { artifactId } = params;
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
       if (sourceArtifact.nodeKey !== "ppt_draft" || sourceArtifact.kind !== "ppt_draft") {
         return NextResponse.json({ error: "这个 PPT 暂时不能生成课堂视觉图。" }, { status: 400 });
       }
+      const queuedJob = await service.createGenerationJob(projectId, {
+        kind: "image",
+        sourceArtifactId: sourceArtifact.id,
+      });
+      jobId = queuedJob.id;
+      await service.startGenerationJob(projectId, jobId);
 
       const generated = await generateImageFromArtifact({ project, artifact: sourceArtifact });
       const artifact = await service.saveArtifact(projectId, {
@@ -65,9 +75,13 @@ export async function POST(request: Request, context: RouteContext) {
           文件类型: generated.mime,
         },
       });
+      const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });
 
-      return NextResponse.json({ artifact });
+      return NextResponse.json({ artifact, job });
     } catch (error) {
+      if (projectId && jobId) {
+        await service.failGenerationJob(projectId, jobId, { errorMessage: "Image generation failed" }).catch(() => null);
+      }
       const message = error instanceof Error ? error.message : "Image generation failed";
       const status = message.includes("not found") ? 404 : 400;
       return NextResponse.json({ error: "课堂视觉图暂时没有生成成功，请稍后再试。" }, { status });

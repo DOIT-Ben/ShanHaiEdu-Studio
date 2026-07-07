@@ -8,12 +8,22 @@ type RouteContext = {
 
 export async function POST(request: Request, context: RouteContext) {
   return withLocalWorkbenchActor(request, async ({ service }) => {
+    let projectId = "";
+    let jobId: string | null = null;
     try {
-      const { projectId, artifactId } = await context.params;
+      const params = await context.params;
+      projectId = params.projectId;
+      const { artifactId } = params;
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
       if (sourceArtifact.nodeKey !== "ppt_draft" && sourceArtifact.kind !== "ppt_draft") {
         return NextResponse.json({ error: "这个 PPT 暂时不能生成真实文件。" }, { status: 400 });
       }
+      const queuedJob = await service.createGenerationJob(projectId, {
+        kind: "pptx",
+        sourceArtifactId: sourceArtifact.id,
+      });
+      jobId = queuedJob.id;
+      await service.startGenerationJob(projectId, jobId);
 
       const generated = await generateCozePptFromArtifact({ project, artifact: sourceArtifact });
       const artifact = await service.saveArtifact(projectId, {
@@ -44,9 +54,13 @@ export async function POST(request: Request, context: RouteContext) {
           文件大小: `${generated.bytes} bytes`,
         },
       });
+      const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });
 
-      return NextResponse.json({ artifact });
+      return NextResponse.json({ artifact, job });
     } catch (error) {
+      if (projectId && jobId) {
+        await service.failGenerationJob(projectId, jobId, { errorMessage: "Coze PPT generation failed" }).catch(() => null);
+      }
       const message = error instanceof Error ? error.message : "Coze PPT generation failed";
       const status = message.includes("not found") ? 404 : 400;
       return NextResponse.json({ error: "这个 PPT 文件暂时没有生成成功，请稍后再试。" }, { status });
