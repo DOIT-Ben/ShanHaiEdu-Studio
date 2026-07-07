@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildStoredImageDownload, imageDownloadHeaders } from "@/server/image-generation/artifact-image";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
 import { createWorkbenchService } from "@/server/workbench/service";
 
@@ -7,6 +8,22 @@ const service = createWorkbenchService();
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
 };
+
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const { projectId, artifactId } = await context.params;
+    const artifact = await service.getArtifact(projectId, artifactId);
+    const download = buildStoredImageDownload(artifact);
+    return new Response(toArrayBuffer(download.buffer), {
+      status: 200,
+      headers: imageDownloadHeaders({ filename: download.filename, mime: download.mime }),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Image download failed";
+    const status = message.includes("not found") ? 404 : 400;
+    return NextResponse.json({ error: "这张课堂视觉图暂时不能下载，请稍后再试。" }, { status });
+  }
+}
 
 export async function POST(_request: Request, context: RouteContext) {
   try {
@@ -52,4 +69,10 @@ export async function POST(_request: Request, context: RouteContext) {
   } catch {
     return NextResponse.json({ error: "课堂视觉图暂时没有生成成功，请稍后再试。" }, { status: 400 });
   }
+}
+
+function toArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const arrayBuffer = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(buffer);
+  return arrayBuffer;
 }
