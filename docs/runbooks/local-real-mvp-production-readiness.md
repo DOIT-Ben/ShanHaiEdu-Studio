@@ -67,6 +67,19 @@ npm run test:e2e:stage7
 node scripts\run-stage27-e2e.mjs
 ```
 
+客户端 exe 验证准备：
+
+```powershell
+npm run preflight:client-exe
+npm run test:e2e:stage33
+```
+
+通过标准：
+
+- `preflight:client-exe` 输出 `ok=true`。
+- 如果仍没有真实桌面打包工程，输出必须保留 `desktop-wrapper-not-configured` warning。
+- Stage33 使用 `localhost` 入口完成新建项目、发送需求、刷新恢复和 Markdown 下载。
+
 ## 4. 本地生产启动候选流程
 
 当前推荐流程：
@@ -116,3 +129,4 @@ npm run start
 - 独立后台 worker、队列取消、重试退避、限流和监控。
 - 对象存储、CDN、备份、素材生命周期清理。
 - WebKit、客户端 exe 和真实设备专项验收。
+- 真实客户端 exe 打包工程、安装包、自动更新、窗口生命周期和系统权限验收。
