@@ -1,12 +1,13 @@
 "use client";
 
-import { Clipboard, Eye, Image as ImageIcon, SendToBack } from "lucide-react";
+import { Clipboard, Download, Eye, Image as ImageIcon, SendToBack } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
+import { useArtifactMarkdownDownload } from "@/hooks/useArtifactMarkdownDownload";
 
 type ArtifactDetailSheetProps = {
   item: ArtifactItem | null;
@@ -61,6 +62,7 @@ function ArtifactDetailContent({
   onRegenerate: (item: ArtifactItem) => void;
 }) {
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
+  const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
 
   return (
     <>
@@ -140,6 +142,10 @@ function ArtifactDetailContent({
         <Button variant="secondary" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
           <SendToBack className="h-4 w-4" />
           作为输入
+        </Button>
+        <Button variant="secondary" disabled={!item.actions.canCopy} onClick={downloadMarkdown}>
+          <Download className="h-4 w-4" />
+          {downloadLabel}
         </Button>
         <Button variant="secondary">
           <ImageIcon className="h-4 w-4" />

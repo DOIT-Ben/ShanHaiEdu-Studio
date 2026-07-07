@@ -115,6 +115,17 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByText("PPTX 文件已生成")).toBeHidden();
     await expect(page.getByText("图片文件已生成")).toBeHidden();
     await expect(page.getByText("视频成片已生成")).toBeHidden();
+    const markdownDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "下载 Markdown" }).click();
+    const download = await markdownDownload;
+    expect(download.suggestedFilename()).toMatch(/\.md$/);
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    const markdownText = await readTextFile(downloadPath ?? "");
+    expect(markdownText).toContain("# 最终交付清单");
+    expect(markdownText).toContain("已形成材料");
+    expect(markdownText).toContain("待确认事项");
+    expect(markdownText).not.toMatch(/PPTX 文件已生成|图片文件已生成|视频成片已生成/);
     await page.getByRole("button", { name: "复制" }).click();
     await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
     await page.getByRole("button", { name: "确认使用" }).click();
@@ -180,4 +191,9 @@ async function expectArtifactEntryAvailable(page: Page, name: RegExp) {
   const drawer = page.getByRole("dialog", { name: "线性产物" });
   await expect(drawer.getByRole("button", { name })).toBeVisible();
   await page.keyboard.press("Escape");
+}
+
+async function readTextFile(path: string) {
+  const { readFile } = await import("node:fs/promises");
+  return readFile(path, "utf8");
 }
