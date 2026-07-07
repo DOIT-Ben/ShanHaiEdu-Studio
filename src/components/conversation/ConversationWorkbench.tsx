@@ -9,8 +9,10 @@ import { ChatTranscript } from "@/components/conversation/ChatTranscript";
 import { GenerationPanel } from "@/components/conversation/GenerationPanel";
 import { PromptComposer } from "@/components/conversation/PromptComposer";
 import { ConversationNavigator } from "@/components/conversation/ConversationNavigator";
+import type { PasswordAuthUser } from "@/lib/auth-api";
 
 type ConversationWorkbenchProps = {
+  currentUser?: PasswordAuthUser | null;
   messages: ChatMessage[];
   loadState: WorkbenchLoadState;
   errorMessage: string | null;
@@ -24,9 +26,11 @@ type ConversationWorkbenchProps = {
   onRetry: () => void;
   onConfirmIntro: () => void;
   onRecover: () => void;
+  onLogout?: () => Promise<void>;
 };
 
 export function ConversationWorkbench({
+  currentUser,
   messages,
   loadState,
   errorMessage,
@@ -40,6 +44,7 @@ export function ConversationWorkbench({
   onRetry,
   onConfirmIntro,
   onRecover,
+  onLogout,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeMessageId, setActiveMessageId] = useState(messages[0]?.id);
@@ -59,7 +64,7 @@ export function ConversationWorkbench({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-card">
-      <WorkbenchTopbar />
+      <WorkbenchTopbar currentUser={currentUser} onLogout={onLogout} />
       <StageProgress activeIndex={2} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex w-full max-w-6xl gap-4 px-6 pb-36 pt-4 lg:pb-10">

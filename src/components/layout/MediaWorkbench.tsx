@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ListTree } from "lucide-react";
+import { PasswordAuthGate } from "@/components/auth/PasswordAuthGate";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
 import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
@@ -10,9 +11,34 @@ import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { PasswordAuthUser } from "@/lib/auth-api";
+import { usePasswordAuth } from "@/hooks/usePasswordAuth";
 import { useWorkbenchController } from "@/hooks/useWorkbenchController";
 
 export function MediaWorkbench() {
+  const auth = usePasswordAuth();
+  if (auth.enabled && auth.mode !== "authenticated") {
+    if (auth.mode === "checking") {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-card text-sm text-muted-foreground">
+          正在确认登录状态...
+        </main>
+      );
+    }
+    return (
+      <PasswordAuthGate
+        errorMessage={auth.errorMessage}
+        submitting={auth.submitting}
+        onLogin={auth.login}
+        onRegister={auth.register}
+      />
+    );
+  }
+
+  return <AuthenticatedMediaWorkbench currentUser={auth.user} onLogout={auth.enabled ? auth.logout : undefined} />;
+}
+
+function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: PasswordAuthUser | null; onLogout?: () => Promise<void> }) {
   const controller = useWorkbenchController();
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
 
@@ -67,6 +93,7 @@ export function MediaWorkbench() {
               </Button>
             </div>
             <ConversationWorkbench
+              currentUser={currentUser}
               messages={controller.messages}
               loadState={controller.loadState}
               errorMessage={controller.errorMessage}
@@ -80,6 +107,7 @@ export function MediaWorkbench() {
               onRetry={controller.retryActiveProject}
               onConfirmIntro={() => controller.activeArtifact && controller.confirmArtifact(controller.activeArtifact)}
               onRecover={controller.showRecovery}
+              onLogout={onLogout}
             />
           </div>
           <ArtifactSidePanel

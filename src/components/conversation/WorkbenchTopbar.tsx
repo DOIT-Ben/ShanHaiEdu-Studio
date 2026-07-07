@@ -1,9 +1,15 @@
 "use client";
 
-import { CheckCircle2, MoreHorizontal, Users } from "lucide-react";
+import { CheckCircle2, LogOut, MoreHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { PasswordAuthUser } from "@/lib/auth-api";
 
-export function WorkbenchTopbar() {
+type WorkbenchTopbarProps = {
+  currentUser?: PasswordAuthUser | null;
+  onLogout?: () => Promise<void>;
+};
+
+export function WorkbenchTopbar({ currentUser, onLogout }: WorkbenchTopbarProps) {
   return (
     <div className="flex items-center justify-between gap-4 px-6 py-6 lg:px-8">
       <nav className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden whitespace-nowrap text-sm text-muted-foreground" aria-label="当前位置">
@@ -14,6 +20,11 @@ export function WorkbenchTopbar() {
         <span className="truncate font-medium text-foreground">表内乘法（一）</span>
       </nav>
       <div className="flex shrink-0 items-center gap-2">
+        {currentUser && (
+          <span className="hidden max-w-[160px] truncate text-sm text-muted-foreground sm:inline">
+            {currentUser.displayName}
+          </span>
+        )}
         <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
           <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           已保存 10:24
@@ -22,6 +33,12 @@ export function WorkbenchTopbar() {
           <Users className="h-4 w-4" />
           协作
         </Button>
+        {onLogout && (
+          <Button variant="secondary" size="sm" onClick={() => void onLogout()}>
+            <LogOut className="h-4 w-4" />
+            退出登录
+          </Button>
+        )}
         <Button variant="secondary" size="icon" aria-label="更多">
           <MoreHorizontal className="h-4 w-4" />
         </Button>
