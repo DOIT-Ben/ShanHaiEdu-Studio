@@ -48,6 +48,21 @@ npm run preflight:production
 - 每个检查项 `ok=true`。
 - 输出不包含密钥、token、私有端点或 `.env` 内容。
 
+部署演示前一键门禁：
+
+```powershell
+npm run preflight:deploy-demo
+```
+
+通过标准：
+
+- exit 0。
+- JSON 输出 `ok=true`。
+- 顺序完成生产预检、SQLite schema 初始化、生产构建、standalone 服务启动和 HTTP smoke。
+- `test-results\deploy-demo-preflight-report.json` 与 `test-results\deploy-demo-preflight-report.md` 生成。
+- `/` 与 `/api/workbench/projects` 均返回 HTTP 200。
+- 该命令只代表真实环境部署演示准备通过，不代表公网 live、域名、HTTPS 或真实用户访问已经完成。
+
 初始化本地 SQLite schema：
 
 ```powershell
@@ -119,6 +134,7 @@ Remove-Item Env:\SHANHAI_RUN_INSTALLER_SMOKE
 当前推荐流程：
 
 ```powershell
+npm run preflight:deploy-demo
 npm run preflight:production
 npm run db:init
 npm run build
@@ -126,6 +142,8 @@ npm run start
 ```
 
 如果需要指定端口，优先通过运行环境变量或外层进程管理器设置，不把端口硬编码进业务代码。
+
+如果只是演示前最后确认，优先运行 `npm run preflight:deploy-demo`。它会使用 `.next\standalone\server.js` 做生产服务 smoke，并自动把相对 SQLite `file:` 路径规范到项目绝对路径，避免 standalone 运行目录变化导致数据库目录不可用。
 
 ## 5. 构建输出
 
