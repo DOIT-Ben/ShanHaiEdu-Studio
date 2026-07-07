@@ -45,10 +45,12 @@ export async function runDesktopInstallerSmoke({
 
 function resolveDesktopPaths(cwd) {
   const dist = path.join(cwd, "dist-desktop");
+  const resources = path.join(dist, "win-unpacked", "resources");
   return {
     installer: path.join(dist, installerName),
     unpackedExe: path.join(dist, "win-unpacked", appExeName),
-    appResources: path.join(dist, "win-unpacked", "resources", "app"),
+    appResources: path.join(resources, "app"),
+    unpackedResources: path.join(resources, "app.asar.unpacked"),
   };
 }
 
@@ -69,7 +71,7 @@ function checkGitIgnored(cwd, relativePath, id) {
   });
 }
 
-function checkPackagedResources(appResources) {
+function checkPackagedResources(appResources, unpackedResources = path.join(path.dirname(appResources), "app.asar.unpacked")) {
   const forbidden = [
     ".env",
     "data",
@@ -80,7 +82,7 @@ function checkPackagedResources(appResources) {
     path.join("desktop-bundle", ".env"),
     path.join("desktop-bundle", "data"),
     path.join("desktop-bundle", "test-results"),
-  ].filter((entry) => existsSync(path.join(appResources, entry)));
+  ].filter((entry) => existsSync(path.join(appResources, entry)) || existsSync(path.join(unpackedResources, entry)));
 
   return buildCheck("packaged-resource-safety", forbidden.length === 0, {
     message: forbidden.length === 0 ? "Packaged resources exclude local-only files." : "Packaged resources contain local-only files.",
@@ -154,7 +156,7 @@ async function runSilentInstallSmoke(installerPath, cwd, port, installerTimeoutM
     windowsHide: true,
   });
   const installedExe = path.join(installDir, appExeName);
-  const installedServer = path.join(installDir, "resources", "app", "desktop-bundle", "server.js");
+  const installedServer = resolveInstalledServerPath(installDir);
   const uninstaller = path.join(installDir, `Uninstall ${appExeName}`);
   const userDataDir = path.join(cwd, "test-results", "stage37-user-data");
   const shortcutPath = resolveStartMenuShortcutPath();
@@ -410,7 +412,20 @@ function resolveStartMenuShortcutPath() {
 }
 
 function checkDesktopUserData(userDataDir) {
-  return existsSync(path.join(userDataDir, "data")) && existsSync(path.join(userDataDir, "artifact-storage-root"));
+  return (
+    existsSync(path.join(userDataDir, "data")) &&
+    existsSync(path.join(userDataDir, "artifact-storage-root")) &&
+    existsSync(path.join(userDataDir, "logs")) &&
+    existsSync(path.join(userDataDir, "crash-dumps"))
+  );
+}
+
+function resolveInstalledServerPath(installDir) {
+  const candidates = [
+    path.join(installDir, "resources", "app.asar.unpacked", "desktop-bundle", "server.js"),
+    path.join(installDir, "resources", "app", "desktop-bundle", "server.js"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 }
 
 async function stopProcessTree(pid) {

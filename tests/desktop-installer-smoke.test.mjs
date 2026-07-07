@@ -103,6 +103,14 @@ test("install experience diagnostics cover system entrypoints and uninstall resi
   );
 });
 
+test("desktop user data smoke verifies runtime data, logs, and crash dump directories", () => {
+  const source = readFileSync(path.join(root, "scripts", "desktop-installer-smoke.mjs"), "utf8");
+
+  assert.match(source, /artifact-storage-root/);
+  assert.match(source, /logs/);
+  assert.match(source, /crash-dumps/);
+});
+
 function createInstallerSmokeFixture() {
   const fixture = path.join(tmpdir(), `shanhai-installer-smoke-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   mkdirSync(path.join(fixture, "dist-desktop", "win-unpacked", "resources", "app", "desktop-bundle"), { recursive: true });

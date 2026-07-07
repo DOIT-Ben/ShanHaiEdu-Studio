@@ -1,7 +1,12 @@
 module.exports = {
   appId: "cn.shanhaiedu.studio",
   productName: "ShanHaiEdu Studio",
-  asar: false,
+  asar: true,
+  asarUnpack: ["desktop-bundle/**", "node_modules/**"],
+  extraMetadata: {
+    description: "ShanHaiEdu local lesson media production studio.",
+    author: "ShanHaiEdu",
+  },
   directories: {
     output: "dist-desktop",
   },
@@ -12,6 +17,7 @@ module.exports = {
     "public/**",
   ],
   win: {
+    icon: "desktop/assets/icon.ico",
     target: ["nsis"],
   },
   nsis: {

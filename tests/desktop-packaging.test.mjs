@@ -53,6 +53,28 @@ test("electron builder config keeps binary artifacts out of git-scoped source", 
   assert.match(gitignore, /^desktop-bundle\/$/m);
 });
 
+test("desktop packaging defines client metadata, icon, and asar unpack boundary", () => {
+  const config = readFileSync(path.join(root, "electron-builder.config.cjs"), "utf8");
+
+  assert.match(config, /asar:\s*true/);
+  assert.match(config, /asarUnpack:\s*\[/);
+  assert.match(config, /desktop-bundle\/\*\*/);
+  assert.match(config, /node_modules\/\*\*/);
+  assert.match(config, /icon:\s*["']desktop\/assets\/icon\.ico["']/);
+  assert.match(config, /extraMetadata/);
+  assert.match(config, /description:\s*["']/);
+  assert.match(config, /author:\s*["']/);
+  assert.equal(existsSync(path.join(root, "desktop", "assets", "icon.ico")), true);
+});
+
+test("desktop main process prepares logs, crash dumps, and asar unpacked server lookup", () => {
+  const main = readFileSync(path.join(root, "desktop", "electron-main.mjs"), "utf8");
+
+  assert.match(main, /app\.setAppLogsPath/);
+  assert.match(main, /app\.setPath\(["']crashDumps["']/);
+  assert.match(main, /\.asar\.unpacked/);
+});
+
 function readPackage() {
   return JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 }

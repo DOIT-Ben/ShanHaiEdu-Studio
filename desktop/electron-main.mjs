@@ -55,8 +55,14 @@ function ensureDesktopDataPaths() {
   const userData = app.getPath("userData");
   const dataDir = path.join(userData, "data");
   const artifactDir = path.join(userData, "artifact-storage-root");
+  const logsDir = path.join(userData, "logs");
+  const crashDumpsDir = path.join(userData, "crash-dumps");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(artifactDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true });
+  mkdirSync(crashDumpsDir, { recursive: true });
+  app.setAppLogsPath(logsDir);
+  app.setPath("crashDumps", crashDumpsDir);
 
   return {
     databaseUrl: process.env.DATABASE_URL?.trim() || `file:${path.join(dataDir, "shanhai-local-real-mvp.db")}`,
@@ -88,10 +94,13 @@ function startNextStandaloneServer({ port, appPaths }) {
 }
 
 function resolveStandaloneServerEntry() {
+  const appPath = app.getAppPath();
+  const unpackedAppPath = appPath.replace(/\.asar$/, ".asar.unpacked");
   const candidates = [
     process.env.SHANHAI_DESKTOP_SERVER_ENTRY,
-    path.join(app.getAppPath(), "desktop-bundle", "server.js"),
-    path.join(app.getAppPath(), ".next", "standalone", "server.js"),
+    path.join(unpackedAppPath, "desktop-bundle", "server.js"),
+    path.join(appPath, "desktop-bundle", "server.js"),
+    path.join(appPath, ".next", "standalone", "server.js"),
     path.join(repoRoot, "desktop-bundle", "server.js"),
     path.join(repoRoot, ".next", "standalone", "server.js"),
   ].filter(Boolean);
