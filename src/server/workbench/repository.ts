@@ -1,5 +1,6 @@
 import { prisma } from "@/server/db/client";
 import type { PrismaClient } from "@/generated/prisma/client";
+import type { WorkbenchActor } from "@/server/auth/local-session";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
 import type {
   AddMessageInput,
@@ -14,16 +15,32 @@ export type WorkbenchRepository = ReturnType<typeof createPrismaWorkbenchReposit
 
 export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
   return {
-    async listProjects() {
-      return client.project.findMany({ orderBy: { updatedAt: "desc" } });
+    async listProjects(input: { actor?: WorkbenchActor } = {}) {
+      return client.project.findMany({
+        where: input.actor
+          ? {
+              OR: [{ ownerUserId: input.actor.userId }, { ownerUserId: null }],
+            }
+          : undefined,
+        orderBy: { updatedAt: "desc" },
+      });
     },
 
     async createProject(input: CreateProjectInput) {
       return client.$transaction(async (tx) => {
+        if (input.ownerUserId) {
+          await tx.localUser.upsert({
+            where: { id: input.ownerUserId },
+            update: { displayName: "本地教师", role: "teacher" },
+            create: { id: input.ownerUserId, displayName: "本地教师", role: "teacher" },
+          });
+        }
+
         const project = await tx.project.create({
           data: {
             title: input.title,
             currentNodeKey: FIRST_WORKFLOW_NODE_KEY,
+            ownerUserId: input.ownerUserId,
             grade: input.grade,
             subject: input.subject,
             textbookVersion: input.textbookVersion,

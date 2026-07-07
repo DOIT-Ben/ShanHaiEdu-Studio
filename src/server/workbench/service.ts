@@ -1,4 +1,5 @@
 import { createPrismaWorkbenchRepository, type WorkbenchRepository } from "./repository";
+import type { WorkbenchActor } from "@/server/auth/local-session";
 import type {
   AddMessageInput,
   AgentRunRecord,
@@ -15,37 +16,48 @@ import type {
 } from "./types";
 import type { AgentRun, Artifact, ConversationMessage, Project, WorkflowNode } from "@/generated/prisma/client";
 
-export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository()) {
+export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository(), actor?: WorkbenchActor) {
+  async function ensureProjectAccess(projectId: string): Promise<Project> {
+    const project = await repository.getProject(projectId);
+    if (!project || !canAccessProject(project, actor)) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+    return project;
+  }
+
   return {
     async listProjects(): Promise<ProjectRecord[]> {
-      const projects = await repository.listProjects();
+      const projects = await repository.listProjects({ actor });
       return projects.map(mapProject);
     },
 
     async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
-      const project = await repository.createProject(input);
+      const project = await repository.createProject({
+        ...input,
+        ownerUserId: input.ownerUserId ?? actor?.userId,
+      });
       return mapProject(project);
     },
 
     async getProject(projectId: string): Promise<ProjectRecord> {
-      const project = await repository.getProject(projectId);
-      if (!project) {
-        throw new Error(`Project not found: ${projectId}`);
-      }
+      const project = await ensureProjectAccess(projectId);
       return mapProject(project);
     },
 
     async addMessage(projectId: string, input: AddMessageInput): Promise<ConversationMessageRecord> {
+      await ensureProjectAccess(projectId);
       const message = await repository.addMessage(projectId, input);
       return mapMessage(message);
     },
 
     async saveArtifact(projectId: string, input: SaveArtifactInput): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId);
       const artifact = await repository.saveArtifact(projectId, input);
       return mapArtifact(artifact);
     },
 
     async getArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId);
       const artifact = await repository.getArtifact(projectId, artifactId);
       if (!artifact) {
         throw new Error(`Artifact not found: ${artifactId}`);
@@ -54,16 +66,19 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async approveArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId);
       const artifact = await repository.approveArtifact(projectId, artifactId);
       return mapArtifact(artifact);
     },
 
     async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId);
       const artifact = await repository.regenerateArtifact(projectId, artifactId, input);
       return mapArtifact(artifact);
     },
 
     async getApprovedInputs(projectId: string, nodeKey: WorkflowNodeRecord["key"]): Promise<ArtifactRecord[]> {
+      await ensureProjectAccess(projectId);
       const node = await repository.getNode(projectId, nodeKey);
       if (!node) {
         throw new Error(`Workflow node not found: ${nodeKey}`);
@@ -77,37 +92,37 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async startAgentRun(projectId: string, input: StartAgentRunInput): Promise<AgentRunRecord> {
+      await ensureProjectAccess(projectId);
       const run = await repository.startAgentRun(projectId, input);
       return mapAgentRun(run);
     },
 
     async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput): Promise<AgentRunRecord> {
+      await ensureProjectAccess(projectId);
       const run = await repository.finishAgentRun(projectId, runId, input);
       return mapAgentRun(run);
     },
 
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
+      await ensureProjectAccess(projectId);
       const messages = await repository.getMessages(projectId);
       return messages.map(mapMessage);
     },
 
     async getArtifacts(projectId: string): Promise<ArtifactRecord[]> {
+      await ensureProjectAccess(projectId);
       const artifacts = await repository.getArtifacts(projectId);
       return artifacts.map(mapArtifact);
     },
 
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
-      const [project, messages, nodes, artifacts, agentRuns] = await Promise.all([
-        repository.getProject(projectId),
+      const project = await ensureProjectAccess(projectId);
+      const [messages, nodes, artifacts, agentRuns] = await Promise.all([
         repository.getMessages(projectId),
         repository.getNodes(projectId),
         repository.getArtifacts(projectId),
         repository.getAgentRuns(projectId),
       ]);
-
-      if (!project) {
-        throw new Error(`Project not found: ${projectId}`);
-      }
 
       return {
         project: mapProject(project),
@@ -118,6 +133,11 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       };
     },
   };
+}
+
+function canAccessProject(project: Project, actor?: WorkbenchActor) {
+  if (!actor) return true;
+  return !project.ownerUserId || project.ownerUserId === actor.userId;
 }
 
 function mapProject(project: Project): ProjectRecord {

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { createWorkbenchService } from "@/server/workbench/service";
+import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import type { WorkflowNodeKey } from "@/server/workbench/types";
-
-const service = createWorkbenchService();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -20,18 +18,21 @@ const nodeKeys = new Set<WorkflowNodeKey>([
 ]);
 
 export async function POST(request: Request, context: RouteContext) {
-  try {
-    const { projectId } = await context.params;
-    const body = await request.json();
-    const run = await service.startAgentRun(projectId, {
-      nodeKey: assertNodeKey(body.nodeKey),
-      runtime: String(body.runtime ?? "deterministic"),
-    });
-    return NextResponse.json({ run }, { status: 201 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "AgentRun start failed";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    try {
+      const { projectId } = await context.params;
+      const body = await request.json();
+      const run = await service.startAgentRun(projectId, {
+        nodeKey: assertNodeKey(body.nodeKey),
+        runtime: String(body.runtime ?? "deterministic"),
+      });
+      return NextResponse.json({ run }, { status: 201 });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "AgentRun start failed";
+      const status = message.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: message }, { status });
+    }
+  });
 }
 
 function assertNodeKey(value: unknown): WorkflowNodeKey {

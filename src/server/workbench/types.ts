@@ -92,6 +92,7 @@ export type ProjectSnapshot = {
 
 export type CreateProjectInput = {
   title: string;
+  ownerUserId?: string;
   grade?: string;
   subject?: string;
   textbookVersion?: string;

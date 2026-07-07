@@ -1,38 +1,38 @@
 import { NextResponse } from "next/server";
+import { withLocalWorkbenchActor, type AuthenticatedWorkbenchRequest } from "@/server/auth/workbench-route";
 import { buildStoredImageDownload } from "@/server/image-generation/artifact-image";
 import { buildFinalMaterialPackageDownload, materialPackageDownloadHeaders } from "@/server/package/artifact-package";
 import { buildStoredOrGeneratedArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
 import { buildStoredVideoDownload } from "@/server/video-generation/artifact-video";
-import { createWorkbenchService } from "@/server/workbench/service";
-
-const service = createWorkbenchService();
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
-  try {
-    const { projectId, artifactId } = await context.params;
-    const finalDelivery = await service.getArtifact(projectId, artifactId);
-    const pptArtifact = await getLatestPptArtifact(projectId);
-    const pptx = await buildStoredOrGeneratedArtifactPptxDownload(pptArtifact);
-    const image = await getLatestImageDownload(projectId);
-    const video = await getLatestVideoDownload(projectId);
-    const download = await buildFinalMaterialPackageDownload({ finalDelivery, pptx, image, video });
+export async function GET(request: Request, context: RouteContext) {
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    try {
+      const { projectId, artifactId } = await context.params;
+      const finalDelivery = await service.getArtifact(projectId, artifactId);
+      const pptArtifact = await getLatestPptArtifact(projectId, service);
+      const pptx = await buildStoredOrGeneratedArtifactPptxDownload(pptArtifact);
+      const image = await getLatestImageDownload(projectId, service);
+      const video = await getLatestVideoDownload(projectId, service);
+      const download = await buildFinalMaterialPackageDownload({ finalDelivery, pptx, image, video });
 
-    return new Response(toArrayBuffer(download.buffer), {
-      status: 200,
-      headers: materialPackageDownloadHeaders(download.filename),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Material package download failed";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: "这个材料包暂时没有生成成功，请稍后再试。" }, { status });
-  }
+      return new Response(toArrayBuffer(download.buffer), {
+        status: 200,
+        headers: materialPackageDownloadHeaders(download.filename),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Material package download failed";
+      const status = message.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: "这个材料包暂时没有生成成功，请稍后再试。" }, { status });
+    }
+  });
 }
 
-async function getLatestPptArtifact(projectId: string) {
+async function getLatestPptArtifact(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
   const pptArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft");
   const approved = pptArtifacts.filter((artifact) => artifact.isApproved);
@@ -44,7 +44,7 @@ async function getLatestPptArtifact(projectId: string) {
   return latest;
 }
 
-async function getLatestVideoDownload(projectId: string) {
+async function getLatestVideoDownload(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
   const videoArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "intro_video_plan" && hasVideoAsset(artifact));
   const approved = videoArtifacts.filter((artifact) => artifact.isApproved);
@@ -56,7 +56,7 @@ async function getLatestVideoDownload(projectId: string) {
   return buildStoredVideoDownload(latest);
 }
 
-async function getLatestImageDownload(projectId: string) {
+async function getLatestImageDownload(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
   const imageArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft" && hasImageAsset(artifact));
   const approved = imageArtifacts.filter((artifact) => artifact.isApproved);

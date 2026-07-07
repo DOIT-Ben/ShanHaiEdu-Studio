@@ -12,17 +12,27 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 db.pragma("foreign_keys = ON");
 db.exec(`
+CREATE TABLE IF NOT EXISTS "LocalUser" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "displayName" TEXT NOT NULL,
+  "role" TEXT NOT NULL DEFAULT 'teacher',
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS "Project" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "title" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'active',
   "currentNodeKey" TEXT NOT NULL,
+  "ownerUserId" TEXT,
   "grade" TEXT,
   "subject" TEXT,
   "textbookVersion" TEXT,
   "lessonTopic" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" DATETIME NOT NULL
+  "updatedAt" DATETIME NOT NULL,
+  CONSTRAINT "Project_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "LocalUser" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "ConversationMessage" (
@@ -79,7 +89,11 @@ CREATE TABLE IF NOT EXISTS "AgentRun" (
   CONSTRAINT "AgentRun_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+`);
+ensureColumn(db, "Project", "ownerUserId", 'ALTER TABLE "Project" ADD COLUMN "ownerUserId" TEXT');
+db.exec(`
 CREATE INDEX IF NOT EXISTS "ConversationMessage_projectId_createdAt_idx" ON "ConversationMessage"("projectId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Project_ownerUserId_updatedAt_idx" ON "Project"("ownerUserId", "updatedAt");
 CREATE INDEX IF NOT EXISTS "WorkflowNode_projectId_order_idx" ON "WorkflowNode"("projectId", "order");
 CREATE UNIQUE INDEX IF NOT EXISTS "WorkflowNode_projectId_key_key" ON "WorkflowNode"("projectId", "key");
 CREATE INDEX IF NOT EXISTS "Artifact_projectId_nodeKey_version_idx" ON "Artifact"("projectId", "nodeKey", "version");
@@ -97,4 +111,11 @@ function resolveSqlitePath(url) {
   const raw = url.slice("file:".length);
   if (path.isAbsolute(raw)) return raw;
   return path.resolve(root, raw);
+}
+
+function ensureColumn(db, table, column, alterSql) {
+  const columns = db.prepare(`PRAGMA table_info("${table}")`).all();
+  if (!columns.some((entry) => entry.name === column)) {
+    db.exec(alterSql);
+  }
 }

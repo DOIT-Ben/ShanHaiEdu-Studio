@@ -17,16 +17,29 @@ model Project {
   title           String
   status          String                @default("active")
   currentNodeKey  String
+  ownerUserId     String?
   grade           String?
   subject         String?
   textbookVersion String?
   lessonTopic     String?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
+  owner           LocalUser?            @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
   messages        ConversationMessage[]
   nodes           WorkflowNode[]
   artifacts       Artifact[]
   agentRuns       AgentRun[]
+
+  @@index([ownerUserId, updatedAt])
+}
+
+model LocalUser {
+  id          String    @id
+  displayName String
+  role        String    @default("teacher")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projects    Project[]
 }
 
 model ConversationMessage {

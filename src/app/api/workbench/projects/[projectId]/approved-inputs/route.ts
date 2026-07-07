@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { createWorkbenchService } from "@/server/workbench/service";
+import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import type { WorkflowNodeKey } from "@/server/workbench/types";
-
-const service = createWorkbenchService();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -20,17 +18,19 @@ const nodeKeys = new Set<WorkflowNodeKey>([
 ]);
 
 export async function GET(request: Request, context: RouteContext) {
-  try {
-    const { projectId } = await context.params;
-    const { searchParams } = new URL(request.url);
-    const nodeKey = assertNodeKey(searchParams.get("nodeKey"));
-    const artifacts = await service.getApprovedInputs(projectId, nodeKey);
-    return NextResponse.json({ artifacts });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Approved inputs lookup failed";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
-  }
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    try {
+      const { projectId } = await context.params;
+      const { searchParams } = new URL(request.url);
+      const nodeKey = assertNodeKey(searchParams.get("nodeKey"));
+      const artifacts = await service.getApprovedInputs(projectId, nodeKey);
+      return NextResponse.json({ artifacts });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Approved inputs lookup failed";
+      const status = message.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: message }, { status });
+    }
+  });
 }
 
 function assertNodeKey(value: unknown): WorkflowNodeKey {

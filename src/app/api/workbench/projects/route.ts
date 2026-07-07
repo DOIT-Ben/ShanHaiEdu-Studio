@@ -1,24 +1,26 @@
 import { NextResponse } from "next/server";
-import { createWorkbenchService } from "@/server/workbench/service";
+import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 
-const service = createWorkbenchService();
-
-export async function GET() {
-  const projects = await service.listProjects();
-  return NextResponse.json({ projects });
+export async function GET(request: Request) {
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    const projects = await service.listProjects();
+    return NextResponse.json({ projects });
+  });
 }
 
 export async function POST(request: Request) {
-  const body = await parseOptionalProjectBody(request);
-  const project = await service.createProject({
-    title: String(body.title ?? "未命名公开课项目"),
-    grade: optionalString(body.grade),
-    subject: optionalString(body.subject),
-    textbookVersion: optionalString(body.textbookVersion),
-    lessonTopic: optionalString(body.lessonTopic),
-  });
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    const body = await parseOptionalProjectBody(request);
+    const project = await service.createProject({
+      title: String(body.title ?? "未命名公开课项目"),
+      grade: optionalString(body.grade),
+      subject: optionalString(body.subject),
+      textbookVersion: optionalString(body.textbookVersion),
+      lessonTopic: optionalString(body.lessonTopic),
+    });
 
-  return NextResponse.json({ project }, { status: 201 });
+    return NextResponse.json({ project }, { status: 201 });
+  });
 }
 
 async function parseOptionalProjectBody(request: Request): Promise<Record<string, unknown>> {

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { createWorkbenchService } from "@/server/workbench/service";
+import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import type { ArtifactKind, ArtifactStatus, WorkflowNodeKey } from "@/server/workbench/types";
-
-const service = createWorkbenchService();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -21,28 +19,44 @@ const nodeKeys = new Set<WorkflowNodeKey>([
 
 const artifactStatuses = new Set<ArtifactStatus>(["not_started", "in_progress", "needs_review", "approved", "blocked", "stale", "failed"]);
 
-export async function GET(_request: Request, context: RouteContext) {
-  const { projectId } = await context.params;
-  const artifacts = await service.getArtifacts(projectId);
-  return NextResponse.json({ artifacts });
+export async function GET(request: Request, context: RouteContext) {
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    try {
+      const { projectId } = await context.params;
+      const artifacts = await service.getArtifacts(projectId);
+      return NextResponse.json({ artifacts });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Artifacts lookup failed";
+      const status = message.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: "项目产物暂时没有取回，请稍后再试。" }, { status });
+    }
+  });
 }
 
 export async function POST(request: Request, context: RouteContext) {
-  const { projectId } = await context.params;
-  const body = await request.json();
-  const nodeKey = assertNodeKey(body.nodeKey);
-  const status = assertArtifactStatus(body.status);
-  const artifact = await service.saveArtifact(projectId, {
-    nodeKey,
-    kind: assertArtifactKind(body.kind ?? body.nodeKey),
-    title: String(body.title ?? "未命名产物"),
-    status,
-    summary: String(body.summary ?? ""),
-    markdownContent: String(body.markdownContent ?? ""),
-    structuredContent: typeof body.structuredContent === "object" && body.structuredContent ? body.structuredContent : {},
-  });
+  return withLocalWorkbenchActor(request, async ({ service }) => {
+    try {
+      const { projectId } = await context.params;
+      const body = await request.json();
+      const nodeKey = assertNodeKey(body.nodeKey);
+      const status = assertArtifactStatus(body.status);
+      const artifact = await service.saveArtifact(projectId, {
+        nodeKey,
+        kind: assertArtifactKind(body.kind ?? body.nodeKey),
+        title: String(body.title ?? "未命名产物"),
+        status,
+        summary: String(body.summary ?? ""),
+        markdownContent: String(body.markdownContent ?? ""),
+        structuredContent: typeof body.structuredContent === "object" && body.structuredContent ? body.structuredContent : {},
+      });
 
-  return NextResponse.json({ artifact }, { status: 201 });
+      return NextResponse.json({ artifact }, { status: 201 });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Artifact save failed";
+      const status = message.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: "这个产物暂时没有保存成功，请稍后再试。" }, { status });
+    }
+  });
 }
 
 function assertNodeKey(value: unknown): WorkflowNodeKey {
