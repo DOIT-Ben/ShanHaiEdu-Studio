@@ -29,6 +29,7 @@
 - `docs\stages\local-real-mvp-m7-local-concurrency-report.md`
 - `docs\stages\local-real-mvp-m8-browser-coverage-report.md`
 - `docs\stages\local-real-mvp-m9-markdown-download-report.md`
+- `docs\stages\local-real-mvp-m10-artifact-reuse-report.md`
 
 ## 3. 已完成能力
 
@@ -145,11 +146,30 @@ M9 已补齐最终交付清单的真实 Markdown 下载能力：
 - `npm run test:e2e:stage8` 通过：窄屏 Chromium 与 Firefox desktop 未回归。
 - `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
 
+### 3.7 M10 产物复用输入闭环
+
+M10 已补齐节点产物作为下一轮教师输入的真实闭环：
+
+- 从完整产物详情页点击“作为输入”后，详情抽屉会关闭，输入区可见可操作。
+- composer 显示“引用：产物标题：摘要”。
+- textarea 插入“请基于：...”的可编辑产物内容。
+- 发送下一轮消息后，后端 `ConversationMessage.artifactRefs` 保存引用。
+- 前端从后端 snapshot 回显教师消息时，会把已保存引用显示为“引用：...”。
+- 点击“移除引用”后引用 chip 消失，但教师已编辑的输入正文保留。
+
+最近一次 M10 验收记录显示：
+
+- `npm run test:e2e:stage2` 通过：Chromium desktop 2 passed，覆盖 M1-M5 主链路和 M10 产物复用输入闭环。
+- `npm run test:e2e:stage8` 通过：Chromium narrow 与 Firefox desktop 共 4 passed，M10 用例在两个浏览器配置下均通过。
+- `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
+- `npm test` 通过：Node 11 tests passed；Vitest 15 files / 68 tests passed。
+- `npm run build` 通过。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 文本 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载。
+> ShanHaiEdu 已具备本地 deterministic 文本 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载。
 
 当前不能表述为：
 
@@ -162,7 +182,7 @@ M9 已补齐最终交付清单的真实 Markdown 下载能力：
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 72%-78%。核心 workflow、后端持久化、浏览器主链路、窄屏/Firefox 覆盖、Markdown 下载交付、阶段测试与文档闭环已经成形。
+- 内部骨架成熟度：约 74%-80%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、阶段测试与文档闭环已经成形。
 - 生产就绪度：约 30%-40%。真实 provider、文件生成、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
@@ -185,6 +205,6 @@ M9 已补齐最终交付清单的真实 Markdown 下载能力：
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过。
 
 因此当前主线可以作为“本地 deterministic 文本 MVP 可用”的候选状态继续推进，但不能作为“真实模型与多媒体生产 MVP 已完成”的最终状态。

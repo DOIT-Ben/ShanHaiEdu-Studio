@@ -155,6 +155,50 @@ test.describe("E2E Stage 2 deterministic user path", () => {
       fullPage: true,
     });
   });
+
+  test("reuses an artifact from detail as the next teacher input", async ({ page }) => {
+    const artifactReference = "需求规格说明书：已整理公开课目标、基础信息、交付范围和后续输入要求。";
+    await createProjectFromVisibleEntry(page);
+
+    await page.getByPlaceholder(composerPlaceholder).fill(teacherPrompt);
+    const firstMessageCreated = page.waitForResponse(
+      (response) => response.url().includes("/api/workbench/projects/") && response.url().endsWith("/messages") && response.status() === 201,
+    );
+    await page.getByRole("button", { name: "发送" }).click();
+    await firstMessageCreated;
+    await expect(page.getByRole("article").filter({ hasText: assistantReply })).toBeVisible();
+
+    await openArtifactDetail(page, /需求规格说明书，待确认/);
+    await page.getByRole("button", { name: "作为输入" }).click();
+
+    await expect(page.getByRole("button", { name: "确认使用" })).toBeHidden();
+    await expect(page.getByPlaceholder(composerPlaceholder)).toBeVisible();
+    await expect(page.getByText(artifactReference)).toBeVisible();
+    await expect(page.getByPlaceholder(composerPlaceholder)).toHaveValue(/请基于：需求规格说明书｜已整理公开课目标/);
+
+    await page.getByPlaceholder(composerPlaceholder).fill("请继续细化课堂活动。");
+    const reusedMessageCreated = page.waitForResponse(
+      (response) => response.url().includes("/api/workbench/projects/") && response.url().endsWith("/messages") && response.status() === 201,
+    );
+    await page.getByRole("button", { name: "发送" }).click();
+    const reusedMessageResponse = await reusedMessageCreated;
+    const projectId = projectIdFromMessageUrl(reusedMessageResponse.url());
+    const messagesResponse = await page.request.get(`/api/workbench/projects/${projectId}/messages`);
+    expect(messagesResponse.ok()).toBe(true);
+    const messagesPayload = (await messagesResponse.json()) as { messages: Array<{ role: string; content: string; artifactRefs: string[] }> };
+    const lastTeacherMessage = messagesPayload.messages.filter((message) => message.role === "teacher").at(-1);
+    expect(lastTeacherMessage?.content).toBe("请继续细化课堂活动。");
+    expect(lastTeacherMessage?.artifactRefs).toContain(artifactReference);
+    await expect(page.getByRole("article").filter({ hasText: "请继续细化课堂活动。" }).filter({ hasText: artifactReference })).toBeVisible();
+
+    await openArtifactDetail(page, /需求规格说明书，待确认/);
+    await page.getByRole("button", { name: "作为输入" }).click();
+    const insertedValue = await page.getByPlaceholder(composerPlaceholder).inputValue();
+    await page.getByPlaceholder(composerPlaceholder).fill(`${insertedValue}\n\n下一步只关注学生活动。`);
+    await page.getByRole("button", { name: "移除引用" }).click();
+    await expect(page.getByRole("button", { name: "移除引用" })).toBeHidden();
+    await expect(page.getByPlaceholder(composerPlaceholder)).toHaveValue(/下一步只关注学生活动。/);
+  });
 });
 
 async function createProjectFromVisibleEntry(page: Page) {
@@ -196,4 +240,10 @@ async function expectArtifactEntryAvailable(page: Page, name: RegExp) {
 async function readTextFile(path: string) {
   const { readFile } = await import("node:fs/promises");
   return readFile(path, "utf8");
+}
+
+function projectIdFromMessageUrl(url: string) {
+  const match = new URL(url).pathname.match(/\/api\/workbench\/projects\/([^/]+)\/messages$/);
+  expect(match?.[1]).toBeTruthy();
+  return match?.[1] ?? "";
 }

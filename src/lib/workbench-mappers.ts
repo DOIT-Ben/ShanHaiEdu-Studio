@@ -107,8 +107,13 @@ function mapBackendMessage(message: BackendMessageRecord): ChatMessage {
   return {
     id: message.id,
     speaker: message.role === "assistant" ? "assistant" : "teacher",
-    body: message.content,
+    body: teacherVisibleMessageBody(message),
   };
+}
+
+function teacherVisibleMessageBody(message: BackendMessageRecord) {
+  if (!message.artifactRefs.length || message.content.includes("引用：")) return message.content;
+  return `${message.content}\n\n引用：${message.artifactRefs.join("；")}`;
 }
 
 function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, string | string[]> {

@@ -157,6 +157,7 @@ export function useWorkbenchController() {
     flashComposerNotice("已插入为下一步输入。");
     setRailOpen(false);
     setSidePanelOpen(false);
+    setDetailOpen(false);
   }
 
   async function confirmArtifact(item: ArtifactItem) {
