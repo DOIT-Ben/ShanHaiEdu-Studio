@@ -16,7 +16,7 @@ export const DEFAULT_WORKFLOW_NODES: DefaultWorkflowNode[] = [
   { key: "intro_video_plan", title: "导入方案", status: "not_started", order: 5, upstreamNodeKeys: ["lesson_plan"] },
   { key: "image_prompts", title: "图片提示词", status: "not_started", order: 6, upstreamNodeKeys: ["ppt_draft", "intro_video_plan"] },
   { key: "video_storyboard", title: "视频分镜", status: "not_started", order: 7, upstreamNodeKeys: ["intro_video_plan", "image_prompts"] },
-  { key: "final_delivery", title: "最终交付", status: "not_started", order: 8, upstreamNodeKeys: ["lesson_plan", "ppt_draft", "intro_video_plan"] },
+  { key: "final_delivery", title: "最终交付", status: "not_started", order: 8, upstreamNodeKeys: ["requirement_spec", "lesson_plan", "ppt_draft", "intro_video_plan"] },
 ];
 
 export const FIRST_WORKFLOW_NODE_KEY = DEFAULT_WORKFLOW_NODES[0].key;

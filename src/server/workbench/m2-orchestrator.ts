@@ -5,7 +5,7 @@ import type { ArtifactRecord, WorkflowNodeKey } from "./types";
 import { createWorkbenchService } from "./service";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
-type LocalRealMvpRuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan" | "ppt_outline" | "intro_video_plan">;
+type LocalRealMvpRuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan" | "ppt_outline" | "intro_video_plan" | "final_delivery_checklist">;
 
 const runtime = new DeterministicRuntime();
 
@@ -36,6 +36,18 @@ export async function advanceM2AfterApproval(
     const hasLessonInput = approvedInputs.some((artifact) => artifact.nodeKey === "lesson_plan");
     if (hasLessonInput) {
       await generateNextArtifactIfMissing(projectId, "intro_video_plan", service, agentRuntime, approvedInputs);
+    }
+  }
+
+  if (approvedArtifact.nodeKey === "intro_video_plan") {
+    const approvedInputs = await service.getApprovedInputs(projectId, "final_delivery");
+    const hasRequiredInputs =
+      approvedInputs.some((artifact) => artifact.nodeKey === "requirement_spec") &&
+      approvedInputs.some((artifact) => artifact.nodeKey === "lesson_plan") &&
+      approvedInputs.some((artifact) => artifact.nodeKey === "ppt_draft") &&
+      approvedInputs.some((artifact) => artifact.nodeKey === "intro_video_plan");
+    if (hasRequiredInputs) {
+      await generateNextArtifactIfMissing(projectId, "final_delivery_checklist", service, agentRuntime, approvedInputs);
     }
   }
 }
@@ -86,7 +98,9 @@ async function generateNextArtifactIfMissing(
 }
 
 function workflowNodeKeyForTask(task: LocalRealMvpRuntimeTask): WorkflowNodeKey {
-  return task === "ppt_outline" ? "ppt_draft" : task;
+  if (task === "ppt_outline") return "ppt_draft";
+  if (task === "final_delivery_checklist") return "final_delivery";
+  return task;
 }
 
 function toApprovedArtifactInput(artifact: ArtifactRecord): ApprovedArtifactInput {
