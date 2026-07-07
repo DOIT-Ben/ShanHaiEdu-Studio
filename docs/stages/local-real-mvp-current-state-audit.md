@@ -33,6 +33,7 @@
 - `docs\stages\local-real-mvp-m11-pptx-download-report.md`
 - `docs\stages\local-real-mvp-m12-final-delivery-pptx-awareness-report.md`
 - `docs\stages\local-real-mvp-m13-final-material-package-report.md`
+- `docs\stages\local-real-mvp-m14-ledger-openai-smoke-report.md`
 
 ## 3. 已完成能力
 
@@ -82,18 +83,15 @@ M1-M5 已形成本地浏览器真实文本闭环：
 M6 已完成真实 OpenAI smoke 的门禁 readiness：
 
 - 新增 `scripts\openai-smoke.mjs`。
-- 缺少 `OPENAI_API_KEY` 时脚本以非 0 退出。
-- 输出包含 `missing_OPENAI_API_KEY`，不打印密钥值。
+- 缺少 OpenAI-compatible 凭据时脚本以非 0 退出。
+- 输出包含 `missing_OPENAI_COMPATIBLE_CREDENTIAL`，不打印密钥值。
 - 不允许 smoke 脚本静默回落 deterministic 冒充真实 OpenAI 结果。
 - OpenAI SDK 仍只在服务端 runtime adapter 或脚本上下文使用，没有进入 React。
 
-当前限制：
+后续状态：
 
-- 本机 `OPENAI_API_KEY` 未设置。
-- `OPENAI_MODEL` 未设置。
-- `OPENAI_BASE_URL` 未设置。
-- 仓库根目录无 `.env*` 文件。
-- 因此 M6 live OpenAI smoke 未通过，不能标记为真实模型可用。
+- M6 当时只完成 readiness。
+- M14 已通过私有台账 fallback 通道完成 live OpenAI-compatible smoke。
 
 ### 3.4 M7 本地双上下文隔离
 
@@ -233,29 +231,50 @@ M13 已补齐最终交付清单到本地材料包的真实 ZIP 下载：
 - `npm run test:e2e:stage8` 通过：Chromium narrow 与 Firefox desktop 共 4 passed，均覆盖材料包下载路径。
 - `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
 
+### 3.11 M14 私有台账 OpenAI-compatible live smoke
+
+M14 已把 M6 的 readiness 推进为真实 OpenAI-compatible live smoke：
+
+- 已参考私有 API 台账，但未摘录、提交或打印真实 key、token、账号、私有端点或 `.env` 内容。
+- 脱敏矩阵显示 primary/third 通道均返回 HTTP 403，fallback 通道的 Responses 和 Chat Completions 均可用。
+- 本项目根 `.env` 已固定选择 `AGENT_BRAIN_CHANNEL=fallback`，`.env` 仍被 `.gitignore` 忽略。
+- `scripts\openai-smoke.mjs` 支持 `OPENAI_*` 和台账 `AGENT_BRAIN_*` 通道选择。
+- live smoke 已输出 `ok=true`、`runtimeKind=openai`、`generationMode=model_generated`、`credentialSource=agent_brain_fallback_ledger_env`。
+- smoke 成功与失败输出均不包含真实 key、token、账号、私有端点、模型响应全文或底层堆栈。
+
+最近一次 M14 验收记录显示：
+
+- `node --test tests\openai-smoke-script.test.mjs` 通过：3 tests passed。
+- 无凭据门禁命令按预期 exit 2，并输出 `missing_OPENAI_COMPATIBLE_CREDENTIAL`。
+- `node scripts\openai-smoke.mjs` 通过：真实 OpenAI-compatible fallback 通道返回 `model_generated`。
+- `npm test` 通过：Node 17 tests passed；Vitest 16 files / 69 tests passed。
+- `npm run build` 通过。
+- worker 残留检查通过。
+- `git diff --check` 通过，无空白错误。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。服务端 smoke 层已能通过私有台账固定 fallback 通道完成真实 OpenAI-compatible live smoke。
 
 当前不能表述为：
 
-- 真实 OpenAI 模型已跑通。
-- PPTX 已完成图片、动画和视觉精修。
 - 图片文件已生成。
+- PPTX 已完成图片、动画和视觉精修。
 - 视频成片已生成。
 - 已具备账号、权限或生产级多人协作。
 - 已完成生产部署或公网发布。
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 82%-86%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、阶段测试与文档闭环已经成形。
-- 生产就绪度：约 33%-42%。真实 provider、图片/视频生成、账号权限、生产部署、安全与运维仍未完成。
+- 内部骨架成熟度：约 84%-88%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、真实 OpenAI-compatible smoke、阶段测试与文档闭环已经成形。
+- 生产就绪度：约 38%-46%。真实文本 smoke 已通过，但业务节点真实模型接入、Coze PPT、图片/视频生成、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
 
-- M6 live OpenAI smoke 缺少真实凭据，真实模型路径尚未证明。
+- M14 live OpenAI-compatible smoke 已通过，但 primary/third 台账通道当前返回 403，固定通道暂选 fallback。
+- 业务工作流节点仍主要使用 deterministic runtime，真实模型尚未全面接入节点生成链路。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
 - 当前材料包已包含最终交付 Markdown 与最小 PPTX，但不包含图片、视频、动画或视觉精修资产。
@@ -267,13 +286,13 @@ M13 已补齐最终交付清单到本地材料包的真实 ZIP 下载：
 
 优先级从高到低：
 
-1. 补验 M6 live OpenAI smoke：配置 `OPENAI_API_KEY` 后运行 `node scripts\openai-smoke.mjs`，只有返回 `ok=true`、`runtimeKind=openai`、`generationMode=model_generated` 时，才可标记真实模型 smoke 通过。
+1. 进入 M15：PPT 样本资产 intake + Coze PPT API readiness，把指定提示词和教材纳入可复用样本，并验证 Coze PPT API 接线边界。
 2. 做真实文件能力拆分规划：PPTX 质量增强、图片、视频分别按 provider readiness、产物合同、存储路径、失败恢复和教师可见边界分阶段推进。
 3. 做 WebKit、真实移动设备或触摸手势专项验证。
 4. 在进入多人或部署前，先定义账号/权限、数据库迁移和长任务队列触发条件。
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过，M14 私有台账 OpenAI-compatible live smoke 已通过。
 
-因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用”的候选状态继续推进，但不能作为“真实模型、图片与视频生产 MVP 已完成”的最终状态。
+因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用 + 服务端真实文本模型 smoke 可用”的候选状态继续推进，但不能作为“Coze PPT、图片与视频生产 MVP 已完成”的最终状态。
