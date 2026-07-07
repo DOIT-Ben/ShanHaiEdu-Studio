@@ -1,8 +1,7 @@
 import {
-  createLocalSessionSetCookieHeader,
-  resolveLocalWorkbenchActor,
   type WorkbenchActor,
 } from "@/server/auth/local-session";
+import { resolveWorkbenchSession } from "@/server/auth/session";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { NextResponse } from "next/server";
 
@@ -19,14 +18,18 @@ export async function withLocalWorkbenchActor(
     return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
   }
 
-  const session = resolveLocalWorkbenchActor(request);
+  const session = resolveWorkbenchSession(request);
+  if (!session.actor) {
+    return NextResponse.json({ error: "请先登录后再继续。" }, { status: 401 });
+  }
+
   const response = await handler({
     actor: session.actor,
     service: createWorkbenchService(undefined, session.actor),
   });
 
-  if (session.isNewSession) {
-    response.headers.append("set-cookie", createLocalSessionSetCookieHeader(session, request));
+  if (session.setCookieHeader) {
+    response.headers.append("set-cookie", session.setCookieHeader);
   }
 
   return response;

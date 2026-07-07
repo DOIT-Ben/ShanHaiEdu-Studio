@@ -1,5 +1,6 @@
 import { createPrismaWorkbenchRepository, type WorkbenchRepository } from "./repository";
-import type { WorkbenchActor } from "@/server/auth/local-session";
+import type { WorkbenchActor } from "@/server/auth/actor";
+import { canReadProject, canTriggerGeneration, canWriteProjectContent } from "@/server/auth/authorization";
 import type {
   AddMessageInput,
   AgentRunRecord,
@@ -21,9 +22,9 @@ import type {
 import type { AgentRun, Artifact, ConversationMessage, GenerationJob, Project, WorkflowNode } from "@/generated/prisma/client";
 
 export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository(), actor?: WorkbenchActor) {
-  async function ensureProjectAccess(projectId: string): Promise<Project> {
+  async function ensureProjectAccess(projectId: string, access: "read" | "write" | "generate" = "read"): Promise<Project> {
     const project = await repository.getProject(projectId);
-    if (!project || !canAccessProject(project, actor)) {
+    if (!project || !canAccessProject(project, actor, access)) {
       throw new Error(`Project not found: ${projectId}`);
     }
     return project;
@@ -49,13 +50,13 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async addMessage(projectId: string, input: AddMessageInput): Promise<ConversationMessageRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const message = await repository.addMessage(projectId, input);
       return mapMessage(message);
     },
 
     async saveArtifact(projectId: string, input: SaveArtifactInput): Promise<ArtifactRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const artifact = await repository.saveArtifact(projectId, input);
       return mapArtifact(artifact);
     },
@@ -70,13 +71,13 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async approveArtifact(projectId: string, artifactId: string): Promise<ArtifactRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const artifact = await repository.approveArtifact(projectId, artifactId);
       return mapArtifact(artifact);
     },
 
     async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput): Promise<ArtifactRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const artifact = await repository.regenerateArtifact(projectId, artifactId, input);
       return mapArtifact(artifact);
     },
@@ -96,19 +97,19 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async startAgentRun(projectId: string, input: StartAgentRunInput): Promise<AgentRunRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const run = await repository.startAgentRun(projectId, input);
       return mapAgentRun(run);
     },
 
     async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput): Promise<AgentRunRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "write");
       const run = await repository.finishAgentRun(projectId, runId, input);
       return mapAgentRun(run);
     },
 
     async createGenerationJob(projectId: string, input: CreateGenerationJobInput): Promise<GenerationJobRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "generate");
       const sourceArtifact = await repository.getArtifact(projectId, input.sourceArtifactId);
       if (!sourceArtifact) {
         throw new Error(`Artifact not found: ${input.sourceArtifactId}`);
@@ -118,19 +119,19 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async startGenerationJob(projectId: string, jobId: string): Promise<GenerationJobRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "generate");
       const job = await repository.startGenerationJob(projectId, jobId);
       return mapGenerationJob(job);
     },
 
     async finishGenerationJob(projectId: string, jobId: string, input: FinishGenerationJobInput): Promise<GenerationJobRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "generate");
       const job = await repository.finishGenerationJob(projectId, jobId, input);
       return mapGenerationJob(job);
     },
 
     async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput): Promise<GenerationJobRecord> {
-      await ensureProjectAccess(projectId);
+      await ensureProjectAccess(projectId, "generate");
       const job = await repository.failGenerationJob(projectId, jobId, input);
       return mapGenerationJob(job);
     },
@@ -175,9 +176,10 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
   };
 }
 
-function canAccessProject(project: Project, actor?: WorkbenchActor) {
-  if (!actor) return true;
-  return !project.ownerUserId || project.ownerUserId === actor.userId;
+function canAccessProject(project: Project, actor: WorkbenchActor | undefined, access: "read" | "write" | "generate") {
+  if (access === "write") return canWriteProjectContent(project, actor);
+  if (access === "generate") return canTriggerGeneration(project, actor);
+  return canReadProject(project, actor);
 }
 
 function mapProject(project: Project): ProjectRecord {

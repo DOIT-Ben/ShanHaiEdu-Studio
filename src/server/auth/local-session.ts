@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { WorkbenchActor } from "@/server/auth/actor";
 
-export type WorkbenchActor = {
-  userId: string;
-  role: "teacher";
-  displayName: string;
-};
+export type { WorkbenchActor } from "@/server/auth/actor";
 
 export type LocalWorkbenchSession = {
   actor: WorkbenchActor;
@@ -30,6 +27,9 @@ export function resolveLocalWorkbenchActor(request: Request, options: LocalWorkb
       userId,
       role: "teacher",
       displayName: "本地教师",
+      authMode: "local",
+      isAdmin: false,
+      projectRoles: {},
     },
     isNewSession: userId !== cookieUserId,
   };

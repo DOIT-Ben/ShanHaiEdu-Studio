@@ -30,17 +30,87 @@ model Project {
   artifacts       Artifact[]
   agentRuns       AgentRun[]
   generationJobs  GenerationJob[]
+  memberships     ProjectMembership[]
+  auditLogs       AuditLog[]
 
   @@index([ownerUserId, updatedAt])
 }
 
 model LocalUser {
-  id          String    @id
-  displayName String
-  role        String    @default("teacher")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  projects    Project[]
+  id             String              @id
+  displayName    String
+  role           String              @default("teacher")
+  authMode       String              @default("local")
+  email          String?             @unique
+  passwordHash   String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  projects       Project[]
+  sessions       AuthSession[]
+  memberships    ProjectMembership[]
+  auditLogs      AuditLog[]
+  csrfTokens     CsrfToken[]
+}
+
+model AuthSession {
+  id               String      @id @default(cuid())
+  userId           String
+  sessionTokenHash String      @unique
+  authMode         String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  user             LocalUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  csrfTokens       CsrfToken[]
+
+  @@index([userId, expiresAt])
+}
+
+model ProjectMembership {
+  id        String    @id @default(cuid())
+  projectId String
+  userId    String
+  role      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId, role])
+}
+
+model AuditLog {
+  id          String     @id @default(cuid())
+  actorUserId String?
+  action      String
+  targetType  String
+  targetId    String?
+  projectId   String?
+  metadataJson String    @default("{}")
+  createdAt   DateTime   @default(now())
+  actor       LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([action, createdAt])
+}
+
+model CsrfToken {
+  id        String      @id @default(cuid())
+  sessionId String
+  userId    String
+  tokenHash String      @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime    @default(now())
+  session   AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      LocalUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, expiresAt])
+  @@index([userId, expiresAt])
 }
 
 model ConversationMessage {

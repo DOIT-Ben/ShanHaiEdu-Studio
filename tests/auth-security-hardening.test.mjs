@@ -101,6 +101,7 @@ test("next config defines baseline security headers", async () => {
 function loadAuthRouteModule() {
   return loadTsModule(path.join(root, "src", "server", "auth", "workbench-route.ts"), {
     "@/server/auth/local-session": loadLocalSessionModule(),
+    "@/server/auth/session": loadSessionModule(),
     "@/server/workbench/service": {
       createWorkbenchService: () => ({}),
     },
@@ -120,6 +121,17 @@ function loadAuthRouteModule() {
 function loadLocalSessionModule() {
   return loadTsModule(path.join(root, "src", "server", "auth", "local-session.ts"), {
     "node:crypto": require("node:crypto"),
+  });
+}
+
+function loadActorModule() {
+  return loadTsModule(path.join(root, "src", "server", "auth", "actor.ts"), {});
+}
+
+function loadSessionModule() {
+  return loadTsModule(path.join(root, "src", "server", "auth", "session.ts"), {
+    "@/server/auth/local-session": loadLocalSessionModule(),
+    "@/server/auth/actor": loadActorModule(),
   });
 }
 

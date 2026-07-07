@@ -1,6 +1,6 @@
 import { prisma } from "@/server/db/client";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { WorkbenchActor } from "@/server/auth/local-session";
+import type { WorkbenchActor } from "@/server/auth/actor";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
 import type {
   AddMessageInput,
@@ -22,7 +22,11 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       return client.project.findMany({
         where: input.actor
           ? {
-              OR: [{ ownerUserId: input.actor.userId }, { ownerUserId: null }],
+              OR: [
+                { ownerUserId: input.actor.userId },
+                ...((input.actor.authMode ?? "local") === "local" ? [{ ownerUserId: null }] : []),
+                { memberships: { some: { userId: input.actor.userId } } },
+              ],
             }
           : undefined,
         orderBy: { updatedAt: "desc" },
@@ -34,8 +38,8 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         if (input.ownerUserId) {
           await tx.localUser.upsert({
             where: { id: input.ownerUserId },
-            update: { displayName: "本地教师", role: "teacher" },
-            create: { id: input.ownerUserId, displayName: "本地教师", role: "teacher" },
+            update: { displayName: "本地教师", role: "teacher", authMode: "local" },
+            create: { id: input.ownerUserId, displayName: "本地教师", role: "teacher", authMode: "local" },
           });
         }
 
@@ -61,6 +65,14 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             upstreamNodeKeysJson: JSON.stringify(node.upstreamNodeKeys),
           })),
         });
+
+        if (input.ownerUserId) {
+          await tx.projectMembership.upsert({
+            where: { projectId_userId: { projectId: project.id, userId: input.ownerUserId } },
+            update: { role: "owner" },
+            create: { projectId: project.id, userId: input.ownerUserId, role: "owner" },
+          });
+        }
 
         return project;
       });
