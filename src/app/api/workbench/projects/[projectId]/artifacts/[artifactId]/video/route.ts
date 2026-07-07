@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildStoredVideoDownload, videoDownloadHeaders } from "@/server/video-generation/artifact-video";
 import { generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
 import { createWorkbenchService } from "@/server/workbench/service";
 
@@ -7,6 +8,22 @@ const service = createWorkbenchService();
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
 };
+
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const { projectId, artifactId } = await context.params;
+    const artifact = await service.getArtifact(projectId, artifactId);
+    const download = buildStoredVideoDownload(artifact);
+    return new Response(toArrayBuffer(download.buffer), {
+      status: 200,
+      headers: videoDownloadHeaders(download.filename),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Video download failed";
+    const status = message.includes("not found") ? 404 : 400;
+    return NextResponse.json({ error: "这个导入视频暂时不能下载，请稍后再试。" }, { status });
+  }
+}
 
 export async function POST(_request: Request, context: RouteContext) {
   try {
@@ -52,4 +69,10 @@ export async function POST(_request: Request, context: RouteContext) {
   } catch {
     return NextResponse.json({ error: "导入视频暂时没有生成成功，请稍后再试。" }, { status: 400 });
   }
+}
+
+function toArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const arrayBuffer = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(buffer);
+  return arrayBuffer;
 }
