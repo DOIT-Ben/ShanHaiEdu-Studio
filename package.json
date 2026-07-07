@@ -23,6 +23,8 @@
     "test:e2e:stage8": "node scripts/run-stage8-e2e.mjs",
     "test:e2e:stage33": "node scripts/run-stage33-e2e.mjs",
     "test:e2e:stage40c": "node scripts/run-stage40c-e2e.mjs",
+    "test:e2e:stage41": "node scripts/run-stage41-delivery-demo.mjs",
+    "demo:e2e:delivery": "node scripts/run-stage41-delivery-demo.mjs",
     "test:e2e:stage3:preflight": "node scripts/e2e-stage3-preflight.mjs",
     "test:e2e:report": "playwright show-report playwright-report",
     "playwright:install": "playwright install chromium firefox",
