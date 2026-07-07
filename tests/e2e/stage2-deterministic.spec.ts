@@ -12,7 +12,9 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await page.getByPlaceholder(composerPlaceholder).waitFor({ state: "visible" });
   });
 
-  test("creates a project, generates a requirement artifact, approves it, and restores after refresh", async ({ page }, testInfo) => {
+  test("creates a project, generates requirement, lesson text artifacts, and restores after refresh", async ({ page, context }, testInfo) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+
     await page.getByRole("button", { name: "新建项目" }).click();
     await expect(page.getByText("已新建公开课项目，可以开始描述备课目标。")).toBeVisible();
 
@@ -41,12 +43,39 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByRole("button", { name: "确认使用" })).toBeHidden();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: /需求规格说明书，已确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /教材证据包，待确认/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /教材证据包，待确认/ }).click();
+    await expect(page.getByText("教材证据包").first()).toBeVisible();
+    await page.getByRole("button", { name: "打开完整详情" }).click();
+    await expect(page.getByText("教材依据").first()).toBeVisible();
+    await page.getByRole("button", { name: "确认使用" }).click();
+    await expect(page.getByText("已确认「教材证据包」，下一步会使用它继续生成。")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /教材证据包，已确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /公开课教案，待确认/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /公开课教案，待确认/ }).click();
+    await expect(page.getByText("公开课教案").first()).toBeVisible();
+    await page.getByRole("button", { name: "打开完整详情" }).click();
+    await expect(page.getByText("教学目标").first()).toBeVisible();
+    await page.getByRole("button", { name: "复制" }).click();
+    await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
+    await page.getByRole("button", { name: "确认使用" }).click();
+    await expect(page.getByText("已确认「公开课教案」，下一步会使用它继续生成。")).toBeVisible();
+    await expect(page.getByRole("button", { name: "确认使用" })).toBeHidden();
+    await page.getByRole("button", { name: "调整后重做" }).click();
+    await expect(page.getByText("已保留「公开课教案」旧内容，新的版本完成后再由你确认是否采用。")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /公开课教案，待确认/ })).toBeVisible();
 
     await page.reload();
     await page.getByPlaceholder(composerPlaceholder).waitFor({ state: "visible" });
     await expect(page.locator("div").filter({ hasText: new RegExp(`^${teacherPrompt}$`) })).toBeVisible();
     await expect(page.getByRole("article").filter({ hasText: assistantReply })).toBeVisible();
     await expect(page.getByRole("button", { name: /需求规格说明书，已确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /教材证据包，已确认/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /公开课教案，待确认/ })).toBeVisible();
 
     const visibleText = await getVisiblePageText(page);
     const matches = findUserVisibleEngineeringTerms(visibleText);

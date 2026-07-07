@@ -91,8 +91,14 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot),
       );
     },
-    regenerateArtifact() {
-      return Promise.reject(new WorkbenchApiError("Regenerate is waiting for the backend version contract.", teacherFacingRegeneratePendingError, 501));
+    regenerateArtifact(projectId, artifactKey) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/regenerate`, {
+        method: "POST",
+        body: JSON.stringify({
+          summary: "请重新生成这一版内容。",
+          markdownContent: "# 重做草稿\n\n- 已保留旧版本。\n- 新版本完成后请重新确认是否采用。",
+        }),
+      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
   };
 }

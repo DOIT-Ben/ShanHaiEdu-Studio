@@ -379,23 +379,29 @@ test("API client approves by artifact id and refreshes the project snapshot", as
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
-test("API client keeps regenerate behind an explicit backend contract boundary", async () => {
-  const { createWorkbenchApiClient, WorkbenchApiError } = loadWorkbenchApiModule();
+test("API client regenerates artifacts through the backend route and refreshes the project snapshot", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
   const client = createWorkbenchApiClient({
     fetcher: async (url, init) => {
       calls.push({ url: String(url), init });
-      throw new Error("fetch should not be called for unfinished regenerate contract");
+      return {
+        ok: true,
+        json: async () =>
+          init?.method === "POST"
+            ? { artifact: { ...backendArtifact, status: "needs_review", isApproved: false, version: 2 } }
+            : backendSnapshot,
+      };
     },
   });
 
-  await assert.rejects(() => client.regenerateArtifact("project-a", "artifact-requirement-v1"), (error) => {
-    assert.ok(error instanceof WorkbenchApiError);
-    assert.equal(error.status, 501);
-    assert.equal(error.userMessage, "这个内容暂时还不能重做，请稍后再试。");
-    return true;
-  });
-  assert.equal(calls.length, 0);
+  const snapshot = await client.regenerateArtifact("project-a", "artifact-requirement-v1");
+
+  assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-requirement-v1/regenerate");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(JSON.parse(calls[0].init.body).summary, "请重新生成这一版内容。");
+  assert.equal(calls[1].url, "/api/workbench/projects/project-a/snapshot");
+  assert.equal(snapshot.project.id, "backend-project-a");
 });
 
 test("artifact action resolver blocks placeholders and prefers real artifact ids", () => {

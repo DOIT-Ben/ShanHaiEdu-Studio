@@ -132,7 +132,12 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       "video_storyboard",
       "final_delivery",
     ]);
-    expect(snapshot.artifacts.map((artifact: { version: number }) => artifact.version)).toEqual([1, 2, 3]);
+    expect(snapshot.artifacts.map((artifact: { nodeKey: string; version: number }) => [artifact.nodeKey, artifact.version])).toEqual([
+      ["requirement_spec", 1],
+      ["requirement_spec", 2],
+      ["requirement_spec", 3],
+      ["textbook_evidence", 1],
+    ]);
   });
 
   it("keeps conflict route envelopes stable", async () => {
