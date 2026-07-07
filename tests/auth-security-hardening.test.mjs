@@ -132,6 +132,7 @@ function loadSessionModule() {
   return loadTsModule(path.join(root, "src", "server", "auth", "session.ts"), {
     "@/server/auth/local-session": loadLocalSessionModule(),
     "@/server/auth/actor": loadActorModule(),
+    "node:crypto": require("node:crypto"),
   });
 }
 

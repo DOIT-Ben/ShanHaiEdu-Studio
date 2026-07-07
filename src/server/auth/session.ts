@@ -1,6 +1,7 @@
 import type { AuthMode } from "@/server/auth/actor";
 import { createWorkbenchActor, type WorkbenchActor } from "@/server/auth/actor";
 import { createLocalSessionSetCookieHeader, resolveLocalWorkbenchActor } from "@/server/auth/local-session";
+import { createHash, randomBytes } from "node:crypto";
 
 export const publicWorkbenchSessionCookieName = "shanhai_session";
 
@@ -66,6 +67,36 @@ export function createPublicSessionSetCookieHeader(session: PublicWorkbenchSessi
   }
 
   return parts.join("; ");
+}
+
+export function createPublicSessionClearCookieHeader(request?: Request) {
+  const parts = [
+    `${publicWorkbenchSessionCookieName}=`,
+    "Max-Age=0",
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+
+  if (isSecureRequest(request)) {
+    parts.push("Secure");
+  }
+
+  return parts.join("; ");
+}
+
+export function generatePublicSessionToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+export function hashPublicSessionToken(token: string) {
+  return createHash("sha256").update(token, "utf8").digest("base64url");
+}
+
+export function readPublicSessionToken(request: Request) {
+  const token = readCookie(request.headers.get("cookie") ?? "", publicWorkbenchSessionCookieName);
+  if (!token || !isSafePublicSessionId(token)) return null;
+  return token;
 }
 
 export function resolveAuthMode(): AuthMode {
