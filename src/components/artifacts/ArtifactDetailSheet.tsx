@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 import { useArtifactMarkdownDownload } from "@/hooks/useArtifactMarkdownDownload";
 import { useArtifactPptxDownload } from "@/hooks/useArtifactPptxDownload";
+import { useFinalPackageDownload } from "@/hooks/useFinalPackageDownload";
 
 type ArtifactDetailSheetProps = {
   projectId: string;
@@ -69,6 +70,7 @@ function ArtifactDetailContent({
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
   const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
   const { canDownloadPptx, downloadPptx, downloadPptxLabel } = useArtifactPptxDownload(projectId, item);
+  const { canDownloadPackage, downloadPackage, downloadPackageLabel } = useFinalPackageDownload(projectId, item);
 
   return (
     <>
@@ -157,6 +159,12 @@ function ArtifactDetailContent({
           <Button variant="secondary" onClick={downloadPptx}>
             <Download className="h-4 w-4" />
             {downloadPptxLabel}
+          </Button>
+        )}
+        {canDownloadPackage && (
+          <Button variant="secondary" onClick={downloadPackage}>
+            <Download className="h-4 w-4" />
+            {downloadPackageLabel}
           </Button>
         )}
         <Button variant="secondary">

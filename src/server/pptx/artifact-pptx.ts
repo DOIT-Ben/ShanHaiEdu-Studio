@@ -5,7 +5,7 @@ type PptxDownload = {
   buffer: Buffer;
 };
 
-type PptxDownloadableArtifact = {
+export type PptxDownloadableArtifact = {
   key: string;
   nodeKey?: string;
   kind: string;
@@ -52,6 +52,35 @@ export function pptxDownloadHeaders(filename: string) {
   return {
     "content-type": pptxMimeType,
     "content-disposition": `attachment; filename="${filename}"`,
+  };
+}
+
+export function toPptxDownloadableArtifact(artifact: {
+  id: string;
+  nodeKey: string;
+  kind: string;
+  title: string;
+  summary: string;
+  markdownContent: string;
+  structuredContent: Record<string, unknown>;
+  updatedAt: string;
+}): PptxDownloadableArtifact {
+  const structuredEntries = Object.entries(artifact.structuredContent ?? {}).filter(([key]) => isTeacherVisibleLabel(key));
+  return {
+    key: artifact.id,
+    nodeKey: artifact.nodeKey,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    updatedAt: formatDateLabel(artifact.updatedAt),
+    sourceTitles: ["公开课教案"],
+    previewFields: structuredEntries.length
+      ? structuredEntries.slice(0, 3).map(([label, value]) => ({ label, value: Array.isArray(value) ? value.map(String).join("、") : String(value) }))
+      : [{ label: "内容来源", value: "当前 PPT 大纲" }],
+    content: {
+      Markdown: artifact.markdownContent,
+      ...Object.fromEntries(structuredEntries.map(([label, value]) => [label, Array.isArray(value) ? value.map(String) : String(value)])),
+    },
   };
 }
 
@@ -168,4 +197,16 @@ function dateStamp() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}${month}${day}`;
+}
+
+function isTeacherVisibleLabel(label: string) {
+  const lower = label.toLowerCase();
+  const internalTerms = ["schema", "manifest", "provider", "node_id", "storage", "api", "debug", "local path", "generationmode", "nextsuggestedaction"];
+  return !internalTerms.some((term) => lower.includes(term));
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "刚刚";
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }

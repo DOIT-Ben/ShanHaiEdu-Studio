@@ -137,6 +137,20 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     expect(markdownText).toContain("PPT 大纲可下载最小 PPTX 文件");
     expect(markdownText).toContain("图片文件、视频成片、动画和视觉精修仍待生成或完善");
     expect(markdownText).not.toMatch(/PPTX 文件已生成|图片文件已生成|视频成片已生成/);
+    const packageDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "下载材料包" }).click();
+    const materialPackage = await packageDownload;
+    expect(materialPackage.suggestedFilename()).toMatch(/\.zip$/);
+    const packagePath = await materialPackage.path();
+    expect(packagePath).toBeTruthy();
+    const packagePrefix = await readBinaryPrefix(packagePath ?? "", 2);
+    expect(packagePrefix.toString("utf8")).toBe("PK");
+    const packageEntries = await readZipEntries(packagePath ?? "");
+    expect(packageEntries.has("README.md")).toBe(true);
+    expect(packageEntries.has("final-delivery.md")).toBe(true);
+    expect(packageEntries.has("ppt-outline.pptx")).toBe(true);
+    expect(packageEntries.get("README.md")?.toString("utf8")).toContain("本材料包包含最终交付清单和最小 PPTX 文件");
+    expect(packageEntries.get("final-delivery.md")?.toString("utf8")).toContain("PPT 大纲可下载最小 PPTX 文件");
     await page.getByRole("button", { name: "复制" }).click();
     await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
     await page.getByRole("button", { name: "确认使用" }).click();
@@ -257,6 +271,49 @@ async function readTextFile(path: string) {
 async function readBinaryPrefix(path: string, length: number) {
   const { readFile } = await import("node:fs/promises");
   return (await readFile(path)).subarray(0, length);
+}
+
+async function readZipEntries(path: string) {
+  const { readFile } = await import("node:fs/promises");
+  const { inflateRawSync } = await import("node:zlib");
+  const buffer = await readFile(path);
+  const entries = new Map<string, Buffer>();
+  let offset = 0;
+
+  while (offset < buffer.length - 4) {
+    const signature = buffer.readUInt32LE(offset);
+    if (signature !== 0x04034b50) {
+      offset += 1;
+      continue;
+    }
+
+    const compressionMethod = buffer.readUInt16LE(offset + 8);
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const uncompressedSize = buffer.readUInt32LE(offset + 22);
+    const fileNameLength = buffer.readUInt16LE(offset + 26);
+    const extraFieldLength = buffer.readUInt16LE(offset + 28);
+    const fileName = buffer.subarray(offset + 30, offset + 30 + fileNameLength).toString("utf8");
+    const dataStart = offset + 30 + fileNameLength + extraFieldLength;
+    const dataEnd = dataStart + compressedSize;
+    const compressed = buffer.subarray(dataStart, dataEnd);
+
+    if (!fileName.endsWith("/")) {
+      let content;
+      if (compressionMethod === 0) {
+        content = compressed;
+      } else if (compressionMethod === 8) {
+        content = inflateRawSync(compressed, { finishFlush: 2 });
+      } else {
+        throw new Error(`Unsupported ZIP compression method: ${compressionMethod}`);
+      }
+      expect(content.length).toBe(uncompressedSize);
+      entries.set(fileName, content);
+    }
+
+    offset = dataEnd;
+  }
+
+  return entries;
 }
 
 function projectIdFromMessageUrl(url: string) {

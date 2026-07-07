@@ -4,7 +4,7 @@
 
 ## 1. 审计目标
 
-本审计用于收口 `mainline/local-real-mvp` 在 M0-M12 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
+本审计用于收口 `mainline/local-real-mvp` 在 M0-M13 后的真实状态，明确哪些能力已经通过本地验证、哪些只是 readiness、哪些仍不能宣称完成。
 
 当前审计不新增产品能力、不变更代码、不执行部署、不 push、不删除旧 worktree。
 
@@ -32,6 +32,7 @@
 - `docs\stages\local-real-mvp-m10-artifact-reuse-report.md`
 - `docs\stages\local-real-mvp-m11-pptx-download-report.md`
 - `docs\stages\local-real-mvp-m12-final-delivery-pptx-awareness-report.md`
+- `docs\stages\local-real-mvp-m13-final-material-package-report.md`
 
 ## 3. 已完成能力
 
@@ -208,11 +209,35 @@ M12 已把 M11 的 PPTX 最小下载能力同步到最终交付清单口径：
 - `npm run test:e2e:stage8` 通过：Chromium narrow 与 Firefox desktop 共 4 passed。
 - `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
 
+### 3.10 M13 最终材料包 ZIP 下载
+
+M13 已补齐最终交付清单到本地材料包的真实 ZIP 下载：
+
+- 最终交付详情页仅对“最终交付清单”显示“下载材料包”按钮。
+- 后端 `/package` 路由只允许 `final_delivery` artifact 导出材料包。
+- ZIP 文件包含 `README.md`、`final-delivery.md`、`ppt-outline.pptx`。
+- `final-delivery.md` 来自当前最终交付 artifact。
+- `ppt-outline.pptx` 复用 M11 的 PPTX 生成能力，来自同项目 PPT 大纲 artifact。
+- README 明确图片文件、视频成片、动画和视觉精修仍待生成或完善。
+- 浏览器验收已解压 ZIP 并检查三个文件存在。
+
+最近一次 M13 验收记录显示：
+
+- `node --test tests\artifact-package-download.test.mjs` 红灯后绿灯：2 tests passed。
+- `npx vitest run src/server/workbench/__tests__/stage13-material-package.test.ts --maxWorkers=1` 通过：1 test passed。
+- `npm run test:e2e:stage2` 通过：Chromium desktop 2 passed，含真实 ZIP 下载与 entries 检查。
+- `node --test tests\artifact-pptx-download.test.mjs` 通过：2 tests passed。
+- `node --test tests\artifact-markdown-download.test.mjs` 通过：1 test passed。
+- `npm test` 通过：Node 15 tests passed；Vitest 16 files / 69 tests passed。
+- `npm run build` 通过，新增 `/api/workbench/projects/[projectId]/artifacts/[artifactId]/package` 动态路由。
+- `npm run test:e2e:stage8` 通过：Chromium narrow 与 Firefox desktop 共 4 passed，均覆盖材料包下载路径。
+- `npm run test:e2e:stage7` 通过：双 browser context 隔离未回归。
+
 ## 4. 当前产品就绪结论
 
 当前可以如实表述为：
 
-> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力。
+> ShanHaiEdu 已具备本地 deterministic 材料生产 MVP：教师可以在本机浏览器完成从一句话需求到最终交付清单 Markdown 的连续材料生产闭环，且项目、消息、节点产物、确认状态、产物复用引用和当前项目选择可由后端与浏览器状态恢复支撑。该主链路已在 Chromium desktop、Chromium narrow viewport 和 Firefox desktop 验证通过，最终交付清单已支持真实 `.md` 文件下载，PPT 大纲已支持基于当前 artifact 生成并下载最小 `.pptx` 文件，最终交付清单已同步说明该 PPTX 最小下载能力，并已支持包含 Markdown 与最小 PPTX 的真实 `.zip` 材料包下载。
 
 当前不能表述为：
 
@@ -225,7 +250,7 @@ M12 已把 M11 的 PPTX 最小下载能力同步到最终交付清单口径：
 
 当前成熟度判断：
 
-- 内部骨架成熟度：约 80%-84%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、阶段测试与文档闭环已经成形。
+- 内部骨架成熟度：约 82%-86%。核心 workflow、后端持久化、浏览器主链路、产物复用输入、窄屏/Firefox 覆盖、Markdown 下载交付、PPTX 最小下载、最终交付口径同步、ZIP 材料包下载、阶段测试与文档闭环已经成形。
 - 生产就绪度：约 33%-42%。真实 provider、图片/视频生成、账号权限、生产部署、安全与运维仍未完成。
 
 ## 5. 剩余风险
@@ -233,7 +258,7 @@ M12 已把 M11 的 PPTX 最小下载能力同步到最终交付清单口径：
 - M6 live OpenAI smoke 缺少真实凭据，真实模型路径尚未证明。
 - 浏览器 E2E 已覆盖 Chromium desktop、Chromium narrow viewport 和 Firefox desktop；WebKit、真实移动设备和触摸手势仍待专项验证。
 - 当前 PPTX 只是根据文本大纲生成的最小可下载文件，不包含真实图片、视频、动画或精修视觉设计。
-- 当前最终交付清单只到 Markdown 下载，不包含完整材料包归档。
+- 当前材料包已包含最终交付 Markdown 与最小 PPTX，但不包含图片、视频、动画或视觉精修资产。
 - 当前隔离是无账号本地工作台隔离，不是权限隔离。
 - SQLite 可继续支撑本地 MVP 试用，但不应被包装为生产级数据库方案。
 - `deterministic_draft` 和 deterministic 文本产物必须继续标注为开发态草稿或本地确定性生成结果。
@@ -249,6 +274,6 @@ M12 已把 M11 的 PPTX 最小下载能力同步到最终交付清单口径：
 
 ## 7. 审查结论
 
-M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过。
+M0-M5 文本主链路已经通过本地浏览器验证，M6 readiness 已通过但 live OpenAI smoke 未通过，M7 本地双上下文隔离已通过，M8 窄屏 Chromium 与 Firefox desktop 覆盖已通过，M9 最终交付清单 Markdown 下载已通过，M10 产物复用输入闭环已通过，M11 PPTX 最小下载闭环已通过，M12 最终交付清单 PPTX 能力口径同步已通过，M13 最终材料包 ZIP 下载已通过。
 
 因此当前主线可以作为“本地 deterministic 材料生产 MVP 可用”的候选状态继续推进，但不能作为“真实模型、图片与视频生产 MVP 已完成”的最终状态。
