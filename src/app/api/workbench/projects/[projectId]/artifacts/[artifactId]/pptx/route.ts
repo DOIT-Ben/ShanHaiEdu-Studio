@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildArtifactPptxDownload, pptxDownloadHeaders, toPptxDownloadableArtifact } from "@/server/pptx/artifact-pptx";
+import { buildStoredOrGeneratedArtifactPptxDownload, pptxDownloadHeaders } from "@/server/pptx/artifact-pptx";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 const service = createWorkbenchService();
@@ -12,7 +12,7 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const { projectId, artifactId } = await context.params;
     const artifact = await service.getArtifact(projectId, artifactId);
-    const download = await buildArtifactPptxDownload(toPptxDownloadableArtifact(artifact));
+    const download = await buildStoredOrGeneratedArtifactPptxDownload(artifact);
     return new Response(toArrayBuffer(download.buffer), {
       status: 200,
       headers: pptxDownloadHeaders(download.filename),

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildFinalMaterialPackageDownload, materialPackageDownloadHeaders } from "@/server/package/artifact-package";
-import { buildArtifactPptxDownload, toPptxDownloadableArtifact } from "@/server/pptx/artifact-pptx";
+import { buildStoredOrGeneratedArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 const service = createWorkbenchService();
@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const { projectId, artifactId } = await context.params;
     const finalDelivery = await service.getArtifact(projectId, artifactId);
     const pptArtifact = await getLatestPptArtifact(projectId);
-    const pptx = await buildArtifactPptxDownload(toPptxDownloadableArtifact(pptArtifact));
+    const pptx = await buildStoredOrGeneratedArtifactPptxDownload(pptArtifact);
     const download = await buildFinalMaterialPackageDownload({ finalDelivery, pptx });
 
     return new Response(toArrayBuffer(download.buffer), {

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import pptxgen from "pptxgenjs";
 
 type PptxDownload = {
@@ -48,6 +50,23 @@ export async function buildArtifactPptxDownload(item: PptxDownloadableArtifact):
   };
 }
 
+export async function buildStoredOrGeneratedArtifactPptxDownload(artifact: {
+  id: string;
+  nodeKey: string;
+  kind: string;
+  title: string;
+  summary: string;
+  markdownContent: string;
+  structuredContent: Record<string, unknown>;
+  updatedAt: string;
+}): Promise<PptxDownload> {
+  const stored = readStoredCozePptx(artifact.structuredContent);
+  if (stored) {
+    return stored;
+  }
+  return buildArtifactPptxDownload(toPptxDownloadableArtifact(artifact));
+}
+
 export function pptxDownloadHeaders(filename: string) {
   return {
     "content-type": pptxMimeType,
@@ -82,6 +101,41 @@ export function toPptxDownloadableArtifact(artifact: {
       ...Object.fromEntries(structuredEntries.map(([label, value]) => [label, Array.isArray(value) ? value.map(String) : String(value)])),
     },
   };
+}
+
+function readStoredCozePptx(structuredContent: Record<string, unknown>): PptxDownload | null {
+  const storage = structuredContent.storage;
+  if (!storage || typeof storage !== "object" || Array.isArray(storage)) return null;
+  const cozePptx = (storage as { cozePptx?: unknown }).cozePptx;
+  if (!cozePptx || typeof cozePptx !== "object" || Array.isArray(cozePptx)) return null;
+
+  const metadata = cozePptx as { localOutput?: unknown; fileName?: unknown };
+  if (typeof metadata.localOutput !== "string" || typeof metadata.fileName !== "string") return null;
+
+  const root = process.cwd();
+  const absolutePath = path.resolve(/* turbopackIgnore: true */ root, metadata.localOutput);
+  const tmpRoot = path.resolve(/* turbopackIgnore: true */ root, ".tmp");
+  if (!absolutePath.startsWith(`${tmpRoot}${path.sep}`) && absolutePath !== tmpRoot) {
+    throw new Error("Stored PPTX path is outside the local artifact storage.");
+  }
+  if (!existsSync(absolutePath)) {
+    throw new Error("Stored PPTX file is missing.");
+  }
+
+  const buffer = readFileSync(absolutePath);
+  if (buffer.subarray(0, 2).toString("ascii") !== "PK") {
+    throw new Error("Stored PPTX file is invalid.");
+  }
+
+  return {
+    filename: safeFileName(metadata.fileName),
+    buffer,
+  };
+}
+
+function safeFileName(value: string) {
+  const cleaned = value.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, "-").trim();
+  return cleaned.toLowerCase().endsWith(".pptx") ? cleaned : `${cleaned || "coze-ppt"}.pptx`;
 }
 
 function addTitleSlide(pptx: pptxgen, item: PptxDownloadableArtifact) {
