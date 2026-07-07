@@ -1,3 +1,4 @@
+import type { RealAssetKind } from "@/lib/artifact-real-assets";
 import type { ArtifactItem, ArtifactKind, ArtifactStatus, ChatMessage, ProjectItem, ProjectStatus, WorkbenchSnapshot } from "@/lib/types";
 
 export type BackendProjectRecord = {
@@ -172,6 +173,7 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
       previewFields: [{ label: "状态", value: "还没有生成内容" }],
       actions: { canCopy: false, canUseAsInput: false, canOpenDetail: true, canConfirm: false, canRegenerate: false },
       content: { 说明: "还没有生成内容。" },
+      realAssetDownloads: [],
     };
   }
 
@@ -196,7 +198,23 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
       canRegenerate: true,
     },
     content: contentFromArtifact(artifact),
+    realAssetDownloads: realAssetDownloadsFromContent(artifact.structuredContent),
   };
+}
+
+function realAssetDownloadsFromContent(structuredContent: Record<string, unknown>): RealAssetKind[] {
+  const storage = structuredContent.storage;
+  if (!storage || typeof storage !== "object" || Array.isArray(storage)) return [];
+  const storageRecord = storage as Record<string, unknown>;
+  const downloads: RealAssetKind[] = [];
+  if (isObjectRecord(storageRecord.cozePptx)) downloads.push("pptx");
+  if (isObjectRecord(storageRecord.imageAsset)) downloads.push("image");
+  if (isObjectRecord(storageRecord.videoAsset)) downloads.push("video");
+  return downloads;
+}
+
+function isObjectRecord(value: unknown) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export function normalizeProjects(value: unknown): ProjectItem[] {

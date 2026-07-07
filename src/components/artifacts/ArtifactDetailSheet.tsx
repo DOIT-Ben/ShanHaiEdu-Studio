@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 import { useArtifactMarkdownDownload } from "@/hooks/useArtifactMarkdownDownload";
 import { useArtifactPptxDownload } from "@/hooks/useArtifactPptxDownload";
+import { useArtifactRealAssetDownload } from "@/hooks/useArtifactRealAssetDownload";
 import { useFinalPackageDownload } from "@/hooks/useFinalPackageDownload";
 
 type ArtifactDetailSheetProps = {
@@ -88,6 +89,8 @@ function ArtifactDetailContent({
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
   const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
   const { canDownloadPptx, downloadPptx, downloadPptxLabel } = useArtifactPptxDownload(projectId, item);
+  const imageDownload = useArtifactRealAssetDownload(projectId, item, "image");
+  const videoDownload = useArtifactRealAssetDownload(projectId, item, "video");
   const { canDownloadPackage, downloadPackage, downloadPackageLabel } = useFinalPackageDownload(projectId, item);
   const realAssetActions = getRealAssetGenerationActions(item);
 
@@ -178,6 +181,18 @@ function ArtifactDetailContent({
           <Button variant="secondary" onClick={downloadPptx}>
             <Download className="h-4 w-4" />
             {downloadPptxLabel}
+          </Button>
+        )}
+        {imageDownload.canDownloadRealAsset && (
+          <Button variant="secondary" onClick={imageDownload.downloadRealAsset}>
+            <Download className="h-4 w-4" />
+            {imageDownload.downloadRealAssetLabel}
+          </Button>
+        )}
+        {videoDownload.canDownloadRealAsset && (
+          <Button variant="secondary" onClick={videoDownload.downloadRealAsset}>
+            <Download className="h-4 w-4" />
+            {videoDownload.downloadRealAssetLabel}
           </Button>
         )}
         {canDownloadPackage && (

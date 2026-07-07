@@ -49,6 +49,7 @@ export type ArtifactItem = {
   previewFields: { label: string; value: string }[];
   actions: ArtifactActionState;
   content: Record<string, string | string[]>;
+  realAssetDownloads?: RealAssetKind[];
 };
 
 export type ChatMessage = {
