@@ -42,14 +42,20 @@ function defaultGeneratedUserId() {
   return randomUUID();
 }
 
-export function createLocalSessionSetCookieHeader(session: LocalWorkbenchSession) {
-  return [
+export function createLocalSessionSetCookieHeader(session: LocalWorkbenchSession, request?: Request) {
+  const parts = [
     `${localWorkbenchUserCookieName}=${session.actor.userId}`,
     `Max-Age=${maxAgeSeconds}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-  ].join("; ");
+  ];
+
+  if (isSecureRequest(request)) {
+    parts.push("Secure");
+  }
+
+  return parts.join("; ");
 }
 
 function readCookie(cookieHeader: string, name: string) {
@@ -65,4 +71,10 @@ function readCookie(cookieHeader: string, name: string) {
 
 function isSafeLocalUserId(value: string) {
   return localUserIdPattern.test(value);
+}
+
+function isSecureRequest(request?: Request) {
+  if (!request) return false;
+  if (new URL(request.url).protocol === "https:") return true;
+  return request.headers.get("x-forwarded-proto")?.toLowerCase().split(",")[0]?.trim() === "https";
 }

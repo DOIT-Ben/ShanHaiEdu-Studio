@@ -4,6 +4,7 @@ import {
   type WorkbenchActor,
 } from "@/server/auth/local-session";
 import { createWorkbenchService } from "@/server/workbench/service";
+import { NextResponse } from "next/server";
 
 export type AuthenticatedWorkbenchRequest = {
   actor: WorkbenchActor;
@@ -14,6 +15,10 @@ export async function withLocalWorkbenchActor(
   request: Request,
   handler: (context: AuthenticatedWorkbenchRequest) => Promise<Response>,
 ) {
+  if (!isLocalWorkbenchRequestAllowed(request)) {
+    return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
+  }
+
   const session = resolveLocalWorkbenchActor(request);
   const response = await handler({
     actor: session.actor,
@@ -21,7 +26,7 @@ export async function withLocalWorkbenchActor(
   });
 
   if (session.isNewSession) {
-    response.headers.append("set-cookie", createLocalSessionSetCookieHeader(session));
+    response.headers.append("set-cookie", createLocalSessionSetCookieHeader(session, request));
   }
 
   return response;
@@ -29,4 +34,44 @@ export async function withLocalWorkbenchActor(
 
 export function isProjectAccessError(error: unknown) {
   return error instanceof Error && /Project not found|access denied/i.test(error.message);
+}
+
+function isLocalWorkbenchRequestAllowed(request: Request) {
+  if (!isWriteMethod(request.method)) return true;
+
+  const url = new URL(request.url);
+  const origin = request.headers.get("origin");
+  if (origin) return sameOrigin(origin, url.origin);
+
+  const referer = request.headers.get("referer");
+  if (referer) return sameOrigin(referer, url.origin);
+
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (fetchSite === "cross-site") return false;
+
+  return true;
+}
+
+function isWriteMethod(method: string) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
+}
+
+function sameOrigin(sourceOrigin: string, expectedOrigin: string) {
+  try {
+    const source = new URL(sourceOrigin);
+    const expected = new URL(expectedOrigin);
+    if (source.origin === expected.origin) return true;
+    return (
+      source.protocol === expected.protocol &&
+      source.port === expected.port &&
+      isLoopbackHost(source.hostname) &&
+      isLoopbackHost(expected.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHost(hostname: string) {
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase());
 }
