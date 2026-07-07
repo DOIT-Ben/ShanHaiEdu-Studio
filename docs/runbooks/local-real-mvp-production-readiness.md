@@ -92,7 +92,7 @@ npm run desktop:installer-smoke
 - 生成 `dist-desktop\ShanHaiEdu Studio Setup 0.1.0.exe`。
 - 生成 `dist-desktop\win-unpacked\ShanHaiEdu Studio.exe`。
 - `dist-desktop\` 与 `desktop-bundle\` 必须保持 git ignored。
-- 打包前必须经过 `desktop:prepare`，不得直接把 `.next\standalone` 整体交给 electron-builder。
+- 打包前仍必须经过 `desktop:prepare`，不得直接把 `.next\standalone` 整体交给 electron-builder；M38 已消除当前 API route NFT 过宽 tracing，但该脚本仍是桌面包安全过滤门禁。
 - `desktop:installer-smoke` 默认只验证候选包、资源安全和 unpacked exe HTTP 200。
 - 当前候选包未正式签名，不能作为生产发布版表述。
 
@@ -129,10 +129,11 @@ npm run start
 
 `next.config.ts` 已配置 `output: "standalone"`，用于准备 Next.js 自托管运行包边界。
 
-当前已知边界：
+当前状态：
 
-- `npm run build` 仍可能出现 1 条既有 Turbopack tracing warning，来源在视频下载和本地 ArtifactStorage 链路。
-- 该 warning 不等于构建失败，但生产部署前必须在实际部署方式下继续复查。
+- M38 后 `npm run build` 已不再出现既有 Turbopack NFT tracing warning。
+- `next.config.ts` 使用 `outputFileTracingExcludes` 排除 API routes 中不应进入 standalone trace 的本地生成物、测试、文档、桌面 bundle、本地数据库和根级非运行配置。
+- 生产部署前仍需在实际部署方式下复查 `.next\standalone`、部署卷、数据库路径和素材下载 route。
 
 ## 6. 回滚方式
 
@@ -147,7 +148,7 @@ npm run start
 
 1. 保留完整构建输出。
 2. 先跑 `npm test` 判断是否代码回归。
-3. 如仅 Next tracing warning，不当作失败；如 exit 非 0，必须先修复再启动。
+3. 如 Next tracing warning 重新出现，先检查 `outputFileTracingExcludes` 是否覆盖新增 route 或新增本地生成目录；如 exit 非 0，必须先修复再启动。
 
 如果真实素材生成失败：
 

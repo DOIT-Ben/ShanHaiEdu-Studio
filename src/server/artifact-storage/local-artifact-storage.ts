@@ -31,7 +31,7 @@ export function writeLocalArtifact(input: WriteLocalArtifactInput) {
     absolutePath: outputPath,
     localOutput: configuredRoot
       ? `${logicalStoragePrefix}/${input.category}/${fileName}`
-      : path.relative(process.cwd(), outputPath).replaceAll("\\", "/"),
+      : path.relative(/*turbopackIgnore: true*/ process.cwd(), outputPath).replaceAll("\\", "/"),
   };
 }
 
@@ -61,7 +61,7 @@ function configuredStorageRoot(env: LocalArtifactEnv) {
 }
 
 function defaultStorageRoot() {
-  return path.join(process.cwd(), ".tmp");
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), ".tmp");
 }
 
 function normalizeLocalOutput(localOutput: string) {
