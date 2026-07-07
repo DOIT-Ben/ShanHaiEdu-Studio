@@ -26,6 +26,7 @@ const zipMimeType = "application/zip";
 export async function buildFinalMaterialPackageDownload(input: {
   finalDelivery: MaterialPackageArtifact;
   pptx: PackagePart;
+  video?: PackagePart | null;
 }): Promise<MaterialPackageDownload> {
   if (input.finalDelivery.nodeKey !== "final_delivery" && input.finalDelivery.kind !== "final_delivery") {
     throw new Error("Only final delivery artifacts can be exported as material packages.");
@@ -36,9 +37,12 @@ export async function buildFinalMaterialPackageDownload(input: {
   }
 
   const zip = new JSZip();
-  zip.file("README.md", buildReadme(input.finalDelivery));
+  zip.file("README.md", buildReadme(input.finalDelivery, Boolean(input.video?.buffer?.length)));
   zip.file("final-delivery.md", buildFinalDeliveryMarkdown(input.finalDelivery));
   zip.file("ppt-outline.pptx", input.pptx.buffer);
+  if (input.video?.buffer?.length) {
+    zip.file("intro-video.mp4", input.video.buffer);
+  }
 
   const output = await zip.generateAsync({
     type: "nodebuffer",
@@ -59,21 +63,22 @@ export function materialPackageDownloadHeaders(filename: string) {
   };
 }
 
-function buildReadme(finalDelivery: MaterialPackageArtifact) {
+function buildReadme(finalDelivery: MaterialPackageArtifact, hasVideo: boolean) {
   return [
     "# ShanHaiEdu 最终材料包",
     "",
-    "本材料包包含最终交付清单和最小 PPTX 文件。",
+    hasVideo ? "本材料包包含最终交付清单、最小 PPTX 文件和导入视频文件。" : "本材料包包含最终交付清单和最小 PPTX 文件。",
     "",
     "## 已包含",
     "",
     "- final-delivery.md：最终交付清单正文。",
     "- ppt-outline.pptx：根据 PPT 大纲与逐页脚本生成的最小 PPTX 文件。",
+    ...(hasVideo ? ["- intro-video.mp4：基于导入视频方案生成的本地导入视频文件。"] : []),
     "",
     "## 仍需教师核对",
     "",
     "- 当前 PPTX 只保证根据文本大纲生成可打开、可阅读的最小文件。",
-    "- 图片文件、视频成片、动画和视觉精修仍待生成或完善。",
+    hasVideo ? "- 已包含导入视频文件；正式授课前请核对视频质量、节奏和课堂锚点。" : "- 图片文件、视频成片、动画和视觉精修仍待生成或完善。",
     "- 正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
     "",
     `来源：${finalDelivery.title}`,

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import JSZip from "jszip";
 import { POST as postProjectRoute } from "@/app/api/workbench/projects/route";
 import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
 import { POST as postApproveArtifact } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/approve/route";
 import { GET as getPackageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/package/route";
 import { GET as getSnapshotRoute } from "@/app/api/workbench/projects/[projectId]/snapshot/route";
+import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("Local Real MVP M13 final material package route", () => {
   it("downloads a ZIP package only for the final delivery artifact", async () => {
@@ -36,6 +40,29 @@ describe("Local Real MVP M13 final material package route", () => {
 
     snapshot = await readSnapshot(projectId);
     const finalDelivery = snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "final_delivery");
+    const videoBuffer = buildTinyMp4();
+    const videoOutput = writeFixtureVideo(videoBuffer);
+    await createWorkbenchService().saveArtifact(projectId, {
+      nodeKey: "intro_video_plan",
+      kind: "intro_video_plan",
+      title: "真实导入视频",
+      status: "needs_review",
+      summary: "已生成本地 MP4。",
+      markdownContent: "视频说明。",
+      structuredContent: {
+        storage: {
+          videoAsset: {
+            localOutput: videoOutput,
+            fileName: "percentage-intro.mp4",
+            bytes: videoBuffer.length,
+            sha256: "fake-video-sha256",
+            mime: "video/mp4",
+            generationMode: "video_generated",
+            sourceArtifactId: "source-artifact",
+          },
+        },
+      },
+    });
 
     const packageResponse = await getPackageRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId, artifactId: finalDelivery.id }),
@@ -45,6 +72,12 @@ describe("Local Real MVP M13 final material package route", () => {
     expect(packageResponse.headers.get("content-disposition")).toMatch(/\.zip"/);
     const packageBuffer = Buffer.from(await packageResponse.arrayBuffer());
     expect(packageBuffer.subarray(0, 2).toString("utf8")).toBe("PK");
+    const zip = await JSZip.loadAsync(packageBuffer);
+    const videoEntry = zip.file("intro-video.mp4");
+    expect(videoEntry).toBeTruthy();
+    const video = Buffer.from(await videoEntry!.async("nodebuffer"));
+    expect(video.equals(videoBuffer)).toBe(true);
+    expect(video.subarray(4, 8).toString("utf8")).toBe("ftyp");
 
     const nonFinalResponse = await getPackageRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId, artifactId: pptOutline.id }),
@@ -65,4 +98,16 @@ async function readSnapshot(projectId: string) {
     params: Promise.resolve({ projectId }),
   });
   return response.json();
+}
+
+function buildTinyMp4() {
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(32)]);
+}
+
+function writeFixtureVideo(buffer: Buffer) {
+  const dir = path.join(process.cwd(), ".tmp", "stage13-video-package-test");
+  mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, "percentage-intro.mp4");
+  writeFileSync(filePath, buffer);
+  return path.relative(process.cwd(), filePath).replaceAll("\\", "/");
 }

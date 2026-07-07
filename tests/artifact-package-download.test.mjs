@@ -37,6 +37,11 @@ const pptxDownload = {
   buffer: Buffer.from("PK fake pptx payload"),
 };
 
+const videoDownload = {
+  filename: "percentage-intro.mp4",
+  buffer: Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(24)]),
+};
+
 test("builds a real final material ZIP package", async () => {
   const { buildFinalMaterialPackageDownload } = loadArtifactPackageModule();
   const download = await buildFinalMaterialPackageDownload({
@@ -64,6 +69,28 @@ test("builds a real final material ZIP package", async () => {
   assert.match(finalDelivery, /PPT 大纲可下载最小 PPTX 文件/);
   assert.equal(pptx.subarray(0, 2).toString("utf8"), "PK");
   assert.doesNotMatch(`${readme}\n${finalDelivery}`, /PPTX 文件已生成|图片文件已生成|视频成片已生成/);
+});
+
+test("includes an existing intro video asset in the final material ZIP package", async () => {
+  const { buildFinalMaterialPackageDownload } = loadArtifactPackageModule();
+  const download = await buildFinalMaterialPackageDownload({
+    finalDelivery: finalDeliveryArtifact,
+    pptx: pptxDownload,
+    video: videoDownload,
+  });
+
+  const entries = unzipEntries(download.buffer);
+  assert.equal(entries.has("README.md"), true);
+  assert.equal(entries.has("intro-video.mp4"), true);
+
+  const readme = entries.get("README.md").toString("utf8");
+  const video = entries.get("intro-video.mp4");
+
+  assert.match(readme, /已包含导入视频文件/);
+  assert.match(readme, /核对视频质量、节奏和课堂锚点/);
+  assert.equal(video.equals(videoDownload.buffer), true);
+  assert.equal(video.subarray(4, 8).toString("utf8"), "ftyp");
+  assert.doesNotMatch(readme, /视频成片已生成/);
 });
 
 test("refuses to package non-final-delivery artifacts", async () => {
