@@ -12,6 +12,7 @@ export async function runDesktopInstallerSmoke({
   launch = true,
   runInstaller = process.env.SHANHAI_RUN_INSTALLER_SMOKE === "1",
   port = Number.parseInt(process.env.SHANHAI_DESKTOP_PORT ?? "3127", 10),
+  installerTimeoutMs = resolveInstallerTimeoutMs(),
 } = {}) {
   const paths = resolveDesktopPaths(cwd);
   const checks = [
@@ -29,7 +30,7 @@ export async function runDesktopInstallerSmoke({
 
   if (runInstaller) {
     installerMode = "enabled";
-    const installResult = await runSilentInstallSmoke(paths.installer, cwd, port + 1);
+    const installResult = await runSilentInstallSmoke(paths.installer, cwd, port + 1, installerTimeoutMs);
     checks.push(...installResult.checks);
   }
 
@@ -118,12 +119,12 @@ async function runExeHttpSmoke(exePath, cwd, port, id) {
   }
 }
 
-async function runSilentInstallSmoke(installerPath, cwd, port) {
+async function runSilentInstallSmoke(installerPath, cwd, port, installerTimeoutMs) {
   const installDir = path.join(cwd, "test-results", "stage35-install");
   if (!isInside(path.resolve(cwd), path.resolve(installDir))) {
     return {
       checks: [
-        buildCheck("silent-install", false, {
+        buildCheck("silent-install-exit", false, {
           message: "Install directory is outside the workspace.",
           missing: ["test-results/stage35-install"],
         }),
@@ -143,39 +144,85 @@ async function runSilentInstallSmoke(installerPath, cwd, port) {
   const installedExe = path.join(installDir, appExeName);
   const installedServer = path.join(installDir, "resources", "app", "desktop-bundle", "server.js");
   const uninstaller = path.join(installDir, `Uninstall ${appExeName}`);
-  const installOk = await waitForFiles([installedExe, installedServer, uninstaller], 180_000);
-  if (!installProcess.killed && installProcess.exitCode === null) {
+  const installExited = await waitForProcessExit(installProcess, installerTimeoutMs);
+  if (!installExited && !installProcess.killed && installProcess.exitCode === null) {
     installProcess.kill();
   }
-  const checks = [
-    buildCheck("silent-install", installOk, {
-      message: installOk ? "Silent installer created executable, app resources, and uninstaller." : "Silent installer did not complete required files within timeout.",
-      missing: installOk ? [] : [installedExe, installedServer, uninstaller].filter((filePath) => !existsSync(filePath)),
-    }),
-  ];
 
-  if (installOk) {
-    checks.push(await runExeHttpSmoke(installedExe, cwd, port, "installed-exe-http"));
+  const installedExeOk = existsSync(installedExe);
+  const installedServerOk = existsSync(installedServer);
+  const uninstallerOk = existsSync(uninstaller);
+  let installedExeHttpCheck = null;
+  let uninstallCode = null;
+
+  if (installedExeOk && installedServerOk) {
+    installedExeHttpCheck = await runExeHttpSmoke(installedExe, cwd, port, "installed-exe-http");
   }
 
-  if (existsSync(uninstaller)) {
+  if (uninstallerOk) {
     const uninstall = await execFileAsync(uninstaller, ["/S"], { cwd: installDir, timeoutMs: 60_000 });
-    checks.push(
-      buildCheck("silent-uninstall", uninstall.code === 0, {
-        message: uninstall.code === 0 ? "Silent uninstall exited with 0." : "Silent uninstall failed.",
-      }),
-    );
-  } else {
-    checks.push(
-      buildCheck("silent-uninstall", false, {
-        message: "Uninstaller was not found.",
-        missing: [uninstaller],
-      }),
-    );
+    uninstallCode = uninstall.code;
+  }
+
+  const checks = summarizeSilentInstallState({
+    installExited,
+    installedExeOk,
+    installedServerOk,
+    uninstallerOk,
+    uninstallCode,
+    missing: {
+      exe: installedExe,
+      server: installedServer,
+      uninstaller,
+    },
+  });
+
+  if (installedExeHttpCheck) {
+    checks.splice(3, 0, installedExeHttpCheck);
   }
 
   await stopMatchingDesktopProcesses(cwd);
   return { checks };
+}
+
+export function resolveInstallerTimeoutMs(value = process.env.SHANHAI_INSTALLER_TIMEOUT_MS) {
+  const parsed = Number.parseInt(value ?? "600000", 10);
+  return Number.isFinite(parsed) && parsed >= 60_000 ? parsed : 600_000;
+}
+
+export function summarizeSilentInstallState({
+  installExited,
+  installedExeOk,
+  installedServerOk,
+  uninstallerOk,
+  uninstallCode,
+  missing,
+}) {
+  return [
+    buildCheck("silent-install-exit", installExited, {
+      message: installExited ? "Silent installer process exited." : "Silent installer process did not exit within timeout.",
+    }),
+    buildCheck("installed-exe", installedExeOk, {
+      message: installedExeOk ? "Installed executable is present." : "Installed executable is missing.",
+      missing: installedExeOk ? [] : [missing.exe],
+    }),
+    buildCheck("installed-server", installedServerOk, {
+      message: installedServerOk ? "Installed desktop server bundle is present." : "Installed desktop server bundle is missing.",
+      missing: installedServerOk ? [] : [missing.server],
+    }),
+    buildCheck("silent-install-uninstaller", uninstallerOk, {
+      message: uninstallerOk ? "Uninstaller is present." : "Uninstaller was not generated.",
+      missing: uninstallerOk ? [] : [missing.uninstaller],
+    }),
+    buildCheck("silent-uninstall", uninstallerOk && uninstallCode === 0, {
+      message: !uninstallerOk
+        ? "Uninstaller was not found."
+        : uninstallCode === 0
+          ? "Silent uninstall exited with 0."
+          : "Silent uninstall failed.",
+      missing: uninstallerOk ? [] : [missing.uninstaller],
+    }),
+  ];
 }
 
 function execFileAsync(file, args, options) {
@@ -213,6 +260,22 @@ function waitForFiles(filePaths, timeoutMs) {
       }
     };
     attempt();
+  });
+}
+
+function waitForProcessExit(child, timeoutMs) {
+  if (child.exitCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    child.once("exit", () => finish(true));
+    setTimeout(() => finish(false), timeoutMs);
   });
 }
 

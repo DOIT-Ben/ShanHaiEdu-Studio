@@ -107,8 +107,9 @@ Remove-Item Env:\SHANHAI_RUN_INSTALLER_SMOKE
 当前状态：
 
 - 默认 unpacked exe smoke 已通过，可证明本地候选客户端能启动 loopback 服务。
-- 显式静默安装/卸载 smoke 当前未通过：安装文件能解压到 `test-results\stage35-install`，但 NSIS 未生成 `Uninstall ShanHaiEdu Studio.exe`。
-- 因此安装/卸载验收仍是发布前 blocker，不能把当前安装包描述为完整生产安装包。
+- 显式静默安装/卸载 smoke 已通过：安装文件能解压到 `test-results\stage35-install`，安装后 exe 可返回 HTTP 200，NSIS 会生成 `Uninstall ShanHaiEdu Studio.exe`，静默卸载 exit 0。
+- 该 smoke 默认给安装器 600 秒完整解压窗口；如需调整，可设置 `SHANHAI_INSTALLER_TIMEOUT_MS`，但不得低于 60000 ms。
+- 当前候选包仍未签名，不能把当前安装包描述为正式生产发布包。
 
 ## 4. 本地生产启动候选流程
 
@@ -159,4 +160,4 @@ npm run start
 - 独立后台 worker、队列取消、重试退避、限流和监控。
 - 对象存储、CDN、备份、素材生命周期清理。
 - WebKit、客户端 exe 和真实设备专项验收。
-- 正式签名客户端安装包、自动更新、窗口生命周期、安装/卸载和系统权限验收；其中 M35 已证明 unpacked exe 可运行，但静默安装/卸载仍未通过。
+- 正式签名客户端安装包、自动更新、窗口生命周期和系统权限验收；其中 M36 已证明未签名候选包可完成静默安装、安装后启动和静默卸载 smoke，但人工安装体验和正式签名仍未完成。

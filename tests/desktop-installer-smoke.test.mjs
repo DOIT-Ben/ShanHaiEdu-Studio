@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runDesktopInstallerSmoke } from "../scripts/desktop-installer-smoke.mjs";
+import {
+  resolveInstallerTimeoutMs,
+  runDesktopInstallerSmoke,
+  summarizeSilentInstallState,
+} from "../scripts/desktop-installer-smoke.mjs";
 
 const root = process.cwd();
 
@@ -39,6 +43,40 @@ test("desktop installer smoke keeps installation opt-in", async () => {
 
   assert.equal(result.installerMode, "skipped");
   assert.equal(result.checks.some((item) => item.id === "silent-install"), false);
+});
+
+test("silent installer diagnostics separate partial install from missing uninstaller", () => {
+  const result = summarizeSilentInstallState({
+    installExited: false,
+    installedExeOk: true,
+    installedServerOk: true,
+    uninstallerOk: false,
+    uninstallCode: null,
+    missing: {
+      exe: "install/ShanHaiEdu Studio.exe",
+      server: "install/resources/app/desktop-bundle/server.js",
+      uninstaller: "install/Uninstall ShanHaiEdu Studio.exe",
+    },
+  });
+
+  assert.deepEqual(
+    result.map((item) => [item.id, item.ok]),
+    [
+      ["silent-install-exit", false],
+      ["installed-exe", true],
+      ["installed-server", true],
+      ["silent-install-uninstaller", false],
+      ["silent-uninstall", false],
+    ],
+  );
+  assert.match(result.find((item) => item.id === "silent-install-uninstaller")?.message ?? "", /Uninstaller/);
+});
+
+test("silent installer timeout defaults to a full extraction window", () => {
+  assert.equal(resolveInstallerTimeoutMs(), 600_000);
+  assert.equal(resolveInstallerTimeoutMs("120000"), 120_000);
+  assert.equal(resolveInstallerTimeoutMs("1000"), 600_000);
+  assert.equal(resolveInstallerTimeoutMs("not-a-number"), 600_000);
 });
 
 function createInstallerSmokeFixture() {
