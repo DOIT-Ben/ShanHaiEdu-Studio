@@ -75,6 +75,14 @@ test.describe("E2E Stage 2 deterministic user path", () => {
     await expect(page.getByText("页面结构").first()).toBeVisible();
     await expect(page.getByText("主视觉需求").first()).toBeVisible();
     await expect(page.getByText("PPTX 文件已生成")).toBeHidden();
+    const pptxDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "下载 PPTX" }).click();
+    const pptx = await pptxDownload;
+    expect(pptx.suggestedFilename()).toMatch(/\.pptx$/);
+    const pptxPath = await pptx.path();
+    expect(pptxPath).toBeTruthy();
+    const pptxPrefix = await readBinaryPrefix(pptxPath ?? "", 2);
+    expect(pptxPrefix.toString("utf8")).toBe("PK");
     await page.getByRole("button", { name: "复制" }).click();
     await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
     await page.getByRole("button", { name: "确认使用" }).click();
@@ -210,6 +218,7 @@ async function createProjectFromVisibleEntry(page: Page) {
     await page.getByRole("dialog", { name: "项目列表" }).getByRole("button", { name: "新建项目" }).click();
   }
 
+  await expect(page.getByText("已新建公开课项目，可以开始描述备课目标。")).toBeVisible();
   await page.getByPlaceholder(composerPlaceholder).click();
 }
 
@@ -240,6 +249,11 @@ async function expectArtifactEntryAvailable(page: Page, name: RegExp) {
 async function readTextFile(path: string) {
   const { readFile } = await import("node:fs/promises");
   return readFile(path, "utf8");
+}
+
+async function readBinaryPrefix(path: string, length: number) {
+  const { readFile } = await import("node:fs/promises");
+  return (await readFile(path)).subarray(0, length);
 }
 
 function projectIdFromMessageUrl(url: string) {

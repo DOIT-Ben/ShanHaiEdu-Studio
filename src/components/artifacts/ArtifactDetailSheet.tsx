@@ -8,8 +8,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 import { useArtifactMarkdownDownload } from "@/hooks/useArtifactMarkdownDownload";
+import { useArtifactPptxDownload } from "@/hooks/useArtifactPptxDownload";
 
 type ArtifactDetailSheetProps = {
+  projectId: string;
   item: ArtifactItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -29,6 +31,7 @@ function PreviewThumb({ label }: { label: string }) {
 }
 
 export function ArtifactDetailSheet({
+  projectId,
   item,
   open,
   onOpenChange,
@@ -41,7 +44,7 @@ export function ArtifactDetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="max-w-[520px]">
         {item && (
-          <ArtifactDetailContent item={item} onCopy={onCopy} onUseAsInput={onUseAsInput} onConfirm={onConfirm} onRegenerate={onRegenerate} />
+          <ArtifactDetailContent projectId={projectId} item={item} onCopy={onCopy} onUseAsInput={onUseAsInput} onConfirm={onConfirm} onRegenerate={onRegenerate} />
         )}
       </SheetContent>
     </Sheet>
@@ -49,12 +52,14 @@ export function ArtifactDetailSheet({
 }
 
 function ArtifactDetailContent({
+  projectId,
   item,
   onCopy,
   onUseAsInput,
   onConfirm,
   onRegenerate,
 }: {
+  projectId: string;
   item: ArtifactItem;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
@@ -63,6 +68,7 @@ function ArtifactDetailContent({
 }) {
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
   const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
+  const { canDownloadPptx, downloadPptx, downloadPptxLabel } = useArtifactPptxDownload(projectId, item);
 
   return (
     <>
@@ -147,6 +153,12 @@ function ArtifactDetailContent({
           <Download className="h-4 w-4" />
           {downloadLabel}
         </Button>
+        {canDownloadPptx && (
+          <Button variant="secondary" onClick={downloadPptx}>
+            <Download className="h-4 w-4" />
+            {downloadPptxLabel}
+          </Button>
+        )}
         <Button variant="secondary">
           <ImageIcon className="h-4 w-4" />
           查看图片

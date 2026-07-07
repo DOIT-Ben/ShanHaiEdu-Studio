@@ -118,6 +118,7 @@ export function MediaWorkbench() {
         </SheetContent>
       </Sheet>
       <ArtifactDetailSheet
+        projectId={controller.activeProjectId}
         item={controller.detailItem}
         open={controller.detailOpen}
         onOpenChange={controller.setDetailOpen}
