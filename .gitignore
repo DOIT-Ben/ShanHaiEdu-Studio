@@ -12,6 +12,8 @@ graphify-out/
 .env
 dev.db
 dev.db-journal
+data/
+artifact-storage-root/
 prisma/*.db
 prisma/*.db-journal
 

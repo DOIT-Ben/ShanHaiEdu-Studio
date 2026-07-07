@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "preflight:production": "node scripts/production-preflight.mjs",
     "test": "node scripts/run-tests.mjs",
     "start": "next start",
     "lint": "next lint",

@@ -3,6 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+if (process.env.SHANHAI_DB_INIT_SKIP_DOTENV !== "1") {
+  await import("dotenv/config");
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
 const dbPath = resolveSqlitePath(databaseUrl);
