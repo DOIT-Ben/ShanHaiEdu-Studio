@@ -378,6 +378,79 @@ test("API client preserves backend quick replies from the message turn response"
   ]);
 });
 
+test("API client preserves backend delivery plans from the message turn response", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const assistantMessage = {
+    id: "assistant-turn-plan-1",
+    projectId: backendProject.id,
+    role: "assistant",
+    content: "我理解你的任务\n\n确认后我会按计划推进完整材料包。",
+    artifactRefs: [],
+    createdAt: "2026-07-07T00:06:00.000Z",
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      if (String(url).endsWith("/messages") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            assistantMessage,
+            agentTurn: {
+              quickReplies: [{ label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true }],
+              deliveryPlan: {
+                id: "delivery:full-package",
+                title: "公开课完整交付计划",
+                summary: "先确认需求，再推进教案、PPT、图片、视频和最终交付包。",
+                currentStepId: "requirement_spec",
+                steps: [
+                  {
+                    id: "requirement_spec",
+                    capabilityId: "requirement_spec",
+                    artifactKind: "requirement_spec",
+                    title: "整理备课需求",
+                    teacherDescription: "确认年级、课题、课堂目标和交付范围。",
+                    status: "awaiting_confirmation",
+                    requiresConfirmation: true,
+                  },
+                  {
+                    id: "lesson_plan",
+                    capabilityId: "lesson_plan",
+                    artifactKind: "lesson_plan",
+                    title: "生成公开课教案",
+                    teacherDescription: "形成可上课的教学流程和活动安排。",
+                    status: "pending",
+                    requiresConfirmation: true,
+                  },
+                ],
+              },
+            },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          ...backendSnapshot,
+          messages: [...backendSnapshot.messages, assistantMessage],
+        }),
+      };
+    },
+  });
+
+  const snapshot = await client.sendMessage("backend-project-a", "帮我做完整材料包", null);
+  const lastAssistant = snapshot.messages.at(-1);
+
+  assert.equal(lastAssistant.speaker, "assistant");
+  assert.equal(lastAssistant.deliveryPlan.title, "公开课完整交付计划");
+  assert.equal(lastAssistant.deliveryPlan.steps[0].title, "整理备课需求");
+  assert.equal(lastAssistant.deliveryPlan.steps[0].teacherDescription, "确认年级、课题、课堂目标和交付范围。");
+  assert.equal(lastAssistant.deliveryPlan.steps[0].statusLabel, "等待确认");
+  assert.equal(lastAssistant.deliveryPlan.steps[0].capabilityId, undefined);
+  assert.equal(lastAssistant.deliveryPlan.steps[0].artifactKind, undefined);
+  assert.deepEqual(lastAssistant.quickReplies, [{ label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true }]);
+});
+
 test("API client does not expose backend-only structured labels in visible artifact fields", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const snapshotWithBackendOnlyFields = {

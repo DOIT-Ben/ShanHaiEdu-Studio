@@ -1,11 +1,24 @@
 import type { AgentProjectContext, AgentRuntime } from "@/server/agent-runtime/types";
 import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
-import type { MainAgentTurn } from "@/server/capabilities/types";
+import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
+
+type PendingDeliveryPlanMetadata = {
+  status: "pending" | "confirmed";
+  teacherRequest: string;
+  toolPlan: CapabilityToolPlan;
+  deliveryPlan?: DeliveryPlan;
+  runtimeKind: MainAgentTurn["runtimeKind"];
+};
+
+type PendingDeliveryPlanSnapshot = PendingDeliveryPlanMetadata & {
+  messageId: string;
+  messageMetadata: Record<string, unknown>;
+};
 
 export type ConversationTurnInput = {
   role?: "teacher" | "assistant" | "system";
@@ -73,6 +86,7 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
       const assistantMessage = await options.service.addMessage(projectId, {
         role: "assistant",
         content: formatAssistantContent(agentTurn.assistantMessage),
+        metadata: createPendingDeliveryPlanMetadata(agentTurn, teacherContent),
       });
 
       return { message, assistantMessage, agentTurn };
@@ -91,15 +105,15 @@ async function runConfirmedFirstArtifact(input: {
   confirmationMessage: ConversationMessageRecord;
   teacherContent: string;
 }): Promise<MessageTurnResponse> {
-  const pendingTeacherRequest = findPendingTeacherRequest(input.messages, input.teacherContent);
-  const generationUserMessage = pendingTeacherRequest ?? input.teacherContent;
-  const plannedTurn = await input.agent.respond({
+  const pendingPlan = findPendingDeliveryPlan(input.messages);
+  const generationUserMessage = pendingPlan?.teacherRequest ?? input.teacherContent;
+  const plannedTurn = pendingPlan ? toPendingMainAgentTurn(pendingPlan) : await input.agent.respond({
     userMessage: generationUserMessage,
     availableArtifactKinds: input.availableArtifactKinds,
     projectContext: toMainAgentProjectContext(input.project),
   });
 
-  if (plannedTurn.state !== "awaiting_confirmation" || !plannedTurn.toolPlan?.requiresConfirmation) {
+  if (!pendingPlan || plannedTurn.state !== "awaiting_confirmation" || !plannedTurn.toolPlan?.requiresConfirmation) {
     const assistantPrompt = "我还没有拿到可以确认执行的备课任务。请先告诉我年级、学科、课题和想要的材料，我会先整理计划再让你确认。";
     const blockedTurn: MainAgentTurn = {
       assistantMessage: { body: assistantPrompt },
@@ -160,6 +174,15 @@ async function runConfirmedFirstArtifact(input: {
     shouldRunToolNow: true,
     artifactRefs: [artifact.id],
   };
+  await input.service.updateMessageMetadata(input.project.id, pendingPlan.messageId, {
+    ...pendingPlan.messageMetadata,
+    pendingDeliveryPlan: {
+      ...pendingPlan,
+      status: "confirmed",
+      messageId: undefined,
+      messageMetadata: undefined,
+    },
+  });
   const assistantMessage = await input.service.addMessage(input.project.id, {
     role: "assistant",
     content: result.assistantSummary,
@@ -192,12 +215,66 @@ function isTeacherConfirmation(content: string) {
   return /确认开始|开始生成|直接生成|按默认生成|确认生成|可以生成|开始吧|没问题/.test(text);
 }
 
-function findPendingTeacherRequest(messages: ConversationMessageRecord[], currentContent: string) {
-  const candidates = messages
-    .filter((message) => message.role === "teacher")
-    .map((message) => message.content.trim())
-    .filter((content) => content && content !== currentContent && !isTeacherConfirmation(content));
-  return candidates.at(-1) ?? null;
+function createPendingDeliveryPlanMetadata(agentTurn: MainAgentTurn, teacherRequest: string) {
+  if (agentTurn.state !== "awaiting_confirmation" || !agentTurn.toolPlan?.requiresConfirmation) {
+    return undefined;
+  }
+
+  return {
+    pendingDeliveryPlan: {
+      status: "pending",
+      teacherRequest,
+      toolPlan: agentTurn.toolPlan,
+      ...(agentTurn.deliveryPlan ? { deliveryPlan: agentTurn.deliveryPlan } : {}),
+      runtimeKind: agentTurn.runtimeKind,
+    },
+  };
+}
+
+function findPendingDeliveryPlan(messages: ConversationMessageRecord[]): PendingDeliveryPlanSnapshot | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "assistant") continue;
+    const pendingPlan = parsePendingDeliveryPlanMetadata(message.metadata.pendingDeliveryPlan);
+    if (!pendingPlan || pendingPlan.status !== "pending") continue;
+    return {
+      ...pendingPlan,
+      messageId: message.id,
+      messageMetadata: message.metadata,
+    };
+  }
+
+  return null;
+}
+
+function parsePendingDeliveryPlanMetadata(value: unknown): PendingDeliveryPlanMetadata | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Partial<PendingDeliveryPlanMetadata>;
+  if (candidate.status !== "pending" && candidate.status !== "confirmed") return null;
+  if (typeof candidate.teacherRequest !== "string" || !candidate.teacherRequest.trim()) return null;
+  if (!candidate.toolPlan || typeof candidate.toolPlan !== "object") return null;
+  if (candidate.deliveryPlan !== undefined && (typeof candidate.deliveryPlan !== "object" || Array.isArray(candidate.deliveryPlan))) return null;
+  if (candidate.runtimeKind !== "openai" && candidate.runtimeKind !== "deterministic") return null;
+
+  return {
+    status: candidate.status,
+    teacherRequest: candidate.teacherRequest,
+    toolPlan: candidate.toolPlan as CapabilityToolPlan,
+    deliveryPlan: candidate.deliveryPlan as DeliveryPlan | undefined,
+    runtimeKind: candidate.runtimeKind,
+  };
+}
+
+function toPendingMainAgentTurn(pendingPlan: PendingDeliveryPlanMetadata): MainAgentTurn {
+  return {
+    assistantMessage: { body: pendingPlan.toolPlan.reasonForUser },
+    state: "awaiting_confirmation",
+    quickReplies: [],
+    recommendedOptions: [],
+    toolPlan: pendingPlan.toolPlan,
+    deliveryPlan: pendingPlan.deliveryPlan,
+    shouldRunToolNow: false,
+    runtimeKind: pendingPlan.runtimeKind,
+  };
 }
 
 function toMainAgentProjectContext(project: ProjectRecord) {

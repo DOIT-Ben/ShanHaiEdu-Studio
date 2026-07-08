@@ -37,6 +37,7 @@ export type ConversationMessageRecord = {
   role: MessageRole;
   content: string;
   artifactRefs: string[];
+  metadata: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -124,6 +125,7 @@ export type AddMessageInput = {
   role: MessageRole;
   content: string;
   artifactRefs?: string[];
+  metadata?: Record<string, unknown>;
 };
 
 export type SaveArtifactInput = {

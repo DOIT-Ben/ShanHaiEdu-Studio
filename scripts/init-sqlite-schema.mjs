@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS "ConversationMessage" (
   "role" TEXT NOT NULL,
   "content" TEXT NOT NULL,
   "artifactRefsJson" TEXT NOT NULL DEFAULT '[]',
+  "metadataJson" TEXT NOT NULL DEFAULT '{}',
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ConversationMessage_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -163,6 +164,7 @@ CREATE TABLE IF NOT EXISTS "CsrfToken" (
 
 `);
 ensureColumn(db, "Project", "ownerUserId", 'ALTER TABLE "Project" ADD COLUMN "ownerUserId" TEXT');
+ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
 ensureColumn(db, "LocalUser", "passwordHash", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordHash" TEXT');

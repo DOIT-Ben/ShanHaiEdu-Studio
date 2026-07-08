@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
+import { GET as getMessageRoute, POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
 import { POST as postProjectRoute } from "@/app/api/workbench/projects/route";
 
 describe("M54-B3 ConversationTurnService route contract", () => {
@@ -208,6 +208,122 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       "pending",
     ]);
     expect(confirmBody.artifact).toMatchObject({ nodeKey: "requirement_spec" });
+  });
+
+  it("persists the pending delivery plan on the assistant planning message", async () => {
+    const projectId = await createProject({
+      title: "M55-A 计划持久化项目",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    const planningResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const planningBody = await planningResponse.json();
+
+    expect(planningBody.assistantMessage.metadata).toMatchObject({
+      pendingDeliveryPlan: {
+        status: "pending",
+        teacherRequest: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+        toolPlan: {
+          capabilityId: "requirement_spec",
+          requiresConfirmation: true,
+        },
+        deliveryPlan: {
+          currentStepId: "requirement_spec",
+        },
+      },
+    });
+
+    const messagesResponse = await getMessageRoute(
+      new Request("http://localhost", {
+        method: "GET",
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const messagesBody = await messagesResponse.json();
+    const assistantPlanMessage = messagesBody.messages.find((message: { id: string }) => message.id === planningBody.assistantMessage.id);
+
+    expect(assistantPlanMessage.metadata).toMatchObject({
+      pendingDeliveryPlan: {
+        status: "pending",
+        teacherRequest: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      },
+    });
+  });
+
+  it("confirms the persisted pending plan even when casual chat is inserted before confirmation", async () => {
+    const projectId = await createProject({
+      title: "M55-A 绑定确认项目",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    const planningResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const planningBody = await planningResponse.json();
+
+    await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "先等一下，我问个无关问题：今天适合怎样开场？" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const confirmResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const confirmBody = await confirmResponse.json();
+
+    expect(confirmBody.agentTurn).toMatchObject({
+      state: "succeeded",
+      deliveryPlan: {
+        currentStepId: "requirement_spec",
+      },
+    });
+    expect(confirmBody.artifact).toMatchObject({ nodeKey: "requirement_spec" });
+
+    const messagesResponse = await getMessageRoute(
+      new Request("http://localhost", {
+        method: "GET",
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const messagesBody = await messagesResponse.json();
+    const assistantPlanMessage = messagesBody.messages.find((message: { id: string }) => message.id === planningBody.assistantMessage.id);
+
+    expect(assistantPlanMessage.metadata.pendingDeliveryPlan.status).toBe("confirmed");
+
+    const repeatedConfirmResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const repeatedConfirmBody = await repeatedConfirmResponse.json();
+
+    expect(repeatedConfirmBody.agentTurn).toMatchObject({
+      state: "collecting_inputs",
+      shouldRunToolNow: false,
+    });
+    expect(repeatedConfirmBody.artifact).toBeUndefined();
   });
 });
 

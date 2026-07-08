@@ -2,7 +2,7 @@ import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as s
 import { getWorkbenchCsrfToken } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -25,7 +25,23 @@ type MessageTurnResponse = {
   };
   agentTurn?: {
     quickReplies?: ChatMessage["quickReplies"];
+    deliveryPlan?: BackendDeliveryPlan;
   };
+};
+
+type BackendDeliveryPlan = {
+  id?: string;
+  title?: string;
+  summary?: string;
+  steps?: BackendDeliveryPlanStep[];
+};
+
+type BackendDeliveryPlanStep = {
+  id?: string;
+  title?: string;
+  teacherDescription?: string;
+  status?: ChatDeliveryPlan["steps"][number]["status"];
+  requiresConfirmation?: boolean;
 };
 
 const teacherFacingLoadError = "项目内容暂时没有取回，请稍后再试。";
@@ -103,7 +119,7 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
       }).then((turn) =>
         request<unknown>(`/api/workbench/projects/${projectId}/snapshot`)
           .then(normalizeSnapshot)
-          .then((snapshot) => mergeTurnQuickReplies(snapshot, turn as MessageTurnResponse)),
+          .then((snapshot) => mergeTurnAssistantMetadata(snapshot, turn as MessageTurnResponse)),
       );
     },
     approveArtifact(projectId, artifactKey) {
@@ -128,18 +144,55 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
   };
 }
 
-function mergeTurnQuickReplies(snapshot: WorkbenchSnapshot, turn: MessageTurnResponse): WorkbenchSnapshot {
+function mergeTurnAssistantMetadata(snapshot: WorkbenchSnapshot, turn: MessageTurnResponse): WorkbenchSnapshot {
   const quickReplies = turn.agentTurn?.quickReplies?.slice(0, 3);
-  if (!quickReplies?.length || !turn.assistantMessage?.id) return snapshot;
+  const deliveryPlan = toChatDeliveryPlan(turn.agentTurn?.deliveryPlan);
+  if ((!quickReplies?.length && !deliveryPlan) || !turn.assistantMessage?.id) return snapshot;
 
   return {
     ...snapshot,
     messages: snapshot.messages.map((message) =>
       message.id === turn.assistantMessage?.id && message.speaker === "assistant"
-        ? { ...message, quickReplies }
+        ? { ...message, ...(quickReplies?.length ? { quickReplies } : {}), ...(deliveryPlan ? { deliveryPlan } : {}) }
         : message,
     ),
   };
+}
+
+function toChatDeliveryPlan(plan?: BackendDeliveryPlan): ChatDeliveryPlan | undefined {
+  const steps = plan?.steps?.map(toChatDeliveryPlanStep).filter((step): step is ChatDeliveryPlan["steps"][number] => Boolean(step));
+  if (!plan?.title || !plan.summary || !steps?.length) return undefined;
+
+  return {
+    id: plan.id ?? `delivery-plan-${plan.title}`,
+    title: plan.title,
+    summary: plan.summary,
+    steps,
+  };
+}
+
+function toChatDeliveryPlanStep(step: BackendDeliveryPlanStep): ChatDeliveryPlan["steps"][number] | null {
+  if (!step.id || !step.title || !step.teacherDescription || !step.status) return null;
+
+  return {
+    id: step.id,
+    title: step.title,
+    teacherDescription: step.teacherDescription,
+    status: step.status,
+    statusLabel: deliveryPlanStatusLabel(step.status),
+    requiresConfirmation: Boolean(step.requiresConfirmation),
+  };
+}
+
+function deliveryPlanStatusLabel(status: ChatDeliveryPlan["steps"][number]["status"]) {
+  const labels: Record<ChatDeliveryPlan["steps"][number]["status"], string> = {
+    awaiting_confirmation: "等待确认",
+    pending: "待推进",
+    running: "正在推进",
+    succeeded: "已完成",
+    failed: "需要处理",
+  };
+  return labels[status];
 }
 
 function csrfHeader(method?: string): Record<string, string> {

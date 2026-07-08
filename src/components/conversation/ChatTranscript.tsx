@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
-import type { ArtifactItem, ChatMessage } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { GeneratingIndicator } from "@/components/conversation/messages/GeneratingIndicator";
 import { MessageActions } from "@/components/conversation/messages/MessageActions";
@@ -101,6 +101,7 @@ function AssistantMessage({
             {message.title && <p className="font-medium">{message.title}</p>}
             <p>{message.body}</p>
           </div>
+          {message.deliveryPlan && <DeliveryPlanCard plan={message.deliveryPlan} />}
           {artifact && <TeacherArtifactCard item={artifact} />}
           {!artifact && quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
@@ -109,6 +110,34 @@ function AssistantMessage({
         </div>
       </div>
     </article>
+  );
+}
+
+function DeliveryPlanCard({ plan }: { plan: ChatDeliveryPlan }) {
+  return (
+    <div className="mt-3 max-w-[720px] rounded-xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm shadow-[0_10px_26px_rgba(29,74,66,0.045)]">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-[#32685d]">备课推进计划</span>
+        <span className="rounded-full border border-[#d7ebe5] bg-white px-2 py-0.5 text-xs text-muted-foreground">{plan.title}</span>
+      </div>
+      <p className="mt-1 text-sm leading-6 text-foreground">{plan.summary}</p>
+      <ol className="mt-3 space-y-2">
+        {plan.steps.map((step, index) => (
+          <li key={step.id} className="flex gap-3 rounded-lg bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#eef8f5] text-[11px] font-medium text-[#32685d]">
+              {index + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-foreground">{step.title}</span>
+                <span className="rounded-full bg-[#f2f7f5] px-2 py-0.5 text-xs text-muted-foreground">{step.statusLabel}</span>
+              </div>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{step.teacherDescription}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

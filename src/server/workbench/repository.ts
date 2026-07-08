@@ -92,7 +92,30 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           role: input.role,
           content: input.content,
           artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+          metadataJson: JSON.stringify(input.metadata ?? {}),
         },
+      });
+    },
+
+    async updateMessageMetadata(projectId: string, messageId: string, metadata: Record<string, unknown>) {
+      return client.$transaction(async (tx) => {
+        const result = await tx.conversationMessage.updateMany({
+          where: { id: messageId, projectId },
+          data: { metadataJson: JSON.stringify(metadata) },
+        });
+
+        if (result.count === 0) {
+          throw new Error(`ConversationMessage not found: ${messageId}`);
+        }
+
+        const message = await tx.conversationMessage.findFirst({
+          where: { id: messageId, projectId },
+        });
+        if (!message) {
+          throw new Error(`ConversationMessage not found: ${messageId}`);
+        }
+
+        return message;
       });
     },
 

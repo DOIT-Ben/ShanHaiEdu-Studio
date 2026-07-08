@@ -94,6 +94,14 @@ M55-A 按“双主线、五智能体”并发推进：
 - “确认开始”必须绑定上一轮可确认计划；没有 pending plan 时不执行。
 - M55-A 可只执行首步 `requirement_spec`，但必须诚实保留剩余步骤 pending。
 
+#### 阶段 1.1：Pending Plan 持久化绑定
+
+- 第一性需求：确认门不能依赖“重新猜上一句用户意图”，必须绑定教师已经看到并确认的计划快照。
+- 可复用基础：复用 `ConversationMessage` 消息持久化、`artifactRefsJson`/`structuredContentJson` 的 JSON 字符串模式，以及现有 route/service 测试链路。
+- 适配方式：给 `ConversationMessage` 增加 `metadataJson`，计划消息保存 `pendingDeliveryPlan` 快照；确认时从最近未消费的 pending metadata 读取教师原始请求、首步 `toolPlan` 和 `deliveryPlan`。
+- 必要自研：只新增最小 metadata 结构和读取校验，不引入独立 pending-plan 表；后续多计划并发或取消能力再升级为专门状态表。
+- 验收标准：确认前不生成 artifact；无 pending 不执行；中间插入普通聊天后确认仍执行原 pending plan；已确认计划不能被重复当作新的 pending plan。
+
 验收：`tests/conversation-turn-service.test.ts` 覆盖普通聊天、复合需求、无 pending 确认、复合需求后确认。
 
 #### 阶段 2：UI 第一批并发打磨

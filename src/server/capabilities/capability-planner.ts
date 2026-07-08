@@ -11,9 +11,31 @@ export type CapabilityPlannerInput = {
   };
 };
 
+const fullDeliveryStepIds: CapabilityId[] = [
+  "requirement_spec",
+  "lesson_plan",
+  "ppt_outline",
+  "coze_ppt",
+  "image_asset",
+  "intro_video",
+  "final_package",
+];
+
 export function planCapabilityForRequest(input: CapabilityPlannerInput): CapabilityToolPlan | null {
   const text = input.userMessage.trim();
   if (isCasualChat(text) || isExplorationOnly(text)) return null;
+
+  if (wantsFullDelivery(text)) {
+    const capabilityId = firstMissingDeliveryStep(fullDeliveryStepIds, input.availableArtifactKinds);
+    const nextSuggestedCapabilities = fullDeliveryStepIds.slice(fullDeliveryStepIds.indexOf(capabilityId) + 1, fullDeliveryStepIds.indexOf(capabilityId) + 2);
+    return buildPlan(
+      capabilityId,
+      text,
+      normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)),
+      nextSuggestedCapabilities,
+      artifactKindsBefore(fullDeliveryStepIds, capabilityId),
+    );
+  }
 
   if (wantsPpt(text)) {
     const missingInputs = normalizePptMissingInputs(missingLessonInputs(text, input.projectContext));
@@ -47,25 +69,17 @@ export function planDeliveryForRequest(input: CapabilityPlannerInput): DeliveryP
   const text = input.userMessage.trim();
   if (isCasualChat(text) || isExplorationOnly(text) || !wantsFullDelivery(text)) return null;
 
-  const firstStep = planCapabilityForRequest(input);
-  if (!firstStep || firstStep.missingInputs.length > 0) return null;
-
-  const stepIds: CapabilityId[] = [
-    "requirement_spec",
-    "lesson_plan",
-    "ppt_outline",
-    "coze_ppt",
-    "image_asset",
-    "intro_video",
-    "final_package",
-  ];
+  const currentStepId = firstMissingDeliveryStep(fullDeliveryStepIds, input.availableArtifactKinds);
+  const currentPlan = planCapabilityForRequest(input);
+  if (!currentPlan || currentPlan.missingInputs.length > 0) return null;
+  const completedStepIds = completedDeliveryStepIds(fullDeliveryStepIds, input.availableArtifactKinds);
 
   return {
     id: `delivery:${stablePlanSegment(text)}`,
     title: "公开课完整交付计划",
     summary: "我会先整理需求，再按顺序生成教案、PPT、课堂素材和最终交付包。",
-    currentStepId: firstStep.capabilityId,
-    steps: stepIds.map((capabilityId) => {
+    currentStepId,
+    steps: fullDeliveryStepIds.map((capabilityId) => {
       const capability = getCapabilityDefinition(capabilityId);
       return {
         id: capabilityId,
@@ -73,11 +87,37 @@ export function planDeliveryForRequest(input: CapabilityPlannerInput): DeliveryP
         artifactKind: capability.artifactKind,
         title: capability.userLabel,
         teacherDescription: capability.description,
-        status: capabilityId === firstStep.capabilityId ? "awaiting_confirmation" : "pending",
+        status: completedStepIds.has(capabilityId) ? "succeeded" : capabilityId === currentStepId ? "awaiting_confirmation" : "pending",
         requiresConfirmation: capability.requiresConfirmation,
       };
     }),
   };
+}
+
+function firstMissingDeliveryStep(stepIds: CapabilityId[], availableArtifactKinds: string[]): CapabilityId {
+  const completedStepIds = completedDeliveryStepIds(stepIds, availableArtifactKinds);
+  return stepIds.find((capabilityId) => !completedStepIds.has(capabilityId)) ?? "final_package";
+}
+
+function completedDeliveryStepIds(stepIds: CapabilityId[], availableArtifactKinds: string[]): Set<CapabilityId> {
+  const remainingArtifactKinds = [...availableArtifactKinds];
+  const completedStepIds = new Set<CapabilityId>();
+
+  for (const capabilityId of stepIds) {
+    const artifactKind = getCapabilityDefinition(capabilityId).artifactKind;
+    const artifactIndex = remainingArtifactKinds.indexOf(artifactKind);
+    if (artifactIndex === -1) continue;
+    completedStepIds.add(capabilityId);
+    remainingArtifactKinds.splice(artifactIndex, 1);
+  }
+
+  return completedStepIds;
+}
+
+function artifactKindsBefore(stepIds: CapabilityId[], capabilityId: CapabilityId): string[] {
+  return stepIds
+    .slice(0, Math.max(0, stepIds.indexOf(capabilityId)))
+    .map((stepId) => getCapabilityDefinition(stepId).artifactKind);
 }
 
 function buildPlan(

@@ -55,6 +55,16 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapMessage(message);
     },
 
+    async updateMessageMetadata(
+      projectId: string,
+      messageId: string,
+      metadata: Record<string, unknown>,
+    ): Promise<ConversationMessageRecord> {
+      await ensureProjectAccess(projectId, "write");
+      const message = await repository.updateMessageMetadata(projectId, messageId, metadata);
+      return mapMessage(message);
+    },
+
     async saveArtifact(projectId: string, input: SaveArtifactInput): Promise<ArtifactRecord> {
       await ensureProjectAccess(projectId, "write");
       const artifact = await repository.saveArtifact(projectId, input);
@@ -204,6 +214,7 @@ function mapMessage(message: ConversationMessage): ConversationMessageRecord {
     role: message.role as ConversationMessageRecord["role"],
     content: message.content,
     artifactRefs: parseJsonArray(message.artifactRefsJson),
+    metadata: parseJsonObject(message.metadataJson ?? "{}"),
     createdAt: message.createdAt.toISOString(),
   };
 }

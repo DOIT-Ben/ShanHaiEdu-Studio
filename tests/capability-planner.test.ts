@@ -94,4 +94,50 @@ describe("M54-B CapabilityPlanner", () => {
 
     expect(plan).toBeNull();
   });
+
+  it("keeps lesson plan as the next full-delivery step when requirements already exist", () => {
+    const toolPlan = planCapabilityForRequest({
+      userMessage: "帮我继续做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: ["requirement_spec"],
+    });
+    const plan = planDeliveryForRequest({
+      userMessage: "帮我继续做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: ["requirement_spec"],
+    });
+
+    expect(toolPlan?.capabilityId).toBe("lesson_plan");
+    expect(plan?.currentStepId).toBe("lesson_plan");
+    expect(plan?.steps.map((step) => [step.capabilityId, step.status])).toEqual([
+      ["requirement_spec", "succeeded"],
+      ["lesson_plan", "awaiting_confirmation"],
+      ["ppt_outline", "pending"],
+      ["coze_ppt", "pending"],
+      ["image_asset", "pending"],
+      ["intro_video", "pending"],
+      ["final_package", "pending"],
+    ]);
+  });
+
+  it("does not treat a PPT outline draft as a completed PPTX delivery step", () => {
+    const toolPlan = planCapabilityForRequest({
+      userMessage: "帮我继续做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_draft"],
+    });
+    const plan = planDeliveryForRequest({
+      userMessage: "帮我继续做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_draft"],
+    });
+
+    expect(toolPlan?.capabilityId).toBe("coze_ppt");
+    expect(plan?.currentStepId).toBe("coze_ppt");
+    expect(plan?.steps.map((step) => [step.capabilityId, step.status])).toEqual([
+      ["requirement_spec", "succeeded"],
+      ["lesson_plan", "succeeded"],
+      ["ppt_outline", "succeeded"],
+      ["coze_ppt", "awaiting_confirmation"],
+      ["image_asset", "pending"],
+      ["intro_video", "pending"],
+      ["final_package", "pending"],
+    ]);
+  });
 });

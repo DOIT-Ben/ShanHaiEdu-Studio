@@ -64,6 +64,25 @@ export type ChatMessage = {
     prompt: string;
     recommended?: boolean;
   }[];
+  deliveryPlan?: ChatDeliveryPlan;
+};
+
+export type ChatDeliveryPlanStepStatus = "pending" | "awaiting_confirmation" | "running" | "succeeded" | "failed";
+
+export type ChatDeliveryPlanStep = {
+  id: string;
+  title: string;
+  teacherDescription: string;
+  status: ChatDeliveryPlanStepStatus;
+  statusLabel: string;
+  requiresConfirmation: boolean;
+};
+
+export type ChatDeliveryPlan = {
+  id: string;
+  title: string;
+  summary: string;
+  steps: ChatDeliveryPlanStep[];
 };
 
 export type WorkbenchSnapshot = {

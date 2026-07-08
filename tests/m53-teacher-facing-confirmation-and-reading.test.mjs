@@ -114,6 +114,15 @@ test("generating indicator keeps waiting text understandable for teachers", () =
   assert.doesNotMatch(generatingSource, /debug|provider|schema|manifest|node_id|storage/i);
 });
 
+test("delivery plan card uses teacher-facing step labels without backend fields", () => {
+  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+
+  assert.match(source, /DeliveryPlanCard/);
+  assert.match(source, /备课推进计划|交付计划/);
+  assert.match(source, /等待确认|待推进|已完成/);
+  assert.doesNotMatch(source, /capabilityId|artifactKind|schema|manifest|provider|node_id|storage|API|debug|local path/i);
+});
+
 test("composer auto resize uses measured text height before hiding overflow", () => {
   const source = readSource("src/components/conversation/composer/useAutoResizeTextarea.ts");
 
