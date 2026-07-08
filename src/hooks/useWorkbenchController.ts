@@ -277,6 +277,11 @@ export function useWorkbenchController() {
     }
   }
 
+  function selectQuickReply(value: string) {
+    setInput(value);
+    flashComposerNotice("已填入，可修改后发送。");
+  }
+
   function showRecovery() {
     const blocked = artifacts.find((item) => item.key === "video-storyboard");
     if (blocked) openDetail(blocked);
@@ -323,6 +328,7 @@ export function useWorkbenchController() {
     generateRealAsset,
     realAssetGenerationKey,
     sendPrompt,
+    selectQuickReply,
     showRecovery,
   };
 }

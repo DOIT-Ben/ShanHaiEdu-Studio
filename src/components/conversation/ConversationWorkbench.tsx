@@ -27,6 +27,7 @@ type ConversationWorkbenchProps = {
   onAttachFile: (fileName: string, text: string) => void;
   onAttachFileError: (message: string) => void;
   onSend: () => void;
+  onQuickReplySelect?: (value: string) => void;
   onRetry: () => void;
   onOpenArtifacts: () => void;
   onLogout?: () => Promise<void>;
@@ -50,6 +51,7 @@ export function ConversationWorkbench({
   onAttachFile,
   onAttachFileError,
   onSend,
+  onQuickReplySelect,
   onRetry,
   onOpenArtifacts,
   onLogout,
@@ -91,7 +93,13 @@ export function ConversationWorkbench({
               </div>
             )}
             {messages.length > 0 ? (
-              <ChatTranscript messages={messages} artifacts={artifacts} sending={sending} registerMessage={registerMessage} />
+              <ChatTranscript
+                messages={messages}
+                artifacts={artifacts}
+                sending={sending}
+                registerMessage={registerMessage}
+                onQuickReplySelect={onQuickReplySelect}
+              />
             ) : (
               loadState !== "loading" && (
                 <div className="max-w-[640px] rounded-2xl border bg-card px-5 py-4 text-sm leading-7 text-muted-foreground shadow-[0_10px_28px_rgba(0,0,0,0.035)]">

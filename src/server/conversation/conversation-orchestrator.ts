@@ -124,11 +124,23 @@ export function createConversationOrchestratorFromEnv(env: OpenAICompatibleEnv =
 export function createDeterministicConversationOrchestrator(): ConversationOrchestrator {
   return {
     async decide(input: ConversationInput): Promise<ConversationDecision> {
-      if (!isActionableLessonRequest(input.userMessage, input.artifactRefs)) {
+      if (!isExplicitLessonWorkRequest(input.userMessage, input.artifactRefs)) {
+        if (isCasualChat(input.userMessage)) {
+          return {
+            intent: "chat",
+            assistantMessage: {
+              body: "我在。你可以先随便聊；如果要开始备课，请补充年级、课题、学科和想要的材料。",
+            },
+            shouldGenerateRequirement: false,
+            normalizedBrief: {},
+            runtimeKind: "deterministic",
+          };
+        }
+
         return {
-          intent: looksLikeGreeting(input.userMessage) ? "chat" : "clarify",
+          intent: "clarify",
           assistantMessage: {
-            body: "我在。请补充年级、课题、教材版本，以及你希望生成的材料，比如教案、PPT 大纲或导入视频方案。信息补齐后我再开始生成备课草稿。",
+            body: "我先不启动备课链路。你可以补充年级、学科、课题和想要的材料；确认后我再整理成可选择的备课需求。",
           },
           shouldGenerateRequirement: false,
           normalizedBrief: {},
@@ -243,38 +255,35 @@ function normalizeBrief(input: ConversationInput): ConversationDecision["normali
   };
 }
 
-function isActionableLessonRequest(content: string, artifactRefs: string[]) {
+function isCasualChat(content: string): boolean {
+  const text = content.trim().toLowerCase();
+  return ["你好", "您好", "hi", "hello", "在吗", "在不在", "谢谢", "你是谁"].includes(text);
+}
+
+function isExplicitLessonWorkRequest(content: string, artifactRefs: string[]) {
   const text = content.trim();
   if (artifactRefs.length > 0) return true;
   if (text.length < 6) return false;
 
-  const lessonSignals = [
-    "年级",
-    "课题",
-    "教材",
+  const directWorkSignals = [
     "公开课",
     "备课",
     "教案",
-    "ppt",
     "PPT",
+    "ppt",
     "课件",
-    "导入",
-    "视频",
-    "数学",
-    "语文",
-    "英语",
-    "生成",
-    "设计",
-    "做一节",
-    "上一节",
+    "导入视频",
+    "教学设计",
+    "课堂活动",
   ];
+  if (directWorkSignals.some((signal) => text.includes(signal))) return true;
 
-  return lessonSignals.some((signal) => text.includes(signal));
-}
+  const hasGrade = Boolean(extractGrade(text));
+  const hasSubject = Boolean(extractSubject(text));
+  const hasTopic = Boolean(extractTopic(text)) || /课题|教材|版本/.test(text);
+  if (hasGrade && (hasSubject || hasTopic)) return true;
 
-function looksLikeGreeting(content: string): boolean {
-  const text = content.trim().toLowerCase();
-  return ["你好", "您好", "hi", "hello", "在吗", "在不在"].includes(text);
+  return /做一节|上一节|准备一节|帮我做/.test(text) && (hasSubject || hasGrade || hasTopic);
 }
 
 function extractGrade(text: string): string | undefined {

@@ -110,6 +110,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onAttachFile={controller.attachComposerFile}
               onAttachFileError={controller.flashComposerNotice}
               onSend={controller.sendPrompt}
+              onQuickReplySelect={controller.selectQuickReply}
               onRetry={controller.retryActiveProject}
               onOpenArtifacts={() => controller.setRailOpen(true)}
               onLogout={onLogout}

@@ -11,16 +11,23 @@ type ChatTranscriptProps = {
   artifacts?: ArtifactItem[];
   sending?: boolean;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
+  onQuickReplySelect?: (value: string) => void;
 };
 
-export function ChatTranscript({ messages, artifacts = [], sending = false, registerMessage }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], sending = false, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
         const assistant = message.speaker === "assistant";
         const artifact = assistant ? findInlineArtifact(message, artifacts) : null;
         return assistant ? (
-          <AssistantMessage key={message.id} message={message} artifact={artifact} registerMessage={registerMessage} />
+          <AssistantMessage
+            key={message.id}
+            message={message}
+            artifact={artifact}
+            registerMessage={registerMessage}
+            onQuickReplySelect={onQuickReplySelect}
+          />
         ) : (
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
         );
@@ -60,11 +67,15 @@ function AssistantMessage({
   message,
   artifact,
   registerMessage,
+  onQuickReplySelect,
 }: {
   message: ChatMessage;
   artifact: ArtifactItem | null;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
+  onQuickReplySelect?: (value: string) => void;
 }) {
+  const quickReplies = getQuickReplyChoices(message, artifact);
+
   return (
     <article
       ref={(node) => registerMessage?.(message.id, node)}
@@ -89,6 +100,9 @@ function AssistantMessage({
             <p>{message.body}</p>
           </div>
           {artifact && <GeneratedArtifactInline item={artifact} />}
+          {!artifact && quickReplies.length > 0 && (
+            <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
+          )}
           <AssistantMessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
         </div>
       </div>
@@ -99,17 +113,83 @@ function AssistantMessage({
 function findInlineArtifact(message: ChatMessage, artifacts: ArtifactItem[]) {
   if (artifacts.length === 0) return null;
   const text = `${message.title ?? ""}\n${message.body}`;
-  if (!/(已生成|生成|产物|草稿|说明书|教案|大纲|视频|交付)/.test(text)) return null;
+  if (!hasGeneratedSignal(text)) return null;
+  const generatedArtifacts = artifacts.filter((item) => {
+    if (!item.artifactId) return null;
+    return item.status !== "not_started";
+  });
 
-  const directlyMentioned = artifacts.find((item) => text.includes(item.title));
-  if (directlyMentioned && directlyMentioned.status !== "not_started") return directlyMentioned;
+  const directlyMentioned = generatedArtifacts.find((item) => text.includes(item.title));
+  if (directlyMentioned) {
+    return directlyMentioned;
+  }
 
+  const candidate =
+    generatedArtifacts.find((item) => item.status === "needs_review") ??
+    generatedArtifacts.find((item) => item.status === "stale") ??
+    generatedArtifacts.find((item) => item.status === "approved") ??
+    null;
+  return candidate;
+}
+
+function hasGeneratedSignal(text: string) {
+  return /已完成|已整理|已进入|可确认|需求规格/.test(text);
+}
+
+type QuickReplyChoice = {
+  label: string;
+  value: string;
+  recommended?: boolean;
+};
+
+function getQuickReplyChoices(message: ChatMessage, artifact: ArtifactItem | null): QuickReplyChoice[] {
+  if (artifact) return [];
+  const text = `${message.title ?? ""}\n${message.body}`;
+  if (/开始整理|已完成|已生成|可确认|已进入|说明书/.test(text)) return [];
+
+  return [
+    {
+      label: "三年级数学公开课",
+      value: "我想做三年级数学公开课，需要教案、PPT大纲和导入视频方案。",
+      recommended: true,
+    },
+    {
+      label: "先整理备课需求",
+      value: "先帮我整理备课需求，我会补充年级、课题和教材版本。",
+    },
+    {
+      label: "先聊课程创意",
+      value: "我想先聊聊这节课的导入创意和课堂活动。",
+    },
+  ];
+}
+
+function QuickReplyChoices({
+  choices,
+  onSelect,
+}: {
+  choices: QuickReplyChoice[];
+  onSelect?: (value: string) => void;
+}) {
   return (
-    artifacts.find((item) => item.status === "needs_review") ??
-    artifacts.find((item) => item.status === "stale") ??
-    artifacts.find((item) => item.status === "approved") ??
-    artifacts.find((item) => item.status !== "not_started") ??
-    null
+    <div className="mt-3 flex flex-wrap gap-2" aria-label="可选回复">
+      {choices.map((choice) => (
+        <button
+          key={choice.value}
+          type="button"
+          data-quick-reply-choice
+          data-recommended-choice={choice.recommended ? "true" : undefined}
+          onClick={() => onSelect?.(choice.value)}
+          className={cn(
+            "inline-flex min-h-8 items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-xs leading-5 text-foreground transition hover:border-[#b9ddd2] hover:bg-[#f7fbfa] focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35",
+            choice.recommended && "border-[#b9ddd2] bg-[#f7fbfa] text-[#32685d]",
+          )}
+        >
+          {choice.recommended && <span className="text-[11px] font-medium text-[#32685d]">推荐</span>}
+          <span>{choice.label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

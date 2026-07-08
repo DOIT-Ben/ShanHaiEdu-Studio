@@ -6,6 +6,8 @@ import type { ProjectItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+const showDisabledUtilities = false;
+
 const projectTone = {
   active: { label: "进行中", dot: "text-muted-foreground" },
   review: { label: "待重审", dot: "text-muted-foreground" },
@@ -24,6 +26,7 @@ type ProjectSidebarProps = {
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect, onCreateProject }: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [courseSectionOpen, setCourseSectionOpen] = useState(true);
   const filteredProjects = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return projects;
@@ -75,21 +78,26 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
                 className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
             </label>
-            <div className="mt-6 flex h-9 items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef]">
+            <button
+              type="button"
+              aria-expanded={courseSectionOpen}
+              onClick={() => setCourseSectionOpen((value) => !value)}
+              className="mt-6 flex h-9 w-full items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef] focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+            >
               <span className="flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
                 公开课备课
               </span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </div>
+              <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", !courseSectionOpen && "-rotate-90")} />
+            </button>
           </>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar px-2">
-        {filteredProjects.length === 0 && !collapsed && (
+        {courseSectionOpen && filteredProjects.length === 0 && !collapsed && (
           <div className="rounded-md px-3 py-3 text-xs leading-5 text-muted-foreground">没有找到匹配项目</div>
         )}
-        {filteredProjects.map((project) => {
+        {(collapsed || courseSectionOpen) && filteredProjects.map((project) => {
           const meta = projectTone[project.status];
           const active = project.id === activeProjectId;
           return (
@@ -121,9 +129,9 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
           );
         })}
       </div>
-      {!collapsed && (
+      {!collapsed && showDisabledUtilities && (
         <div className="px-3 py-4">
-          <Button disabled title="回收站稍后开放" variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]">
+          <Button disabled title="回收站稍后开放" variant="ghost" className="justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]">
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>
