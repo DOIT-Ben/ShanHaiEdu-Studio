@@ -19,6 +19,15 @@ type DevelopmentAdapterOptions = {
   };
 };
 
+type MessageTurnResponse = {
+  assistantMessage?: {
+    id: string;
+  };
+  agentTurn?: {
+    quickReplies?: ChatMessage["quickReplies"];
+  };
+};
+
 const teacherFacingLoadError = "项目内容暂时没有取回，请稍后再试。";
 const teacherFacingRegeneratePendingError = "这个内容暂时还不能重做，请稍后再试。";
 
@@ -91,7 +100,11 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
       return request<unknown>(`/api/workbench/projects/${projectId}/messages`, {
         method: "POST",
         body: JSON.stringify({ role: "teacher", content: body, reference, artifactRefs: reference ? [reference] : [] }),
-      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+      }).then((turn) =>
+        request<unknown>(`/api/workbench/projects/${projectId}/snapshot`)
+          .then(normalizeSnapshot)
+          .then((snapshot) => mergeTurnQuickReplies(snapshot, turn as MessageTurnResponse)),
+      );
     },
     approveArtifact(projectId, artifactKey) {
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/approve`, { method: "POST" }).then(() =>
@@ -112,6 +125,20 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         method: "POST",
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
+  };
+}
+
+function mergeTurnQuickReplies(snapshot: WorkbenchSnapshot, turn: MessageTurnResponse): WorkbenchSnapshot {
+  const quickReplies = turn.agentTurn?.quickReplies?.slice(0, 3);
+  if (!quickReplies?.length || !turn.assistantMessage?.id) return snapshot;
+
+  return {
+    ...snapshot,
+    messages: snapshot.messages.map((message) =>
+      message.id === turn.assistantMessage?.id && message.speaker === "assistant"
+        ? { ...message, quickReplies }
+        : message,
+    ),
   };
 }
 

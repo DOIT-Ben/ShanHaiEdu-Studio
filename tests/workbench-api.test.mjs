@@ -331,6 +331,53 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
+test("API client preserves backend quick replies from the message turn response", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const assistantMessage = {
+    id: "assistant-turn-1",
+    projectId: backendProject.id,
+    role: "assistant",
+    content: "我理解你的任务\n\n确认后我会先整理需求。",
+    artifactRefs: [],
+    createdAt: "2026-07-07T00:05:00.000Z",
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      if (String(url).endsWith("/messages") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            assistantMessage,
+            agentTurn: {
+              quickReplies: [
+                { label: "确认开始", prompt: "确认开始，先生成需求规格。", recommended: true },
+                { label: "补充要求", prompt: "我想补充课堂风格。" },
+              ],
+            },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          ...backendSnapshot,
+          messages: [...backendSnapshot.messages, assistantMessage],
+        }),
+      };
+    },
+  });
+
+  const snapshot = await client.sendMessage("backend-project-a", "帮我做五年级数学百分数 PPT", null);
+  const lastAssistant = snapshot.messages.at(-1);
+
+  assert.equal(lastAssistant.speaker, "assistant");
+  assert.deepEqual(lastAssistant.quickReplies, [
+    { label: "确认开始", prompt: "确认开始，先生成需求规格。", recommended: true },
+    { label: "补充要求", prompt: "我想补充课堂风格。" },
+  ]);
+});
+
 test("API client does not expose backend-only structured labels in visible artifact fields", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const snapshotWithBackendOnlyFields = {
@@ -344,6 +391,9 @@ test("API client does not expose backend-only structured labels in visible artif
           schema: "internal-schema",
           node_id: "node-requirement",
           provider: "internal-provider",
+          providerStatus: "deterministic_draft",
+          capabilityId: "requirement_spec",
+          runtimeKind: "deterministic",
           generationMode: "deterministic_draft",
           nextSuggestedAction: "查看并确认这份草稿",
         },
@@ -364,6 +414,9 @@ test("API client does not expose backend-only structured labels in visible artif
   assert.equal(visibleLabels.includes("schema"), false);
   assert.equal(visibleLabels.includes("node_id"), false);
   assert.equal(visibleLabels.includes("provider"), false);
+  assert.equal(visibleLabels.includes("providerStatus"), false);
+  assert.equal(visibleLabels.includes("capabilityId"), false);
+  assert.equal(visibleLabels.includes("runtimeKind"), false);
   assert.equal(visibleLabels.includes("generationMode"), false);
   assert.equal(visibleLabels.includes("nextSuggestedAction"), false);
   assert.equal(requirement.content["课题"], "百分数");

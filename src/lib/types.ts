@@ -59,6 +59,11 @@ export type ChatMessage = {
   body: string;
   timeLabel?: string;
   tone?: "normal" | "focus" | "warning" | "error";
+  quickReplies?: {
+    label: string;
+    prompt: string;
+    recommended?: boolean;
+  }[];
 };
 
 export type WorkbenchSnapshot = {

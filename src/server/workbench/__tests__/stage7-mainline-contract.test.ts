@@ -49,7 +49,8 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(messageResponse.status).toBe(201);
     expect(messageBody).toMatchObject({
       message: { role: "teacher", content: "你好" },
-      assistantMessage: { role: "assistant", content: expect.stringContaining("请补充年级、课题") },
+      assistantMessage: { role: "assistant", content: expect.stringContaining("我在") },
+      agentTurn: { state: "chatting", shouldRunToolNow: false },
     });
     expect(messageBody.artifact).toBeUndefined();
     expect(snapshot.messages.map((message: { content: string }) => message.content).join("\n")).not.toContain("需求规格说明书已生成");
@@ -150,7 +151,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       project: { id: projectId, title: "Stage 7 合同项目" },
       messages: [
         { role: "teacher", content: "我要做百分数公开课" },
-        { role: "assistant", content: expect.stringContaining("备课任务确认") },
+        { role: "assistant", content: expect.stringContaining("我理解你的任务") },
       ],
       agentRuns: [{ id: runStartBody.run.id, status: "succeeded" }],
     });
