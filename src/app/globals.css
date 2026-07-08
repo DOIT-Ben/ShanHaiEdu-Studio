@@ -126,6 +126,28 @@ textarea:focus-visible {
   transform-origin: right center;
 }
 
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #4d8f82;
+  box-shadow: 0 0 0 3px rgba(77, 143, 130, 0.08);
+  animation: shanhai-typing-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes shanhai-typing-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.34;
+    transform: translateY(0) scale(0.86);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1);
+  }
+}
+
 @keyframes artifact-preview-in {
   from {
     opacity: 0;
@@ -138,7 +160,8 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .artifact-preview-popover {
+  .artifact-preview-popover,
+  .typing-dot {
     animation: none;
   }
 }

@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
+  sending?: boolean;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
 };
 
-export function ChatTranscript({ messages, registerMessage }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, sending = false, registerMessage }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
@@ -22,6 +23,7 @@ export function ChatTranscript({ messages, registerMessage }: ChatTranscriptProp
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
         );
       })}
+      {sending && <AssistantThinking />}
     </div>
   );
 }
@@ -65,24 +67,71 @@ function AssistantMessage({
       data-message-role={message.speaker}
       className="group scroll-mt-24 flex justify-start"
     >
-      <div className="max-w-[88%] sm:max-w-[760px]">
-        <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">ShanHaiEdu AI</span>
-          {message.timeLabel && <span>{message.timeLabel}</span>}
+      <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[790px]">
+        <ShanHaiMark />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">ShanHaiEdu AI</span>
+            {message.timeLabel && <span>{message.timeLabel}</span>}
+          </div>
+          <div
+            data-chat-bubble="assistant"
+            className={cn(
+              "space-y-3 whitespace-pre-wrap rounded-2xl border border-[#d7ebe5] bg-card px-4 py-3 text-sm leading-7 text-foreground shadow-[0_12px_30px_rgba(29,74,66,0.055)] sm:px-5",
+              message.tone === "focus" && "border-[#b9ddd2] shadow-[0_16px_34px_rgba(29,74,66,0.075)]",
+            )}
+          >
+            {message.title && <p className="font-medium">{message.title}</p>}
+            <p>{message.body}</p>
+          </div>
+          <AssistantMessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
         </div>
-        <div
-          data-chat-bubble="assistant"
-          className={cn(
-            "space-y-3 whitespace-pre-wrap rounded-2xl border bg-card px-4 py-3 text-sm leading-7 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.04)] sm:px-5",
-            message.tone === "focus" && "border-input",
-          )}
-        >
-          {message.title && <p className="font-medium">{message.title}</p>}
-          <p>{message.body}</p>
-        </div>
-        <AssistantMessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
       </div>
     </article>
+  );
+}
+
+function AssistantThinking() {
+  return (
+    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="AI 正在回复">
+      <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[620px]">
+        <ShanHaiMark active />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">ShanHaiEdu AI</span>
+          </div>
+          <div className="inline-flex items-center gap-3 rounded-2xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm text-muted-foreground shadow-[0_12px_30px_rgba(29,74,66,0.05)]">
+            <span>正在整理回复</span>
+            <span className="flex items-center gap-1.5" aria-hidden="true">
+              <span className="typing-dot" />
+              <span className="typing-dot [animation-delay:140ms]" />
+              <span className="typing-dot [animation-delay:280ms]" />
+            </span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ShanHaiMark({ active = false }: { active?: boolean }) {
+  return (
+    <div
+      data-assistant-logo
+      className={cn(
+        "mt-5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#cae2db] bg-[#f8fffc] text-[#32685d] shadow-[0_10px_24px_rgba(29,74,66,0.1)]",
+        active && "border-[#8fcbbb] bg-[#f0fffa] shadow-[0_12px_28px_rgba(29,74,66,0.14)]",
+      )}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 32 32" className="h-6 w-6" role="img">
+        <path d="M7 22V9.5c0-1.1.8-1.9 1.9-1.9H24v15.1H8.9C7.8 22.7 7 22.2 7 22Z" fill="#ffffff" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M10 20.5c2.4-4 4.4-6.1 6-6.1 1.2 0 2.1 1.1 3 2.3.8 1.1 1.6 2.1 3 2.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+        <path d="M11 11.2h8.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+        <path d="M23.5 7.6v15.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" opacity="0.45" />
+        <path d="M24.4 9.1h1.9M25.35 8.15v1.9" stroke="#2aa889" strokeLinecap="round" strokeWidth="1.2" />
+      </svg>
+    </div>
   );
 }
 

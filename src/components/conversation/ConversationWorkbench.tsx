@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ChatMessage, ProjectItem, WorkbenchLoadState } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
@@ -51,6 +51,11 @@ export function ConversationWorkbench({
   onLogout,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, sending]);
 
   function registerMessage(id: string, node: HTMLElement | null) {
     messageRefs.current[id] = node;
@@ -82,7 +87,7 @@ export function ConversationWorkbench({
               </div>
             )}
             {messages.length > 0 ? (
-              <ChatTranscript messages={messages} registerMessage={registerMessage} />
+              <ChatTranscript messages={messages} sending={sending} registerMessage={registerMessage} />
             ) : (
               loadState !== "loading" && (
                 <div className="max-w-[640px] rounded-2xl border bg-card px-5 py-4 text-sm leading-7 text-muted-foreground shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
@@ -90,6 +95,7 @@ export function ConversationWorkbench({
                 </div>
               )
             )}
+            <div ref={scrollAnchorRef} data-chat-scroll-anchor className="h-1" />
           </div>
         </div>
       </ScrollArea>
