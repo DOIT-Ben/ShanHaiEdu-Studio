@@ -12,7 +12,7 @@
 - `mainline/local-real-mvp`：`56cad2b`，领先 `main` 63 个提交。
 - 当前 M54 路线文档已先提交到 `mainline/local-real-mvp`：
   - `docs/stages/local-real-mvp-m54-agentic-conversation-workbench-plan.md`
-  - `docs/stages/local-real-mvp-m54a-frontend-workbench-roadmap.md`
+  - `docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md`
   - `docs/stages/local-real-mvp-m54b-agentic-conversation-roadmap.md`
 
 ## 合并动作
@@ -55,7 +55,7 @@ git merge --ff-only mainline/local-real-mvp
 - 现在 `main` 已成为最新可演示和部署准备基线。
 - `mainline/local-real-mvp` 与 `main` 本地应继续保持对齐。
 - M54 起的两条能力路线仍然存在，但只是同一 Git 主线下的并行能力子主线：
-  - 前端聊天式工作台：`docs/stages/local-real-mvp-m54a-frontend-workbench-roadmap.md`
+  - 前端聊天式工作台：`docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md`
   - 后端对话智能体：`docs/stages/local-real-mvp-m54b-agentic-conversation-roadmap.md`
 - 旧 `feature/mvp-*` 和 `integration/unified-mainline` 只作为历史追溯，不再承接新开发。
 

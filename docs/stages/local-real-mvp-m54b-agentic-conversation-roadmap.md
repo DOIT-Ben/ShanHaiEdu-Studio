@@ -4,27 +4,60 @@
 
 状态：正式阶段路线 / 待测试定义与开发切片。
 
+权威拆分文档：
+
+- 架构深度规划：`docs/stages/local-real-mvp-m54b-agentic-conversation-architecture-plan.md`
+- 技术实现路线：`docs/stages/local-real-mvp-m54b-agentic-conversation-implementation-roadmap.md`
+
+本文保留为 M54-B 总览；具体开发顺序、类型合同、测试定义和验收门以后两份文档为准。
+
+## 0. 2026-07-08 架构纠偏结论
+
+本路线原本偏向 `ConversationDecisionV2 + RequirementSlotService`，容易继续把模型做成“分类器 + 表单流程”。本轮讨论确认：这不是最终方向。
+
+新的后端核心是：
+
+```text
+不要限制模型能力。
+给模型包装 ShanHaiEdu 的业务能力。
+模型可以自然对话、发散、追问。
+当模型判断用户要真正完成一件事时，调用业务能力工具。
+工具执行真实业务逻辑，产物回写项目和糖葫芦轨道。
+```
+
+因此，M54-B 的第一优先级调整为：
+
+```text
+Main Conversation Agent
+-> Capability Registry
+-> Capability Adapter
+-> Workflow Checkpoint
+-> Artifact Store
+```
+
+`ConversationDecisionV2`、槽位和 quick replies 仍然需要，但它们是主 Agent 的结构化输出和 UI 辅助，不是主架构中心。
+
 ## 1. 终极目标
 
-把 ShanHaiEdu 后端从“能根据关键词进入产物链”升级为“能理解教师意图、补齐需求槽位、组织长任务并可恢复交付”的对话智能体系统。
+把 ShanHaiEdu 后端从“能根据关键词进入产物链”升级为“主对话 Agent 能自然理解教师、调度业务能力、组织长任务并可恢复交付”的智能体系统。
 
 终局能力：
 
 ```text
 自然语言输入
--> 意图识别
--> 需求槽位抽取
--> 缺失信息追问
--> 推荐选项生成
--> 需求确认
--> 产物节点生成
--> 人工确认或修改
--> 自动继续后续节点
+-> 主对话 Agent 持续理解上下文
+-> 普通聊天直接自然回复
+-> 业务需求时判断可调用能力
+-> 缺输入时自然追问或给推荐选项
+-> 信息足够时调用业务工具
+-> 工具生成真实产物
+-> 产物保存到项目、糖葫芦轨道和工作流状态
+-> 人工确认、修改或自动继续后续节点
 -> 最终交付包
 -> 可追踪、可评测、可恢复
 ```
 
-后端目标不是堆一个大 prompt，而是形成模块化、可插拔、可评测、可替换 provider 的智能体能力层。
+后端目标不是堆一个大 prompt，也不是把模型压成分类器，而是形成模块化、可插拔、可评测、可替换 provider 的业务调度智能体能力层。
 
 ## 2. 现有能力
 
@@ -59,15 +92,113 @@
 ## 3. 架构原则
 
 - React 前端不直接调用模型 SDK。
-- 对话理解、槽位补齐、产物生成、附件解析、工作流推进必须在服务端边界内。
-- 先复用现有 `ConversationOrchestrator` 和 `AgentRuntime`，不引入大而全平台。
-- 所有模型输出必须结构化校验，失败时 fallback 且记录原因。
+- 对话理解、能力选择、工具调用、产物生成、附件解析、工作流推进必须在服务端边界内。
+- 主模型默认保持自然对话能力，不用模板覆盖模型表达。
+- 结构化输出只用于内部决策、工具调用和状态保存，不直接替代用户可见回复。
+- 先复用现有 `ConversationOrchestrator`、`AgentRuntime`、Coze PPT、图片、视频等能力，不引入大而全平台。
+- 所有工具调用必须有输入合同、输出合同、失败状态和产物回写规则。
+- 模型输出必须可校验，但校验失败不能静默冒充成功；fallback 必须标记，并给用户可理解的恢复动作。
 - 每个可变能力都要有 deterministic baseline，便于本地演示和回归测试。
 - 长期学习 Dify、Open WebUI、Flowise、LangGraph 的设计思想，但不照搬通用平台。
 
 ## 4. 目标模块边界
 
-### 4.1 ConversationDecisionV2
+### 4.1 MainConversationAgent
+
+职责：
+
+- 持续接收用户消息和项目上下文。
+- 像真实对话模型一样自然回应普通聊天、想法探索和轻量咨询。
+- 识别用户是否真的要完成 ShanHaiEdu 业务任务。
+- 根据业务能力注册表选择候选工具，而不是自己假装完成产物。
+- 缺少工具输入时自然追问或生成 2-3 个推荐选项。
+- 工具执行后解释结果、引用产物、建议下一步。
+
+候选文件：
+
+- `src/server/conversation/main-conversation-agent.ts`
+- `src/server/conversation/main-agent-schema.ts`
+- `src/server/conversation/main-agent-prompts.ts`
+- `tests/main-conversation-agent.test.mjs`
+
+主 Agent 输出应包含两层：
+
+```ts
+type MainAgentResponse = {
+  assistantMessage: {
+    title?: string;
+    body: string;
+  };
+  quickReplies: QuickReply[];
+  toolPlan?: CapabilityToolPlan;
+  requiresUserConfirmation: boolean;
+  runtimeKind: "openai" | "deterministic";
+};
+```
+
+### 4.2 CapabilityRegistry
+
+职责：
+
+- 登记 ShanHaiEdu 已有业务能力。
+- 让主 Agent 能知道“我能调用什么”，但不暴露工程细节给教师端。
+- 描述每个能力的输入、输出、前置依赖、是否需要人工确认、产物类型和失败恢复方式。
+
+第一批能力：
+
+| 能力 id | 作用 | 输入 | 输出 |
+| --- | --- | --- | --- |
+| `requirement_spec` | 整理备课需求 | 用户需求、槽位、附件摘要 | Markdown 需求规格 |
+| `lesson_plan` | 生成教案 | 已确认需求、教材依据 | Markdown 教案 |
+| `ppt_outline` | 生成 PPT 大纲 | 教案或需求规格 | Markdown PPT 大纲 |
+| `coze_ppt` | 调用 Coze PPT API 生成 PPTX | PPT 大纲、风格、页数 | PPTX artifact |
+| `image_asset` | 调用图片 provider | 图片提示词、场景需求 | 图片 artifact |
+| `intro_video` | 调用视频 provider | 视频方案、分镜、图片 | 视频 artifact |
+| `final_package` | 打包交付 | 已确认产物集合 | ZIP artifact |
+
+候选文件：
+
+- `src/server/capabilities/capability-registry.ts`
+- `src/server/capabilities/types.ts`
+- `tests/capability-registry.test.mjs`
+
+### 4.3 CapabilityAdapter
+
+职责：
+
+- 把具体业务能力封装成可调用工具。
+- 不让主 Agent 直接拼外部 API。
+- 统一返回 `CapabilityRunResult`，包含成功、失败、等待、需要人工确认等状态。
+- 成功后写入 artifact store 或返回可保存的 artifact draft。
+
+候选文件：
+
+- `src/server/capabilities/adapters/requirement-spec-adapter.ts`
+- `src/server/capabilities/adapters/lesson-plan-adapter.ts`
+- `src/server/capabilities/adapters/ppt-outline-adapter.ts`
+- `src/server/capabilities/adapters/coze-ppt-adapter.ts`
+- `src/server/capabilities/adapters/image-adapter.ts`
+- `src/server/capabilities/adapters/video-adapter.ts`
+- `tests/capability-adapters.test.mjs`
+
+核心合同：
+
+```ts
+type CapabilityToolPlan = {
+  capabilityId: string;
+  reason: string;
+  inputDraft: Record<string, unknown>;
+  missingInputs: string[];
+  requiresConfirmation: boolean;
+};
+
+type CapabilityRunResult =
+  | { status: "succeeded"; artifact: SaveArtifactInput; assistantSummary: string }
+  | { status: "needs_input"; missingInputs: string[]; assistantPrompt: string }
+  | { status: "failed"; userMessage: string; retryable: boolean };
+```
+
+### 4.4 ConversationDecisionV2
 
 新增合同：
 
@@ -122,7 +253,14 @@ type ConversationDecisionV2 = {
 };
 ```
 
-### 4.2 RequirementSlotService
+定位调整：
+
+- 它不是主 Agent 的全部输出。
+- 它用于兼容现有前端 quick replies、槽位确认卡和测试 fixture。
+- 后续可由 `MainAgentResponse` 映射生成。
+- 用户可见回复应优先来自主 Agent 的自然回复，而不是模板函数。
+
+### 4.5 RequirementSlotService
 
 职责：
 
@@ -138,15 +276,17 @@ type ConversationDecisionV2 = {
 - `src/server/conversation/requirement-options.ts`
 - `tests/conversation-slots.test.ts`
 
-### 4.3 ConversationOrchestratorV2
+### 4.6 ConversationOrchestratorV2
 
 职责：
 
+- 作为旧 `messages` API 到 `MainConversationAgent` 的兼容桥。
 - 调用模型或 deterministic fallback。
 - 返回 `ConversationDecisionV2`。
 - 处理模型 JSON 解析失败、字段缺失、低置信度。
 - 保证普通聊天不会生成 artifact。
 - 保证确认前不生成需求规格。
+- 不再直接用模板覆盖主 Agent 的用户可见回复。
 
 候选文件：
 
@@ -154,7 +294,7 @@ type ConversationDecisionV2 = {
 - 可拆 `src/server/conversation/conversation-schema.ts`
 - 可拆 `src/server/conversation/conversation-fallback.ts`
 
-### 4.4 PromptPack
+### 4.7 PromptPack
 
 职责：
 
@@ -169,7 +309,7 @@ type ConversationDecisionV2 = {
 - `src/server/promptpack/prompts/requirement-spec.v1.md`
 - `tests/promptpack-contract.test.ts`
 
-### 4.5 ConversationEvalSet
+### 4.8 ConversationEvalSet
 
 职责：
 
@@ -194,7 +334,7 @@ type ConversationDecisionV2 = {
 - 用户要求继续生成教案/PPT/视频。
 - 上传材料后引用。
 
-### 4.6 AttachmentPipeline
+### 4.9 AttachmentPipeline
 
 职责：
 
@@ -220,7 +360,7 @@ type ConversationDecisionV2 = {
 - docx：优先 `mammoth` 或成熟 docx 文本抽取库。
 - 图片：第一阶段只存储和预览，OCR 后续阶段再接。
 
-### 4.7 WorkflowCheckpoint
+### 4.10 WorkflowCheckpoint
 
 职责：
 
@@ -304,38 +444,78 @@ type ConversationDecisionV2 = {
 
 ## 6. 多阶段拆分
 
-### M54-B1 ConversationDecisionV2 合同
+### M54-B0 主 Agent 与能力调度合同纠偏
 
-目标：建立前后端共享的结构化对话决策合同。
+目标：把后端第一优先级从“意图分类器”纠正为“主对话 Agent 调用业务能力”。
 
 范围：
 
-- 定义 intent v2。
-- 定义 slots、missingSlots、recommendedOptions、quickReplies。
-- 保持旧 API 兼容或提供 mapper。
+- 定义 `MainConversationAgent` 合同。
+- 定义 `CapabilityRegistry` 合同。
+- 定义 `CapabilityToolPlan` 和 `CapabilityRunResult`。
+- 明确 `ConversationDecisionV2` 只是兼容层，不覆盖用户可见回复。
 
 验收：
 
-- 单元测试验证普通聊天、模糊需求、明确需求、确认信号。
-- 前端可用 fixture 渲染。
+- 普通聊天只返回自然回复，不产生 tool plan。
+- 明确 PPT 需求会产生 `ppt_outline` 或 `coze_ppt` 候选 tool plan。
+- 缺少必要输入时 tool plan 标记 `missingInputs`，并生成自然追问。
+- 工具成功结果必须能映射到 artifact 保存。
+- 工具失败不能伪装成功。
 
-### M54-B2 需求槽位服务
+### M54-B1 CapabilityRegistry 与第一批业务工具目录
 
-目标：让系统理解教师需求里的结构化信息。
+目标：让主 Agent 知道 ShanHaiEdu 有哪些可调用业务能力。
+
+范围：
+
+- 注册 `requirement_spec`、`lesson_plan`、`ppt_outline`、`coze_ppt`、`image_asset`、`intro_video`、`final_package`。
+- 给每个能力定义输入、输出、依赖、是否需要确认、产物类型。
+- 暂不要求所有 adapter 都真实调用外部服务，但合同必须稳定。
+
+验收：
+
+- 单元测试能列出所有能力。
+- 每个能力都有用户可理解名称和内部 id。
+- Coze PPT 能力声明依赖 PPT 大纲或教案输入。
+- 图片/视频/材料包能力声明产物类型和失败状态。
+
+### M54-B2 MainConversationAgent 最小调度闭环
+
+目标：让真实模型负责自然对话和业务能力选择，而不是只做分类。
+
+范围：
+
+- 主 Agent prompt 强调自然对话优先、工具调用按需。
+- 接入 `CapabilityRegistry`。
+- 对普通聊天、探索、明确 PPT 需求分别输出自然回复和候选 tool plan。
+- 保留 deterministic baseline 做测试兜底。
+
+验收：
+
+- “你好”自然回复，不触发任何能力。
+- “我想做一节有意思的百分数课”进入探索和轻量建议。
+- “帮我做五年级数学百分数 PPT”选择 PPT 相关能力。
+- 缺少教案/PPT 大纲时先建议生成上游输入，而不是直接假装 PPT 完成。
+
+### M54-B3 RequirementSlotService 与 ConversationDecisionV2 兼容层
+
+目标：保留槽位、quick replies 和确认卡能力，但让它服务于主 Agent。
 
 范围：
 
 - 年级、学科、课题、教材版本、交付物、时长、风格、材料来源。
 - 缺失槽位判断。
 - 推荐选项生成。
+- 从 `MainAgentResponse` 映射到 `ConversationDecisionV2`。
 
 验收：
 
 - “三年级数学长方形周长公开课”能抽出年级、学科、课题。
-- “帮我做一个课件”进入 `clarify_slots`。
-- “苏教版六年级百分数，教案和PPT”进入确认。
+- “帮我做一个课件”给出推荐选项，不直接生成。
+- “苏教版六年级百分数，教案和 PPT”进入确认或工具计划准备态。
 
-### M54-B3 Orchestrator v2 与 prompt schema
+### M54-B4 Orchestrator v2 与 prompt schema
 
 目标：让真实模型和 fallback 都返回相同合同。
 
@@ -353,7 +533,7 @@ type ConversationDecisionV2 = {
 - “你好”绝不生成 artifact。
 - 未确认前不生成需求规格。
 
-### M54-B4 ConversationEvalSet
+### M54-B5 ConversationEvalSet
 
 目标：让对话能力可持续提高，而不是凭感觉调 prompt。
 
@@ -368,8 +548,9 @@ type ConversationDecisionV2 = {
 - evalset 至少覆盖 30 条样例。
 - intent 准确率有测试阈值。
 - `shouldGenerateArtifact` 误触发为 0。
+- tool plan 选择有测试阈值。
 
-### M54-B5 PromptPack
+### M54-B6 PromptPack
 
 目标：让提示词成为可审查资产。
 
@@ -385,7 +566,25 @@ type ConversationDecisionV2 = {
 - 测试验证 prompt id 和 schema 存在。
 - runtime 记录 prompt version。
 
-### M54-B6 AttachmentPipeline
+### M54-B7 CapabilityAdapter：Coze PPT 最小真实链路
+
+目标：证明“主 Agent 调用业务工具生成真实产物”的核心闭环。
+
+范围：
+
+- 先选 `ppt_outline -> coze_ppt` 或 `lesson_plan -> ppt_outline -> coze_ppt` 的最小链路。
+- 封装 `CozePptAdapter`。
+- 工具成功后保存 PPTX artifact。
+- 工具失败后返回可理解失败信息和可重试状态。
+
+验收：
+
+- 明确 PPT 需求不会只返回文字草稿。
+- 缺 PPT 输入时先生成或要求确认 PPT 大纲。
+- Coze PPT 成功后 artifact 中有 PPTX 下载信息。
+- 糖葫芦 PPT 节点进入可查看或已生成状态。
+
+### M54-B8 AttachmentPipeline
 
 目标：上传材料进入真实后端上下文。
 
@@ -403,7 +602,7 @@ type ConversationDecisionV2 = {
 - 解析失败给可理解错误。
 - 附件摘要能进入槽位服务。
 
-### M54-B7 WorkflowCheckpoint 与自动交付准备
+### M54-B9 WorkflowCheckpoint 与自动交付准备
 
 目标：为一键跑完整交付提供可恢复后端状态。
 
@@ -450,17 +649,26 @@ git diff --check
 
 新增测试方向：
 
+- `tests/main-conversation-agent.test.mjs`
+- `tests/capability-registry.test.mjs`
+- `tests/capability-tool-plan.test.mjs`
 - `tests/conversation-decision-v2.test.mjs`
 - `tests/conversation-slots.test.mjs`
 - `tests/conversation-evalset.test.mjs`
+- `tests/coze-ppt-capability.test.mjs`
 - `tests/attachments.test.mjs`
 - `tests/workflow-checkpoints.test.mjs`
 
 关键断言：
 
 - 普通聊天不会生成 artifact。
+- 普通聊天不会产生 tool plan。
 - 模糊需求会追问槽位。
 - 明确需求会确认，不直接生成。
+- 明确 PPT 需求会选择 PPT 相关能力，而不是只走固定模板。
+- 缺少 PPT 输入时会先计划上游能力或追问，不假装 PPT 已完成。
+- 工具成功必须保存 artifact。
+- 工具失败必须给用户可理解恢复动作，不能伪装成功。
 - 确认信号才生成需求规格。
 - 修改信号进入 revise。
 - 继续信号进入 continue_workflow。
@@ -469,15 +677,16 @@ git diff --check
 
 ## 9. 并行协作方式
 
-后端和前端可并行，但必须先完成 B1 合同。
+后端和前端可并行，但必须先完成 B0/B1 合同。
 
 推荐顺序：
 
-1. 后端定义 `ConversationDecisionV2` 类型和 fixture。
-2. 前端用 fixture 开发 UI。
-3. 后端实现 slot service 和 orchestrator v2。
-4. 集成真实 API。
-5. 浏览器跑完整对话到需求确认。
+1. 后端定义 `MainConversationAgent`、`CapabilityRegistry`、`CapabilityToolPlan`。
+2. 后端提供可映射到 `ConversationDecisionV2` 的 fixture。
+3. 前端用 fixture 开发 UI。
+4. 后端实现主 Agent 最小调度闭环。
+5. 集成一个真实能力 adapter，如 Coze PPT。
+6. 浏览器跑完整对话到“工具调用 -> artifact 回写 -> 糖葫芦更新”。
 
 ## 10. 风险与回退
 
@@ -494,10 +703,10 @@ git diff --check
 
 ## 11. 最近下一步
 
-先进入 M54-B1 + M54-B2：
+先进入 M54-B0 + M54-B1：
 
-1. 写 `ConversationDecisionV2` 测试定义。
-2. 定义共享类型和 mapper。
-3. 实现 deterministic slot extraction baseline。
-4. 更新 fake OpenAI schema 测试。
-5. 输出 quick replies 和 recommended options 给前端 fixture。
+1. 写 `MainConversationAgent` 与 `CapabilityRegistry` 测试定义。
+2. 定义 `CapabilityToolPlan` 和 `CapabilityRunResult`。
+3. 注册第一批业务能力，尤其是 `ppt_outline` 与 `coze_ppt`。
+4. 明确 `ConversationDecisionV2` 只作为兼容映射，不覆盖主 Agent 自然回复。
+5. 输出前端 fixture：自然回复、quick replies、候选工具计划、确认态、工具成功和失败态。

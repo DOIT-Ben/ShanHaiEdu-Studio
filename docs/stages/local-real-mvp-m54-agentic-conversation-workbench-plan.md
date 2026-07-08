@@ -6,10 +6,41 @@
 
 正式拆分路线：
 
-- 前端主线：`docs/stages/local-real-mvp-m54a-frontend-workbench-roadmap.md`
-- 后端主线：`docs/stages/local-real-mvp-m54b-agentic-conversation-roadmap.md`
+- 前端主线：`docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md`
+- 后端架构规划：`docs/stages/local-real-mvp-m54b-agentic-conversation-architecture-plan.md`
+- 后端技术路线：`docs/stages/local-real-mvp-m54b-agentic-conversation-implementation-roadmap.md`
+- 后端旧路线总览：`docs/stages/local-real-mvp-m54b-agentic-conversation-roadmap.md`
 
-本文件保留为 M54 方向总入口；后续测试定义和开发以两份正式路线文档为准。
+本文件保留为 M54 方向总入口；后续后端测试定义和开发以后端架构规划与后端技术路线为准。
+
+## 2026-07-08 架构纠偏
+
+本轮讨论确认：M54 的后端核心不应继续沿着“模型先分类、代码再模板化回复”的方向推进。ShanHaiEdu 需要的是“给模型包装业务能力”，而不是“用流程限制模型能力”。
+
+新的架构判断：
+
+```text
+用户自然对话
+-> 主对话 Agent 自由理解、发散、追问、回应
+-> 当它判断用户要真正完成一件业务任务时
+-> 查询 ShanHaiEdu 已注册的业务能力
+-> 选择并调用需求整理、教案、PPT、Coze PPT、图片、视频、材料包等工具
+-> 工具返回真实产物
+-> 保存到项目、产物轨和工作流状态
+-> 主对话 Agent 用自然语言把结果和下一步告诉用户
+```
+
+因此，M54-B 后端主线的重心从 `ConversationDecisionV2 + slots` 调整为：
+
+```text
+Main Conversation Agent
++ Capability Registry
++ Tool/Capability Adapters
++ Artifact Return
++ Workflow Checkpoint
+```
+
+`ConversationDecisionV2`、槽位、quick replies 仍保留，但它们只是主 Agent 的内部结构和 UI 辅助，不再是对话体验的主导者。
 
 ## 背景
 
@@ -91,14 +122,25 @@ M54 对话智能体与聊天式工作台闭环
 
 包含四层：
 
-1. 对话智能体层：理解普通聊天、备课意图、缺失信息、确认信号、修改信号。
-2. 需求槽位层：年级、学科、课题、教材版本、交付物、课堂时长、教学风格、资料来源。
+1. 主对话 Agent 层：像真实模型对话一样持续理解用户，自然聊天、发散、追问和解释，不被工作流模板压扁。
+2. 业务能力调度层：主 Agent 识别需要做事时，调用 ShanHaiEdu 已有能力，而不是自己假装完成。
 3. 工作台交互层：消息流、quick reply chips、输入框附件、生成态、反馈、展开式成果卡。
 4. 长任务运行层：为后续自动化交付准备可恢复、可中断、可审查的任务状态。
 
 ## 对话智能体改造方向
 
-当前 `ConversationOrchestrator` 已有 `chat / clarify / start_requirement` 三类意图，但能力仍偏薄。下一步应扩展为：
+当前 `ConversationOrchestrator` 已有 `chat / clarify / start_requirement` 三类意图，但它更像“分类器”。下一步不能只扩展 intent 枚举，而应把它升级为主对话 Agent。
+
+主对话 Agent 的默认职责：
+
+- 普通聊天时直接自然回复，不启动产物链。
+- 用户探索想法时陪聊、启发、提出轻量建议，不急着填表。
+- 用户明确要完成业务任务时，判断应调用哪些 ShanHaiEdu 能力。
+- 缺少工具输入时自然追问或给 2-3 个推荐选项。
+- 能力执行完成后解释结果、提供下载或继续修改建议。
+- 工具失败时说明可理解的恢复动作，不把 deterministic fallback 冒充真实模型。
+
+内部仍可使用这些意图，但它们服务于工具调度，而不是覆盖模型表达：
 
 - `chat`：普通聊天，不触发产物。
 - `explore`：用户在聊想法或方向，系统陪聊并给轻量建议，不进入产物链。
@@ -119,6 +161,7 @@ recommended_options
 quick_replies
 next_action
 should_generate_artifact
+candidate_tool_calls
 ```
 
 ## 需求槽位系统
@@ -164,7 +207,10 @@ should_generate_artifact
 
 短期不直接引入大而全平台。优先在现有后端边界内加薄层：
 
-- `ConversationOrchestrator`：扩展结构化意图和槽位输出。
+- `MainConversationAgent`：主对话脑，负责自然对话、上下文理解和业务能力选择。
+- `CapabilityRegistry`：注册 ShanHaiEdu 已有能力，如需求整理、教案、PPT 大纲、Coze PPT、图片、视频、最终材料包。
+- `CapabilityAdapter`：封装真实外部能力，如 Coze PPT API、图片 provider、视频 provider、附件解析。
+- `ConversationOrchestrator`：降级为主 Agent 的结构化决策/兼容层，不再主导所有用户可见回复。
 - `RequirementSlotService`：合并项目已有信息、用户输入、附件摘要和模型抽取结果。
 - `PromptPack`：把对话智能体、需求规格、教案、PPT、视频等提示词版本化，便于审查和回滚。
 - `ConversationEvalSet`：沉淀普通聊天、模糊需求、明确需求、修改需求、确认信号等样例，跑回归评测。
@@ -250,10 +296,10 @@ should_generate_artifact
 
 ## 最小下一步
 
-先做 M54-A：
+先做 M54-B 架构纠偏，再继续 M54-A UI 切片：
 
-1. 写测试定义：覆盖普通聊天、模糊需求、明确需求、确认、修改、quick replies。
-2. 扩展 `ConversationDecision` 结构，加入 slots、missingSlots、recommendedOptions、quickReplies、nextAction。
-3. 更新 deterministic orchestrator 的教师场景规则。
-4. 更新 OpenAI conversation schema 和提示词。
-5. 前端渲染 quick replies 和需求槽位确认，不动真实产物生成链路。
+1. 写主对话 Agent 与业务能力调度测试定义。
+2. 定义 `CapabilityRegistry` 合同，明确可调用能力、输入、输出、失败状态和产物回写规则。
+3. 把 `ConversationDecisionV2` 调整为主 Agent 的内部结构化结果，而不是用户可见回复模板。
+4. 先接一个最小真实工具链：`ppt_outline -> coze_ppt` 或 `requirement_spec -> lesson_plan`。
+5. 前端继续按 M54-A 展示 quick replies、生成态和糖葫芦，不承担复杂业务判断。

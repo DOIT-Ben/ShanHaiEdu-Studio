@@ -182,17 +182,19 @@ Response:
 
 ### POST /api/workbench/projects/[projectId]/messages
 
-保存消息。
+保存教师消息并返回本轮对话结果。公开路由始终把客户端消息写为 `teacher`，不会接受客户端伪造的 `assistant` 或 `system` 角色。
 
 Request:
 
 ```json
 {
-  "role": "teacher",
   "content": "我要做百分数公开课",
-  "artifactRefs": ["artifact_id"]
+  "reference": "教材截图第 3 页",
+  "artifactRefs": ["教材截图第 3 页"]
 }
 ```
+
+说明：`artifactRefs` 在当前前端会作为教师可见引用文本透传；不要放入后端内部路径、存储键或调试信息。
 
 Response: `201`
 
@@ -202,10 +204,39 @@ Response: `201`
     "id": "message_id",
     "role": "teacher",
     "content": "我要做百分数公开课",
-    "artifactRefs": ["artifact_id"]
+    "artifactRefs": []
+  },
+  "assistantMessage": {
+    "id": "assistant_message_id",
+    "role": "assistant",
+    "content": "我建议先整理需求规格，再继续生成 PPT 大纲。",
+    "artifactRefs": []
+  },
+  "agentTurn": {
+    "assistantMessage": {
+      "body": "我建议先整理需求规格，再继续生成 PPT 大纲。"
+    },
+    "state": "awaiting_confirmation",
+    "quickReplies": [
+      {
+        "label": "确认开始",
+        "prompt": "确认开始，先整理需求规格。",
+        "recommended": true
+      }
+    ],
+    "recommendedOptions": [],
+    "toolPlan": {
+      "capabilityId": "requirement_spec",
+      "expectedArtifactKind": "requirement_spec",
+      "requiresConfirmation": true
+    },
+    "shouldRunToolNow": false,
+    "runtimeKind": "deterministic"
   }
 }
 ```
+
+当教师后续明确确认执行时，响应还可能包含 `artifact` 与 `result`，用于表示本轮已生成的节点成果和 runtime 执行结果。前端用户可见内容仍以 `messages` / `artifacts` 快照为准，`agentTurn.toolPlan`、`runtimeKind` 等字段只供客户端编排，不得直接展示给教师。
 
 ### GET /api/workbench/projects/[projectId]/artifacts
 
