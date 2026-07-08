@@ -98,4 +98,70 @@ describe("M54-B CapabilityRunner contract", () => {
       },
     });
   });
+
+  it("returns honest placeholder artifacts for external capabilities before real providers are wired", async () => {
+    const runtime: AgentRuntime = {
+      async run() {
+        throw new Error("external placeholder capabilities should not call the text runtime");
+      },
+    };
+
+    const baseInput = {
+      runtime,
+      projectId: "project-a",
+      userMessage: "帮我做五年级数学百分数完整材料包",
+      projectContext: {
+        grade: "五年级",
+        subject: "数学",
+        topic: "百分数",
+        requestedOutputs: ["完整材料包"],
+      },
+    };
+
+    const cozePpt = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "coze_ppt" });
+    const imageAsset = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "image_asset" });
+    const introVideo = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "intro_video" });
+
+    expect(cozePpt).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        nodeKey: "ppt_draft",
+        kind: "ppt_draft",
+        structuredContent: {
+          capabilityId: "coze_ppt",
+          providerStatus: "deterministic_draft",
+          placeholder: true,
+        },
+      },
+      providerStatus: "deterministic_draft",
+    });
+    expect(imageAsset).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        nodeKey: "image_prompts",
+        kind: "image_prompts",
+        structuredContent: {
+          capabilityId: "image_asset",
+          providerStatus: "deterministic_draft",
+          placeholder: true,
+        },
+      },
+      providerStatus: "deterministic_draft",
+    });
+    expect(introVideo).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        nodeKey: "video_storyboard",
+        kind: "video_storyboard",
+        structuredContent: {
+          capabilityId: "intro_video",
+          providerStatus: "deterministic_draft",
+          placeholder: true,
+        },
+      },
+      providerStatus: "deterministic_draft",
+    });
+
+    expect(JSON.stringify([cozePpt, imageAsset, introVideo])).not.toMatch(/真实 PPTX 已生成|真实图片已生成|真实视频已生成/);
+  });
 });

@@ -121,13 +121,23 @@ npx vitest run tests/main-conversation-agent.test.ts tests/capability-planner.te
 
 ### M55-B 文本链路一口气跑通
 
-目标：确认后自动连续生成文本节点：
+目标：确认后能按计划逐步调用所有已注册节点工具；文本节点生成草稿，外部节点先生成诚实接线占位：
 
 ```text
-requirement_spec -> lesson_plan -> ppt_outline -> intro_video_plan -> final_delivery
+requirement_spec -> lesson_plan -> ppt_outline -> coze_ppt -> image_asset -> intro_video -> final_package
 ```
 
 第一版可串行执行，后续再优化并发。
+
+2026-07-08 主线微调：本阶段优先级调整为“先把完整节点链路打通”。`coze_ppt`、`image_asset`、`intro_video` 这类外部节点先不强依赖真实 provider，而是通过 CapabilityRunner 返回明确标记的占位草稿，让主对话能按计划简单调用到每个工具节点。占位产物必须写入 `providerStatus: deterministic_draft` 和 `placeholder: true`，教师可见文案不得宣称真实 PPTX、真实图片或真实视频已经生成。
+
+调整后的最小链路：
+
+```text
+requirement_spec -> lesson_plan -> ppt_outline -> coze_ppt(占位) -> image_asset(占位) -> intro_video(占位) -> final_package
+```
+
+第一版允许用户通过“继续下一步”逐步推进，不要求一次请求自动跑完全部节点；但每个节点必须能从同一份 pending delivery plan 继续调用并保存 artifact。
 
 必须做到：
 
@@ -150,7 +160,7 @@ requirement_spec -> lesson_plan -> ppt_outline -> intro_video_plan -> final_deli
 验收：
 
 ```text
-npx vitest run tests/capability-runner.test.ts tests/conversation-turn-service.test.ts tests/agentic-delivery-flow.test.ts --maxWorkers=1
+npx vitest run tests/capability-runner.test.ts tests/conversation-turn-service.test.ts --maxWorkers=1
 ```
 
 ### M55-C Coze PPT 能力接入

@@ -34,7 +34,7 @@ export const taskGuidance: Record<AgentRuntimeTask, RuntimeTaskGuidance> = {
   },
   final_delivery_checklist: {
     label: "最终交付清单",
-    requiredFields: ["需求规格", "教材证据", "教案", "PPT 大纲", "PPTX 最小下载", "导入视频方案", "教师讲稿", "检查清单", "未完成文件能力标记"],
-    checklist: ["已完成文本产物是否全部列齐。", "是否说明 PPT 大纲可下载最小 PPTX 文件。", "图片、视频、动画和视觉精修未完成时是否不得标记为已完成。", "教师课前核对事项是否可执行。"],
+    requiredFields: ["需求规格", "教案", "PPT 大纲", "PPTX 接线占位", "图片提示词接线占位", "视频分镜接线占位", "教师讲稿", "检查清单", "未完成文件能力标记"],
+    checklist: ["已完成草稿和接线占位是否全部列齐。", "是否说明 PPTX、图片、视频仍待接入真实服务。", "图片、视频、动画和视觉精修未完成时是否不得标记为已完成。", "教师课前核对事项是否可执行。"],
   },
 };

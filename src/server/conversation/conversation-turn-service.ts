@@ -1,5 +1,6 @@
 import type { AgentProjectContext, AgentRuntime } from "@/server/agent-runtime/types";
 import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
+import { getCapabilityDefinition } from "@/server/capabilities/capability-registry";
 import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
@@ -166,11 +167,19 @@ async function runConfirmedFirstArtifact(input: {
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
   });
+  const advancedDeliveryPlan = plannedTurn.deliveryPlan
+    ? advanceDeliveryPlan(plannedTurn.deliveryPlan, plannedTurn.toolPlan.capabilityId)
+    : null;
+  const nextToolPlan = advancedDeliveryPlan?.nextCapabilityId
+    ? buildContinuedToolPlan(advancedDeliveryPlan.nextCapabilityId, generationUserMessage, advancedDeliveryPlan.deliveryPlan)
+    : null;
   const succeededTurn: MainAgentTurn = {
     ...plannedTurn,
     assistantMessage: { body: result.assistantSummary },
     state: "succeeded",
-    deliveryPlan: plannedTurn.deliveryPlan ? markDeliveryStepSucceeded(plannedTurn.deliveryPlan, plannedTurn.toolPlan.capabilityId) : undefined,
+    toolPlan: nextToolPlan ?? plannedTurn.toolPlan,
+    deliveryPlan: advancedDeliveryPlan?.deliveryPlan ?? plannedTurn.deliveryPlan,
+    quickReplies: nextToolPlan ? [{ label: "继续下一步", prompt: "继续下一步", recommended: true }] : [],
     shouldRunToolNow: true,
     artifactRefs: [artifact.id],
   };
@@ -187,6 +196,17 @@ async function runConfirmedFirstArtifact(input: {
     role: "assistant",
     content: result.assistantSummary,
     artifactRefs: [artifact.id],
+    metadata: nextToolPlan && advancedDeliveryPlan
+      ? {
+          pendingDeliveryPlan: {
+            status: "pending",
+            teacherRequest: generationUserMessage,
+            toolPlan: nextToolPlan,
+            deliveryPlan: advancedDeliveryPlan.deliveryPlan,
+            runtimeKind: plannedTurn.runtimeKind,
+          },
+        }
+      : undefined,
   });
 
   return {
@@ -197,12 +217,44 @@ async function runConfirmedFirstArtifact(input: {
   };
 }
 
-function markDeliveryStepSucceeded(deliveryPlan: NonNullable<MainAgentTurn["deliveryPlan"]>, capabilityId: string) {
+function advanceDeliveryPlan(deliveryPlan: DeliveryPlan, completedCapabilityId: string) {
+  const completedIndex = deliveryPlan.steps.findIndex((step) => step.capabilityId === completedCapabilityId);
+  const nextStep = completedIndex === -1 ? null : deliveryPlan.steps.slice(completedIndex + 1).find((step) => step.status !== "succeeded");
+  const nextCapabilityId = nextStep?.capabilityId;
+
   return {
-    ...deliveryPlan,
-    steps: deliveryPlan.steps.map((step) =>
-      step.capabilityId === capabilityId ? { ...step, status: "succeeded" as const } : step,
-    ),
+    nextCapabilityId,
+    deliveryPlan: {
+      ...deliveryPlan,
+      currentStepId: nextCapabilityId ?? (completedCapabilityId as DeliveryPlan["currentStepId"]),
+      steps: deliveryPlan.steps.map((step) => {
+        if (step.capabilityId === completedCapabilityId) return { ...step, status: "succeeded" as const };
+        if (step.capabilityId === nextCapabilityId) return { ...step, status: "awaiting_confirmation" as const };
+        return step;
+      }),
+    },
+  };
+}
+
+function buildContinuedToolPlan(capabilityId: CapabilityToolPlan["capabilityId"], teacherRequest: string, deliveryPlan: DeliveryPlan): CapabilityToolPlan {
+  const capability = getCapabilityDefinition(capabilityId);
+  const stepIndex = deliveryPlan.steps.findIndex((step) => step.capabilityId === capabilityId);
+  const nextCapabilityId = deliveryPlan.steps[stepIndex + 1]?.capabilityId;
+
+  return {
+    planId: `${capabilityId}:${deliveryPlan.id}`,
+    capabilityId,
+    reasonForUser: `我可以继续为你${capability.userLabel}。`,
+    internalReason: `continued_from_pending_delivery_plan:${capabilityId}`,
+    inputDraft: {
+      teacherGoal: teacherRequest,
+      upstreamAvailable: deliveryPlan.steps.slice(0, Math.max(0, stepIndex)).map((step) => step.artifactKind),
+    },
+    missingInputs: [],
+    upstreamPlan: [],
+    nextSuggestedCapabilities: nextCapabilityId ? [nextCapabilityId] : [],
+    requiresConfirmation: capability.requiresConfirmation,
+    expectedArtifactKind: capability.artifactKind,
   };
 }
 
@@ -212,7 +264,7 @@ function formatAssistantContent(message: { title?: string; body: string }) {
 
 function isTeacherConfirmation(content: string) {
   const text = content.trim();
-  return /确认开始|开始生成|直接生成|按默认生成|确认生成|可以生成|开始吧|没问题/.test(text);
+  return /确认开始|开始生成|直接生成|按默认生成|确认生成|可以生成|开始吧|没问题|继续下一步|下一步|继续生成|继续推进|继续做|按计划继续/.test(text);
 }
 
 function createPendingDeliveryPlanMetadata(agentTurn: MainAgentTurn, teacherRequest: string) {

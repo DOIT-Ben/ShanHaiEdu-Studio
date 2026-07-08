@@ -195,12 +195,12 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(confirmBody.agentTurn).toMatchObject({
       state: "succeeded",
       deliveryPlan: {
-        currentStepId: "requirement_spec",
+        currentStepId: "lesson_plan",
       },
     });
     expect(confirmBody.agentTurn.deliveryPlan.steps.map((step: { status: string }) => step.status)).toEqual([
       "succeeded",
-      "pending",
+      "awaiting_confirmation",
       "pending",
       "pending",
       "pending",
@@ -294,7 +294,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(confirmBody.agentTurn).toMatchObject({
       state: "succeeded",
       deliveryPlan: {
-        currentStepId: "requirement_spec",
+        currentStepId: "lesson_plan",
       },
     });
     expect(confirmBody.artifact).toMatchObject({ nodeKey: "requirement_spec" });
@@ -310,20 +310,99 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
     expect(assistantPlanMessage.metadata.pendingDeliveryPlan.status).toBe("confirmed");
 
-    const repeatedConfirmResponse = await postMessageRoute(
+    const latestAssistantMessage = messagesBody.messages.at(-1);
+    expect(latestAssistantMessage.metadata).toMatchObject({
+      pendingDeliveryPlan: {
+        status: "pending",
+        toolPlan: { capabilityId: "lesson_plan" },
+        deliveryPlan: { currentStepId: "lesson_plan" },
+      },
+    });
+  });
+
+  it("continues through the full delivery plan by calling each registered capability", async () => {
+    const projectId = await createProject({
+      title: "M55-B 全链路项目",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    await postMessageRoute(
       new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
+        body: JSON.stringify({ role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" }),
       }),
       { params: Promise.resolve({ projectId }) },
     );
-    const repeatedConfirmBody = await repeatedConfirmResponse.json();
 
-    expect(repeatedConfirmBody.agentTurn).toMatchObject({
-      state: "collecting_inputs",
-      shouldRunToolNow: false,
-    });
-    expect(repeatedConfirmBody.artifact).toBeUndefined();
+    const expectedSteps = [
+      { content: "确认开始", capabilityId: "requirement_spec", nodeKey: "requirement_spec", nextCapabilityId: "lesson_plan" },
+      { content: "继续下一步", capabilityId: "lesson_plan", nodeKey: "lesson_plan", nextCapabilityId: "ppt_outline" },
+      { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "coze_ppt" },
+      { content: "继续下一步", capabilityId: "coze_ppt", nodeKey: "ppt_draft", nextCapabilityId: "image_asset" },
+      { content: "继续下一步", capabilityId: "image_asset", nodeKey: "image_prompts", nextCapabilityId: "intro_video" },
+      { content: "继续下一步", capabilityId: "intro_video", nodeKey: "video_storyboard", nextCapabilityId: "final_package" },
+      { content: "继续下一步", capabilityId: "final_package", nodeKey: "final_delivery", nextCapabilityId: null },
+    ];
+
+    for (const step of expectedSteps) {
+      const response = await postMessageRoute(
+        new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({ role: "teacher", content: step.content }),
+        }),
+        { params: Promise.resolve({ projectId }) },
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(body.agentTurn).toMatchObject({
+        state: "succeeded",
+        shouldRunToolNow: true,
+      });
+      expect(body.artifact).toMatchObject({
+        nodeKey: step.nodeKey,
+        status: "needs_review",
+        structuredContent: {
+          capabilityId: step.capabilityId,
+          providerStatus: "deterministic_draft",
+        },
+      });
+      expect(body.assistantMessage.content).not.toMatch(/schema|provider|node_id|storage|debug|local path|API/i);
+      if (step.capabilityId === "final_package") {
+        expect(body.artifact.markdownContent).toMatch(/接线占位|草稿|待接入/);
+        expect(body.artifact.markdownContent).not.toMatch(/教材证据包|可下载最小 PPTX 文件|真实图片已生成|真实视频已生成/);
+      }
+
+      if (step.nextCapabilityId) {
+        expect(body.agentTurn.deliveryPlan.currentStepId).toBe(step.nextCapabilityId);
+        expect(body.agentTurn.quickReplies).toEqual(
+          expect.arrayContaining([expect.objectContaining({ label: "继续下一步", prompt: "继续下一步" })]),
+        );
+        expect(body.assistantMessage.metadata).toMatchObject({
+          pendingDeliveryPlan: {
+            status: "pending",
+            toolPlan: { capabilityId: step.nextCapabilityId },
+            deliveryPlan: { currentStepId: step.nextCapabilityId },
+          },
+        });
+      } else {
+        expect(body.agentTurn.deliveryPlan.steps.every((deliveryStep: { status: string }) => deliveryStep.status === "succeeded")).toBe(true);
+        expect(body.assistantMessage.metadata.pendingDeliveryPlan).toBeUndefined();
+      }
+    }
+
+    const messagesResponse = await getMessageRoute(
+      new Request("http://localhost", {
+        method: "GET",
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const messagesBody = await messagesResponse.json();
+    const artifactRefs = messagesBody.messages.flatMap((message: { artifactRefs: string[] }) => message.artifactRefs);
+
+    expect(artifactRefs).toHaveLength(7);
   });
 });
 
