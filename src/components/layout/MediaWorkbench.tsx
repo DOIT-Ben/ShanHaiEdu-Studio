@@ -93,6 +93,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               </Button>
             </div>
             <ConversationWorkbench
+              project={controller.activeProject}
               currentUser={currentUser}
               messages={controller.messages}
               loadState={controller.loadState}

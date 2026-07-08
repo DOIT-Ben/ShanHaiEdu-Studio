@@ -109,6 +109,7 @@ function mapBackendMessage(message: BackendMessageRecord): ChatMessage {
     id: message.id,
     speaker: message.role === "assistant" ? "assistant" : "teacher",
     body: teacherVisibleMessageBody(message),
+    timeLabel: formatDateLabel(message.createdAt),
   };
 }
 

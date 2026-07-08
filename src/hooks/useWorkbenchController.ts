@@ -33,6 +33,10 @@ export function useWorkbenchController() {
     () => artifacts.find((item) => item.key === activeArtifactKey) ?? artifacts[0] ?? null,
     [activeArtifactKey, artifacts],
   );
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === activeProjectId) ?? null,
+    [activeProjectId, projects],
+  );
   const composerNoticeTimer = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
@@ -250,6 +254,7 @@ export function useWorkbenchController() {
 
   return {
     activeProjectId,
+    activeProject,
     projects,
     messages,
     loadState,

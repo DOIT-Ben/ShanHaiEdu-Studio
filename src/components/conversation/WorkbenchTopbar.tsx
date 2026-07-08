@@ -3,13 +3,18 @@
 import { CheckCircle2, LogOut, MoreHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import type { ProjectItem } from "@/lib/types";
 
 type WorkbenchTopbarProps = {
+  project?: ProjectItem | null;
   currentUser?: PasswordAuthUser | null;
   onLogout?: () => Promise<void>;
 };
 
-export function WorkbenchTopbar({ currentUser, onLogout }: WorkbenchTopbarProps) {
+export function WorkbenchTopbar({ project, currentUser, onLogout }: WorkbenchTopbarProps) {
+  const projectTitle = project?.title ?? "未选择项目";
+  const savedLabel = project?.updatedAt ? `已保存 ${project.updatedAt}` : "未保存";
+
   return (
     <div className="flex items-center justify-between gap-4 px-6 py-6 lg:px-8">
       <nav className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden whitespace-nowrap text-sm text-muted-foreground" aria-label="当前位置">
@@ -17,7 +22,7 @@ export function WorkbenchTopbar({ currentUser, onLogout }: WorkbenchTopbarProps)
         <span className="shrink-0">/</span>
         <span className="shrink-0">公开课备课</span>
         <span className="shrink-0">/</span>
-        <span className="truncate font-medium text-foreground">表内乘法（一）</span>
+        <span className="truncate font-medium text-foreground">{projectTitle}</span>
       </nav>
       <div className="flex shrink-0 items-center gap-2">
         {currentUser && (
@@ -27,7 +32,7 @@ export function WorkbenchTopbar({ currentUser, onLogout }: WorkbenchTopbarProps)
         )}
         <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
           <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-          已保存 10:24
+          {savedLabel}
         </Button>
         <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
           <Users className="h-4 w-4" />

@@ -53,7 +53,7 @@ function AssistantMessage({
     <article ref={(node) => registerMessage?.(message.id, node)} className="group scroll-mt-24 max-w-[820px]">
       <div className="mb-3 flex items-center gap-3 text-sm">
         <span className="font-medium">ShanHaiEdu AI</span>
-        <span className="text-muted-foreground">10:24</span>
+        {message.timeLabel && <span className="text-muted-foreground">{message.timeLabel}</span>}
       </div>
       <div className={cn("space-y-3 text-sm leading-7 text-foreground", message.tone === "focus" && "text-foreground")}>
         {message.title && <p>{message.title}</p>}

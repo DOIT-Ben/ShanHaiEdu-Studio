@@ -12,3 +12,14 @@ test("conversation workbench does not mount the static prototype generation pane
   assert.equal(source.includes("PPT 页面生成中"), false);
   assert.equal(source.includes("8 / 12"), false);
 });
+
+test("workbench topbar uses the active project instead of prototype literals", () => {
+  const topbarSource = readFileSync(path.join(root, "src", "components", "conversation", "WorkbenchTopbar.tsx"), "utf8");
+  const conversationSource = readFileSync(path.join(root, "src", "components", "conversation", "ConversationWorkbench.tsx"), "utf8");
+  const transcriptSource = readFileSync(path.join(root, "src", "components", "conversation", "ChatTranscript.tsx"), "utf8");
+
+  assert.equal(topbarSource.includes("表内乘法（一）"), false);
+  assert.equal(topbarSource.includes("已保存 10:24"), false);
+  assert.equal(transcriptSource.includes(">10:24<"), false);
+  assert.equal(conversationSource.includes("<WorkbenchTopbar project={project}"), true);
+});

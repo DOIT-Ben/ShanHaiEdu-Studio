@@ -24,6 +24,38 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(projectBody.project.title).toBe("未命名公开课项目");
   });
 
+  it("asks for lesson details instead of generating a requirement artifact for greetings", async () => {
+    const projectResponse = await postProjectRoute(
+      new Request("http://localhost/api/workbench/projects", {
+        method: "POST",
+      }),
+    );
+    const projectBody = await projectResponse.json();
+    const projectId = projectBody.project.id;
+
+    const messageResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "你好" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const messageBody = await messageResponse.json();
+    const snapshotResponse = await getSnapshotRoute(new Request("http://localhost"), {
+      params: Promise.resolve({ projectId }),
+    });
+    const snapshot = await snapshotResponse.json();
+
+    expect(messageResponse.status).toBe(201);
+    expect(messageBody).toMatchObject({
+      message: { role: "teacher", content: "你好" },
+      assistantMessage: { role: "assistant", content: expect.stringContaining("请补充年级、课题") },
+    });
+    expect(messageBody.artifact).toBeUndefined();
+    expect(snapshot.messages.map((message: { content: string }) => message.content).join("\n")).not.toContain("需求规格说明书已生成");
+    expect(snapshot.artifacts).toEqual([]);
+  });
+
   it("keeps the route envelopes stable across the backend workflow happy path", async () => {
     const projectResponse = await postProjectRoute(
       new Request("http://localhost/api/workbench/projects", {

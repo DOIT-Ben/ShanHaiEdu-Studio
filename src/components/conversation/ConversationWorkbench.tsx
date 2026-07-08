@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, WorkbenchLoadState } from "@/lib/types";
+import type { ChatMessage, ProjectItem, WorkbenchLoadState } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
 import { StageProgress } from "@/components/conversation/StageProgress";
@@ -11,6 +11,7 @@ import { ConversationNavigator } from "@/components/conversation/ConversationNav
 import type { PasswordAuthUser } from "@/lib/auth-api";
 
 type ConversationWorkbenchProps = {
+  project: ProjectItem | null;
   currentUser?: PasswordAuthUser | null;
   messages: ChatMessage[];
   loadState: WorkbenchLoadState;
@@ -27,6 +28,7 @@ type ConversationWorkbenchProps = {
 };
 
 export function ConversationWorkbench({
+  project,
   currentUser,
   messages,
   loadState,
@@ -59,8 +61,8 @@ export function ConversationWorkbench({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-card">
-      <WorkbenchTopbar currentUser={currentUser} onLogout={onLogout} />
-      <StageProgress activeIndex={2} />
+      <WorkbenchTopbar project={project} currentUser={currentUser} onLogout={onLogout} />
+      <StageProgress activeIndex={stageIndexFromProject(project)} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex w-full max-w-6xl gap-4 px-6 pb-36 pt-4 lg:pb-10">
           <ConversationNavigator messages={messages} activeId={activeMessageId} onJump={jumpToMessage} />
@@ -107,4 +109,13 @@ export function ConversationWorkbench({
       />
     </main>
   );
+}
+
+function stageIndexFromProject(project: ProjectItem | null) {
+  const step = project?.currentStep ?? "";
+  if (/教材|教案|教学/.test(step)) return 1;
+  if (/PPT|图片|视频|导入|资源/.test(step)) return 2;
+  if (/检查|优化|重审/.test(step)) return 3;
+  if (/交付|完成/.test(step)) return 4;
+  return 0;
 }

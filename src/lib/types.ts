@@ -57,6 +57,7 @@ export type ChatMessage = {
   speaker: "teacher" | "assistant";
   title?: string;
   body: string;
+  timeLabel?: string;
   tone?: "normal" | "focus" | "warning" | "error";
 };
 

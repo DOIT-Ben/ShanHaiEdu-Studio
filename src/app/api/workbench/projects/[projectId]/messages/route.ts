@@ -41,6 +41,14 @@ export async function POST(request: Request, context: RouteContext) {
         return NextResponse.json({ message }, { status: 201 });
       }
 
+      if (!isActionableLessonRequest(teacherContent, message.artifactRefs)) {
+        const assistantMessage = await service.addMessage(projectId, {
+          role: "assistant",
+          content: "你好，我在。请补充年级、课题、教材版本，以及你希望生成的材料，比如教案、PPT 大纲或导入视频方案。信息补齐后我再开始生成备课草稿。",
+        });
+        return NextResponse.json({ message, assistantMessage }, { status: 201 });
+      }
+
       const project = await service.getProject(projectId);
       const result = await runtime.run({
         projectId,
@@ -90,4 +98,33 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "这条消息暂时没有发送成功，请稍后再试。" }, { status });
     }
   });
+}
+
+function isActionableLessonRequest(content: string, artifactRefs: string[]) {
+  const text = content.trim();
+  if (artifactRefs.length > 0) return true;
+  if (text.length < 6) return false;
+
+  const lessonSignals = [
+    "年级",
+    "课题",
+    "教材",
+    "公开课",
+    "备课",
+    "教案",
+    "ppt",
+    "PPT",
+    "课件",
+    "导入",
+    "视频",
+    "数学",
+    "语文",
+    "英语",
+    "生成",
+    "设计",
+    "做一节",
+    "上一节",
+  ];
+
+  return lessonSignals.some((signal) => text.includes(signal));
 }
