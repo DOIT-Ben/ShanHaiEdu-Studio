@@ -105,8 +105,6 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onClearReference={() => controller.setReference(null)}
               onSend={controller.sendPrompt}
               onRetry={controller.retryActiveProject}
-              onConfirmIntro={() => controller.activeArtifact && controller.confirmArtifact(controller.activeArtifact)}
-              onRecover={controller.showRecovery}
               onLogout={onLogout}
             />
           </div>

@@ -6,7 +6,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
 import { StageProgress } from "@/components/conversation/StageProgress";
 import { ChatTranscript } from "@/components/conversation/ChatTranscript";
-import { GenerationPanel } from "@/components/conversation/GenerationPanel";
 import { PromptComposer } from "@/components/conversation/PromptComposer";
 import { ConversationNavigator } from "@/components/conversation/ConversationNavigator";
 import type { PasswordAuthUser } from "@/lib/auth-api";
@@ -24,8 +23,6 @@ type ConversationWorkbenchProps = {
   onClearReference: () => void;
   onSend: () => void;
   onRetry: () => void;
-  onConfirmIntro: () => void;
-  onRecover: () => void;
   onLogout?: () => Promise<void>;
 };
 
@@ -42,8 +39,6 @@ export function ConversationWorkbench({
   onClearReference,
   onSend,
   onRetry,
-  onConfirmIntro,
-  onRecover,
   onLogout,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -98,7 +93,6 @@ export function ConversationWorkbench({
                   </div>
                 )
               )}
-              {messages.length > 0 && <GenerationPanel onConfirmIntro={onConfirmIntro} onRecover={onRecover} />}
             </div>
           </div>
         </div>

@@ -283,8 +283,8 @@ function realAssetRouteSegment(assetKind: RealAssetKind) {
 }
 
 export function createDefaultWorkbenchDataSource(): WorkbenchDataSource {
-  if (process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE === "api") {
-    return createWorkbenchApiClient();
+  if (process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE === "mock") {
+    return createDevelopmentWorkbenchAdapter();
   }
-  return createDevelopmentWorkbenchAdapter();
+  return createWorkbenchApiClient();
 }

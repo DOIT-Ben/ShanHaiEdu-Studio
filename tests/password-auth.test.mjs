@@ -91,7 +91,7 @@ test("current password user resolves only active non-expired sessions", async ()
   assert.equal(active.user.email, "current@example.test");
   assert.equal(active.user.passwordHash, undefined);
 
-  db.authSessions[0].expiresAt = new Date(Date.now() - 1000);
+  db.authSessions[0].expiresAt = new Date("2026-07-07T23:59:59.000Z");
   const expired = await auth.getCurrentPasswordUser(cookieRequest(registered.setCookieHeader), serviceOptions(db));
   assert.deepEqual(expired, { authenticated: false, user: null });
 });

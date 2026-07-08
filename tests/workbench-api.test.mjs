@@ -158,7 +158,7 @@ const backendSnapshot = {
   agentRuns: [],
 };
 
-function loadWorkbenchApiModule() {
+function loadWorkbenchApiModule(options = {}) {
   const ts = require("typescript");
   const cache = new Map();
   const compileModule = (filename) => ts.transpileModule(readFileSync(filename, "utf8"), {
@@ -194,7 +194,7 @@ function loadWorkbenchApiModule() {
         require: requireStub,
         URL,
         structuredClone,
-        process: { env: {} },
+        process: { env: options.env ?? {} },
         console,
       });
       return mapperModule.exports;
@@ -209,7 +209,8 @@ function loadWorkbenchApiModule() {
     require: requireStub,
     URL,
     structuredClone,
-    process: { env: {} },
+    process: { env: options.env ?? {} },
+    fetch: options.fetch,
     console,
   });
 
@@ -588,4 +589,40 @@ test("development adapter updates snapshots without pretending to be production 
   const generatedIntro = afterGenerate.artifacts.find((item) => item.key === "intro-video-plan");
   assert.equal(generatedIntro.status, "needs_review");
   assert.match(generatedIntro.summary, /真实素材/);
+});
+
+test("default workbench data source uses the real API client unless mock is explicit", async () => {
+  const calls = [];
+  const { createDefaultWorkbenchDataSource } = loadWorkbenchApiModule({
+    fetch: async (url) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        json: async () => ({ projects: [backendProject] }),
+      };
+    },
+  });
+
+  const dataSource = createDefaultWorkbenchDataSource();
+  const projects = await dataSource.listProjects();
+
+  assert.deepEqual(calls, ["/api/workbench/projects"]);
+  assert.equal(projects[0].id, "backend-project-a");
+});
+
+test("mock workbench data source is available only through an explicit local switch", async () => {
+  const calls = [];
+  const { createDefaultWorkbenchDataSource } = loadWorkbenchApiModule({
+    env: { NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "mock" },
+    fetch: async (url) => {
+      calls.push(String(url));
+      throw new Error("mock data source should not call fetch");
+    },
+  });
+
+  const dataSource = createDefaultWorkbenchDataSource();
+  const projects = await dataSource.listProjects();
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(projects.map((project) => project.id), ["project-a", "project-b"]);
 });

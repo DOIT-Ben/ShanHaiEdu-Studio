@@ -36,6 +36,14 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next",
+    ".tmp",
+    "desktop-bundle",
+    "dist",
+    "dist-desktop",
+    "out",
+    "playwright-report",
+    "test-results"
   ]
 }
