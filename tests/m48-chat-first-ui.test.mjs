@@ -26,13 +26,13 @@ test("ChatTranscript renders model-chat style message bubbles with preserved mul
   assert.match(source, /aria-label="复制回复"/);
 });
 
-test("MediaWorkbench makes artifacts an on-demand drawer instead of a permanent desktop rail", () => {
+test("MediaWorkbench keeps the artifact drawer available for narrow screens", () => {
   const source = readSource("src/components/layout/MediaWorkbench.tsx");
 
-  assert.doesNotMatch(source, /hidden w-16 shrink-0 lg:block/);
-  assert.doesNotMatch(source, /<ArtifactRail[\s\S]*variant="rail"/);
   assert.match(source, /onClick=\{\(\) => controller\.setRailOpen\(true\)\}/);
   assert.match(source, />\s*产物\s*</);
+  assert.match(source, /<Sheet open=\{controller\.railOpen\} onOpenChange=\{controller\.setRailOpen\}/);
+  assert.match(source, /variant="drawer"/);
 });
 
 test("Workbench controller gives immediate chat feedback and blocks duplicate sends while waiting", () => {

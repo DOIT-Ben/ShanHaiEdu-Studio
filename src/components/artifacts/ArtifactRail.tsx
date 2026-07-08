@@ -58,8 +58,8 @@ export function ArtifactRail({
 
   if (variant === "drawer") {
     return (
-      <aside className="flex h-full min-h-0 flex-col bg-[#f7f7f7]">
-        <div className="border-b px-5 py-4">
+      <aside className="flex h-full min-h-0 flex-col bg-[#fbfefd]">
+        <div className="border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
           <h2 className="title-md">线性产物</h2>
           <p className="mt-1 text-xs text-muted-foreground">点击查看详情，确认后复用到下一步。</p>
           <Select value={filter} onValueChange={setFilter}>
@@ -93,9 +93,9 @@ export function ArtifactRail({
   }
 
   return (
-    <aside className="relative flex h-full items-center justify-center border-l bg-card">
+    <aside className="relative flex h-full items-center justify-center border-l border-[#d7ebe5] bg-[#fbfefd]">
       <div className="relative flex w-full flex-col items-center gap-2.5 px-2 py-4">
-        <span className="absolute bottom-8 left-1/2 top-8 w-px -translate-x-1/2 bg-border" />
+        <span className="absolute bottom-8 left-1/2 top-8 w-px -translate-x-1/2 bg-[#d7ebe5]" />
         {visibleItems.map((item, index) => (
           <div key={item.key} className="relative z-10">
             <ArtifactNodeCard

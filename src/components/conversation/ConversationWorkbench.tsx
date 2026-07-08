@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ChatMessage, ProjectItem, WorkbenchLoadState } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
 import { StageProgress } from "@/components/conversation/StageProgress";
@@ -13,6 +13,7 @@ type ConversationWorkbenchProps = {
   project: ProjectItem | null;
   currentUser?: PasswordAuthUser | null;
   messages: ChatMessage[];
+  artifacts: ArtifactItem[];
   loadState: WorkbenchLoadState;
   errorMessage: string | null;
   input: string;
@@ -34,6 +35,7 @@ export function ConversationWorkbench({
   project,
   currentUser,
   messages,
+  artifacts,
   loadState,
   errorMessage,
   input,
@@ -87,7 +89,7 @@ export function ConversationWorkbench({
               </div>
             )}
             {messages.length > 0 ? (
-              <ChatTranscript messages={messages} sending={sending} registerMessage={registerMessage} />
+              <ChatTranscript messages={messages} artifacts={artifacts} sending={sending} registerMessage={registerMessage} />
             ) : (
               loadState !== "loading" && (
                 <div className="max-w-[640px] rounded-2xl border bg-card px-5 py-4 text-sm leading-7 text-muted-foreground shadow-[0_10px_28px_rgba(0,0,0,0.035)]">

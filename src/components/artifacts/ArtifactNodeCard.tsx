@@ -49,8 +49,8 @@ export function ArtifactNodeCard({
         aria-label={`${item.title}，${meta.label}`}
         onClick={() => onOpen(item)}
         className={cn(
-          "w-full rounded-md px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#ebebeb]",
-          active && "bg-[#e9e9e9]",
+          "w-full rounded-md px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#eef8f5]",
+          active && "bg-[#eef8f5] shadow-[inset_0_0_0_1px_rgba(43,112,97,0.12)]",
         )}
       >
         <div className="flex items-center justify-between gap-3">
@@ -77,14 +77,14 @@ export function ArtifactNodeCard({
       onBlur={onPreviewEnd}
       onClick={() => onOpen(item)}
       className={cn(
-        "group flex h-10 w-10 items-center justify-center rounded-xl outline-none transition duration-150 ease-out hover:-translate-x-0.5 hover:bg-[#f3f3f3] focus:ring-2 focus:ring-ring/35",
-        active && "bg-[#eeeeee]",
+        "group flex h-10 w-10 items-center justify-center rounded-xl outline-none transition duration-150 ease-out hover:-translate-x-0.5 hover:bg-[#eef8f5] focus:ring-2 focus:ring-[#8fcbbb]/35",
+        active && "bg-[#eef8f5]",
       )}
     >
       <span
         className={cn(
-          "relative flex h-7 w-7 items-center justify-center rounded-full border bg-card transition group-hover:border-input",
-          active && "border-input bg-card shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
+          "relative flex h-7 w-7 items-center justify-center rounded-full border border-[#d7ebe5] bg-card transition group-hover:border-[#8fcbbb]",
+          active && "border-[#8fcbbb] bg-card shadow-[0_2px_8px_rgba(29,74,66,0.08)]",
         )}
       >
         <Icon className={cn("h-3.5 w-3.5", active ? "text-foreground" : "text-muted-foreground")} />

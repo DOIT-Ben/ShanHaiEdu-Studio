@@ -5,6 +5,7 @@ import type { ArtifactItem } from "@/lib/types";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MarkdownPreview } from "@/components/artifacts/MarkdownPreview";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
@@ -49,7 +50,7 @@ export function ArtifactDetailSheet({
 }: ArtifactDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="max-w-[520px]">
+      <SheetContent className="max-w-[540px] border-[#d7ebe5] bg-[#fbfefd]">
         {item && (
           <ArtifactDetailContent
             projectId={projectId}
@@ -96,7 +97,7 @@ function ArtifactDetailContent({
 
   return (
     <>
-      <div className="border-b px-5 py-5">
+      <div className="border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-5">
         <div className="flex items-start justify-between gap-4 pr-8">
           <div>
             <SheetTitle className="title-md">{item.title}</SheetTitle>
@@ -104,7 +105,7 @@ function ArtifactDetailContent({
           </div>
           <Badge tone={item.status === "blocked" ? "danger" : "neutral"}>{item.status === "blocked" ? "需处理" : item.status === "needs_review" ? "待确认" : "已保存"}</Badge>
         </div>
-        <div className="mt-5 flex gap-5 border-b text-sm">
+        <div className="mt-5 flex gap-5 border-b border-[#d7ebe5] text-sm">
           {["摘要", "来源对话", "页面脚本", "图片", "提示词"].map((tab, index) => (
             <button key={tab} type="button" className={index === 0 ? "border-b-2 border-foreground pb-2 font-medium text-foreground" : "pb-2 text-muted-foreground"}>
               {tab}
@@ -117,11 +118,11 @@ function ArtifactDetailContent({
           <section>
             <h3 className="mb-3 text-sm font-medium">生成来源</h3>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg border bg-background p-3">
+              <div className="rounded-lg border border-[#d7ebe5] bg-white p-3">
                 <div className="text-xs text-muted-foreground">上游产物</div>
                 <div className="mt-1">{item.sourceTitles.join("、") || "项目配置"}</div>
               </div>
-              <div className="rounded-lg border bg-background p-3">
+              <div className="rounded-lg border border-[#d7ebe5] bg-white p-3">
                 <div className="text-xs text-muted-foreground">更新时间</div>
                 <div className="mt-1">{item.updatedAt}</div>
               </div>
@@ -143,28 +144,12 @@ function ArtifactDetailContent({
             </div>
           </section>
 
-          <section>
-            <h3 className="mb-3 text-sm font-medium">可复用内容</h3>
-            <div className="space-y-2">
-              {Object.entries(item.content).map(([key, value]) => (
-                <div key={key} className="rounded-lg border bg-card p-3">
-                  <div className="text-xs font-medium text-muted-foreground">{key}</div>
-                  {Array.isArray(value) ? (
-                    <ul className="mt-2 space-y-1 text-sm leading-6">
-                      {value.map((entry) => (
-                        <li key={entry}>{entry}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-1 text-sm leading-6">{value}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+          <section className="rounded-lg border border-[#d7ebe5] bg-white p-4">
+            <MarkdownPreview item={item} showHeader={false} />
           </section>
         </div>
       </ScrollArea>
-      <div className="flex flex-wrap gap-2 border-t p-4">
+      <div className="flex flex-wrap gap-2 border-t border-[#d7ebe5] bg-[#fbfefd] p-4">
         <Button variant="secondary" disabled={!item.actions.canCopy} onClick={copyItem}>
           <Clipboard className="h-4 w-4" />
           {copyLabel}

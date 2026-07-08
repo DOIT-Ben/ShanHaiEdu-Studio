@@ -30,7 +30,7 @@ export function ArtifactSidePanel({
 
   return (
     <aside
-      className="relative hidden h-full shrink-0 overflow-hidden border-l bg-[#fbfbfb] transition-[width] duration-300 ease-out lg:block"
+      className="relative hidden h-full shrink-0 overflow-hidden border-l border-[#d7ebe5] bg-[#fbfefd] transition-[width] duration-300 ease-out lg:block"
       style={{ width: open && item ? width : 0 }}
       aria-hidden={!open}
     >
@@ -71,7 +71,7 @@ function ArtifactSidePanelContent({
   return (
     <div className="relative flex h-full min-w-[300px] flex-col">
       <ResizableHandle width={width} onChange={onWidthChange} />
-      <div className="flex items-center justify-between border-b bg-card px-5 py-4">
+      <div className="flex items-center justify-between border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{item.title}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">产物预览 · {item.updatedAt}</div>
@@ -92,7 +92,7 @@ function ArtifactSidePanelContent({
         </div>
       </ScrollArea>
 
-      <div className="flex flex-wrap gap-2 border-t bg-card px-5 py-3">
+      <div className="flex flex-wrap gap-2 border-t border-[#d7ebe5] bg-[#fbfefd] px-5 py-3">
         <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={copyItem}>
           <Clipboard className="h-3.5 w-3.5" />
           {copyLabel}

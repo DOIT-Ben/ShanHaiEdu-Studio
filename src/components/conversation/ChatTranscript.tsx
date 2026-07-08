@@ -1,24 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import type { ChatMessage } from "@/lib/types";
+import { Check, Copy, FileText } from "lucide-react";
+import type { ArtifactItem, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
+  artifacts?: ArtifactItem[];
   sending?: boolean;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
 };
 
-export function ChatTranscript({ messages, sending = false, registerMessage }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], sending = false, registerMessage }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
         const assistant = message.speaker === "assistant";
+        const artifact = assistant ? findInlineArtifact(message, artifacts) : null;
         return assistant ? (
-          <AssistantMessage key={message.id} message={message} registerMessage={registerMessage} />
+          <AssistantMessage key={message.id} message={message} artifact={artifact} registerMessage={registerMessage} />
         ) : (
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
         );
@@ -56,9 +58,11 @@ function TeacherMessage({
 
 function AssistantMessage({
   message,
+  artifact,
   registerMessage,
 }: {
   message: ChatMessage;
+  artifact: ArtifactItem | null;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
 }) {
   return (
@@ -84,10 +88,60 @@ function AssistantMessage({
             {message.title && <p className="font-medium">{message.title}</p>}
             <p>{message.body}</p>
           </div>
+          {artifact && <GeneratedArtifactInline item={artifact} />}
           <AssistantMessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
         </div>
       </div>
     </article>
+  );
+}
+
+function findInlineArtifact(message: ChatMessage, artifacts: ArtifactItem[]) {
+  if (artifacts.length === 0) return null;
+  const text = `${message.title ?? ""}\n${message.body}`;
+  if (!/(已生成|生成|产物|草稿|说明书|教案|大纲|视频|交付)/.test(text)) return null;
+
+  const directlyMentioned = artifacts.find((item) => text.includes(item.title));
+  if (directlyMentioned && directlyMentioned.status !== "not_started") return directlyMentioned;
+
+  return (
+    artifacts.find((item) => item.status === "needs_review") ??
+    artifacts.find((item) => item.status === "stale") ??
+    artifacts.find((item) => item.status === "approved") ??
+    artifacts.find((item) => item.status !== "not_started") ??
+    null
+  );
+}
+
+function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
+  return (
+    <div
+      data-generated-artifact-inline
+      className="mt-3 max-w-[680px] rounded-xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm shadow-[0_10px_26px_rgba(29,74,66,0.045)]"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#cae2db] bg-white text-[#32685d]">
+          <FileText className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-[#32685d]">生成内容已进入产物链</span>
+            <span className="rounded-full border border-[#d7ebe5] bg-white px-2 py-0.5 text-xs text-muted-foreground">{item.title}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground">{item.summary}</p>
+          {item.previewFields.length > 0 && (
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {item.previewFields.slice(0, 2).map((field) => (
+                <div key={field.label} className="min-w-0 rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+                  <div className="text-xs text-muted-foreground">{field.label}</div>
+                  <div className="mt-0.5 line-clamp-1 text-xs text-foreground">{field.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
