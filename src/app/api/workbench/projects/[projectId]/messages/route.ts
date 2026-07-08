@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
-import { DeterministicRuntime } from "@/server/agent-runtime";
+import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
+import { createConversationOrchestratorFromEnv } from "@/server/conversation/conversation-orchestrator";
 
-const runtime = new DeterministicRuntime();
+const runtime = createAgentRuntimeFromEnv();
+const conversationOrchestrator = createConversationOrchestratorFromEnv();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -41,27 +43,43 @@ export async function POST(request: Request, context: RouteContext) {
         return NextResponse.json({ message }, { status: 201 });
       }
 
-      if (!isActionableLessonRequest(teacherContent, message.artifactRefs)) {
+      const project = await service.getProject(projectId);
+      const recentMessages = await service.getMessages(projectId);
+      const conversationDecision = await conversationOrchestrator.decide({
+        userMessage: teacherContent,
+        artifactRefs: message.artifactRefs,
+        projectContext: {
+          grade: project.grade,
+          subject: project.subject,
+          topic: project.lessonTopic,
+          textbookVersion: project.textbookVersion,
+        },
+        recentMessages: recentMessages.map((recentMessage) => ({
+          role: recentMessage.role,
+          content: recentMessage.content,
+        })),
+      });
+
+      if (!conversationDecision.shouldGenerateRequirement) {
         const assistantMessage = await service.addMessage(projectId, {
           role: "assistant",
-          content: "你好，我在。请补充年级、课题、教材版本，以及你希望生成的材料，比如教案、PPT 大纲或导入视频方案。信息补齐后我再开始生成备课草稿。",
+          content: formatAssistantContent(conversationDecision.assistantMessage),
         });
         return NextResponse.json({ message, assistantMessage }, { status: 201 });
       }
 
-      const project = await service.getProject(projectId);
       const result = await runtime.run({
         projectId,
         runId: randomUUID(),
         task: "requirement_spec",
         userMessage: content,
         projectContext: {
-          grade: project.grade ?? "五年级",
-          subject: project.subject ?? "数学",
-          topic: project.lessonTopic ?? "百分数",
+          grade: conversationDecision.normalizedBrief?.grade ?? project.grade ?? "五年级",
+          subject: conversationDecision.normalizedBrief?.subject ?? project.subject ?? "数学",
+          topic: conversationDecision.normalizedBrief?.topic ?? project.lessonTopic ?? "待确认课题",
           textbookVersion: project.textbookVersion ?? undefined,
-          teacherGoal: teacherContent,
-          requestedOutputs: ["需求规格", "教案", "PPT 大纲", "导入视频方案"],
+          teacherGoal: conversationDecision.normalizedBrief?.teacherGoal ?? teacherContent,
+          requestedOutputs: conversationDecision.normalizedBrief?.requestedOutputs ?? ["需求规格", "教案", "PPT 大纲", "导入视频方案"],
         },
         approvedArtifacts: [],
       });
@@ -100,31 +118,6 @@ export async function POST(request: Request, context: RouteContext) {
   });
 }
 
-function isActionableLessonRequest(content: string, artifactRefs: string[]) {
-  const text = content.trim();
-  if (artifactRefs.length > 0) return true;
-  if (text.length < 6) return false;
-
-  const lessonSignals = [
-    "年级",
-    "课题",
-    "教材",
-    "公开课",
-    "备课",
-    "教案",
-    "ppt",
-    "PPT",
-    "课件",
-    "导入",
-    "视频",
-    "数学",
-    "语文",
-    "英语",
-    "生成",
-    "设计",
-    "做一节",
-    "上一节",
-  ];
-
-  return lessonSignals.some((signal) => text.includes(signal));
+function formatAssistantContent(message: { title?: string; body: string }) {
+  return message.title ? `${message.title}\n\n${message.body}` : message.body;
 }

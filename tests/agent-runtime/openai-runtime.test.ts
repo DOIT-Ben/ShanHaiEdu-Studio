@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createAgentRuntimeFromEnv } from "../../src/server/agent-runtime/runtime-factory";
+import { FallbackAgentRuntime, createAgentRuntimeFromEnv } from "../../src/server/agent-runtime/runtime-factory";
+import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
 import { OpenAIRuntime } from "../../src/server/agent-runtime/openai-runtime";
-import type { AgentRuntimeInput } from "../../src/server/agent-runtime/types";
+import type { AgentRuntime, AgentRuntimeInput } from "../../src/server/agent-runtime/types";
 import { expectSucceeded } from "./test-helpers";
 
 function input(): AgentRuntimeInput {
@@ -168,5 +169,38 @@ describe("OpenAIRuntime", () => {
     }
     expect(teacherText).toContain("本次生成没有完成");
     expect(teacherText).toContain("重试");
+  });
+
+  it("falls back to deterministic artifacts when the configured model runtime fails", async () => {
+    const failingPrimary: AgentRuntime = {
+      async run(runtimeInput) {
+        return {
+          status: "failed",
+          run: {
+            runId: runtimeInput.runId,
+            projectId: runtimeInput.projectId,
+            task: runtimeInput.task,
+            runtimeKind: "openai",
+            status: "failed",
+          },
+          assistantMessage: {
+            title: "本次生成没有完成",
+            body: "请稍后重试。",
+          },
+          nextSuggestedAction: {
+            type: "retry",
+            label: "重试本次生成",
+          },
+        };
+      },
+    };
+
+    const runtime = new FallbackAgentRuntime(failingPrimary, new DeterministicRuntime());
+    const result = expectSucceeded(await runtime.run(input()));
+
+    expect(result.run.runtimeKind).toBe("deterministic");
+    expect(result.artifactDraft.generationMode).toBe("deterministic_draft");
+    expect(result.artifactDraft.markdown).toContain("## 教学目标");
+    expect(result.artifactDraft.markdown).toContain("## 自检清单");
   });
 });
