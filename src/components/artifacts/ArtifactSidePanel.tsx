@@ -73,13 +73,13 @@ function ArtifactSidePanelContent({
       <div className="flex items-center justify-between border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{item.title}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">产物预览 · {item.updatedAt}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">备课成果 · {item.updatedAt}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="打开完整详情" onClick={() => onOpenDetail(item)}>
             <Maximize2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="关闭产物预览" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="关闭成果阅读" onClick={onClose}>
             <PanelRightClose className="h-4 w-4" />
           </Button>
         </div>

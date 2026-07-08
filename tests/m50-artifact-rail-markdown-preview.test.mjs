@@ -25,8 +25,8 @@ test("Conversation transcript can show generated artifacts inline", () => {
   assert.match(workbenchSource, /artifacts: ArtifactItem\[\]/);
   assert.match(workbenchSource, /<ChatTranscript[\s\S]*artifacts=\{artifacts\}/);
   assert.match(transcriptSource, /artifacts\?: ArtifactItem\[\]/);
-  assert.match(transcriptSource, /data-generated-artifact-inline/);
-  assert.match(transcriptSource, /生成内容已进入产物链/);
+  assert.match(transcriptSource, /data-teacher-artifact-card/);
+  assert.match(transcriptSource, /已整理出一版备课成果/);
 });
 
 test("MarkdownPreview renders markdown structure instead of plain text blobs", () => {
@@ -52,4 +52,3 @@ test("Artifact detail surfaces reuse MarkdownPreview and share the AI visual ton
   assert.match(sidePanelSource, /#d7ebe5|#fbfefd|#eef8f5/);
   assert.match(railSource, /#d7ebe5|#fbfefd|#eef8f5/);
 });
-

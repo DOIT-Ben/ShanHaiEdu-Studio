@@ -77,6 +77,6 @@ test("Unavailable sidebar and topbar buttons are not fake enabled controls", () 
   assert.match(topbarSource, /aria-label=\{savedLabel\}/);
   assert.doesNotMatch(topbarSource, /<Button[\s\S]*\{savedLabel\}[\s\S]*<\/Button>/);
   assert.match(composerSource, /aria-label="重新生成"[\s\S]*title="请在产物详情中调整后重做"[\s\S]*disabled/);
-  assert.match(detailSource, /完整缩略图预览稍后开放/);
+  assert.doesNotMatch(detailSource, /完整缩略图预览稍后开放|缩略预览/);
   assert.doesNotMatch(detailSource, /<button[\s\S]*来源对话[\s\S]*<\/button>/);
 });

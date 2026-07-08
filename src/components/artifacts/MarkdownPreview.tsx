@@ -14,8 +14,8 @@ type MarkdownBlock =
   | { type: "list"; items: string[] }
   | { type: "paragraph"; text: string };
 
-function isMarkdownText(title: string, text: string) {
-  return title === "Markdown" || /^#{1,3}\s/m.test(text) || /^-\s/m.test(text);
+function isMarkdownText(text: string) {
+  return /^#{1,3}\s/m.test(text) || /^-\s/m.test(text);
 }
 
 function renderMarkdownBlocks(markdown: string): MarkdownBlock[] {
@@ -92,6 +92,11 @@ function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
 }
 
 export function MarkdownPreview({ item, showHeader = true }: MarkdownPreviewProps) {
+  const readableContentEntries = Object.entries(item.content)
+    .flatMap(([, value]) => normalizeValue(value))
+    .map(String)
+    .filter(Boolean);
+
   return (
     <article className="space-y-7 text-sm leading-7">
       {showHeader && (
@@ -102,8 +107,7 @@ export function MarkdownPreview({ item, showHeader = true }: MarkdownPreviewProp
       )}
 
       {item.previewFields.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="title-md">关键字段</h2>
+        <section aria-label="已确认内容" className="space-y-2">
           <div className="divide-y rounded-md border bg-card">
             {item.previewFields.map((field) => (
               <div key={field.label} className="grid grid-cols-[78px_1fr] gap-3 px-3 py-2.5">
@@ -116,32 +120,25 @@ export function MarkdownPreview({ item, showHeader = true }: MarkdownPreviewProp
       )}
 
       <section className="space-y-3">
-        <h2 className="title-md">正文预览</h2>
-        {Object.entries(item.content).map(([title, value]) => (
-          <div key={title} className="space-y-1.5">
-            <h3 className="text-sm font-medium">{title}</h3>
+        {readableContentEntries.map((line) => (
+          <div key={line} className="space-y-1.5">
             <div className="space-y-2">
-              {normalizeValue(value).map((line) =>
-                isMarkdownText(title, line) ? (
+              {[line].map((entry) =>
+                isMarkdownText(entry) ? (
                   <div key={line} className="space-y-2.5">
-                    {renderMarkdownBlocks(line).map((block, index) => (
+                    {renderMarkdownBlocks(entry).map((block, index) => (
                       <MarkdownBlockView key={`${block.type}-${index}`} block={block} />
                     ))}
                   </div>
                 ) : (
                   <p key={line} className="text-sm leading-7 text-muted-foreground">
-                    {line}
+                    {entry}
                   </p>
                 ),
               )}
             </div>
           </div>
         ))}
-      </section>
-
-      <section className="space-y-2 border-t pt-5">
-        <h2 className="title-md">上游来源</h2>
-        <p className="text-muted-foreground">{item.sourceTitles.join("、") || "当前项目配置"}</p>
       </section>
     </article>
   );

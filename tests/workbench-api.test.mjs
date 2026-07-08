@@ -322,7 +322,7 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(requirement.title, "需求规格说明书");
   assert.equal(requirement.actions.canCopy, true);
   assert.equal(requirement.actions.canConfirm, true);
-  assert.equal(requirement.content.Markdown, "# 需求规格说明书\n\n## 课题\n百分数");
+  assert.equal(requirement.content["正文"], "# 需求规格说明书\n\n## 课题\n百分数");
 
   const lesson = snapshot.artifacts.find((item) => item.nodeKey === "lesson_plan");
   assert.equal(lesson.key, "node-lesson");

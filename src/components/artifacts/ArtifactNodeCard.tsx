@@ -13,7 +13,7 @@ const iconByTitle = {
   "PPT 大纲与逐页脚本": Presentation,
   导入视频策划卡: Video,
   "PPT 草稿": Presentation,
-  图片提示词: Image,
+  课堂视觉图: Image,
   视频分镜: Video,
   最终交付: PackageCheck,
 };

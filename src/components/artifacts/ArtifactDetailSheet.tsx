@@ -1,6 +1,6 @@
 "use client";
 
-import { Clipboard, Download, Eye, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
+import { Clipboard, Download, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { Badge } from "@/components/ui/badge";
@@ -26,15 +26,6 @@ type ArtifactDetailSheetProps = {
   onGenerateRealAsset: (item: ArtifactItem, assetKind: RealAssetKind) => void;
   realAssetGenerationKey: string | null;
 };
-
-function PreviewThumb({ label }: { label: string }) {
-  return (
-    <div>
-      <div className="aspect-[4/3] rounded-lg border bg-muted" />
-      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-    </div>
-  );
-}
 
 export function ArtifactDetailSheet({
   projectId,
@@ -105,45 +96,10 @@ function ArtifactDetailContent({
           </div>
           <Badge tone={item.status === "blocked" ? "danger" : "neutral"}>{item.status === "blocked" ? "需处理" : item.status === "needs_review" ? "待确认" : "已保存"}</Badge>
         </div>
-        <div className="mt-5 flex gap-5 border-b border-[#d7ebe5] text-sm" aria-label="产物详情分区">
-          {["摘要", "来源对话", "页面脚本", "图片", "提示词"].map((tab, index) => (
-            <span key={tab} className={index === 0 ? "border-b-2 border-foreground pb-2 font-medium text-foreground" : "pb-2 text-muted-foreground"}>
-              {tab}
-            </span>
-          ))}
-        </div>
+        <div className="mt-4 text-xs font-medium text-[#32685d]">成果阅读</div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-5">
-          <section>
-            <h3 className="mb-3 text-sm font-medium">生成来源</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg border border-[#d7ebe5] bg-white p-3">
-                <div className="text-xs text-muted-foreground">上游产物</div>
-                <div className="mt-1">{item.sourceTitles.join("、") || "项目配置"}</div>
-              </div>
-              <div className="rounded-lg border border-[#d7ebe5] bg-white p-3">
-                <div className="text-xs text-muted-foreground">更新时间</div>
-                <div className="mt-1">{item.updatedAt}</div>
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-medium">缩略预览</h3>
-              <Button variant="ghost" size="sm" disabled title="完整缩略图预览稍后开放">
-                <Eye className="h-4 w-4" />
-                查看全部
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <PreviewThumb label="1" />
-              <PreviewThumb label="2" />
-              <PreviewThumb label="3" />
-            </div>
-          </section>
-
           <section className="rounded-lg border border-[#d7ebe5] bg-white p-4">
             <MarkdownPreview item={item} showHeader={false} />
           </section>

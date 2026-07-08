@@ -99,7 +99,7 @@ function AssistantMessage({
             {message.title && <p className="font-medium">{message.title}</p>}
             <p>{message.body}</p>
           </div>
-          {artifact && <GeneratedArtifactInline item={artifact} />}
+          {artifact && <TeacherArtifactCard item={artifact} />}
           {!artifact && quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
           )}
@@ -193,13 +193,17 @@ function QuickReplyChoices({
   );
 }
 
-function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
+function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
   const [expanded, setExpanded] = useState(false);
-  const contentEntries = Object.entries(item.content).slice(0, 2);
+  const readableLines = Object.values(item.content)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map(String)
+    .filter(Boolean)
+    .slice(0, 3);
 
   return (
     <div
-      data-generated-artifact-inline
+      data-teacher-artifact-card
       className="mt-3 max-w-[680px] rounded-xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm shadow-[0_10px_26px_rgba(29,74,66,0.045)]"
     >
       <div className="flex items-start gap-3">
@@ -208,17 +212,16 @@ function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-[#32685d]">生成内容已进入产物链</span>
+            <span className="text-xs font-medium text-[#32685d]">已整理出一版备课成果</span>
             <span className="rounded-full border border-[#d7ebe5] bg-white px-2 py-0.5 text-xs text-muted-foreground">{item.title}</span>
           </div>
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground">{item.summary}</p>
           {item.previewFields.length > 0 && (
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {item.previewFields.slice(0, 2).map((field) => (
-                <div key={field.label} className="min-w-0 rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
-                  <div className="text-xs text-muted-foreground">{field.label}</div>
-                  <div className="mt-0.5 line-clamp-1 text-xs text-foreground">{field.value}</div>
-                </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {item.previewFields.slice(0, 3).map((field) => (
+                <span key={field.label} className="rounded-md bg-white px-2.5 py-1 text-xs text-muted-foreground shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+                  {field.label}：{field.value}
+                </span>
               ))}
             </div>
           )}
@@ -243,29 +246,17 @@ function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
           </button>
           {expanded && (
             <div data-inline-artifact-expanded className="mt-3 space-y-3 border-t border-[#d7ebe5] pt-3">
-              {item.previewFields.length > 0 && (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {item.previewFields.slice(0, 4).map((field) => (
-                    <div key={field.label} className="min-w-0 rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
-                      <div className="text-xs text-muted-foreground">{field.label}</div>
-                      <div className="mt-0.5 text-xs leading-5 text-foreground">{field.value}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {contentEntries.length > 0 && (
+              {readableLines.length > 0 && (
                 <div className="space-y-2">
-                  {contentEntries.map(([title, value]) => (
-                    <div key={title} className="rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
-                      <div className="text-xs text-muted-foreground">{title}</div>
-                      <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-foreground">
-                        {Array.isArray(value) ? value.join("\n") : value}
+                  {readableLines.map((line, index) => (
+                    <div key={`${item.key}-${index}`} className="rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+                      <p className="whitespace-pre-wrap text-xs leading-5 text-foreground">
+                        {line}
                       </p>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="text-xs leading-5 text-muted-foreground">上游来源：{item.sourceTitles.join("、") || "当前项目配置"}</div>
             </div>
           )}
         </div>

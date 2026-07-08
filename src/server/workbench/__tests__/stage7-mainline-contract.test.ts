@@ -109,7 +109,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({
-          expectedLatestVersion: 2,
+          expectedLatestVersion: 1,
           title: "需求规格 v2",
           summary: "百分数公开课需求 v2",
           markdownContent: "# 需求规格 v2",
@@ -142,7 +142,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(artifactResponse.status).toBe(201);
     expect(approveResponse.status).toBe(200);
     await expect(approvedInputsResponse.json()).resolves.toMatchObject({ artifacts: [{ id: artifactId, isApproved: true }] });
-    await expect(artifactDetailResponse.json()).resolves.toMatchObject({ artifact: { id: artifactId, version: 2 } });
+    await expect(artifactDetailResponse.json()).resolves.toMatchObject({ artifact: { id: artifactId, version: 1 } });
     expect(regenerateResponse.status).toBe(201);
     expect(runStartResponse.status).toBe(201);
     expect(runFinishResponse.status).toBe(200);
@@ -150,7 +150,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       project: { id: projectId, title: "Stage 7 合同项目" },
       messages: [
         { role: "teacher", content: "我要做百分数公开课" },
-        { role: "assistant", content: expect.stringContaining("需求规格说明书已生成") },
+        { role: "assistant", content: expect.stringContaining("备课任务确认") },
       ],
       agentRuns: [{ id: runStartBody.run.id, status: "succeeded" }],
     });
@@ -167,7 +167,6 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(snapshot.artifacts.map((artifact: { nodeKey: string; version: number }) => [artifact.nodeKey, artifact.version])).toEqual([
       ["requirement_spec", 1],
       ["requirement_spec", 2],
-      ["requirement_spec", 3],
       ["textbook_evidence", 1],
     ]);
   });

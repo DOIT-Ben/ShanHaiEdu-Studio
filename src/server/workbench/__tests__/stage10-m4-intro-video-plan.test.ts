@@ -20,6 +20,13 @@ describe("Local Real MVP M4 intro video plan loop", () => {
       }),
       { params: Promise.resolve({ projectId }) },
     );
+    await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
 
     let snapshot = await readSnapshot(projectId);
     await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "requirement_spec").id);

@@ -120,7 +120,7 @@ function teacherVisibleMessageBody(message: BackendMessageRecord) {
 
 function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, string | string[]> {
   const content: Record<string, string | string[]> = {};
-  if (artifact.markdownContent) content.Markdown = artifact.markdownContent;
+  if (artifact.markdownContent) content["正文"] = artifact.markdownContent;
   for (const [key, value] of Object.entries(artifact.structuredContent ?? {})) {
     if (!isVisibleStructuredLabel(key)) continue;
     if (Array.isArray(value)) {
@@ -138,7 +138,7 @@ function previewFieldsFromContent(artifact: BackendArtifactRecord): { label: str
     .filter(([label]) => isVisibleStructuredLabel(label))
     .slice(0, 3)
     .map(([label, value]) => ({ label, value: Array.isArray(value) ? value.map(String).join("、") : String(value) }));
-  return fields.length ? fields : [{ label: "状态", value: artifact.summary || "已生成内容" }];
+  return fields.length ? fields : [{ label: "内容", value: artifact.summary || "已生成内容" }];
 }
 
 function isVisibleStructuredLabel(label: string) {
@@ -171,9 +171,9 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
       updatedAt: formatDateLabel(node.updatedAt),
       reusable: false,
       sourceTitles: node.upstreamNodeKeys.map((key) => nodeTitleByKey[key] ?? key),
-      previewFields: [{ label: "状态", value: "还没有生成内容" }],
+      previewFields: [{ label: "内容", value: "还没有生成内容" }],
       actions: { canCopy: false, canUseAsInput: false, canOpenDetail: true, canConfirm: false, canRegenerate: false },
-      content: { 说明: "还没有生成内容。" },
+      content: { 正文: "还没有生成内容。" },
       realAssetDownloads: [],
     };
   }

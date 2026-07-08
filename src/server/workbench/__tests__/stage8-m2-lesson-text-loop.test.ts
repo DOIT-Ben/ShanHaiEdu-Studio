@@ -20,6 +20,13 @@ describe("Local Real MVP M2 lesson text loop", () => {
       }),
       { params: Promise.resolve({ projectId }) },
     );
+    await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
 
     const requirementSnapshotResponse = await getSnapshotRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId }),

@@ -63,7 +63,7 @@ export function ResizableHandle({ width, min = 300, max = 460, onChange, onResiz
   return (
     <button
       type="button"
-      aria-label="调整产物预览宽度"
+      aria-label="调整成果阅读宽度"
       onPointerDown={startResize}
       onMouseDown={startResize}
       style={{ zIndex: 1000 }}

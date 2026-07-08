@@ -59,8 +59,10 @@ export async function POST(request: Request, context: RouteContext) {
           content: recentMessage.content,
         })),
       });
+      const pendingTeacherRequest = findPendingTeacherRequest(recentMessages, teacherContent);
+      const shouldStartRequirement = conversationDecision.shouldGenerateRequirement || Boolean(isTeacherConfirmation(teacherContent) && pendingTeacherRequest);
 
-      if (!conversationDecision.shouldGenerateRequirement) {
+      if (!shouldStartRequirement) {
         const assistantMessage = await service.addMessage(projectId, {
           role: "assistant",
           content: formatAssistantContent(conversationDecision.assistantMessage),
@@ -68,17 +70,26 @@ export async function POST(request: Request, context: RouteContext) {
         return NextResponse.json({ message, assistantMessage }, { status: 201 });
       }
 
+      if (!isTeacherConfirmation(teacherContent)) {
+        const assistantMessage = await service.addMessage(projectId, {
+          role: "assistant",
+          content: formatRequirementConfirmation(conversationDecision, project),
+        });
+        return NextResponse.json({ message, assistantMessage }, { status: 201 });
+      }
+
+      const generationUserMessage = pendingTeacherRequest ?? teacherContent;
       const result = await runtime.run({
         projectId,
         runId: randomUUID(),
         task: "requirement_spec",
-        userMessage: content,
+        userMessage: reference ? `${generationUserMessage}\n\n引用：${reference}` : generationUserMessage,
         projectContext: {
           grade: conversationDecision.normalizedBrief?.grade ?? project.grade ?? "五年级",
           subject: conversationDecision.normalizedBrief?.subject ?? project.subject ?? "数学",
           topic: conversationDecision.normalizedBrief?.topic ?? project.lessonTopic ?? "待确认课题",
           textbookVersion: project.textbookVersion ?? undefined,
-          teacherGoal: conversationDecision.normalizedBrief?.teacherGoal ?? teacherContent,
+          teacherGoal: conversationDecision.normalizedBrief?.teacherGoal ?? generationUserMessage,
           requestedOutputs: conversationDecision.normalizedBrief?.requestedOutputs ?? ["需求规格", "教案", "PPT 大纲", "导入视频方案"],
         },
         approvedArtifacts: [],
@@ -120,4 +131,53 @@ export async function POST(request: Request, context: RouteContext) {
 
 function formatAssistantContent(message: { title?: string; body: string }) {
   return message.title ? `${message.title}\n\n${message.body}` : message.body;
+}
+
+function isTeacherConfirmation(content: string) {
+  const text = content.trim();
+  return /确认开始|开始生成|直接生成|按默认生成|确认生成|可以生成|开始吧|没问题/.test(text);
+}
+
+function findPendingTeacherRequest(messages: { role: "teacher" | "assistant" | "system"; content: string }[], currentContent: string) {
+  const candidates = messages
+    .filter((message) => message.role === "teacher")
+    .map((message) => message.content.trim())
+    .filter((content) => content && content !== currentContent && !isTeacherConfirmation(content));
+  return candidates.at(-1) ?? null;
+}
+
+function formatRequirementConfirmation(
+  decision: {
+    normalizedBrief?: {
+      grade?: string;
+      subject?: string;
+      topic?: string;
+      requestedOutputs?: string[];
+      teacherGoal?: string;
+    };
+  },
+  project: {
+    grade?: string | null;
+    subject?: string | null;
+    lessonTopic?: string | null;
+    textbookVersion?: string | null;
+  },
+) {
+  const brief = decision.normalizedBrief ?? {};
+  const grade = brief.grade ?? project.grade ?? "待补充";
+  const subject = brief.subject ?? project.subject ?? "待补充";
+  const topic = brief.topic ?? project.lessonTopic ?? "待补充";
+  const textbook = project.textbookVersion ?? "可稍后补充";
+  const outputs = brief.requestedOutputs?.length ? brief.requestedOutputs : ["需求规格", "教案", "PPT 大纲", "导入视频方案"];
+  return [
+    "备课任务确认",
+    "",
+    `我理解你要做的是：${grade}${subject}《${topic}》公开课备课。`,
+    "",
+    `已确认：年级 ${grade}；学科 ${subject}；课题 ${topic}。`,
+    `还缺的信息：教材版本 ${textbook}；课时长度和课堂风格可以稍后补充。`,
+    `推荐先生成：${outputs.join("、")}。`,
+    "",
+    "如果方向对，请回复“确认开始”；如果要调整，请直接补充年级、课题、教材版本或交付物。",
+  ].join("\n");
 }
