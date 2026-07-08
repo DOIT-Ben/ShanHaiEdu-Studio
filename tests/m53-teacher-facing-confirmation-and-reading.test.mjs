@@ -10,18 +10,22 @@ function readSource(relativePath) {
 }
 
 test("message route asks for teacher confirmation before generating requirement artifacts", () => {
-  const source = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
+  const routeSource = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
+  const serviceSource = readSource("src/server/conversation/conversation-turn-service.ts");
 
-  assert.match(source, /isTeacherConfirmation/);
-  assert.match(source, /formatRequirementConfirmation/);
-  assert.match(source, /备课任务确认/);
-  assert.match(source, /if \(!isTeacherConfirmation\(teacherContent\)\)/);
-  assert.match(source, /runtime\.run/);
-  assert.match(source, /saveArtifact/);
+  assert.match(routeSource, /createConversationTurnService/);
+  assert.doesNotMatch(routeSource, /formatRequirementConfirmation/);
+  assert.doesNotMatch(routeSource, /runtime\.run/);
+  assert.doesNotMatch(routeSource, /saveArtifact/);
 
-  const confirmationBranch = source.slice(source.indexOf("if (!isTeacherConfirmation(teacherContent))"));
-  assert.match(confirmationBranch, /return NextResponse\.json\(\{ message, assistantMessage \}/);
-  assert.doesNotMatch(confirmationBranch.split(/const result = await runtime\.run/)[0], /saveArtifact/);
+  assert.match(serviceSource, /isTeacherConfirmation/);
+  assert.match(serviceSource, /runConfirmedFirstArtifact/);
+  assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
+  assert.match(serviceSource, /saveArtifact/);
+
+  const nonConfirmationBranch = serviceSource.slice(serviceSource.indexOf("const agentTurn = await agent.respond"));
+  assert.match(nonConfirmationBranch, /return \{ message, assistantMessage, agentTurn \}/);
+  assert.doesNotMatch(nonConfirmationBranch.split(/return \{ message, assistantMessage, agentTurn \}/)[0], /saveArtifact/);
 });
 
 test("conversation inline artifact is a teacher-facing result card without backend labels", () => {
@@ -72,4 +76,23 @@ test("workbench mappers do not expose Markdown or status as visible artifact lab
   assert.doesNotMatch(source, /content\.Markdown|content\["Markdown"\]/);
   assert.doesNotMatch(source, /label: "状态"/);
   assert.doesNotMatch(source, /content: \{ 说明: "还没有生成内容。"\ }/);
+  assert.match(source, /capability.*id/);
+  assert.match(source, /runtime.*kind/);
+  assert.match(source, /provider.*status/);
+});
+
+test("chat transcript wraps long continuous teacher-facing text on narrow screens", () => {
+  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+
+  assert.match(source, /break-words whitespace-pre-wrap rounded-2xl bg/);
+  assert.match(source, /space-y-3 break-words whitespace-pre-wrap/);
+  assert.match(source, /break-words whitespace-pre-wrap text-xs/);
+});
+
+test("composer auto resize uses measured text height before hiding overflow", () => {
+  const source = readSource("src/components/conversation/composer/useAutoResizeTextarea.ts");
+
+  assert.match(source, /element\.scrollHeight/);
+  assert.match(source, /Math\.min\(maxHeight, measuredHeight\)/);
+  assert.match(source, /measuredHeight > maxHeight \? "auto" : "hidden"/);
 });

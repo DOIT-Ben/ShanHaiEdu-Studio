@@ -22,12 +22,15 @@ test("ConversationWorkbench scrolls to the newest chat state", () => {
 
 test("ChatTranscript renders AI identity and thinking feedback", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
+  const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
+  const contractsSource = readSource("src/components/conversation/composer/composer-contracts.ts");
 
   assert.match(source, /function ShanHaiMark/);
   assert.match(source, /data-assistant-logo/);
-  assert.match(source, /data-ai-thinking/);
-  assert.match(source, /正在整理回复/);
-  assert.match(source, /typing-dot/);
+  assert.match(generatingSource, /data-ai-thinking/);
+  assert.match(generatingSource, /getGeneratingLabel/);
+  assert.match(contractsSource, /正在生成回复/);
+  assert.match(generatingSource, /typing-dot/);
 });
 
 test("Global styles define the AI thinking animation", () => {

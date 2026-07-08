@@ -5,6 +5,8 @@ import { Check, ChevronDown, ChevronUp, Copy, FileText } from "lucide-react";
 import type { ArtifactItem, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GeneratingIndicator } from "@/components/conversation/messages/GeneratingIndicator";
+import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
@@ -54,7 +56,7 @@ function TeacherMessage({
         <span className="px-1 text-xs text-muted-foreground">你</span>
         <div
           data-chat-bubble="user"
-          className="whitespace-pre-wrap rounded-2xl bg-[#f1f1f1] px-4 py-3 text-sm leading-7 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.025)] sm:px-5"
+          className="break-words whitespace-pre-wrap rounded-2xl bg-[#f1f1f1] px-4 py-3 text-sm leading-7 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.025)] sm:px-5"
         >
           {message.body}
         </div>
@@ -92,7 +94,7 @@ function AssistantMessage({
           <div
             data-chat-bubble="assistant"
             className={cn(
-              "space-y-3 whitespace-pre-wrap rounded-2xl border border-[#d7ebe5] bg-card px-4 py-3 text-sm leading-7 text-foreground shadow-[0_12px_30px_rgba(29,74,66,0.055)] sm:px-5",
+              "space-y-3 break-words whitespace-pre-wrap rounded-2xl border border-[#d7ebe5] bg-card px-4 py-3 text-sm leading-7 text-foreground shadow-[0_12px_30px_rgba(29,74,66,0.055)] sm:px-5",
               message.tone === "focus" && "border-[#b9ddd2] shadow-[0_16px_34px_rgba(29,74,66,0.075)]",
             )}
           >
@@ -144,24 +146,14 @@ type QuickReplyChoice = {
 
 function getQuickReplyChoices(message: ChatMessage, artifact: ArtifactItem | null): QuickReplyChoice[] {
   if (artifact) return [];
-  const text = `${message.title ?? ""}\n${message.body}`;
-  if (/开始整理|已完成|已生成|可确认|已进入|说明书/.test(text)) return [];
-
-  return [
-    {
-      label: "三年级数学公开课",
-      value: "我想做三年级数学公开课，需要教案、PPT大纲和导入视频方案。",
-      recommended: true,
-    },
-    {
-      label: "先整理备课需求",
-      value: "先帮我整理备课需求，我会补充年级、课题和教材版本。",
-    },
-    {
-      label: "先聊课程创意",
-      value: "我想先聊聊这节课的导入创意和课堂活动。",
-    },
-  ];
+  if (message.quickReplies?.length) {
+    return message.quickReplies.map((reply) => ({
+      label: reply.label,
+      value: reply.prompt,
+      recommended: reply.recommended,
+    }));
+  }
+  return [];
 }
 
 function QuickReplyChoices({
@@ -171,26 +163,7 @@ function QuickReplyChoices({
   choices: QuickReplyChoice[];
   onSelect?: (value: string) => void;
 }) {
-  return (
-    <div className="mt-3 flex flex-wrap gap-2" aria-label="可选回复">
-      {choices.map((choice) => (
-        <button
-          key={choice.value}
-          type="button"
-          data-quick-reply-choice
-          data-recommended-choice={choice.recommended ? "true" : undefined}
-          onClick={() => onSelect?.(choice.value)}
-          className={cn(
-            "inline-flex min-h-8 items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-xs leading-5 text-foreground transition hover:border-[#b9ddd2] hover:bg-[#f7fbfa] focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35",
-            choice.recommended && "border-[#b9ddd2] bg-[#f7fbfa] text-[#32685d]",
-          )}
-        >
-          {choice.recommended && <span className="text-[11px] font-medium text-[#32685d]">推荐</span>}
-          <span>{choice.label}</span>
-        </button>
-      ))}
-    </div>
-  );
+  return <QuickReplySuggestions choices={choices.map((choice) => ({ label: choice.label, prompt: choice.value, recommended: choice.recommended }))} onSelect={onSelect} />;
 }
 
 function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
@@ -220,7 +193,7 @@ function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
             <div className="mt-2 flex flex-wrap gap-1.5">
               {item.previewFields.slice(0, 3).map((field) => (
                 <span key={field.label} className="rounded-md bg-white px-2.5 py-1 text-xs text-muted-foreground shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
-                  {field.label}：{field.value}
+                  <span className="break-words">{field.label}：{field.value}</span>
                 </span>
               ))}
             </div>
@@ -250,7 +223,7 @@ function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
                 <div className="space-y-2">
                   {readableLines.map((line, index) => (
                     <div key={`${item.key}-${index}`} className="rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
-                      <p className="whitespace-pre-wrap text-xs leading-5 text-foreground">
+                      <p className="break-words whitespace-pre-wrap text-xs leading-5 text-foreground">
                         {line}
                       </p>
                     </div>
@@ -266,26 +239,7 @@ function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
 }
 
 function AssistantThinking() {
-  return (
-    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="AI 正在回复">
-      <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[620px]">
-        <ShanHaiMark active />
-        <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">ShanHaiEdu AI</span>
-          </div>
-          <div className="inline-flex items-center gap-3 rounded-2xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm text-muted-foreground shadow-[0_12px_30px_rgba(29,74,66,0.05)]">
-            <span>正在整理回复</span>
-            <span className="flex items-center gap-1.5" aria-hidden="true">
-              <span className="typing-dot" />
-              <span className="typing-dot [animation-delay:140ms]" />
-              <span className="typing-dot [animation-delay:280ms]" />
-            </span>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
+  return <GeneratingIndicator mark={<ShanHaiMark active />} />;
 }
 
 function ShanHaiMark({ active = false }: { active?: boolean }) {

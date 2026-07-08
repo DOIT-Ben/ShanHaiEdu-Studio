@@ -19,12 +19,15 @@ test("ChatTranscript does not show inline artifacts for ungenerated workflow nod
 
 test("ChatTranscript renders recommended quick reply choices for semi-auto clarification", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
+  const quickReplySource = readSource("src/components/conversation/messages/QuickReplySuggestions.tsx");
 
   assert.match(source, /onQuickReplySelect\?: \(value: string\) => void/);
-  assert.match(source, /data-quick-reply-choice/);
-  assert.match(source, /data-recommended-choice/);
-  assert.match(source, /推荐/);
+  assert.match(quickReplySource, /data-quick-reply-choice/);
+  assert.match(quickReplySource, /data-recommended-choice/);
+  assert.match(quickReplySource, /推荐/);
   assert.match(source, /getQuickReplyChoices/);
+  assert.doesNotMatch(source, /我想做三年级数学公开课/);
+  assert.doesNotMatch(source, /先帮我整理备课需求/);
 });
 
 test("ConversationWorkbench routes quick reply choices into the composer without sending", () => {

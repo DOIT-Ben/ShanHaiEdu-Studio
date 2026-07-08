@@ -4,6 +4,7 @@ import { useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { CornerDownLeft, Paperclip, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useAutoResizeTextarea } from "@/components/conversation/composer/useAutoResizeTextarea";
 
 type PromptComposerProps = {
   value: string;
@@ -32,6 +33,8 @@ export function PromptComposer({
   onSend,
 }: PromptComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  useAutoResizeTextarea(textareaRef, value, { minRows: 2, maxRows: 8 });
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -91,6 +94,7 @@ export function PromptComposer({
             aria-label="选择文本资料"
           />
           <Textarea
+            ref={textareaRef}
             id="lesson-workbench-prompt"
             name="lesson-workbench-prompt"
             value={value}
