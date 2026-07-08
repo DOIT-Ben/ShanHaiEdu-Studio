@@ -75,6 +75,16 @@ test("desktop main process prepares logs, crash dumps, and asar unpacked server 
   assert.match(main, /\.asar\.unpacked/);
 });
 
+test("desktop main process waits for the local server before showing the window", () => {
+  const main = readFileSync(path.join(root, "desktop", "electron-main.mjs"), "utf8");
+
+  assert.match(main, /waitForDesktopServer/);
+  assert.match(main, /mainWindow\.webContents\.once\(["']did-fail-load["']/);
+  assert.match(main, /loadDesktopUrl/);
+  assert.match(main, /loadFile/);
+  assert.match(main, /127\.0\.0\.1/);
+});
+
 function readPackage() {
   return JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 }

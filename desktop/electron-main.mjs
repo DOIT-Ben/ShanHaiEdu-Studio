@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Menu, shell } from "electron";
 
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(desktopDir, "..");
@@ -16,8 +17,10 @@ async function createMainWindow() {
   const port = resolveConfiguredDesktopPort() ?? (await findOpenPort());
   const appPaths = ensureDesktopDataPaths();
   serverProcess = startNextStandaloneServer({ port, appPaths });
+  const desktopUrl = `http://127.0.0.1:${port}`;
 
   mainWindow = new BrowserWindow({
+    title: "ShanHaiEdu Studio",
     width: 1440,
     height: 900,
     minWidth: 1100,
@@ -31,17 +34,72 @@ async function createMainWindow() {
       sandbox: true,
     },
   });
+  Menu.setApplicationMenu(null);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+  mainWindow.webContents.once("did-fail-load", () => {
+    void loadDesktopUrl(desktopUrl);
   });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  await loadDesktopUrl(desktopUrl);
+}
+
+async function loadDesktopUrl(url) {
+  try {
+    await waitForDesktopServer(url);
+    await mainWindow?.loadURL(url);
+  } catch {
+    await loadStartupErrorPage();
+  } finally {
+    mainWindow?.show();
+  }
+}
+
+async function loadStartupErrorPage() {
+  const errorPage = path.join(desktopDir, "startup-error.html");
+  if (existsSync(errorPage)) {
+    await mainWindow?.loadFile(errorPage);
+    return;
+  }
+  await mainWindow?.loadURL(
+    "data:text/html;charset=utf-8," +
+      encodeURIComponent("<!doctype html><meta charset='utf-8'><body style='font-family:sans-serif;padding:32px'>应用正在启动，请关闭后重试。</body>"),
+  );
+}
+
+function waitForDesktopServer(url, timeoutMs = 30_000) {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const request = http.get(url, { timeout: 2_000 }, (response) => {
+        response.resume();
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 500) {
+          resolve(true);
+          return;
+        }
+        retryOrReject();
+      });
+      request.on("timeout", () => request.destroy());
+      request.on("error", retryOrReject);
+    };
+
+    const retryOrReject = () => {
+      if (Date.now() - startedAt > timeoutMs) {
+        reject(new Error("Desktop local server did not become ready."));
+        return;
+      }
+      setTimeout(attempt, 300);
+    };
+
+    attempt();
+  });
 }
 
 function configureDesktopUserDataPath() {
