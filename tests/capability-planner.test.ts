@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planCapabilityForRequest } from "@/server/capabilities/capability-planner";
+import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 
 describe("M54-B CapabilityPlanner", () => {
   it("does not create a tool plan for casual chat", () => {
@@ -57,5 +57,41 @@ describe("M54-B CapabilityPlanner", () => {
       requiresConfirmation: false,
     });
     expect(plan?.missingInputs).toEqual(["grade", "subject", "topic"]);
+  });
+
+  it("builds a full delivery plan for one-sentence material package requests", () => {
+    const plan = planDeliveryForRequest({
+      userMessage: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: [],
+    });
+
+    expect(plan).toMatchObject({
+      title: "公开课完整交付计划",
+      currentStepId: "requirement_spec",
+    });
+    expect(plan?.steps.map((step) => step.capabilityId)).toEqual([
+      "requirement_spec",
+      "lesson_plan",
+      "ppt_outline",
+      "coze_ppt",
+      "image_asset",
+      "intro_video",
+      "final_package",
+    ]);
+    expect(plan?.steps.map((step) => step.status)).toEqual([
+      "awaiting_confirmation",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+  });
+
+  it("does not build a delivery plan for vague requests with missing inputs", () => {
+    const plan = planDeliveryForRequest({ userMessage: "帮我做一个完整材料包", availableArtifactKinds: [] });
+
+    expect(plan).toBeNull();
   });
 });

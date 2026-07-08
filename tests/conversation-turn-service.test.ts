@@ -128,6 +128,87 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     });
     expect(confirmBody.agentTurn.artifactRefs).toEqual([confirmBody.artifact.id]);
   });
+
+  it("returns a delivery plan for complete material package requests before confirmation", async () => {
+    const projectId = await createProject({
+      title: "M55-A 完整材料包项目",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    const response = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.agentTurn).toMatchObject({
+      state: "awaiting_confirmation",
+      shouldRunToolNow: false,
+      deliveryPlan: {
+        title: "公开课完整交付计划",
+        currentStepId: "requirement_spec",
+      },
+    });
+    expect(body.agentTurn.deliveryPlan.steps.map((step: { capabilityId: string }) => step.capabilityId)).toEqual([
+      "requirement_spec",
+      "lesson_plan",
+      "ppt_outline",
+      "coze_ppt",
+      "image_asset",
+      "intro_video",
+      "final_package",
+    ]);
+    expect(body.artifact).toBeUndefined();
+    expect(JSON.stringify(body.agentTurn.deliveryPlan)).not.toMatch(/schema|provider|node_id|storage|debug|local path/i);
+  });
+
+  it("keeps the delivery plan pending after confirming the first step", async () => {
+    const projectId = await createProject({
+      title: "M55-A 确认项目",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const confirmResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "确认开始，按这个计划推进。" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const confirmBody = await confirmResponse.json();
+
+    expect(confirmBody.agentTurn).toMatchObject({
+      state: "succeeded",
+      deliveryPlan: {
+        currentStepId: "requirement_spec",
+      },
+    });
+    expect(confirmBody.agentTurn.deliveryPlan.steps.map((step: { status: string }) => step.status)).toEqual([
+      "succeeded",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+    expect(confirmBody.artifact).toMatchObject({ nodeKey: "requirement_spec" });
+  });
 });
 
 async function createProject(input: Record<string, unknown> = {}) {

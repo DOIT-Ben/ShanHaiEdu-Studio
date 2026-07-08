@@ -1,12 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
 
 function readSource(relativePath) {
   return readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function readOptionalSource(relativePath) {
+  const absolutePath = path.join(root, relativePath);
+  return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : "";
 }
 
 test("message route asks for teacher confirmation before generating requirement artifacts", () => {
@@ -87,6 +92,26 @@ test("chat transcript wraps long continuous teacher-facing text on narrow screen
   assert.match(source, /break-words whitespace-pre-wrap rounded-2xl bg/);
   assert.match(source, /space-y-3 break-words whitespace-pre-wrap/);
   assert.match(source, /break-words whitespace-pre-wrap text-xs/);
+});
+
+test("assistant feedback actions clearly stay local until feedback collection is opened", () => {
+  const source = readOptionalSource("src/components/conversation/messages/MessageActions.tsx");
+
+  assert.match(source, /已在本页记下/);
+  assert.match(source, /暂未开放/);
+  assert.doesNotMatch(source, /上传成功|提交成功|已同步|已发送/);
+
+  for (const forbidden of ["backend", "API", "debug", "provider", "schema", "manifest", "node_id", "storage"]) {
+    assert.doesNotMatch(source, new RegExp(forbidden, "i"));
+  }
+});
+
+test("generating indicator keeps waiting text understandable for teachers", () => {
+  const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
+
+  assert.match(generatingSource, /aria-label="正在准备回复"/);
+  assert.match(generatingSource, /getGeneratingLabel/);
+  assert.doesNotMatch(generatingSource, /debug|provider|schema|manifest|node_id|storage/i);
 });
 
 test("composer auto resize uses measured text height before hiding overflow", () => {

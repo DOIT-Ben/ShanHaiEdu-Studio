@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Copy, FileText } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 import type { ArtifactItem, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { GeneratingIndicator } from "@/components/conversation/messages/GeneratingIndicator";
+import { MessageActions } from "@/components/conversation/messages/MessageActions";
 import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
 
 type ChatTranscriptProps = {
@@ -105,7 +105,7 @@ function AssistantMessage({
           {!artifact && quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
           )}
-          <AssistantMessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
+          <MessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
         </div>
       </div>
     </article>
@@ -253,28 +253,6 @@ function ShanHaiMark({ active = false }: { active?: boolean }) {
       aria-hidden="true"
     >
       <img src="/brand/shanhai-ai-logo-256.png" alt="" className="h-full w-full rounded-xl object-cover" />
-    </div>
-  );
-}
-
-function AssistantMessageActions({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyText() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  return (
-    <div className="mt-3 flex h-7 items-center gap-1 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100">
-      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={copyText} aria-label="复制回复">
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      </Button>
     </div>
   );
 }

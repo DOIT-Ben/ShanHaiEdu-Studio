@@ -1,5 +1,5 @@
 import { getCapabilityDefinition } from "./capability-registry";
-import type { CapabilityId, CapabilityToolPlan } from "./types";
+import type { CapabilityId, CapabilityToolPlan, DeliveryPlan } from "./types";
 
 export type CapabilityPlannerInput = {
   userMessage: string;
@@ -41,6 +41,43 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
   }
 
   return null;
+}
+
+export function planDeliveryForRequest(input: CapabilityPlannerInput): DeliveryPlan | null {
+  const text = input.userMessage.trim();
+  if (isCasualChat(text) || isExplorationOnly(text) || !wantsFullDelivery(text)) return null;
+
+  const firstStep = planCapabilityForRequest(input);
+  if (!firstStep || firstStep.missingInputs.length > 0) return null;
+
+  const stepIds: CapabilityId[] = [
+    "requirement_spec",
+    "lesson_plan",
+    "ppt_outline",
+    "coze_ppt",
+    "image_asset",
+    "intro_video",
+    "final_package",
+  ];
+
+  return {
+    id: `delivery:${stablePlanSegment(text)}`,
+    title: "公开课完整交付计划",
+    summary: "我会先整理需求，再按顺序生成教案、PPT、课堂素材和最终交付包。",
+    currentStepId: firstStep.capabilityId,
+    steps: stepIds.map((capabilityId) => {
+      const capability = getCapabilityDefinition(capabilityId);
+      return {
+        id: capabilityId,
+        capabilityId,
+        artifactKind: capability.artifactKind,
+        title: capability.userLabel,
+        teacherDescription: capability.description,
+        status: capabilityId === firstStep.capabilityId ? "awaiting_confirmation" : "pending",
+        requiresConfirmation: capability.requiresConfirmation,
+      };
+    }),
+  };
 }
 
 function buildPlan(
@@ -88,6 +125,12 @@ function wantsLessonPlan(text: string): boolean {
 
 function wantsRequirementSpec(text: string): boolean {
   return /备课|公开课|需求|整理/.test(text);
+}
+
+function wantsFullDelivery(text: string): boolean {
+  const wantsPackage = /完整|材料包|交付包|全套|一套/.test(text);
+  const wantsMultipleAssets = /(教案|教学设计)/.test(text) && /ppt|PPT|课件|幻灯片/.test(text) && /(图片|素材|视频|导入)/.test(text);
+  return wantsPackage || wantsMultipleAssets;
 }
 
 function missingLessonInputs(text: string, projectContext: CapabilityPlannerInput["projectContext"]): string[] {

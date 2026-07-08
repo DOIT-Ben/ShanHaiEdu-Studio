@@ -1,4 +1,4 @@
-import { planCapabilityForRequest } from "@/server/capabilities/capability-planner";
+import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 import type { MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
 
 export type MainConversationAgentInput = {
@@ -54,6 +54,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       }
 
       const toolPlan = planCapabilityForRequest(input);
+      const deliveryPlan = planDeliveryForRequest(input) ?? undefined;
       if (!toolPlan) {
         return {
           assistantMessage: {
@@ -84,21 +85,36 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       return {
         assistantMessage: {
           title: "我理解你的任务",
-          body: "你想做一套公开课相关材料。我建议先把需求规格整理清楚，再继续生成 PPT 大纲和可下载文件。",
+          body: deliveryPlan
+            ? "你想做一套完整公开课材料。我会先整理需求，再按计划推进教案、PPT、图片、导入视频和最终交付包。"
+            : "你想做一套公开课相关材料。我建议先把需求规格整理清楚，再继续生成 PPT 大纲和可下载文件。",
         },
         state: "awaiting_confirmation",
-        quickReplies: [
-          { label: "确认开始", prompt: "确认开始，先整理需求规格。", recommended: true },
-          { label: "补充要求", prompt: "我想补充教学风格和课堂时长。" },
-          { label: "先聊创意", prompt: "先不要生成，继续聊几个课堂创意。" },
-        ],
+        quickReplies: deliveryPlan ? deliveryPlanConfirmationReplies() : singleStepConfirmationReplies(),
         recommendedOptions: [],
         toolPlan,
+        deliveryPlan,
         shouldRunToolNow: false,
         runtimeKind: "deterministic",
       };
     },
   };
+}
+
+function singleStepConfirmationReplies(): QuickReply[] {
+  return [
+    { label: "确认开始", prompt: "确认开始，先整理需求规格。", recommended: true },
+    { label: "补充要求", prompt: "我想补充教学风格和课堂时长。" },
+    { label: "先聊创意", prompt: "先不要生成，继续聊几个课堂创意。" },
+  ];
+}
+
+function deliveryPlanConfirmationReplies(): QuickReply[] {
+  return [
+    { label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true },
+    { label: "补充要求", prompt: "我想补充教学风格和课堂时长。" },
+    { label: "先只做文本", prompt: "先只生成需求、教案和 PPT 大纲。" },
+  ];
 }
 
 function isCasualChat(text: string): boolean {

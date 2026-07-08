@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applyQuickReplyToDraft,
+  buildComposerAttachmentCard,
   getGeneratingLabel,
+  getComposerAttachmentKind,
   getTextareaHeightPlan,
   normalizeAttachmentStatus,
   normalizeQuickReplies,
@@ -31,10 +33,33 @@ describe("M54-A frontend workbench contracts", () => {
     expect(applyQuickReplyToDraft("确认开始")).toEqual({ draft: "确认开始", shouldSend: false });
   });
 
-  it("does not present unparsed attachments as understood", () => {
+  it("does not present local attachments as parsed before real parsing", () => {
     expect(normalizeAttachmentStatus("pending_parse").teacherLabel).toContain("待解析");
     expect(normalizeAttachmentStatus("parse_failed").teacherLabel).toContain("解析失败");
-    expect(normalizeAttachmentStatus("parsed").teacherLabel).toContain("已解析");
+    expect(normalizeAttachmentStatus("readable")).toMatchObject({
+      teacherLabel: "已读取，可作为材料参考",
+      understood: true,
+    });
+    expect(normalizeAttachmentStatus("parsed").teacherLabel).not.toContain("已解析");
+  });
+
+  it("builds teacher-facing attachment cards with file name, type, status, and no engineering words", () => {
+    expect(getComposerAttachmentKind({ name: "lesson-plan.md", type: "text/markdown" })).toBe("markdown");
+    expect(getComposerAttachmentKind({ name: "scan.pdf", type: "application/pdf" })).toBe("unsupported");
+
+    const card = buildComposerAttachmentCard({
+      fileName: "lesson-plan.md",
+      mimeType: "text/markdown",
+      status: "readable",
+    });
+
+    expect(card).toMatchObject({
+      fileName: "lesson-plan.md",
+      fileTypeLabel: "Markdown 文本",
+      teacherLabel: "已读取，可作为材料参考",
+      canUseAsReference: true,
+    });
+    expect(`${card.fileTypeLabel} ${card.teacherLabel}`).not.toMatch(/schema|manifest|provider|node_id|storage|API|debug|local path|已解析/i);
   });
 
   it("labels generating states without faking token streaming", () => {

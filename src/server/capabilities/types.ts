@@ -42,6 +42,26 @@ export type CapabilityToolPlan = {
   expectedArtifactKind: string;
 };
 
+export type DeliveryPlanStepStatus = "pending" | "awaiting_confirmation" | "running" | "succeeded" | "failed";
+
+export type DeliveryPlanStep = {
+  id: CapabilityId;
+  capabilityId: CapabilityId;
+  artifactKind: string;
+  title: string;
+  teacherDescription: string;
+  status: DeliveryPlanStepStatus;
+  requiresConfirmation: boolean;
+};
+
+export type DeliveryPlan = {
+  id: string;
+  title: string;
+  summary: string;
+  currentStepId: CapabilityId;
+  steps: DeliveryPlanStep[];
+};
+
 export type SaveArtifactDraft = {
   nodeKey: string;
   kind: string;
@@ -105,6 +125,7 @@ export type MainAgentTurn = {
   quickReplies: QuickReply[];
   recommendedOptions: RecommendedOption[];
   toolPlan?: CapabilityToolPlan;
+  deliveryPlan?: DeliveryPlan;
   shouldRunToolNow: boolean;
   runtimeKind: "openai" | "deterministic";
   artifactRefs?: string[];

@@ -18,12 +18,14 @@ test("ConversationWorkbench keeps the transcript free of timeline navigation", (
 
 test("ChatTranscript renders model-chat style message bubbles with preserved multiline text", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
+  const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(source, /data-message-role=\{message\.speaker\}/);
   assert.match(source, /data-chat-bubble="assistant"/);
   assert.match(source, /data-chat-bubble="user"/);
   assert.match(source, /whitespace-pre-wrap/);
-  assert.match(source, /aria-label="复制回复"/);
+  assert.match(source, /<MessageActions/);
+  assert.match(actionsSource, /aria-label="复制回复"/);
 });
 
 test("MediaWorkbench keeps the artifact drawer available for narrow screens", () => {

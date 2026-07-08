@@ -1,9 +1,15 @@
 "use client";
 
-import { useRef, type ChangeEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { CornerDownLeft, Paperclip, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { AttachmentStatusCard } from "@/components/conversation/composer/AttachmentStatusCard";
+import {
+  buildComposerAttachmentCard,
+  getComposerAttachmentKind,
+  type ComposerAttachmentCard,
+} from "@/components/conversation/composer/composer-contracts";
 import { useAutoResizeTextarea } from "@/components/conversation/composer/useAutoResizeTextarea";
 
 type PromptComposerProps = {
@@ -34,20 +40,38 @@ export function PromptComposer({
 }: PromptComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [attachment, setAttachment] = useState<ComposerAttachmentCard | null>(null);
   useAutoResizeTextarea(textareaRef, value, { minRows: 2, maxRows: 8 });
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
+    if (sending) return;
     onSend();
+  }
+
+  function clearAttachment() {
+    if (attachment?.canUseAsReference) onClearReference();
+    setAttachment(null);
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (attachment?.canUseAsReference) onClearReference();
+
+    const kind = getComposerAttachmentKind(file);
+    if (kind === "unsupported") {
+      setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "unsupported" }));
+      onAttachFileError("这类资料暂不能直接读取，请换成文本资料或直接粘贴关键内容。");
+      return;
+    }
+
+    setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "pending_parse" }));
 
     if (file.size > maxAttachmentBytes) {
+      setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "parse_failed" }));
       onAttachFileError("这份资料太大了，请先摘取关键段落或换成 512KB 以内的文本文件。");
       return;
     }
@@ -56,11 +80,14 @@ export function PromptComposer({
       const text = await file.text();
       const trimmed = text.trim();
       if (!trimmed) {
+        setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "parse_failed" }));
         onAttachFileError("这份资料没有读取到文本内容，请换一个文本文件或直接粘贴关键内容。");
         return;
       }
+      setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "readable" }));
       onAttachFile(file.name, trimmed.slice(0, maxAttachmentCharacters));
     } catch {
+      setAttachment(buildComposerAttachmentCard({ fileName: file.name, mimeType: file.type, status: "parse_failed" }));
       onAttachFileError("这份资料暂时没有读取成功，请换一个文本文件或直接粘贴关键内容。");
     }
   }
@@ -68,7 +95,8 @@ export function PromptComposer({
   return (
     <div className="bg-card px-4 pb-4 pt-3 sm:px-8">
       <div className="mx-auto w-full max-w-[980px]">
-        {reference && (
+        {attachment && <AttachmentStatusCard attachment={attachment} onRemove={clearAttachment} />}
+        {reference && !attachment?.canUseAsReference && (
           <div className="mb-2 inline-flex max-w-full items-start justify-between gap-3 rounded-lg bg-muted px-3 py-2">
             <div className="min-w-0 text-xs leading-5 text-foreground">
               <span className="font-medium text-muted-foreground">引用：</span>
@@ -88,10 +116,11 @@ export function PromptComposer({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md,.csv,.json,.text,text/*"
+            accept=".txt,.md,.markdown,.csv,.json,.text,.pdf,.doc,.docx,text/*,application/pdf"
             className="hidden"
             onChange={handleFileChange}
             aria-label="选择文本资料"
+            disabled={sending}
           />
           <Textarea
             ref={textareaRef}
@@ -100,6 +129,7 @@ export function PromptComposer({
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={sending}
             placeholder="继续描述备课目标，或引用右侧产物继续生成"
             className="min-h-20 border-0 bg-transparent px-2 py-1 text-sm leading-6 shadow-none focus:ring-0"
           />
@@ -110,8 +140,9 @@ export function PromptComposer({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                aria-label="粘贴资料"
+                aria-label="添加资料"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={sending}
               >
                 <Paperclip className="h-4 w-4" />
               </Button>

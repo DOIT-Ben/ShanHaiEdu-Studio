@@ -40,6 +40,27 @@ describe("M54-B MainConversationAgent", () => {
     expect(turn.quickReplies.map((reply) => reply.prompt)).toContain("确认开始，先整理需求规格。");
   });
 
+  it("creates a teacher-readable delivery plan for complete material package requests", async () => {
+    const turn = await agent.respond({
+      userMessage: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
+      availableArtifactKinds: [],
+    });
+
+    expect(turn.state).toBe("awaiting_confirmation");
+    expect(turn.toolPlan).toMatchObject({ capabilityId: "requirement_spec" });
+    expect(turn.deliveryPlan?.steps.map((step) => step.title)).toEqual([
+      "整理备课需求",
+      "生成公开课教案",
+      "生成 PPT 大纲",
+      "生成 PPTX 文件",
+      "生成课堂图片素材",
+      "生成导入视频素材",
+      "打包最终交付",
+    ]);
+    expect(turn.quickReplies.map((reply) => reply.prompt)).toContain("确认开始，按这个计划推进。");
+    expect(JSON.stringify(turn.deliveryPlan)).not.toMatch(/schema|provider|node_id|storage|debug|local path/i);
+  });
+
   it("asks for missing inputs before planning vague requests", async () => {
     const turn = await agent.respond({ userMessage: "帮我做一个课件", availableArtifactKinds: [] });
 

@@ -156,6 +156,7 @@ async function runConfirmedFirstArtifact(input: {
     ...plannedTurn,
     assistantMessage: { body: result.assistantSummary },
     state: "succeeded",
+    deliveryPlan: plannedTurn.deliveryPlan ? markDeliveryStepSucceeded(plannedTurn.deliveryPlan, plannedTurn.toolPlan.capabilityId) : undefined,
     shouldRunToolNow: true,
     artifactRefs: [artifact.id],
   };
@@ -170,6 +171,15 @@ async function runConfirmedFirstArtifact(input: {
     assistantMessage,
     agentTurn: succeededTurn,
     artifact,
+  };
+}
+
+function markDeliveryStepSucceeded(deliveryPlan: NonNullable<MainAgentTurn["deliveryPlan"]>, capabilityId: string) {
+  return {
+    ...deliveryPlan,
+    steps: deliveryPlan.steps.map((step) =>
+      step.capabilityId === capabilityId ? { ...step, status: "succeeded" as const } : step,
+    ),
   };
 }
 

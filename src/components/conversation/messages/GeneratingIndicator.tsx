@@ -10,7 +10,7 @@ type GeneratingIndicatorProps = {
 
 export function GeneratingIndicator({ state = "generating", mark }: GeneratingIndicatorProps) {
   return (
-    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="AI 正在回复">
+    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="正在准备回复">
       <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[620px]">
         {mark}
         <div className="min-w-0 flex-1">
