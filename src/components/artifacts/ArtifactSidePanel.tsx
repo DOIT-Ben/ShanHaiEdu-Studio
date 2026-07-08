@@ -26,24 +26,28 @@ export function ArtifactSidePanel({
   onUseAsInput,
   onOpenDetail,
 }: ArtifactSidePanelProps) {
-  const [width, setWidth] = useState(380);
+  const [width, setWidth] = useState(360);
 
   return (
     <aside
-      className="relative hidden h-full shrink-0 overflow-hidden border-l border-[#d7ebe5] bg-[#fbfefd] transition-[width] duration-300 ease-out lg:block"
+      className="relative hidden h-full shrink-0 overflow-hidden border-l border-[#d7ebe5] bg-[#fbfefd] lg:block"
       style={{ width: open && item ? width : 0 }}
       aria-hidden={!open}
     >
       {open && item && (
-        <ArtifactSidePanelContent
-          item={item}
-          width={width}
-          onWidthChange={setWidth}
-          onClose={onClose}
-          onCopy={onCopy}
-          onUseAsInput={onUseAsInput}
-          onOpenDetail={onOpenDetail}
-        />
+        <>
+          <ResizableHandle
+            width={width}
+            onChange={setWidth}
+          />
+          <ArtifactSidePanelContent
+            item={item}
+            onClose={onClose}
+            onCopy={onCopy}
+            onUseAsInput={onUseAsInput}
+            onOpenDetail={onOpenDetail}
+          />
+        </>
       )}
     </aside>
   );
@@ -51,16 +55,12 @@ export function ArtifactSidePanel({
 
 function ArtifactSidePanelContent({
   item,
-  width,
-  onWidthChange,
   onClose,
   onCopy,
   onUseAsInput,
   onOpenDetail,
 }: {
   item: ArtifactItem;
-  width: number;
-  onWidthChange: (width: number) => void;
   onClose: () => void;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
@@ -70,7 +70,6 @@ function ArtifactSidePanelContent({
 
   return (
     <div className="relative flex h-full min-w-[300px] flex-col">
-      <ResizableHandle width={width} onChange={onWidthChange} />
       <div className="flex items-center justify-between border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{item.title}</div>

@@ -105,11 +105,11 @@ function ArtifactDetailContent({
           </div>
           <Badge tone={item.status === "blocked" ? "danger" : "neutral"}>{item.status === "blocked" ? "需处理" : item.status === "needs_review" ? "待确认" : "已保存"}</Badge>
         </div>
-        <div className="mt-5 flex gap-5 border-b border-[#d7ebe5] text-sm">
+        <div className="mt-5 flex gap-5 border-b border-[#d7ebe5] text-sm" aria-label="产物详情分区">
           {["摘要", "来源对话", "页面脚本", "图片", "提示词"].map((tab, index) => (
-            <button key={tab} type="button" className={index === 0 ? "border-b-2 border-foreground pb-2 font-medium text-foreground" : "pb-2 text-muted-foreground"}>
+            <span key={tab} className={index === 0 ? "border-b-2 border-foreground pb-2 font-medium text-foreground" : "pb-2 text-muted-foreground"}>
               {tab}
-            </button>
+            </span>
           ))}
         </div>
       </div>
@@ -132,7 +132,7 @@ function ArtifactDetailContent({
           <section>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-medium">缩略预览</h3>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" disabled title="完整缩略图预览稍后开放">
                 <Eye className="h-4 w-4" />
                 查看全部
               </Button>

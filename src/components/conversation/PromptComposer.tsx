@@ -111,7 +111,15 @@ export function PromptComposer({
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="重新生成">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                aria-label="重新生成"
+                title="请在产物详情中调整后重做"
+                disabled
+              >
                 <RotateCcw className="h-4 w-4" />
               </Button>
               <span className="min-w-0 truncate text-xs text-muted-foreground" aria-live="polite">

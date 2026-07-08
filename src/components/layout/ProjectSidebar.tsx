@@ -1,6 +1,7 @@
 "use client";
 
-import { BookOpen, ChevronDown, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { ProjectItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,16 @@ type ProjectSidebarProps = {
 };
 
 export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect, onCreateProject }: ProjectSidebarProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredProjects = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return projects;
+    return projects.filter((project) => {
+      const searchableText = `${project.title} ${project.currentStep} ${project.meta}`.toLowerCase();
+      return searchableText.includes(query);
+    });
+  }, [projects, searchQuery]);
+
   return (
     <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f8f8f9] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
       <button
@@ -37,8 +48,8 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
           {!collapsed && (
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground">
-                  <BookOpen className="h-4 w-4" />
+                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md border bg-card text-muted-foreground">
+                  <img src="/brand/shanhai-ai-logo-256.png" alt="" className="h-full w-full object-cover" />
                 </div>
                 <h2 className="truncate text-sm font-medium text-foreground">ShanHaiEdu 备课工作台</h2>
               </div>
@@ -55,10 +66,15 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
               <Plus className="h-4 w-4" />
               新建项目
             </Button>
-            <div className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-[#eeeeef]">
+            <label className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition focus-within:bg-card focus-within:ring-2 focus-within:ring-[#8fcbbb]/35 hover:bg-[#eeeeef]">
               <Search className="h-4 w-4" />
-              <span>搜索课题</span>
-            </div>
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="搜索课题"
+                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+            </label>
             <div className="mt-6 flex h-9 items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef]">
               <span className="flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -70,7 +86,10 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar px-2">
-        {projects.map((project) => {
+        {filteredProjects.length === 0 && !collapsed && (
+          <div className="rounded-md px-3 py-3 text-xs leading-5 text-muted-foreground">没有找到匹配项目</div>
+        )}
+        {filteredProjects.map((project) => {
           const meta = projectTone[project.status];
           const active = project.id === activeProjectId;
           return (
@@ -104,7 +123,7 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
       </div>
       {!collapsed && (
         <div className="px-3 py-4">
-          <Button variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]">
+          <Button disabled title="回收站稍后开放" variant="ghost" className="w-full justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]">
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>

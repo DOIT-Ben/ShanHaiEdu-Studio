@@ -14,6 +14,7 @@ type ConversationWorkbenchProps = {
   currentUser?: PasswordAuthUser | null;
   messages: ChatMessage[];
   artifacts: ArtifactItem[];
+  compact: boolean;
   loadState: WorkbenchLoadState;
   errorMessage: string | null;
   input: string;
@@ -36,6 +37,7 @@ export function ConversationWorkbench({
   currentUser,
   messages,
   artifacts,
+  compact,
   loadState,
   errorMessage,
   input,
@@ -65,8 +67,8 @@ export function ConversationWorkbench({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-card">
-      <WorkbenchTopbar project={project} currentUser={currentUser} onOpenArtifacts={onOpenArtifacts} onLogout={onLogout} />
-      <StageProgress activeIndex={stageIndexFromProject(project)} />
+      <WorkbenchTopbar project={project} currentUser={currentUser} compact={compact} onOpenArtifacts={onOpenArtifacts} onLogout={onLogout} />
+      <StageProgress activeIndex={stageIndexFromProject(project)} compact={compact} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-[1040px] px-4 pb-36 pt-4 sm:px-6 lg:pb-10">
           <div className="mx-auto max-w-[920px] space-y-8">

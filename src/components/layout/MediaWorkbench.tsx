@@ -97,6 +97,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               currentUser={currentUser}
               messages={controller.messages}
               artifacts={controller.artifacts}
+              compact={controller.sidePanelOpen}
               loadState={controller.loadState}
               errorMessage={controller.errorMessage}
               input={controller.input}

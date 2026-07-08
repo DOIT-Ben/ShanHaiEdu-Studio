@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, FileText } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, FileText } from "lucide-react";
 import type { ArtifactItem, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,9 @@ function findInlineArtifact(message: ChatMessage, artifacts: ArtifactItem[]) {
 }
 
 function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const contentEntries = Object.entries(item.content).slice(0, 2);
+
   return (
     <div
       data-generated-artifact-inline
@@ -137,6 +140,52 @@ function GeneratedArtifactInline({ item }: { item: ArtifactItem }) {
                   <div className="mt-0.5 line-clamp-1 text-xs text-foreground">{field.value}</div>
                 </div>
               ))}
+            </div>
+          )}
+          <button
+            type="button"
+            data-inline-artifact-toggle
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[#32685d] transition hover:bg-[#eef8f5] focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="h-3.5 w-3.5" />
+                收起
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3.5 w-3.5" />
+                展开查看
+              </>
+            )}
+          </button>
+          {expanded && (
+            <div data-inline-artifact-expanded className="mt-3 space-y-3 border-t border-[#d7ebe5] pt-3">
+              {item.previewFields.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {item.previewFields.slice(0, 4).map((field) => (
+                    <div key={field.label} className="min-w-0 rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+                      <div className="text-xs text-muted-foreground">{field.label}</div>
+                      <div className="mt-0.5 text-xs leading-5 text-foreground">{field.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {contentEntries.length > 0 && (
+                <div className="space-y-2">
+                  {contentEntries.map(([title, value]) => (
+                    <div key={title} className="rounded-md bg-white px-3 py-2 shadow-[inset_0_0_0_1px_rgba(43,112,97,0.08)]">
+                      <div className="text-xs text-muted-foreground">{title}</div>
+                      <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-foreground">
+                        {Array.isArray(value) ? value.join("\n") : value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-xs leading-5 text-muted-foreground">上游来源：{item.sourceTitles.join("、") || "当前项目配置"}</div>
             </div>
           )}
         </div>
@@ -178,13 +227,7 @@ function ShanHaiMark({ active = false }: { active?: boolean }) {
       )}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 32 32" className="h-6 w-6" role="img">
-        <path d="M7 22V9.5c0-1.1.8-1.9 1.9-1.9H24v15.1H8.9C7.8 22.7 7 22.2 7 22Z" fill="#ffffff" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M10 20.5c2.4-4 4.4-6.1 6-6.1 1.2 0 2.1 1.1 3 2.3.8 1.1 1.6 2.1 3 2.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-        <path d="M11 11.2h8.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-        <path d="M23.5 7.6v15.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" opacity="0.45" />
-        <path d="M24.4 9.1h1.9M25.35 8.15v1.9" stroke="#2aa889" strokeLinecap="round" strokeWidth="1.2" />
-      </svg>
+      <img src="/brand/shanhai-ai-logo-256.png" alt="" className="h-full w-full rounded-xl object-cover" />
     </div>
   );
 }
