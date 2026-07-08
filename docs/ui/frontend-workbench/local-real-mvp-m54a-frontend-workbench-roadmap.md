@@ -4,6 +4,10 @@
 
 状态：正式阶段路线 / 待测试定义与开发切片。
 
+深度开发规格：
+
+- `docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-deep-spec.md`
+
 ## 1. 终极目标
 
 把 ShanHaiEdu 前端从“能展示对话和产物的工作台”升级为“教师愿意真实使用的聊天式备课工作台”。
