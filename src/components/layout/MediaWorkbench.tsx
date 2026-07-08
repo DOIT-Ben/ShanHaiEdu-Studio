@@ -104,6 +104,8 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               composerNotice={controller.composerNotice}
               onInputChange={controller.setInput}
               onClearReference={() => controller.setReference(null)}
+              onAttachFile={controller.attachComposerFile}
+              onAttachFileError={controller.flashComposerNotice}
               onSend={controller.sendPrompt}
               onRetry={controller.retryActiveProject}
               onLogout={onLogout}

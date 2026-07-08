@@ -98,6 +98,12 @@ test("next config defines baseline security headers", async () => {
   assert.match(byKey["Permissions-Policy"], /camera=\(\)/);
 });
 
+test("next config allows loopback dev origins used by local MVP browser checks", () => {
+  const config = loadTsModule(path.join(root, "next.config.ts"), {});
+
+  assert.deepEqual(config.default.allowedDevOrigins, ["127.0.0.1"]);
+});
+
 function loadAuthRouteModule() {
   const db = {};
   const actor = loadActorModule();

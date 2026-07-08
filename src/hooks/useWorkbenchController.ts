@@ -166,6 +166,11 @@ export function useWorkbenchController() {
     setDetailOpen(false);
   }
 
+  function attachComposerFile(fileName: string, text: string) {
+    setReference(`资料《${fileName}》：\n${text}`);
+    flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
+  }
+
   async function confirmArtifact(item: ArtifactItem) {
     if (!activeProjectId) return;
     const artifactKey = resolveArtifactActionKey(item, "confirm");
@@ -227,16 +232,22 @@ export function useWorkbenchController() {
       flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
       return;
     }
-    if (!activeProjectId) {
-      flashComposerNotice("请先选择或新建一个项目。");
-      return;
-    }
+    let targetProjectId = activeProjectId;
     const body = input.trim();
     setInput("");
     setReference(null);
     flashComposerNotice("正在发送");
     try {
-      const snapshot = await dataSource.sendMessage(activeProjectId, body, reference);
+      if (!targetProjectId) {
+        flashComposerNotice("正在新建项目并发送");
+        const createdSnapshot = await dataSource.createProject();
+        targetProjectId = createdSnapshot.project.id;
+        const nextProjects = await dataSource.listProjects();
+        setProjects(nextProjects);
+        applySnapshot(createdSnapshot);
+      }
+
+      const snapshot = await dataSource.sendMessage(targetProjectId, body, reference);
       applySnapshot(snapshot);
       flashComposerNotice("已发送");
     } catch {
@@ -270,6 +281,7 @@ export function useWorkbenchController() {
     setReference,
     notice,
     composerNotice,
+    flashComposerNotice,
     detailItem,
     detailOpen,
     setDetailOpen,
@@ -284,6 +296,7 @@ export function useWorkbenchController() {
     openSidePanel,
     copyArtifact,
     useAsInput,
+    attachComposerFile,
     confirmArtifact,
     regenerateArtifact,
     generateRealAsset,

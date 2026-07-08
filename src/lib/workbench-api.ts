@@ -90,7 +90,7 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
     sendMessage(projectId, body, reference) {
       return request<unknown>(`/api/workbench/projects/${projectId}/messages`, {
         method: "POST",
-        body: JSON.stringify({ role: "teacher", content: body, artifactRefs: reference ? [reference] : [] }),
+        body: JSON.stringify({ role: "teacher", content: body, reference, artifactRefs: reference ? [reference] : [] }),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
     approveArtifact(projectId, artifactKey) {

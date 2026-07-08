@@ -22,6 +22,8 @@ type ConversationWorkbenchProps = {
   composerNotice: string | null;
   onInputChange: (value: string) => void;
   onClearReference: () => void;
+  onAttachFile: (fileName: string, text: string) => void;
+  onAttachFileError: (message: string) => void;
   onSend: () => void;
   onRetry: () => void;
   onLogout?: () => Promise<void>;
@@ -39,6 +41,8 @@ export function ConversationWorkbench({
   composerNotice,
   onInputChange,
   onClearReference,
+  onAttachFile,
+  onAttachFileError,
   onSend,
   onRetry,
   onLogout,
@@ -105,6 +109,8 @@ export function ConversationWorkbench({
         notice={composerNotice}
         onChange={onInputChange}
         onClearReference={onClearReference}
+        onAttachFile={onAttachFile}
+        onAttachFileError={onAttachFileError}
         onSend={onSend}
       />
     </main>

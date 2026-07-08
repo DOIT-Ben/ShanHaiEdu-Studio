@@ -289,6 +289,7 @@ test("API client uses the shared workbench contract paths", async () => {
   assert.deepEqual(JSON.parse(calls[2].init.body), {
     role: "teacher",
     content: "我想做百分数公开课",
+    reference: "导入视频方案：生活情境",
     artifactRefs: ["导入视频方案：生活情境"],
   });
   assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/snapshot");
