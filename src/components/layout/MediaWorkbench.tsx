@@ -100,6 +100,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               errorMessage={controller.errorMessage}
               input={controller.input}
               reference={controller.reference}
+              sending={controller.sending}
               notice={controller.notice}
               composerNotice={controller.composerNotice}
               onInputChange={controller.setInput}
@@ -108,6 +109,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onAttachFileError={controller.flashComposerNotice}
               onSend={controller.sendPrompt}
               onRetry={controller.retryActiveProject}
+              onOpenArtifacts={() => controller.setRailOpen(true)}
               onLogout={onLogout}
             />
           </div>
@@ -119,17 +121,6 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
             onUseAsInput={controller.useAsInput}
             onOpenDetail={controller.openDetail}
           />
-          <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
-            <ArtifactRail
-              items={controller.artifacts}
-              activeKey={controller.activeArtifact?.key ?? ""}
-              previewDisabled={controller.sidePanelOpen}
-              onCopy={controller.copyArtifact}
-              onUseAsInput={controller.useAsInput}
-              onOpen={controller.openSidePanel}
-              onRegenerate={controller.regenerateArtifact}
-            />
-          </div>
         </div>
       </div>
       <Sheet open={controller.railOpen} onOpenChange={controller.setRailOpen}>

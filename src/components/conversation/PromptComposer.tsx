@@ -9,6 +9,7 @@ type PromptComposerProps = {
   value: string;
   reference: string | null;
   notice: string | null;
+  sending: boolean;
   onChange: (value: string) => void;
   onClearReference: () => void;
   onAttachFile: (fileName: string, text: string) => void;
@@ -23,6 +24,7 @@ export function PromptComposer({
   value,
   reference,
   notice,
+  sending,
   onChange,
   onClearReference,
   onAttachFile,
@@ -116,9 +118,9 @@ export function PromptComposer({
                 {notice}
               </span>
             </div>
-            <Button type="button" variant="default" className="h-9 rounded-lg px-3.5" onClick={onSend}>
+            <Button type="button" variant="default" className="h-9 rounded-lg px-3.5" onClick={onSend} disabled={sending}>
               <CornerDownLeft className="h-4 w-4" />
-              发送
+              {sending ? "等待回复" : "发送"}
             </Button>
           </div>
         </div>

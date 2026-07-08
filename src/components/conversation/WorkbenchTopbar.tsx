@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, LogOut, MoreHorizontal, Users } from "lucide-react";
+import { CheckCircle2, ListTree, LogOut, MoreHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { ProjectItem } from "@/lib/types";
@@ -8,10 +8,11 @@ import type { ProjectItem } from "@/lib/types";
 type WorkbenchTopbarProps = {
   project?: ProjectItem | null;
   currentUser?: PasswordAuthUser | null;
+  onOpenArtifacts?: () => void;
   onLogout?: () => Promise<void>;
 };
 
-export function WorkbenchTopbar({ project, currentUser, onLogout }: WorkbenchTopbarProps) {
+export function WorkbenchTopbar({ project, currentUser, onOpenArtifacts, onLogout }: WorkbenchTopbarProps) {
   const projectTitle = project?.title ?? "未选择项目";
   const savedLabel = project?.updatedAt ? `已保存 ${project.updatedAt}` : "未保存";
 
@@ -38,6 +39,12 @@ export function WorkbenchTopbar({ project, currentUser, onLogout }: WorkbenchTop
           <Users className="h-4 w-4" />
           协作
         </Button>
+        {onOpenArtifacts && (
+          <Button variant="secondary" size="sm" className="hidden sm:inline-flex" onClick={onOpenArtifacts}>
+            <ListTree className="h-4 w-4" />
+            产物
+          </Button>
+        )}
         {onLogout && (
           <Button variant="secondary" size="sm" onClick={() => void onLogout()}>
             <LogOut className="h-4 w-4" />

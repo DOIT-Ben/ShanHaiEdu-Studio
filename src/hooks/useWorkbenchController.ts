@@ -18,6 +18,7 @@ export function useWorkbenchController() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [input, setInput] = useState("");
   const [reference, setReference] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
@@ -37,6 +38,7 @@ export function useWorkbenchController() {
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [activeProjectId, projects],
   );
+  const sendingRef = useRef(false);
   const composerNoticeTimer = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
@@ -228,15 +230,28 @@ export function useWorkbenchController() {
   }
 
   async function sendPrompt() {
+    if (sendingRef.current || sending) {
+      flashComposerNotice("上一条还在回复，请稍等片刻。");
+      return;
+    }
     if (!input.trim() && !reference) {
       flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
       return;
     }
     let targetProjectId = activeProjectId;
     const body = input.trim();
+    const displayBody = reference ? `${body || "请参考这份资料继续。"}\n\n引用：${reference}` : body;
+    const optimisticMessage: ChatMessage = {
+      id: `optimistic-teacher-${Date.now()}`,
+      speaker: "teacher",
+      body: displayBody,
+    };
     setInput("");
     setReference(null);
-    flashComposerNotice("正在发送");
+    sendingRef.current = true;
+    setSending(true);
+    setMessages((current) => [...current, optimisticMessage]);
+    flashComposerNotice("正在等待回复");
     try {
       if (!targetProjectId) {
         flashComposerNotice("正在新建项目并发送");
@@ -245,15 +260,20 @@ export function useWorkbenchController() {
         const nextProjects = await dataSource.listProjects();
         setProjects(nextProjects);
         applySnapshot(createdSnapshot);
+        setMessages((current) => [...current, optimisticMessage]);
       }
 
       const snapshot = await dataSource.sendMessage(targetProjectId, body, reference);
       applySnapshot(snapshot);
       flashComposerNotice("已发送");
     } catch {
+      setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
       setInput(body);
       setReference(reference);
       flashComposerNotice("发送没有成功，请稍后再试。");
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   }
 
@@ -279,6 +299,7 @@ export function useWorkbenchController() {
     setInput,
     reference,
     setReference,
+    sending,
     notice,
     composerNotice,
     flashComposerNotice,
