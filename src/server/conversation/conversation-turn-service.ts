@@ -12,6 +12,8 @@ import { generateImageFromArtifact } from "@/server/image-generation/image-gener
 import { generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
+import { routeToolCall } from "@/server/tools/tool-router";
+import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
@@ -33,6 +35,23 @@ type PendingDeliveryPlanSnapshot = PendingDeliveryPlanMetadata & {
 };
 
 const unsupportedExternalCapabilityIds = new Set(["asset_image_generate", "concat_only_assemble"]);
+
+const toolRouterCapabilityIds = new Set<CapabilityId>([
+  "requirement_spec",
+  "lesson_plan",
+  "ppt_outline",
+  "ppt_design",
+  "knowledge_anchor_extract",
+  "creative_theme_generate",
+  "video_script_generate",
+  "storyboard_generate",
+  "asset_brief_generate",
+  "video_segment_plan",
+  "final_package",
+  "coze_ppt",
+  "asset_image_generate",
+  "concat_only_assemble",
+]);
 
 export type ConversationTurnInput = {
   role?: "teacher" | "assistant" | "system";
@@ -58,10 +77,12 @@ export type ConversationTurnServiceOptions = {
   service: WorkbenchService;
   runtime: AgentRuntime;
   agent?: MainConversationAgent;
+  toolRouter?: typeof routeToolCall;
 };
 
 export function createConversationTurnService(options: ConversationTurnServiceOptions) {
   const agent = options.agent ?? createDeterministicMainConversationAgent();
+  const toolRouter = options.toolRouter ?? routeToolCall;
 
   return {
     async createTurn(projectId: string, input: ConversationTurnInput): Promise<MessageTurnResponse> {
@@ -83,6 +104,7 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         service: options.service,
         runtime: options.runtime,
         agent,
+        toolRouter,
         projectId,
         teacherContent,
         reference,
@@ -102,6 +124,7 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         service: options.service,
         runtime: options.runtime,
         agent,
+        toolRouter,
         projectId,
         teacherContent: message.content,
         reference: "",
@@ -116,6 +139,7 @@ async function executeTeacherMessageTurn(input: {
   service: WorkbenchService;
   runtime: AgentRuntime;
   agent: MainConversationAgent;
+  toolRouter: typeof routeToolCall;
   projectId: string;
   teacherContent: string;
   reference: string;
@@ -164,6 +188,7 @@ async function executeTeacherMessageTurn(input: {
     return runPlannedArtifact({
       service: input.service,
       runtime: input.runtime,
+      toolRouter: input.toolRouter,
       project,
       artifacts,
       pendingPlan,
@@ -217,6 +242,7 @@ function applyCapabilityAvailabilityToTurn(agentTurn: MainAgentTurn, capabilityA
 async function runPlannedArtifact(input: {
   service: WorkbenchService;
   runtime: AgentRuntime;
+  toolRouter: typeof routeToolCall;
   project: ProjectRecord;
   artifacts: ArtifactRecord[];
   pendingPlan: PendingDeliveryPlanSnapshot | null;
@@ -376,6 +402,9 @@ async function runPlannedArtifact(input: {
     return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
   }
 
+  const toolRouterResult = await runToolRouterCapability(input);
+  if (toolRouterResult) return toolRouterResult;
+
   const externalResult = await runExternalProviderCapability(input);
   if (externalResult) return externalResult;
 
@@ -487,6 +516,148 @@ async function runPlannedArtifact(input: {
     assistantMessage,
     agentTurn: succeededTurn,
     artifact,
+  };
+}
+
+async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifact>[0]): Promise<MessageTurnResponse | null> {
+  const plannedTurn = input.plannedTurn;
+  const toolPlan = plannedTurn.toolPlan;
+  if (!toolPlan || !toolRouterCapabilityIds.has(toolPlan.capabilityId)) return null;
+
+  const generationUserMessage = input.generationUserMessage;
+  const userInstruction = input.reference ? `${generationUserMessage}\n\n引用：${input.reference}` : generationUserMessage;
+  const approvedArtifacts = buildApprovedArtifactInputs(input.artifacts);
+  const artifactRefs = buildProviderArtifactRefs(input.artifacts);
+  const result = await input.toolRouter({
+    capabilityId: toolPlan.capabilityId,
+    projectId: input.project.id,
+    userInstruction,
+    runtime: input.runtime,
+    projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
+    approvedArtifacts,
+    artifactRefs,
+    sourceMessageId: input.triggerMessage.id,
+  });
+
+  if (result.status !== "succeeded") {
+    const budgetEvent = normalizeToolRouterBudgetEvent(result, toolPlan);
+    const failedTurn: MainAgentTurn = {
+      ...plannedTurn,
+      assistantMessage: { body: result.observation.teacherSafeSummary },
+      state: result.status === "needs_input" ? "needs_input" : result.status === "retryable_failed" ? "failed_retryable" : "failed_blocked",
+      shouldRunToolNow: false,
+      artifactRefs: [],
+    };
+    const assistantMessage = await input.service.addMessage(input.project.id, {
+      role: "assistant",
+      content: result.observation.teacherSafeSummary,
+      metadata: {
+        ...appendToolObservationMetadata(undefined, result.observation),
+        agentHarnessBudgetEvent: budgetEvent,
+      },
+    });
+    return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
+  }
+
+  const artifact = await input.service.saveArtifact(input.project.id, {
+    nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
+    kind: result.artifactDraft.kind as ArtifactKind,
+    title: result.artifactDraft.title,
+    status: "needs_review",
+    summary: result.artifactDraft.summary,
+    markdownContent: result.artifactDraft.markdownContent ?? "",
+    structuredContent: result.artifactDraft.structuredContent,
+  });
+  const advancedDeliveryPlan = plannedTurn.deliveryPlan
+    ? advanceDeliveryPlan(plannedTurn.deliveryPlan, toolPlan.capabilityId)
+    : null;
+  const nextToolPlan = advancedDeliveryPlan?.nextCapabilityId
+    ? buildContinuedToolPlan(advancedDeliveryPlan.nextCapabilityId, generationUserMessage, advancedDeliveryPlan.deliveryPlan)
+    : null;
+  const succeededTurn: MainAgentTurn = {
+    ...plannedTurn,
+    assistantMessage: { body: result.assistantSummary },
+    state: "succeeded",
+    toolPlan: nextToolPlan ?? toolPlan,
+    deliveryPlan: advancedDeliveryPlan?.deliveryPlan ?? plannedTurn.deliveryPlan,
+    quickReplies: nextToolPlan ? [{ label: "继续下一步", prompt: "继续下一步", recommended: true }] : [],
+    shouldRunToolNow: true,
+    artifactRefs: [artifact.id],
+  };
+  if (input.pendingPlan) {
+    await input.service.updateMessageMetadata(input.project.id, input.pendingPlan.messageId, {
+      ...input.pendingPlan.messageMetadata,
+      pendingDeliveryPlan: {
+        ...input.pendingPlan,
+        status: "confirmed",
+        messageId: undefined,
+        messageMetadata: undefined,
+      },
+    });
+  }
+  const assistantMessage = await addAssistantMessageWithPendingActionId(input.service, input.project.id, {
+    role: "assistant",
+    content: result.assistantSummary,
+    artifactRefs: [artifact.id],
+    metadata: mergeMessageMetadata(
+      nextToolPlan && advancedDeliveryPlan
+      ? {
+          pendingDeliveryPlan: {
+            status: "pending",
+            teacherRequest: generationUserMessage,
+            toolPlan: nextToolPlan,
+            deliveryPlan: advancedDeliveryPlan.deliveryPlan,
+            runtimeKind: plannedTurn.runtimeKind,
+          },
+        }
+      : undefined,
+      createToolRouterBudgetMetadata(result, toolPlan),
+    ),
+  });
+
+  return {
+    message: input.triggerMessage,
+    assistantMessage,
+    agentTurn: succeededTurn,
+    artifact,
+    result,
+  };
+}
+
+function buildApprovedArtifactInputs(artifacts: ArtifactRecord[]) {
+  return artifacts.filter(isApprovedArtifact).map((artifact) => ({
+    nodeKey: artifact.nodeKey,
+    title: artifact.title,
+    summary: artifact.summary,
+    markdown: artifact.markdownContent,
+  }));
+}
+
+function buildProviderArtifactRefs(artifacts: ArtifactRecord[]) {
+  return artifacts.filter(isApprovedArtifact).map((artifact) => ({
+    kind: artifact.kind,
+    artifactId: artifact.id,
+    title: artifact.title,
+    summary: artifact.summary,
+    markdownContent: artifact.markdownContent,
+    structuredContent: artifact.structuredContent,
+  }));
+}
+
+function isApprovedArtifact(artifact: ArtifactRecord) {
+  return artifact.isApproved && artifact.status === "approved";
+}
+
+function createToolRouterBudgetMetadata(result: ToolExecutionResult, toolPlan: CapabilityToolPlan): Record<string, unknown> {
+  return {
+    agentHarnessBudgetEvent: normalizeToolRouterBudgetEvent(result, toolPlan),
+  };
+}
+
+function normalizeToolRouterBudgetEvent(result: ToolExecutionResult, toolPlan: CapabilityToolPlan) {
+  return {
+    ...result.budgetEvent,
+    actionKey: buildToolActionKey(toolPlan),
   };
 }
 

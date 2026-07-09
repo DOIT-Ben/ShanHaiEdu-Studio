@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { buildAgentHarnessBudgetEvent, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { CapabilityId } from "@/server/capabilities/types";
-import { readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
+import { createToolObservation, readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
+import type { routeToolCall } from "@/server/tools/tool-router";
+import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 const fullDeliveryCapabilityIds = [
@@ -308,6 +310,167 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     ]));
   });
 
+  it("runs confirmed requirement_spec through the injected ToolRouter and persists one succeeded budget event", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "M64-E router requirement 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const actionId = await seedPendingPlan(service, project.id, "requirement_spec", "requirement_spec");
+    let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
+    const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
+      capturedRouterInput = input;
+      return {
+        status: "succeeded",
+        toolId: "create_requirement_spec",
+        capabilityId: "requirement_spec",
+        artifactDraft: {
+          nodeKey: "requirement_spec",
+          kind: "requirement_spec",
+          title: "Router 需求规格",
+          summary: "Router 已整理需求规格。",
+          markdownContent: "# Router 需求规格",
+          structuredContent: { fromRouter: true },
+        },
+        assistantSummary: "Router 已整理需求规格。",
+        budgetEvent: {
+          capabilityId: "requirement_spec",
+          actionKey: "create_requirement_spec:requirement_spec",
+          status: "succeeded",
+          kind: "tool_succeeded",
+          createdAt: "2026-07-10T00:00:00.000Z",
+        },
+      };
+    });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      toolRouter,
+      agent: { async respond() { return buildAgentToolTurn("requirement_spec", "requirement_spec"); } },
+    });
+
+    const body = await turnService.createTurn(project.id, { role: "teacher", content: "确认开始", confirmedActionId: actionId });
+    const messages = await service.getMessages(project.id);
+    const events = readAgentHarnessBudgetEventsFromMessages(messages);
+
+    expect(toolRouter).toHaveBeenCalledTimes(1);
+    expect(capturedRouterInput).toMatchObject({
+      capabilityId: "requirement_spec",
+      projectId: project.id,
+      userInstruction: "测试请求",
+      approvedArtifacts: [],
+      artifactRefs: [],
+      sourceMessageId: body.message.id,
+    });
+    expect(body.artifact).toMatchObject({
+      nodeKey: "requirement_spec",
+      kind: "requirement_spec",
+      status: "needs_review",
+      structuredContent: { fromRouter: true },
+    });
+    expect(body.assistantMessage?.artifactRefs).toEqual([body.artifact!.id]);
+    expect(events.filter((event) => event.status === "succeeded" && event.capabilityId === "requirement_spec")).toEqual([
+      expect.objectContaining({
+        capabilityId: "requirement_spec",
+        actionKey: "requirement_spec:requirement_spec",
+        status: "succeeded",
+        kind: "tool_succeeded",
+      }),
+    ]);
+  });
+
+  it("routes coze_ppt with approved artifactRefs and records only router observation on quality gate failure", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousToken = process.env.COZE_API_TOKEN;
+    const previousRunUrl = process.env.COZE_PPT_RUN_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.COZE_API_TOKEN = "test-token";
+    process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M64-E router coze 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const design = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "已确认 PPT 设计稿",
+        status: "needs_review",
+        summary: "逐页四层设计稿已确认。",
+        markdownContent: "# 已确认 PPT 设计稿",
+        structuredContent: { pages: [{ page: 1, title: "导入" }] },
+      });
+      await service.approveArtifact(project.id, design.id);
+      const actionId = await seedPendingPlan(service, project.id, "coze_ppt", "pptx_artifact");
+      let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
+      const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
+        capturedRouterInput = input;
+        return {
+          status: "failed",
+          toolId: "generate_pptx_from_design",
+          capabilityId: "coze_ppt",
+          provider: "coze_ppt",
+          observation: createToolObservation({
+            projectId: input.projectId,
+            sourceMessageId: input.sourceMessageId,
+            capabilityId: "coze_ppt",
+            expectedArtifactKind: "pptx_artifact",
+            kind: "quality_gate_failed",
+            teacherSafeSummary: "PPTX 没有通过交付校验，请先调整设计稿后再继续。",
+            internalReasonSanitized: "quality_gate_failed",
+            retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+          }),
+          artifactCreated: false,
+          errorCategory: "quality_gate_failed",
+          budgetEvent: {
+            capabilityId: "coze_ppt",
+            actionKey: "generate_pptx_from_design:pptx_artifact",
+            status: "failed",
+            kind: "quality_gate_failed",
+            createdAt: "2026-07-10T00:00:00.000Z",
+          },
+        };
+      });
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("coze_ppt", "pptx_artifact"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX", confirmedActionId: actionId });
+      const artifacts = await service.getArtifacts(project.id);
+      const messages = await service.getMessages(project.id);
+      const observations = readActiveToolObservationsFromMessages(messages);
+      const events = readAgentHarnessBudgetEventsFromMessages(messages);
+
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(capturedRouterInput?.artifactRefs).toEqual([
+        expect.objectContaining({
+          kind: "ppt_design_draft",
+          artifactId: design.id,
+          title: "已确认 PPT 设计稿",
+          summary: "逐页四层设计稿已确认。",
+          markdownContent: "# 已确认 PPT 设计稿",
+          structuredContent: expect.objectContaining({ pages: [{ page: 1, title: "导入" }] }),
+        }),
+      ]);
+      expect(body.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false, artifactRefs: [] });
+      expect(body.artifact).toBeUndefined();
+      expect(artifacts).toHaveLength(1);
+      expect(observations).toEqual([
+        expect.objectContaining({ capabilityId: "coze_ppt", kind: "quality_gate_failed", artifactCreated: false }),
+      ]);
+      expect(events.filter((event) => event.capabilityId === "coze_ppt")).toEqual([
+        expect.objectContaining({
+          capabilityId: "coze_ppt",
+          actionKey: "coze_ppt:pptx_artifact",
+          status: "failed",
+          kind: "quality_gate_failed",
+        }),
+      ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("COZE_API_TOKEN", previousToken);
+      restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
+
   it("records internal runtime failures as tool observations and budget events without leaking engineering words", async () => {
     const failingRuntime: AgentRuntime = {
       async run(input) {
@@ -402,14 +565,14 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX", confirmedActionId: actionId });
       const messages = await service.getMessages(project.id);
 
-      expect(body.agentTurn).toMatchObject({ state: "failed_retryable", shouldRunToolNow: false, artifactRefs: [] });
+      expect(body.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false, artifactRefs: [] });
       expect(body.artifact).toBeUndefined();
       expect(await service.getArtifacts(project.id)).toHaveLength(1);
       expect(readActiveToolObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
         expect.objectContaining({ capabilityId: "coze_ppt", kind: "quality_gate_failed", artifactCreated: false }),
       ]));
       expect(readAgentHarnessBudgetEventsFromMessages(messages)).toEqual(expect.arrayContaining([
-        expect.objectContaining({ capabilityId: "coze_ppt", status: "retryable_failed", kind: "quality_gate_failed" }),
+        expect.objectContaining({ capabilityId: "coze_ppt", actionKey: "coze_ppt:pptx_artifact", status: "failed", kind: "quality_gate_failed" }),
       ]));
       expect(JSON.stringify(readActiveToolObservationsFromMessages(messages))).not.toMatch(/provider|debug|token|API|local path|C:\\/i);
     } finally {
