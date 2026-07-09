@@ -1,4 +1,5 @@
 import { getCapabilityDefinition } from "./capability-registry";
+import type { CapabilityAvailabilityEntry } from "./capability-availability";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan } from "./types";
 
 export type CapabilityPlannerInput = {
@@ -9,6 +10,7 @@ export type CapabilityPlannerInput = {
     subject?: string | null;
     topic?: string | null;
   };
+  capabilityAvailability?: CapabilityAvailabilityEntry[];
 };
 
 const fullDeliveryStepIds: CapabilityId[] = [
@@ -43,6 +45,7 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
       normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)),
       nextSuggestedCapabilities,
       artifactKindsBefore(fullDeliveryStepIds, capabilityId),
+      input.capabilityAvailability,
     );
   }
 
@@ -54,26 +57,26 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
     const wantsConcretePptx = /pptx|文件|下载|生成\s*ppt/i.test(text);
 
     if (hasPptDesign && wantsConcretePptx) {
-      return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"]);
+      return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"], input.capabilityAvailability);
     }
 
     if (hasPptOutline && wantsConcretePptx) {
-      return buildPlan("ppt_design", text, [], ["coze_ppt"], ["ppt_draft"]);
+      return buildPlan("ppt_design", text, [], ["coze_ppt"], ["ppt_draft"], input.capabilityAvailability);
     }
 
     if (!hasRequirementSpec) {
-      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "ppt_design"], []);
+      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "ppt_design"], [], input.capabilityAvailability);
     }
 
-    return buildPlan("ppt_outline", text, missingInputs, ["ppt_design"], []);
+    return buildPlan("ppt_outline", text, missingInputs, ["ppt_design"], [], input.capabilityAvailability);
   }
 
   if (wantsLessonPlan(text)) {
-    return buildPlan("lesson_plan", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["ppt_outline"], []);
+    return buildPlan("lesson_plan", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["ppt_outline"], [], input.capabilityAvailability);
   }
 
   if (wantsRequirementSpec(text)) {
-    return buildPlan("requirement_spec", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["lesson_plan", "ppt_outline"], []);
+    return buildPlan("requirement_spec", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["lesson_plan", "ppt_outline"], [], input.capabilityAvailability);
   }
 
   return null;
@@ -140,8 +143,27 @@ function buildPlan(
   missingInputs: string[],
   nextSuggestedCapabilities: CapabilityId[],
   upstreamAvailable: string[],
+  capabilityAvailability?: CapabilityAvailabilityEntry[],
 ): CapabilityToolPlan {
   const capability = getCapabilityDefinition(capabilityId);
+  const availability = capabilityAvailability?.find((entry) => entry.capabilityId === capabilityId);
+  if (availability && availability.status !== "available") {
+    return {
+      planId: `${capabilityId}:${stablePlanSegment(userMessage)}`,
+      capabilityId,
+      reasonForUser: availability.reasonForUser,
+      internalReason: `planned_from_user_message:${capabilityId};capability_unavailable:${availability.status}`,
+      inputDraft: {
+        teacherGoal: userMessage,
+        upstreamAvailable,
+      },
+      missingInputs: availability.missingApprovedInputs.length > 0 ? availability.missingApprovedInputs : missingInputs,
+      upstreamPlan: [],
+      nextSuggestedCapabilities,
+      requiresConfirmation: false,
+      expectedArtifactKind: capability.artifactKind,
+    };
+  }
   return {
     planId: `${capabilityId}:${stablePlanSegment(userMessage)}`,
     capabilityId,

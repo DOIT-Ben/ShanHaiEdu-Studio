@@ -1,4 +1,6 @@
 import { estimateContextTokens, resolveContextBudgetMode } from "@/server/conversation/context-budget";
+import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
+import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import { compactSessionWithValidation } from "@/server/conversation/session-compactor";
 import type { ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeRecord } from "@/server/workbench/types";
@@ -54,7 +56,7 @@ export function buildConversationContextPackage(input: {
       title: node.title,
       status: node.status,
       approvedArtifactId: node.approvedArtifactId,
-      staleReason: node.staleReason,
+      staleReason: sanitizeTeacherMessage(node.staleReason) || null,
     })),
     sessionSummary: packageMode === "snapshot" ? compacted.summary : undefined,
     recentMessages: recentMessages.map((message) => ({
@@ -80,8 +82,17 @@ export function buildConversationContextPackage(input: {
   };
 }
 
+function sanitizeTeacherMessage(message: string | null): string {
+  if (!message) return "";
+  const containsSensitiveDetail = /\b(provider|schema|storage|debug|token|manifest|node_id|api|key|secret|credential)\b|[A-Z0-9_]*(?:API_KEY|API_TOKEN|TOKEN|SECRET|KEY|CREDENTIAL)[A-Z0-9_]*|local\s+path|[A-Za-z]:[\\/]|\/(Users|home|tmp|var|private|mnt)\//i.test(message);
+  if (containsSensitiveDetail) return "处理过程遇到问题，请稍后重试或调整后再继续。";
+  return message.trim();
+}
+
 export function contextPackageToMainAgentConversationContext(
   contextPackage: ContextPackage,
+  agentWorldState: AgentWorldState | undefined,
+  capabilityAvailability: CapabilityAvailabilityEntry[] | undefined,
   pendingPlan: {
     teacherRequest: string;
     toolPlan: import("@/server/capabilities/types").CapabilityToolPlan;
@@ -90,6 +101,8 @@ export function contextPackageToMainAgentConversationContext(
 ) {
   return {
     contextPackage,
+    agentWorldState,
+    capabilityAvailability,
     recentMessages: contextPackage.recentMessages.map((message) => ({ role: message.role, content: message.content })),
     latestAssistantContent: [...contextPackage.recentMessages].reverse().find((message) => message.role === "assistant")?.content,
     pendingDeliveryPlan: pendingPlan

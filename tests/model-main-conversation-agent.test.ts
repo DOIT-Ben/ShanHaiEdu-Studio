@@ -140,6 +140,43 @@ describe("M55-C model-first main conversation agent", () => {
       availableArtifactKinds: ["requirement_spec", "ppt_draft"],
       conversationContext: {
         recentMessages: [{ role: "teacher", content: "继续下一步" }],
+        agentWorldState: {
+          project: {
+            id: "project-main-context",
+            title: "五年级百分数公开课",
+            grade: "五年级",
+            subject: "数学",
+            textbookVersion: null,
+            lessonTopic: "百分数",
+            status: "active",
+          },
+          currentNodeKey: "ppt_draft",
+          trustedInputs: [{ id: "artifact-approved", nodeKey: "requirement_spec", kind: "requirement_spec", title: "需求规格", status: "approved", summary: "已由教师确认", isApproved: true, version: 1 }],
+          draftArtifacts: [{ id: "artifact-draft", nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT 大纲", status: "needs_review", summary: "待教师审阅", isApproved: false, version: 1 }],
+          blockedItems: [],
+          failedJobs: [],
+          toolObservations: [],
+          pendingPlan: null,
+          nextRisks: [],
+        },
+        capabilityAvailability: [
+          {
+            capabilityId: "lesson_plan",
+            status: "available",
+            requiresConfirmation: true,
+            missingApprovedInputs: [],
+            reasonForModel: "available",
+            reasonForUser: "前置成果已确认，可以继续，执行前仍需教师确认。",
+          },
+          {
+            capabilityId: "asset_image_generate",
+            status: "provider_unavailable",
+            requiresConfirmation: true,
+            missingApprovedInputs: [],
+            reasonForModel: "not currently executable",
+            reasonForUser: "这项生成能力暂时不可用，可以稍后重试。",
+          },
+        ],
         contextPackage: {
           mode: "snapshot",
           project: {
@@ -198,8 +235,68 @@ describe("M55-C model-first main conversation agent", () => {
       summaryValidation: { status: "passed", errors: [] },
       tokenEstimate: 1234,
     });
+    expect(requestInput.agentWorldState).toMatchObject({
+      currentNodeKey: "ppt_draft",
+      trustedInputs: [expect.objectContaining({ id: "artifact-approved", isApproved: true })],
+      draftArtifacts: [expect.objectContaining({ id: "artifact-draft", status: "needs_review" })],
+    });
+    expect(requestInput.capabilityAvailability).toEqual([
+      expect.objectContaining({ capabilityId: "lesson_plan", status: "available" }),
+      expect.objectContaining({ capabilityId: "asset_image_generate", status: "provider_unavailable" }),
+    ]);
+    expect(requestInput.availableCapabilities).toContainEqual(expect.objectContaining({ id: "lesson_plan", availability: "available" }));
+    expect(requestInput.availableCapabilities).toContainEqual(expect.objectContaining({ id: "asset_image_generate", availability: "provider_unavailable" }));
     expect(client.lastPayload?.instructions).toContain("contextPackage");
     expect(client.lastPayload?.instructions).toContain("summaryValidation.status=failed");
+    expect(client.lastPayload?.instructions).toContain("agentWorldState");
+    expect(client.lastPayload?.instructions).toContain("capabilityAvailability");
+  });
+
+  it("does not turn model-selected unavailable capabilities into confirmable plans", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "我可以开始生成 PPTX 文件。" },
+      state: "awaiting_confirmation",
+      quickReplies: [{ label: "确认开始", prompt: "确认开始。", recommended: true }],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "coze_ppt",
+        reasonForUser: "我可以开始生成 PPTX 文件。",
+        missingInputs: [],
+        nextSuggestedCapabilities: [],
+        requiresConfirmation: true,
+      },
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "根据现有设计稿生成 PPTX 文件",
+      availableArtifactKinds: ["ppt_design_draft"],
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          {
+            capabilityId: "coze_ppt",
+            status: "provider_unavailable",
+            requiresConfirmation: true,
+            missingApprovedInputs: [],
+            reasonForModel: "status=provider_unavailable",
+            reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+          },
+        ],
+      },
+    });
+
+    expect(turn).toMatchObject({
+      state: "failed_blocked",
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "coze_ppt",
+        requiresConfirmation: false,
+        reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+      },
+    });
+    expect(turn.assistantMessage.body).toContain("暂时不可用");
   });
 
   it("preserves all model quick replies without truncating them", async () => {

@@ -3,6 +3,7 @@ import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/o
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentState, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
+import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { createDeterministicMainConversationAgent, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
 
 type OpenAIMainConversationAgentOptions = {
@@ -64,8 +65,8 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
     }
 
     try {
-      const response = await this.client.responses.create(buildMainAgentRequest(input, this.model));
-      return normalizeModelTurn(parseMainAgentOutput(response.output_text), input.userMessage, input.availableArtifactKinds);
+      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildMainAgentRequest(input));
+      return normalizeModelTurn(parseMainAgentOutput(response.assistantText), input);
     } catch {
       return {
         assistantMessage: {
@@ -143,9 +144,27 @@ function isModelFallbackConfirmation(text: string): boolean {
   return /确认开始|按这个计划推进|开始生成|可以生成|继续下一步|继续推进|继续生成/.test(normalized);
 }
 
-function buildMainAgentRequest(input: MainConversationAgentInput, model: string) {
+function unavailableTurnFromPlan(input: { toolPlan: CapabilityToolPlan; status: string; reasonForUser: string; runtimeKind: MainAgentTurn["runtimeKind"] }): MainAgentTurn {
+  const blockedPlan: CapabilityToolPlan = {
+    ...input.toolPlan,
+    reasonForUser: input.reasonForUser,
+    internalReason: `${input.toolPlan.internalReason};capability_unavailable:${input.status}`,
+    requiresConfirmation: false,
+  };
+
   return {
-    model,
+    assistantMessage: { body: input.reasonForUser },
+    state: input.status === "provider_unavailable" || input.status === "blocked" ? "failed_blocked" : "collecting_inputs",
+    quickReplies: [],
+    recommendedOptions: [],
+    toolPlan: blockedPlan,
+    shouldRunToolNow: false,
+    runtimeKind: input.runtimeKind,
+  };
+}
+
+function buildMainAgentRequest(input: MainConversationAgentInput) {
+  return {
     instructions: [
       "你是 ShanHaiEdu 的主控备课 Agent。",
       "产品当前只服务小学公开课备课，默认范围是一至六年级；不要生成初中、高中或大学内容。",
@@ -159,6 +178,8 @@ function buildMainAgentRequest(input: MainConversationAgentInput, model: string)
       "你会收到最近对话和可能存在的 pendingDeliveryPlan。短回复如“开始”“好”“可以”“继续”要结合上下文理解。",
       "如果收到 contextPackage，它是本轮可信上下文边界；只把 approved artifact 作为下游可信输入，needs_review 或 failed 只能作为待确认/风险状态。",
       "如果 contextPackage.summaryValidation.status=failed，不要使用 sessionSummary 作事实依据，只使用最近消息、节点状态和 artifact 状态。",
+      "如果收到 agentWorldState，它是当前项目事实状态；trustedInputs 才能作为下游可信输入，draftArtifacts 只能作为待教师确认内容。",
+      "如果收到 capabilityAvailability，不要把 provider_unavailable 或 needs_approved_inputs 的能力当成可立即执行；对教师只说自然语言，不输出 status、capabilityId、provider、runtimeKind 等工程词。",
       "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
       "不要输出工程词、底层字段名、schema、provider、node_id、storage、debug、local path 或密钥。",
       "返回内容必须严格符合 JSON 结构。",
@@ -167,6 +188,8 @@ function buildMainAgentRequest(input: MainConversationAgentInput, model: string)
       userMessage: input.userMessage,
       projectContext: input.projectContext ?? {},
       contextPackage: input.conversationContext?.contextPackage ?? null,
+      agentWorldState: input.conversationContext?.agentWorldState ?? null,
+      capabilityAvailability: input.conversationContext?.capabilityAvailability ?? [],
       conversationContext: input.conversationContext ?? {},
       availableArtifactKinds: input.availableArtifactKinds,
       availableCapabilities: getCapabilityDefinitions().map((capability) => ({
@@ -176,6 +199,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput, model: string)
         artifactKind: capability.artifactKind,
         requiresConfirmation: capability.requiresConfirmation,
         upstreamCapabilities: capability.upstreamCapabilities,
+        availability: input.conversationContext?.capabilityAvailability?.find((entry) => entry.capabilityId === capability.id)?.status ?? "unknown",
       })),
       outputGuidance: {
         noTool: "聊天、追问或探索时不返回 toolPlan。",
@@ -205,13 +229,24 @@ function parseMainAgentOutput(outputText: string | undefined): StructuredMainAge
   return parsed;
 }
 
-function normalizeModelTurn(output: StructuredMainAgentOutput, teacherRequest: string, availableArtifactKinds: string[]): MainAgentTurn {
-  if (isOutsidePrimarySchoolScope(teacherRequest) || containsOutOfScopeTeachingContent(output)) {
+function normalizeModelTurn(output: StructuredMainAgentOutput, input: MainConversationAgentInput): MainAgentTurn {
+  if (isOutsidePrimarySchoolScope(input.userMessage) || containsOutOfScopeTeachingContent(output)) {
     return primaryScopeBoundaryTurn();
   }
 
-  const toolPlan = output.toolPlan ? buildModelToolPlan(output.toolPlan, teacherRequest) : undefined;
-  const deliveryPlan = toolPlan && output.deliveryPlan?.mode === "full" ? buildFullDeliveryPlan(toolPlan.capabilityId, availableArtifactKinds) : undefined;
+  const toolPlan = output.toolPlan ? buildModelToolPlan(output.toolPlan, input.userMessage) : undefined;
+  const availability = toolPlan
+    ? input.conversationContext?.capabilityAvailability?.find((entry) => entry.capabilityId === toolPlan.capabilityId)
+    : undefined;
+  if (toolPlan && availability && availability.status !== "available") {
+    return unavailableTurnFromPlan({
+      toolPlan,
+      status: availability.status,
+      reasonForUser: availability.reasonForUser,
+      runtimeKind: "openai",
+    });
+  }
+  const deliveryPlan = toolPlan && output.deliveryPlan?.mode === "full" ? buildFullDeliveryPlan(toolPlan.capabilityId, input.availableArtifactKinds) : undefined;
 
   return {
     assistantMessage: output.assistantMessage,

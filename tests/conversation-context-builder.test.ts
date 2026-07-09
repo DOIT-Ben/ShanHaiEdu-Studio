@@ -38,7 +38,7 @@ describe("conversation-context-builder", () => {
       artifacts: [],
     });
 
-    const conversationContext = contextPackageToMainAgentConversationContext(contextPackage, {
+    const conversationContext = contextPackageToMainAgentConversationContext(contextPackage, undefined, undefined, {
       teacherRequest: "帮我做百分数 PPT",
       toolPlan: {
         planId: "plan-context-test",
@@ -62,6 +62,23 @@ describe("conversation-context-builder", () => {
     expect(conversationContext.pendingDeliveryPlan).toMatchObject({ teacherRequest: "帮我做百分数 PPT" });
     expect(conversationContext.contextPackage.workflowNodes).toEqual([expect.objectContaining({ key: "requirement_spec", status: "needs_review" })]);
     expect(conversationContext.contextPackage.guardrails).toContain("只有 approved artifact 可作为下游可信输入。");
+  });
+
+  it("sanitizes workflow stale reasons before they enter ContextPackage", () => {
+    const contextPackage = buildConversationContextPackage({
+      project: projectRecord(),
+      messages: [],
+      workflowNodes: [
+        {
+          ...nodeRecord("ppt_draft", "stale"),
+          staleReason: "OPENAI_API_KEY missing",
+        },
+      ],
+      artifacts: [],
+    });
+
+    expect(JSON.stringify(contextPackage.workflowNodes)).not.toMatch(/OPENAI_API_KEY/i);
+    expect(contextPackage.workflowNodes[0].staleReason).toBe("处理过程遇到问题，请稍后重试或调整后再继续。");
   });
 });
 

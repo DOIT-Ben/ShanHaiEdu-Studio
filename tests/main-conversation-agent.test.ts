@@ -78,4 +78,69 @@ describe("M54-B MainConversationAgent", () => {
     expect(turn.recommendedOptions.length).toBeGreaterThanOrEqual(2);
     expect(turn.shouldRunToolNow).toBe(false);
   });
+
+  it("does not ask for confirmation when the planned capability is currently unavailable", async () => {
+    const turn = await agent.respond({
+      userMessage: "根据现有设计稿生成 PPTX 文件",
+      availableArtifactKinds: ["ppt_design_draft"],
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          {
+            capabilityId: "coze_ppt",
+            status: "provider_unavailable",
+            requiresConfirmation: true,
+            missingApprovedInputs: [],
+            reasonForModel: "status=provider_unavailable",
+            reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+          },
+        ],
+      },
+    });
+
+    expect(turn).toMatchObject({
+      state: "collecting_inputs",
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "coze_ppt",
+        requiresConfirmation: false,
+        reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+      },
+    });
+    expect(turn.assistantMessage.body).toContain("暂时不可用");
+    expect(JSON.stringify({ body: turn.assistantMessage.body, quickReplies: turn.quickReplies, reasonForUser: turn.toolPlan?.reasonForUser })).not.toMatch(
+      /providerUnavailable|runtimeKind|debug|schema|storage|local path|token/i,
+    );
+  });
+
+  it("explains missing approved upstream artifacts before asking for ordinary course inputs", async () => {
+    const turn = await agent.respond({
+      userMessage: "帮我生成教案",
+      availableArtifactKinds: [],
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          {
+            capabilityId: "lesson_plan",
+            status: "needs_approved_inputs",
+            requiresConfirmation: true,
+            missingApprovedInputs: ["requirement_spec"],
+            reasonForModel: "status=needs_approved_inputs",
+            reasonForUser: "请先确认前置成果后再继续。",
+          },
+        ],
+      },
+    });
+
+    expect(turn).toMatchObject({
+      state: "collecting_inputs",
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "lesson_plan",
+        requiresConfirmation: false,
+        reasonForUser: "请先确认前置成果后再继续。",
+      },
+    });
+    expect(turn.assistantMessage.body).toBe("请先确认前置成果后再继续。");
+  });
 });

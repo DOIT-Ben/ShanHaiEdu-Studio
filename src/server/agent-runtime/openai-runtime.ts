@@ -6,9 +6,9 @@ import type {
   AgentRuntimeTask,
 } from "./types";
 import { taskGuidance } from "./task-guidance";
+import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 
 type OpenAIResponsePayload = {
-  model: string;
   instructions: string;
   input: string;
   text: {
@@ -62,8 +62,8 @@ export class OpenAIRuntime implements AgentRuntime {
 
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     try {
-      const response = await this.client.responses.create(buildOpenAIResponseRequest(input, this.model));
-      const parsed = parseStructuredOutput(response.output_text, input.task);
+      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildOpenAIResponseRequest(input));
+      const parsed = parseStructuredOutput(response.assistantText, input.task);
       const artifactDraft: AgentArtifactDraft = {
         nodeKey: input.task,
         kind: input.task,
@@ -114,9 +114,8 @@ export class OpenAIRuntime implements AgentRuntime {
   }
 }
 
-export function buildOpenAIResponseRequest(input: AgentRuntimeInput, model: string): OpenAIResponsePayload {
+export function buildOpenAIResponseRequest(input: AgentRuntimeInput, _model?: string): OpenAIResponsePayload {
   return {
-    model,
     instructions: [
       "你是 ShanHaiEdu 小学数学公开课备课助手。",
       "只生成面向教师可阅读的 Markdown 文本产物。",

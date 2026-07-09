@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
+import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
+
+function availabilityEntry(input: Partial<CapabilityAvailabilityEntry> & Pick<CapabilityAvailabilityEntry, "capabilityId" | "status">): CapabilityAvailabilityEntry {
+  return {
+    capabilityId: input.capabilityId,
+    status: input.status,
+    requiresConfirmation: input.requiresConfirmation ?? true,
+    missingApprovedInputs: input.missingApprovedInputs ?? [],
+    reasonForModel: input.reasonForModel ?? `status=${input.status}`,
+    reasonForUser: input.reasonForUser ?? "这一步暂时不能执行，请先完善或确认前置成果。",
+  };
+}
 
 const fullDeliveryCapabilityIds = [
   "requirement_spec",
@@ -190,5 +202,27 @@ describe("M54-B CapabilityPlanner", () => {
       ["concat_only_assemble", "pending"],
       ["final_package", "pending"],
     ]);
+  });
+
+  it("marks an unavailable capability as not confirmable in fallback planning", () => {
+    const plan = planCapabilityForRequest({
+      userMessage: "根据现有设计稿生成 PPTX 文件",
+      availableArtifactKinds: ["ppt_design_draft"],
+      capabilityAvailability: [
+        availabilityEntry({
+          capabilityId: "coze_ppt",
+          status: "provider_unavailable",
+          reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+        }),
+      ],
+    });
+
+    expect(plan).toMatchObject({
+      capabilityId: "coze_ppt",
+      requiresConfirmation: false,
+      reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
+    });
+    expect(plan?.internalReason).toContain("capability_unavailable:provider_unavailable");
+    expect(JSON.stringify(plan)).not.toMatch(/providerUnavailable|runtimeKind|debug|schema|storage|local path|token/i);
   });
 });

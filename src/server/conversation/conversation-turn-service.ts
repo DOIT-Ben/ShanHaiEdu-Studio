@@ -1,7 +1,11 @@
 import type { AgentProjectContext, AgentRuntime } from "@/server/agent-runtime/types";
+import { buildCapabilityAvailability, resolveRuntimeProviderAvailability, type CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
 import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
-import { getCapabilityDefinition } from "@/server/capabilities/capability-registry";
-import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
+import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
+import { appendToolObservationMetadata, createToolObservation, readActiveToolObservationsFromMessages, type ToolObservationKind } from "@/server/capabilities/tool-observation";
+import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
+import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
+import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
 import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
@@ -125,17 +129,36 @@ async function executeTeacherMessageTurn(input: {
   const messages = await input.service.getMessages(input.projectId);
   const workflowNodes = await input.service.getNodes(input.projectId);
   const artifacts = await input.service.getArtifacts(input.projectId);
+  const generationJobs = await input.service.getGenerationJobs(input.projectId);
+  const turnJobs = await input.service.getConversationTurnJobs(input.projectId);
   const availableArtifactKinds = artifacts.map((artifact) => artifact.kind);
 
   const pendingPlan = findPendingDeliveryPlan(messages);
+  const toolObservations = readActiveToolObservationsFromMessages(messages);
+  const budgetEvents = readAgentHarnessBudgetEventsFromMessages(messages);
   const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
+  const capabilityAvailability = buildCapabilityAvailability({
+    capabilityDefinitions: getCapabilityDefinitions(),
+    artifacts,
+    providerAvailability: resolveRuntimeProviderAvailability(),
+  });
+  const agentWorldState = buildAgentWorldState({
+    project,
+    workflowNodes,
+    artifacts,
+    generationJobs,
+    turnJobs,
+    contextPackage,
+    pendingPlan,
+    toolObservations,
+  });
 
-  const agentTurn = await input.agent.respond({
+  const agentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
     userMessage: teacherContent,
     availableArtifactKinds,
     projectContext: toMainAgentProjectContext(project),
-    conversationContext: contextPackageToMainAgentConversationContext(contextPackage, pendingPlan),
-  });
+    conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
+  }), capabilityAvailability);
 
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
     return runPlannedArtifact({
@@ -149,19 +172,46 @@ async function executeTeacherMessageTurn(input: {
         toolPlan: agentTurn.toolPlan ?? pendingPlan?.toolPlan,
         deliveryPlan: agentTurn.deliveryPlan ?? pendingPlan?.deliveryPlan,
       },
+      capabilityAvailability,
+      budgetEvents,
+      contextTokenEstimate: contextPackage.tokenEstimate,
       reference,
       confirmedActionId: input.confirmedActionId,
       triggerMessage: input.triggerMessage,
       generationUserMessage: pendingPlan?.teacherRequest ?? teacherContent,
     });
   }
+  const assistantMetadata = mergeMessageMetadata(
+    createPendingDeliveryPlanMetadata(agentTurn, teacherContent),
+    createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
+  );
   const assistantMessage = await addAssistantMessageWithPendingActionId(input.service, input.projectId, {
     role: "assistant",
     content: formatAssistantContent(agentTurn.assistantMessage),
-    metadata: createPendingDeliveryPlanMetadata(agentTurn, teacherContent),
+    metadata: assistantMetadata,
   });
 
   return { message: input.triggerMessage, assistantMessage, agentTurn };
+}
+
+function applyCapabilityAvailabilityToTurn(agentTurn: MainAgentTurn, capabilityAvailability: CapabilityAvailabilityEntry[]): MainAgentTurn {
+  if (!agentTurn.toolPlan) return agentTurn;
+  const availability = capabilityAvailability.find((entry) => entry.capabilityId === agentTurn.toolPlan?.capabilityId);
+  if (!availability || availability.status === "available") return agentTurn;
+
+  return {
+    ...agentTurn,
+    assistantMessage: { body: availability.reasonForUser },
+    state: availability.status === "provider_unavailable" || availability.status === "blocked" ? "failed_blocked" : "collecting_inputs",
+    toolPlan: {
+      ...agentTurn.toolPlan,
+      reasonForUser: availability.reasonForUser,
+      internalReason: `${agentTurn.toolPlan.internalReason};capability_unavailable:${availability.status}`,
+      requiresConfirmation: false,
+    },
+    shouldRunToolNow: false,
+    artifactRefs: [],
+  };
 }
 
 async function runPlannedArtifact(input: {
@@ -171,6 +221,9 @@ async function runPlannedArtifact(input: {
   artifacts: ArtifactRecord[];
   pendingPlan: PendingDeliveryPlanSnapshot | null;
   plannedTurn: MainAgentTurn;
+  capabilityAvailability: CapabilityAvailabilityEntry[];
+  budgetEvents: ReturnType<typeof readAgentHarnessBudgetEventsFromMessages>;
+  contextTokenEstimate: number;
   reference: string;
   triggerMessage: ConversationMessageRecord;
   generationUserMessage: string;
@@ -199,6 +252,43 @@ async function runPlannedArtifact(input: {
     return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
   }
 
+  const availability = input.capabilityAvailability.find((entry) => entry.capabilityId === plannedTurn.toolPlan?.capabilityId);
+  if (availability && availability.status !== "available") {
+    const assistantPrompt = availability.reasonForUser;
+    const observationKind: ToolObservationKind = availability.status === "provider_unavailable" ? "provider_unavailable" : "blocked_by_policy";
+    const observation = createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      kind: observationKind,
+      teacherSafeSummary: assistantPrompt,
+      internalReasonSanitized: availability.reasonForModel,
+    });
+    const budgetEvent = buildAgentHarnessBudgetEvent({
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      status: "blocked",
+      kind: observationKind,
+    });
+    const blockedTurn: MainAgentTurn = {
+      ...plannedTurn,
+      assistantMessage: { body: observation.teacherSafeSummary },
+      state: availability.status === "provider_unavailable" || availability.status === "blocked" ? "failed_blocked" : "collecting_inputs",
+      shouldRunToolNow: false,
+      artifactRefs: [],
+    };
+    const assistantMessage = await input.service.addMessage(input.project.id, {
+      role: "assistant",
+      content: observation.teacherSafeSummary,
+      metadata: {
+        ...appendToolObservationMetadata(undefined, observation),
+        agentHarnessBudgetEvent: budgetEvent,
+      },
+    });
+    return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
+  }
+
   const planGuardResult = evaluateToolPlan({
     capabilityId: plannedTurn.toolPlan.capabilityId,
     toolRequiresConfirmation: plannedTurn.toolPlan.requiresConfirmation,
@@ -209,16 +299,79 @@ async function runPlannedArtifact(input: {
 
   if (planGuardResult.status !== "allowed") {
     const assistantPrompt = "我还没有拿到这一步的有效确认，请先确认当前待执行任务后再继续。";
+    const observation = createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      kind: "blocked_by_policy",
+      teacherSafeSummary: assistantPrompt,
+      internalReasonSanitized: `plan_guard_blocked:${planGuardResult.status}`,
+    });
+    const budgetEvent = buildAgentHarnessBudgetEvent({
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      status: "blocked",
+      kind: "blocked_by_policy",
+    });
     const blockedTurn: MainAgentTurn = {
       ...plannedTurn,
-      assistantMessage: { body: assistantPrompt },
+      assistantMessage: { body: observation.teacherSafeSummary },
       state: "collecting_inputs",
       shouldRunToolNow: false,
       artifactRefs: [],
     };
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
-      content: assistantPrompt,
+      content: observation.teacherSafeSummary,
+      metadata: {
+        ...appendToolObservationMetadata(undefined, observation),
+        agentHarnessBudgetEvent: budgetEvent,
+      },
+    });
+    return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
+  }
+
+  const budgetDecision = evaluateAgentHarnessBudget({
+    capabilityId: plannedTurn.toolPlan.capabilityId,
+    actionKey: buildToolActionKey(plannedTurn.toolPlan),
+    events: input.budgetEvents,
+    contextTokenEstimate: input.contextTokenEstimate,
+    isSideEffectful: plannedTurn.toolPlan.requiresConfirmation,
+    hasConfirmedHumanGate: Boolean(input.confirmedActionId),
+  });
+
+  if (!budgetDecision.allowed) {
+    const assistantPrompt = budgetDecision.teacherSafeSummary ?? "这一步已经多次没有完成，建议先调整材料或确认要求后再继续。";
+    const observation = createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      kind: "retry_exhausted",
+      teacherSafeSummary: assistantPrompt,
+      internalReasonSanitized: `budget_blocked:${budgetDecision.reason ?? "unknown"}`,
+    });
+    const budgetEvent = buildAgentHarnessBudgetEvent({
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      status: "blocked",
+      kind: "retry_exhausted",
+    });
+    const blockedTurn: MainAgentTurn = {
+      ...plannedTurn,
+      assistantMessage: { body: observation.teacherSafeSummary },
+      state: "failed_blocked",
+      shouldRunToolNow: false,
+      artifactRefs: [],
+    };
+    const assistantMessage = await input.service.addMessage(input.project.id, {
+      role: "assistant",
+      content: observation.teacherSafeSummary,
+      metadata: {
+        ...appendToolObservationMetadata(undefined, observation),
+        agentHarnessBudgetEvent: budgetEvent,
+      },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
   }
@@ -235,17 +388,40 @@ async function runPlannedArtifact(input: {
   });
 
   if (result.status !== "succeeded") {
-    const assistantPrompt = result.status === "failed" ? result.userMessage : result.assistantPrompt;
+    const rawAssistantPrompt = result.status === "failed" ? result.userMessage : result.assistantPrompt;
+    const observationKind = result.status === "needs_input" ? "blocked_by_policy" : capabilityRunFailureKindToObservationKind(result.errorCategory);
+    const observation = createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      kind: observationKind,
+      teacherSafeSummary: rawAssistantPrompt,
+      internalReasonSanitized: result.status === "failed" ? `capability_failed:${result.errorCategory}` : "capability_needs_input",
+      retryPolicy: result.status === "failed"
+        ? { retryable: result.retryable, nextAction: result.errorCategory === "validation" ? "fix_inputs" : "retry_later" }
+        : { retryable: false, nextAction: "ask_teacher" },
+    });
+    const budgetEvent = buildAgentHarnessBudgetEvent({
+      capabilityId: plannedTurn.toolPlan.capabilityId,
+      expectedArtifactKind: plannedTurn.toolPlan.expectedArtifactKind,
+      status: result.status === "needs_input" ? "blocked" : result.retryable ? "retryable_failed" : "failed",
+      kind: observationKind,
+    });
     const failedTurn: MainAgentTurn = {
       ...plannedTurn,
-      assistantMessage: { body: assistantPrompt },
+      assistantMessage: { body: observation.teacherSafeSummary },
       state: result.status === "needs_input" ? "needs_input" : result.retryable ? "failed_retryable" : "failed_blocked",
-      shouldRunToolNow: true,
+      shouldRunToolNow: false,
       artifactRefs: [],
     };
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
-      content: assistantPrompt,
+      content: observation.teacherSafeSummary,
+      metadata: {
+        ...appendToolObservationMetadata(undefined, observation),
+        agentHarnessBudgetEvent: budgetEvent,
+      },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
   }
@@ -290,7 +466,8 @@ async function runPlannedArtifact(input: {
     role: "assistant",
     content: result.assistantSummary,
     artifactRefs: [artifact.id],
-    metadata: nextToolPlan && advancedDeliveryPlan
+    metadata: mergeMessageMetadata(
+      nextToolPlan && advancedDeliveryPlan
       ? {
           pendingDeliveryPlan: {
             status: "pending",
@@ -301,6 +478,8 @@ async function runPlannedArtifact(input: {
           },
         }
       : undefined,
+      createToolSucceededBudgetMetadata(plannedTurn.toolPlan),
+    ),
   });
 
   return {
@@ -324,16 +503,28 @@ async function runExternalProviderCapability(input: {
   const capabilityId = input.plannedTurn.toolPlan?.capabilityId;
   if (capabilityId && unsupportedExternalCapabilityIds.has(capabilityId)) {
     const message = unsupportedExternalCapabilityMessage(capabilityId);
+    const failureMetadata = createToolFailureObservationMetadata({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId,
+      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
+      kind: "blocked_by_policy",
+      status: "blocked",
+      teacherSafeSummary: message,
+      internalReasonSanitized: `unsupported_external_capability:${capabilityId}`,
+      retryable: false,
+    });
     const failedTurn: MainAgentTurn = {
       ...input.plannedTurn,
       assistantMessage: { body: message },
       state: "failed_blocked",
-      shouldRunToolNow: true,
+      shouldRunToolNow: false,
       artifactRefs: [],
     };
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: message,
+      metadata: failureMetadata,
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
   }
@@ -342,16 +533,28 @@ async function runExternalProviderCapability(input: {
   const sourceArtifact = await resolveExternalSourceArtifact(input, capabilityId);
   if (!sourceArtifact) {
     const message = externalMissingSourceMessage(capabilityId);
+    const failureMetadata = createToolFailureObservationMetadata({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId,
+      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
+      kind: "blocked_by_policy",
+      status: "blocked",
+      teacherSafeSummary: message,
+      internalReasonSanitized: `missing_external_source:${capabilityId}`,
+      retryable: false,
+    });
     const failedTurn: MainAgentTurn = {
       ...input.plannedTurn,
       assistantMessage: { body: message },
       state: "failed_retryable",
-      shouldRunToolNow: true,
+      shouldRunToolNow: false,
       artifactRefs: [],
     };
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: message,
+      metadata: failureMetadata,
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
   }
@@ -408,7 +611,8 @@ async function runExternalProviderCapability(input: {
       role: "assistant",
       content: assistantSummary,
       artifactRefs: [artifact.id],
-      metadata: nextToolPlan && advancedDeliveryPlan
+      metadata: mergeMessageMetadata(
+        nextToolPlan && advancedDeliveryPlan
         ? {
             pendingDeliveryPlan: {
               status: "pending",
@@ -419,11 +623,25 @@ async function runExternalProviderCapability(input: {
             },
           }
         : undefined,
+        input.plannedTurn.toolPlan ? createToolSucceededBudgetMetadata(input.plannedTurn.toolPlan) : undefined,
+      ),
     });
 
     return { message: input.triggerMessage, assistantMessage, agentTurn: succeededTurn, artifact };
   } catch (error) {
     const message = externalFailedMessage(capabilityId, error);
+    const failureMetadata = createToolFailureObservationMetadata({
+      projectId: input.project.id,
+      jobId: jobId ?? undefined,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId,
+      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
+      kind: message.includes("逐页完整") ? "quality_gate_failed" : "tool_failed",
+      status: "retryable_failed",
+      teacherSafeSummary: message,
+      internalReasonSanitized: error instanceof Error ? error.message : "external_provider_failed",
+      retryable: true,
+    });
     if (jobId) {
       await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: message }).catch(() => null);
     }
@@ -431,12 +649,13 @@ async function runExternalProviderCapability(input: {
       ...input.plannedTurn,
       assistantMessage: { body: message },
       state: "failed_retryable",
-      shouldRunToolNow: true,
+      shouldRunToolNow: false,
       artifactRefs: [],
     };
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: message,
+      metadata: failureMetadata,
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
   }
@@ -641,6 +860,108 @@ function buildContinuedToolPlan(capabilityId: CapabilityToolPlan["capabilityId"]
 
 function formatAssistantContent(message: { title?: string; body: string }) {
   return message.title ? `${message.title}\n\n${message.body}` : message.body;
+}
+
+function buildToolActionKey(toolPlan: CapabilityToolPlan): string {
+  return `${toolPlan.capabilityId}:${toolPlan.expectedArtifactKind ?? ""}`;
+}
+
+function createToolSucceededBudgetMetadata(toolPlan: CapabilityToolPlan): Record<string, unknown> {
+  return {
+    agentHarnessBudgetEvent: buildAgentHarnessBudgetEvent({
+      capabilityId: toolPlan.capabilityId,
+      actionKey: buildToolActionKey(toolPlan),
+      expectedArtifactKind: toolPlan.expectedArtifactKind,
+      status: "succeeded",
+      kind: "tool_succeeded",
+    }),
+  };
+}
+
+function createToolFailureObservationMetadata(input: {
+  projectId: string;
+  sourceMessageId?: string;
+  jobId?: string;
+  capabilityId: CapabilityId;
+  expectedArtifactKind?: string;
+  kind: ToolObservationKind;
+  status: AgentHarnessBudgetEventStatus;
+  teacherSafeSummary: string;
+  internalReasonSanitized: string;
+  retryable: boolean;
+}): Record<string, unknown> {
+  const observation = createToolObservation({
+    projectId: input.projectId,
+    sourceMessageId: input.sourceMessageId,
+    jobId: input.jobId,
+    capabilityId: input.capabilityId,
+    expectedArtifactKind: input.expectedArtifactKind,
+    kind: input.kind,
+    teacherSafeSummary: input.teacherSafeSummary,
+    internalReasonSanitized: input.internalReasonSanitized,
+    retryPolicy: {
+      retryable: input.retryable,
+      nextAction: input.retryable ? "retry_later" : input.kind === "quality_gate_failed" ? "fix_inputs" : "ask_teacher",
+    },
+  });
+
+  return {
+    ...appendToolObservationMetadata(undefined, observation),
+    agentHarnessBudgetEvent: buildAgentHarnessBudgetEvent({
+      capabilityId: input.capabilityId,
+      expectedArtifactKind: input.expectedArtifactKind,
+      status: input.status,
+      kind: input.kind,
+    }),
+  };
+}
+
+function capabilityRunFailureKindToObservationKind(errorCategory: "provider" | "validation" | "permission" | "timeout" | "unknown"): ToolObservationKind {
+  if (errorCategory === "validation") return "quality_gate_failed";
+  if (errorCategory === "permission") return "blocked_by_policy";
+  return "tool_failed";
+}
+
+function createUnavailableCapabilityObservationMetadata(
+  projectId: string,
+  triggerMessage: ConversationMessageRecord,
+  agentTurn: MainAgentTurn,
+  capabilityAvailability: CapabilityAvailabilityEntry[],
+): Record<string, unknown> | undefined {
+  if (!agentTurn.toolPlan || agentTurn.shouldRunToolNow) return undefined;
+  const availability = capabilityAvailability.find((entry) => entry.capabilityId === agentTurn.toolPlan?.capabilityId);
+  if (!availability || availability.status === "available") return undefined;
+
+  const observationKind: ToolObservationKind = availability.status === "provider_unavailable" ? "provider_unavailable" : "blocked_by_policy";
+  const observation = createToolObservation({
+    projectId,
+    sourceMessageId: triggerMessage.id,
+    capabilityId: agentTurn.toolPlan.capabilityId,
+    expectedArtifactKind: agentTurn.toolPlan.expectedArtifactKind,
+    kind: observationKind,
+    teacherSafeSummary: availability.reasonForUser,
+    internalReasonSanitized: availability.reasonForModel,
+  });
+  const budgetEvent = buildAgentHarnessBudgetEvent({
+    capabilityId: agentTurn.toolPlan.capabilityId,
+    expectedArtifactKind: agentTurn.toolPlan.expectedArtifactKind,
+    status: "blocked",
+    kind: observationKind,
+  });
+
+  return {
+    ...appendToolObservationMetadata(undefined, observation),
+    agentHarnessBudgetEvent: budgetEvent,
+  };
+}
+
+function mergeMessageMetadata(...metadataItems: Array<Record<string, unknown> | undefined>): Record<string, unknown> | undefined {
+  const merged = metadataItems.reduce<Record<string, unknown>>((result, metadata) => {
+    if (!metadata) return result;
+    return { ...result, ...metadata };
+  }, {});
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function createPendingDeliveryPlanMetadata(agentTurn: MainAgentTurn, teacherRequest: string) {

@@ -1,5 +1,7 @@
 import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
+import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
+import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 
 export type MainConversationAgentInput = {
@@ -12,6 +14,8 @@ export type MainConversationAgentInput = {
   };
   conversationContext?: {
     contextPackage?: ContextPackage;
+    agentWorldState?: AgentWorldState;
+    capabilityAvailability?: CapabilityAvailabilityEntry[];
     recentMessages: Array<{ role: "teacher" | "assistant" | "system"; content: string }>;
     latestAssistantContent?: string;
     pendingDeliveryPlan?: {
@@ -80,8 +84,12 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
         };
       }
 
-      const toolPlan = planCapabilityForRequest(input);
-      const deliveryPlan = planDeliveryForRequest(input) ?? undefined;
+      const plannerInput = {
+        ...input,
+        capabilityAvailability: input.conversationContext?.capabilityAvailability,
+      };
+      const toolPlan = planCapabilityForRequest(plannerInput);
+      const deliveryPlan = planDeliveryForRequest(plannerInput) ?? undefined;
       if (!toolPlan) {
         return {
           assistantMessage: {
@@ -90,6 +98,20 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
           state: "collecting_inputs",
           quickReplies: defaultCollectionReplies(),
           recommendedOptions: defaultRecommendedOptions(),
+          shouldRunToolNow: false,
+          runtimeKind: "deterministic",
+        };
+      }
+
+      if (isUnavailableToolPlan(toolPlan)) {
+        return {
+          assistantMessage: {
+            body: toolPlan.reasonForUser,
+          },
+          state: "collecting_inputs",
+          quickReplies: defaultCollectionReplies(),
+          recommendedOptions: [],
+          toolPlan,
           shouldRunToolNow: false,
           runtimeKind: "deterministic",
         };
@@ -126,6 +148,10 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       };
     },
   };
+}
+
+function isUnavailableToolPlan(toolPlan: CapabilityToolPlan): boolean {
+  return toolPlan.requiresConfirmation === false && toolPlan.internalReason.includes("capability_unavailable:");
 }
 
 function singleStepConfirmationReplies(): QuickReply[] {
