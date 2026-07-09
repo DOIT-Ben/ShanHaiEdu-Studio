@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getToolDefinition, getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
 import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
+import type { ToolDefinition } from "@/server/tools/tool-types";
 
 function expectStrictJsonSchema(schema: unknown): void {
   if (!schema || typeof schema !== "object") return;
@@ -9,6 +10,8 @@ function expectStrictJsonSchema(schema: unknown): void {
   if (objectSchema.type === "object") {
     expect(objectSchema.additionalProperties).toBe(false);
     expect(Array.isArray(objectSchema.required)).toBe(true);
+    const propertyKeys = Object.keys((objectSchema.properties as Record<string, unknown> | undefined) ?? {});
+    expect(new Set(objectSchema.required as string[])).toEqual(new Set(propertyKeys));
   }
 
   const properties = objectSchema.properties;
@@ -19,6 +22,48 @@ function expectStrictJsonSchema(schema: unknown): void {
   }
 
   expectStrictJsonSchema(objectSchema.items);
+  expectStrictJsonSchema(objectSchema.contains);
+
+  const allOf = objectSchema.allOf;
+  if (Array.isArray(allOf)) {
+    for (const nestedSchema of allOf) {
+      expectStrictJsonSchema(nestedSchema);
+    }
+  }
+}
+
+function createSafeToolDefinition(overrides: Partial<ToolDefinition>): ToolDefinition {
+  return {
+    id: "safe_tool",
+    label: "安全工具",
+    description: "安全工具描述",
+    adapterKind: "internal_capability",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        projectId: { type: "string", minLength: 1 },
+        userInstruction: { type: ["string", "null"] },
+      },
+      required: ["projectId", "userInstruction"],
+    },
+    outputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        artifactKind: { type: "string", const: "safe_artifact" },
+        summary: { type: "string" },
+      },
+      required: ["artifactKind", "summary"],
+    },
+    requiresHumanGate: true,
+    sideEffectLevel: "artifact_write",
+    requiredArtifactKinds: [],
+    producedArtifactKind: "safe_artifact",
+    failurePolicy: { retryable: true, maxRetries: 1, onFailure: "record_observation" },
+    implemented: true,
+    ...overrides,
+  };
 }
 
 describe("ToolRegistry", () => {
@@ -78,7 +123,72 @@ describe("ToolRegistry", () => {
       ],
       producedArtifactKind: "final_delivery",
     });
-    expect(tool.inputSchema.required).toEqual(["projectId", "artifactRefs"]);
+    expect(tool.inputSchema.required).toEqual(["projectId", "userInstruction", "artifactRefs"]);
+  });
+
+  it("accepts project id and nullable user instruction for create_requirement_spec", () => {
+    const tool = getToolDefinition("create_requirement_spec");
+
+    expect(tool.inputSchema.properties).toMatchObject({
+      projectId: { type: "string", minLength: 1 },
+      userInstruction: { type: ["string", "null"] },
+    });
+    expect(tool.inputSchema.required).toEqual(["projectId", "userInstruction"]);
+  });
+
+  it("requires every upstream artifact kind in multi-artifact input schemas", () => {
+    const tool = getToolDefinition("plan_video_segments");
+    const artifactRefs = (tool.inputSchema.properties as Record<string, unknown>).artifactRefs as Record<string, unknown>;
+
+    expect(artifactRefs.minItems).toBe(2);
+    expect(artifactRefs.allOf).toEqual([
+      {
+        contains: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string", const: "storyboard_generate" },
+            artifactId: { type: "string", minLength: 1 },
+          },
+          required: ["kind", "artifactId"],
+        },
+      },
+      {
+        contains: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string", const: "asset_image_generate" },
+            artifactId: { type: "string", minLength: 1 },
+          },
+          required: ["kind", "artifactId"],
+        },
+      },
+    ]);
+  });
+
+  it("prevents returned definition mutations from polluting the registry", () => {
+    const listedTool = listToolDefinitions().find((tool) => tool.id === "create_lesson_plan");
+    expect(listedTool).toBeDefined();
+
+    listedTool!.description = "mutated description";
+    listedTool!.requiredArtifactKinds.push("mutated_artifact");
+    ((listedTool!.inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength = 99;
+
+    expect(getToolDefinition("create_lesson_plan")).toMatchObject({
+      description: "基于已确认需求和教材依据生成公开课教案。",
+      requiredArtifactKinds: ["requirement_spec"],
+    });
+    expect(((getToolDefinition("create_lesson_plan").inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength).toBe(1);
+
+    const fetchedTool = getToolDefinition("create_lesson_plan");
+    fetchedTool.description = "mutated again";
+    ((fetchedTool.inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength = 100;
+
+    expect(getToolDefinition("create_lesson_plan")).toMatchObject({
+      description: "基于已确认需求和教材依据生成公开课教案。",
+    });
+    expect(((getToolDefinition("create_lesson_plan").inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength).toBe(1);
   });
 
   it("registers blocked definitions without making deferred tools executable", () => {
@@ -132,5 +242,56 @@ describe("ToolRegistry", () => {
 
   it("does not expose blocked definitions as OpenAI executable tools", () => {
     expect(() => toolDefinitionToOpenAiFunctionTool(getToolDefinition("asset_image_generate"))).toThrow(/not implemented/i);
+  });
+
+  it("rejects unsafe OpenAI tool description and schema values", () => {
+    expect(() =>
+      toolDefinitionToOpenAiFunctionTool(createSafeToolDefinition({ description: "包含 provider 内部词" })),
+    ).toThrow(/unsafe/i);
+
+    expect(() =>
+      toolDefinitionToOpenAiFunctionTool(
+        createSafeToolDefinition({
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              token: { type: "string" },
+            },
+            required: ["token"],
+          },
+        }),
+      ),
+    ).toThrow(/unsafe/i);
+
+    expect(() =>
+      toolDefinitionToOpenAiFunctionTool(
+        createSafeToolDefinition({
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              projectId: { type: "string", enum: ["safe", "debug"] },
+            },
+            required: ["projectId"],
+          },
+        }),
+      ),
+    ).toThrow(/unsafe/i);
+
+    expect(() =>
+      toolDefinitionToOpenAiFunctionTool(
+        createSafeToolDefinition({
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              projectId: { type: "string", const: "local path" },
+            },
+            required: ["projectId"],
+          },
+        }),
+      ),
+    ).toThrow(/unsafe/i);
   });
 });

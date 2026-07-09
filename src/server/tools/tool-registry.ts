@@ -7,34 +7,63 @@ const defaultFailurePolicy: ToolFailurePolicy = {
   onFailure: "record_observation",
 };
 
-const emptyInputSchema: JsonSchemaObject = {
-  type: "object",
-  additionalProperties: false,
-  properties: {},
-  required: [],
-};
-
-function artifactInputSchema(requiredArtifactKinds: string[]): JsonSchemaObject {
+function baseInputSchema(): JsonSchemaObject {
   return {
     type: "object",
     additionalProperties: false,
     properties: {
       projectId: { type: "string", minLength: 1 },
-      userInstruction: { type: "string" },
-      artifactRefs: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            kind: { type: "string", enum: requiredArtifactKinds },
-            artifactId: { type: "string", minLength: 1 },
-          },
-          required: ["kind", "artifactId"],
-        },
-      },
+      userInstruction: { type: ["string", "null"] },
     },
-    required: requiredArtifactKinds.length > 0 ? ["projectId", "artifactRefs"] : ["projectId"],
+    required: ["projectId", "userInstruction"],
+  };
+}
+
+function requiredArtifactKindSchema(kind: string): JsonSchemaObject {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: { type: "string", const: kind },
+      artifactId: { type: "string", minLength: 1 },
+    },
+    required: ["kind", "artifactId"],
+  };
+}
+
+function artifactRefsSchema(requiredArtifactKinds: string[]): Record<string, unknown> {
+  return {
+    type: "array",
+    minItems: requiredArtifactKinds.length,
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        kind: { type: "string", enum: requiredArtifactKinds },
+        artifactId: { type: "string", minLength: 1 },
+      },
+      required: ["kind", "artifactId"],
+    },
+    allOf: requiredArtifactKinds.map((kind) => ({ contains: requiredArtifactKindSchema(kind) })),
+  };
+}
+
+const emptyInputSchema: JsonSchemaObject = baseInputSchema();
+
+function artifactInputSchema(requiredArtifactKinds: string[]): JsonSchemaObject {
+  if (requiredArtifactKinds.length === 0) {
+    return baseInputSchema();
+  }
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      projectId: { type: "string", minLength: 1 },
+      userInstruction: { type: ["string", "null"] },
+      artifactRefs: artifactRefsSchema(requiredArtifactKinds),
+    },
+    required: ["projectId", "userInstruction", "artifactRefs"],
   };
 }
 

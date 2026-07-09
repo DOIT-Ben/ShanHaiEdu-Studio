@@ -6,9 +6,9 @@ function cloneJsonSchema(schema: JsonSchemaObject): JsonSchemaObject {
   return structuredClone(schema);
 }
 
-function assertSafeDescription(description: string, toolId: string): void {
-  if (unsafeDescriptionPattern.test(description)) {
-    throw new Error(`Unsafe OpenAI tool description for ${toolId}`);
+function assertSafeOpenAiToolSchema(schema: OpenAiFunctionToolSchema, toolId: string): void {
+  if (unsafeDescriptionPattern.test(JSON.stringify(schema))) {
+    throw new Error(`Unsafe OpenAI tool schema for ${toolId}`);
   }
 }
 
@@ -17,13 +17,15 @@ export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition): OpenAi
     throw new Error(`Tool is not implemented: ${tool.id}`);
   }
 
-  assertSafeDescription(tool.description, tool.id);
-
-  return {
+  const schema: OpenAiFunctionToolSchema = {
     type: "function",
     name: tool.id,
     description: tool.description,
     parameters: cloneJsonSchema(tool.inputSchema),
     strict: true,
   };
+
+  assertSafeOpenAiToolSchema(schema, tool.id);
+
+  return schema;
 }
