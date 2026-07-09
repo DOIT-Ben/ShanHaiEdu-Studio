@@ -183,6 +183,44 @@ describe("M64-D ToolRouter Core", () => {
     });
   });
 
+  it("does not let approvedArtifacts satisfy provider required artifactRefs", async () => {
+    const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));
+
+    const result = await routeToolCall(
+      {
+        toolName: "generate_pptx_from_design",
+        projectId: "project-a",
+        userInstruction: "生成真实 PPTX",
+        approvedArtifacts: [
+          {
+            nodeKey: "ppt_design_draft",
+            title: "已确认 PPT 设计稿",
+            summary: "设计稿已确认。",
+            markdown: "# PPT 设计稿",
+          },
+        ],
+      },
+      { providerExecutor },
+    );
+
+    expect(providerExecutor).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "needs_input",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      missingInputs: ["ppt_design_draft"],
+      artifactCreated: false,
+      observation: {
+        kind: "blocked_by_policy",
+        artifactCreated: false,
+      },
+      budgetEvent: {
+        status: "blocked",
+        kind: "blocked_by_policy",
+      },
+    });
+  });
+
   it("safely fails unknown toolName or capabilityId without leaking sensitive input details", async () => {
     const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
     const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));

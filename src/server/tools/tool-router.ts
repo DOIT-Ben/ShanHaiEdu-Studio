@@ -140,6 +140,10 @@ function resolveToolDefinition(input: ToolRouterInput, dependencies: ToolRouterD
 }
 
 function findMissingArtifactKinds(tool: ToolDefinition, input: ToolRouterInput): string[] {
+  if (tool.adapterKind === "provider") {
+    return tool.requiredArtifactKinds.filter((kind) => !hasArtifactRef(kind, input.artifactRefs));
+  }
+
   return tool.requiredArtifactKinds.filter((kind) => !hasArtifactRef(kind, input.artifactRefs) && !hasApprovedArtifact(kind, input.approvedArtifacts));
 }
 
