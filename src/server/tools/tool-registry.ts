@@ -76,6 +76,34 @@ function internalTool(definition: {
   };
 }
 
+function blockedTool(definition: {
+  id: string;
+  label: string;
+  description: string;
+  capabilityId: CapabilityId;
+  requiredArtifactKinds: string[];
+  producedArtifactKind: string;
+  blockedReason: string;
+  sideEffectLevel?: ToolSideEffectLevel;
+}): ToolDefinition {
+  return {
+    id: definition.id,
+    label: definition.label,
+    description: definition.description,
+    adapterKind: "internal_capability",
+    capabilityId: definition.capabilityId,
+    inputSchema: definition.requiredArtifactKinds.length > 0 ? artifactInputSchema(definition.requiredArtifactKinds) : emptyInputSchema,
+    outputSchema: artifactOutputSchema(definition.producedArtifactKind),
+    requiresHumanGate: true,
+    sideEffectLevel: definition.sideEffectLevel ?? "external_call",
+    requiredArtifactKinds: definition.requiredArtifactKinds,
+    producedArtifactKind: definition.producedArtifactKind,
+    failurePolicy: { retryable: false, maxRetries: 0, onFailure: "record_observation" },
+    implemented: false,
+    blockedReason: definition.blockedReason,
+  };
+}
+
 const toolDefinitions: ToolDefinition[] = [
   internalTool({
     id: "create_requirement_spec",
@@ -157,12 +185,40 @@ const toolDefinitions: ToolDefinition[] = [
     requiredArtifactKinds: ["storyboard_generate", "asset_image_generate"],
     producedArtifactKind: "video_segment_plan",
   }),
+  blockedTool({
+    id: "intro_video",
+    label: "生成导入视频素材",
+    description: "根据已确认分镜和资产约束生成课堂导入视频素材。",
+    capabilityId: "intro_video",
+    requiredArtifactKinds: ["storyboard_generate", "asset_image_generate"],
+    producedArtifactKind: "intro_video",
+    blockedReason: "导入视频真实生成能力尚未完成接入，暂不注册为可执行工具。",
+  }),
+  blockedTool({
+    id: "asset_image_generate",
+    label: "生成视频资产图",
+    description: "根据资产说明生成统一风格图、角色参考图、道具参考图、场景参考图和关键帧图。",
+    capabilityId: "asset_image_generate",
+    requiredArtifactKinds: ["asset_brief_generate"],
+    producedArtifactKind: "asset_image_generate",
+    blockedReason: "视频资产图真实生成能力尚未完成接入，暂不注册为可执行工具。",
+  }),
+  blockedTool({
+    id: "concat_only_assemble",
+    label: "只拼接最终导入视频",
+    description: "只按分镜顺序拼接已通过校验的片段，不重排、不加转场、不加滤镜、不重写内容。",
+    capabilityId: "concat_only_assemble",
+    requiredArtifactKinds: ["video_segment_generate"],
+    producedArtifactKind: "concat_only_assemble",
+    blockedReason: "最终导入视频拼接能力尚未完成接入，暂不注册为可执行工具。",
+    sideEffectLevel: "package_write",
+  }),
   internalTool({
     id: "create_final_delivery_checklist",
     label: "创建最终交付清单",
     description: "汇总已确认成果，创建最终交付前的检查清单。",
     capabilityId: "final_package",
-    requiredArtifactKinds: [],
+    requiredArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "concat_only_assemble"],
     producedArtifactKind: "final_delivery",
     sideEffectLevel: "package_write",
   }),
@@ -201,7 +257,7 @@ export function getToolDefinition(id: string): ToolDefinition {
 }
 
 export function getToolDefinitionByCapabilityId(capabilityId: CapabilityId): ToolDefinition {
-  const definition = toolDefinitions.find((tool) => tool.capabilityId === capabilityId && tool.implemented);
+  const definition = toolDefinitions.find((tool) => tool.capabilityId === capabilityId);
   if (!definition) {
     throw new Error(`Unknown tool capability: ${capabilityId}`);
   }

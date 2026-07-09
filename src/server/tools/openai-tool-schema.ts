@@ -13,6 +13,10 @@ function assertSafeDescription(description: string, toolId: string): void {
 }
 
 export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition): OpenAiFunctionToolSchema {
+  if (!tool.implemented) {
+    throw new Error(`Tool is not implemented: ${tool.id}`);
+  }
+
   assertSafeDescription(tool.description, tool.id);
 
   return {
