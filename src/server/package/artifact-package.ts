@@ -76,7 +76,7 @@ export function materialPackageDownloadHeaders(filename: string) {
 function buildReadme(finalDelivery: MaterialPackageArtifact, assets: { hasImage: boolean; hasVideo: boolean }) {
   const includedItems = [
     "最终交付清单",
-    "最小 PPTX 文件",
+    "真实 PPTX 文件",
     ...(assets.hasImage ? ["课堂视觉图"] : []),
     ...(assets.hasVideo ? ["导入视频文件"] : []),
   ];
@@ -91,13 +91,13 @@ function buildReadme(finalDelivery: MaterialPackageArtifact, assets: { hasImage:
     "## 已包含",
     "",
     "- final-delivery.md：最终交付清单正文。",
-    "- ppt-outline.pptx：根据 PPT 大纲与逐页脚本生成的最小 PPTX 文件。",
+    "- ppt-outline.pptx：真实生成并通过 PPTX 结构校验的课件文件。",
     ...(assets.hasImage ? ["- classroom-visual.png / classroom-visual.jpg：基于 PPT 视觉需求生成的本地课堂视觉图。"] : []),
     ...(assets.hasVideo ? ["- intro-video.mp4：基于导入视频方案生成的本地导入视频文件。"] : []),
     "",
     "## 仍需教师核对",
     "",
-    "- 当前 PPTX 只保证根据文本大纲生成可打开、可阅读的最小文件。",
+    "- 当前 PPTX 已通过文件结构校验；正式授课前仍需教师核对内容与节奏。",
     ...(assets.hasImage ? ["- 已包含课堂视觉图；正式授课前请核对视觉准确性、版权和课堂适配。"] : []),
     ...(assets.hasVideo ? ["- 已包含导入视频文件；正式授课前请核对视频质量、节奏和课堂锚点。"] : []),
     ...missingAssetNotes(assets),

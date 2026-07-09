@@ -145,7 +145,7 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
 }
 
 function mergeTurnAssistantMetadata(snapshot: WorkbenchSnapshot, turn: MessageTurnResponse): WorkbenchSnapshot {
-  const quickReplies = turn.agentTurn?.quickReplies?.slice(0, 3);
+  const quickReplies = turn.agentTurn?.quickReplies;
   const deliveryPlan = toChatDeliveryPlan(turn.agentTurn?.deliveryPlan);
   if ((!quickReplies?.length && !deliveryPlan) || !turn.assistantMessage?.id) return snapshot;
 

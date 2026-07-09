@@ -331,6 +331,35 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
+test("API client keeps artifact refs for inline cards without exposing raw ids in assistant text", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const assistantMessageWithArtifact = {
+    id: "assistant-artifact-message",
+    projectId: backendProject.id,
+    role: "assistant",
+    content: "已整理出第一版需求规格。",
+    artifactRefs: ["artifact-requirement-v1"],
+    createdAt: "2026-07-07T00:04:00.000Z",
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async () => ({
+      ok: true,
+      json: async () => ({
+        ...backendSnapshot,
+        messages: [...backendSnapshot.messages, assistantMessageWithArtifact],
+      }),
+    }),
+  });
+
+  const snapshot = await client.getProjectSnapshot("backend-project-a");
+  const lastAssistant = snapshot.messages.at(-1);
+
+  assert.equal(lastAssistant.speaker, "assistant");
+  assert.deepEqual(lastAssistant.artifactRefs, ["artifact-requirement-v1"]);
+  assert.equal(lastAssistant.body, "已整理出第一版需求规格。");
+  assert.equal(lastAssistant.body.includes("artifact-requirement-v1"), false);
+});
+
 test("API client preserves backend quick replies from the message turn response", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const assistantMessage = {
@@ -352,6 +381,8 @@ test("API client preserves backend quick replies from the message turn response"
               quickReplies: [
                 { label: "确认开始", prompt: "确认开始，先生成需求规格。", recommended: true },
                 { label: "补充要求", prompt: "我想补充课堂风格。" },
+                { label: "推荐课题", prompt: "你先推荐几个适合的课题。" },
+                { label: "继续聊", prompt: "先不生成，继续聊想法。" },
               ],
             },
           }),
@@ -375,6 +406,8 @@ test("API client preserves backend quick replies from the message turn response"
   assert.deepEqual(lastAssistant.quickReplies, [
     { label: "确认开始", prompt: "确认开始，先生成需求规格。", recommended: true },
     { label: "补充要求", prompt: "我想补充课堂风格。" },
+    { label: "推荐课题", prompt: "你先推荐几个适合的课题。" },
+    { label: "继续聊", prompt: "先不生成，继续聊想法。" },
   ]);
 });
 
@@ -449,6 +482,68 @@ test("API client preserves backend delivery plans from the message turn response
   assert.equal(lastAssistant.deliveryPlan.steps[0].capabilityId, undefined);
   assert.equal(lastAssistant.deliveryPlan.steps[0].artifactKind, undefined);
   assert.deepEqual(lastAssistant.quickReplies, [{ label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true }]);
+});
+
+test("API client restores pending delivery plans from persisted assistant metadata", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const snapshotWithPendingPlan = {
+    ...backendSnapshot,
+    messages: [
+      ...backendSnapshot.messages,
+      {
+        id: "assistant-pending-plan",
+        projectId: backendProject.id,
+        role: "assistant",
+        content: "我会先整理需求，再继续推进教案。",
+        artifactRefs: [],
+        createdAt: "2026-07-07T00:07:00.000Z",
+        metadata: {
+          pendingDeliveryPlan: {
+            status: "pending",
+            toolPlan: { capabilityId: "lesson_plan" },
+            deliveryPlan: {
+              id: "delivery:full-package",
+              title: "公开课完整交付计划",
+              summary: "先确认需求，再推进教案。",
+              currentStepId: "lesson_plan",
+              steps: [
+                {
+                  id: "requirement_spec",
+                  title: "整理备课需求",
+                  teacherDescription: "确认年级、课题、课堂目标和交付范围。",
+                  status: "succeeded",
+                  requiresConfirmation: true,
+                },
+                {
+                  id: "lesson_plan",
+                  title: "生成公开课教案",
+                  teacherDescription: "形成可上课的教学流程和活动安排。",
+                  status: "awaiting_confirmation",
+                  requiresConfirmation: true,
+                },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async () => ({
+      ok: true,
+      json: async () => snapshotWithPendingPlan,
+    }),
+  });
+
+  const snapshot = await client.getProjectSnapshot("backend-project-a");
+  const lastAssistant = snapshot.messages.at(-1);
+
+  assert.equal(lastAssistant.deliveryPlan.title, "公开课完整交付计划");
+  assert.equal(lastAssistant.deliveryPlan.steps[1].statusLabel, "等待确认");
+  assert.equal(lastAssistant.quickReplies.length, 1);
+  assert.equal(lastAssistant.quickReplies[0].label, "继续下一步");
+  assert.equal(lastAssistant.quickReplies[0].prompt, "继续下一步");
+  assert.equal(lastAssistant.quickReplies[0].recommended, true);
 });
 
 test("API client does not expose backend-only structured labels in visible artifact fields", async () => {

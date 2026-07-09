@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor, type AuthenticatedWorkbenchRequest } from "@/server/auth/workbench-route";
 import { buildStoredImageDownload } from "@/server/image-generation/artifact-image";
 import { buildFinalMaterialPackageDownload, materialPackageDownloadHeaders } from "@/server/package/artifact-package";
-import { buildStoredOrGeneratedArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
+import { buildStoredArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
 import { buildStoredVideoDownload } from "@/server/video-generation/artifact-video";
 
 type RouteContext = {
@@ -15,7 +15,7 @@ export async function GET(request: Request, context: RouteContext) {
       const { projectId, artifactId } = await context.params;
       const finalDelivery = await service.getArtifact(projectId, artifactId);
       const pptArtifact = await getLatestPptArtifact(projectId, service);
-      const pptx = await buildStoredOrGeneratedArtifactPptxDownload(pptArtifact);
+      const pptx = await buildStoredArtifactPptxDownload(pptArtifact);
       const image = await getLatestImageDownload(projectId, service);
       const video = await getLatestVideoDownload(projectId, service);
       const download = await buildFinalMaterialPackageDownload({ finalDelivery, pptx, image, video });
@@ -34,7 +34,7 @@ export async function GET(request: Request, context: RouteContext) {
 
 async function getLatestPptArtifact(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
-  const pptArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft");
+  const pptArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft" && hasPptxAsset(artifact));
   const approved = pptArtifacts.filter((artifact) => artifact.isApproved);
   const candidates = approved.length ? approved : pptArtifacts;
   const latest = candidates.sort((left, right) => right.version - left.version)[0];
@@ -46,7 +46,7 @@ async function getLatestPptArtifact(projectId: string, service: AuthenticatedWor
 
 async function getLatestVideoDownload(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
-  const videoArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "intro_video_plan" && hasVideoAsset(artifact));
+  const videoArtifacts = artifacts.filter((artifact) => (artifact.nodeKey === "video_storyboard" || artifact.nodeKey === "intro_video_plan") && hasVideoAsset(artifact));
   const approved = videoArtifacts.filter((artifact) => artifact.isApproved);
   const candidates = approved.length ? approved : videoArtifacts;
   const latest = candidates.sort((left, right) => right.version - left.version)[0];
@@ -58,7 +58,7 @@ async function getLatestVideoDownload(projectId: string, service: AuthenticatedW
 
 async function getLatestImageDownload(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
-  const imageArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft" && hasImageAsset(artifact));
+  const imageArtifacts = artifacts.filter((artifact) => (artifact.nodeKey === "image_prompts" || artifact.nodeKey === "ppt_draft") && hasImageAsset(artifact));
   const approved = imageArtifacts.filter((artifact) => artifact.isApproved);
   const candidates = approved.length ? approved : imageArtifacts;
   const latest = candidates.sort((left, right) => right.version - left.version)[0];
@@ -75,6 +75,15 @@ function hasVideoAsset(artifact: { structuredContent: Record<string, unknown> })
   }
   const videoAsset = (storage as { videoAsset?: unknown }).videoAsset;
   return Boolean(videoAsset && typeof videoAsset === "object" && !Array.isArray(videoAsset));
+}
+
+function hasPptxAsset(artifact: { structuredContent: Record<string, unknown> }) {
+  const storage = artifact.structuredContent.storage;
+  if (!storage || typeof storage !== "object" || Array.isArray(storage)) {
+    return false;
+  }
+  const cozePptx = (storage as { cozePptx?: unknown }).cozePptx;
+  return Boolean(cozePptx && typeof cozePptx === "object" && !Array.isArray(cozePptx));
 }
 
 function hasImageAsset(artifact: { structuredContent: Record<string, unknown> }) {

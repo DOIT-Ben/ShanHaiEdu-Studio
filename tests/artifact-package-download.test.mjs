@@ -24,7 +24,7 @@ const finalDeliveryArtifact = {
     "- 需求规格说明书",
     "- 公开课教案",
     "- PPT 大纲与逐页脚本",
-    "- PPT 大纲可下载最小 PPTX 文件",
+    "- PPT 大纲可下载真实 PPTX 文件",
     "",
     "## 待确认事项",
     "- 图片文件、视频成片、动画和视觉精修仍待生成或完善。",
@@ -69,10 +69,11 @@ test("builds a real final material ZIP package", async () => {
   const finalDelivery = entries.get("final-delivery.md").toString("utf8");
   const pptx = entries.get("ppt-outline.pptx");
 
-  assert.match(readme, /本材料包包含最终交付清单和最小 PPTX 文件/);
+  assert.match(readme, /本材料包包含最终交付清单和真实 PPTX 文件/);
+  assert.match(readme, /真实生成并通过 PPTX 结构校验的课件文件/);
   assert.match(readme, /图片文件、视频成片、动画和视觉精修仍待生成或完善/);
   assert.match(finalDelivery, /# 最终交付清单/);
-  assert.match(finalDelivery, /PPT 大纲可下载最小 PPTX 文件/);
+  assert.match(finalDelivery, /PPT 大纲可下载真实 PPTX 文件/);
   assert.equal(pptx.subarray(0, 2).toString("utf8"), "PK");
   assert.doesNotMatch(`${readme}\n${finalDelivery}`, /PPTX 文件已生成|图片文件已生成|视频成片已生成/);
 });

@@ -103,7 +103,7 @@ function AssistantMessage({
           </div>
           {message.deliveryPlan && <DeliveryPlanCard plan={message.deliveryPlan} />}
           {artifact && <TeacherArtifactCard item={artifact} />}
-          {!artifact && quickReplies.length > 0 && (
+          {quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
           )}
           <MessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
@@ -143,28 +143,8 @@ function DeliveryPlanCard({ plan }: { plan: ChatDeliveryPlan }) {
 
 function findInlineArtifact(message: ChatMessage, artifacts: ArtifactItem[]) {
   if (artifacts.length === 0) return null;
-  const text = `${message.title ?? ""}\n${message.body}`;
-  if (!hasGeneratedSignal(text)) return null;
-  const generatedArtifacts = artifacts.filter((item) => {
-    if (!item.artifactId) return null;
-    return item.status !== "not_started";
-  });
-
-  const directlyMentioned = generatedArtifacts.find((item) => text.includes(item.title));
-  if (directlyMentioned) {
-    return directlyMentioned;
-  }
-
-  const candidate =
-    generatedArtifacts.find((item) => item.status === "needs_review") ??
-    generatedArtifacts.find((item) => item.status === "stale") ??
-    generatedArtifacts.find((item) => item.status === "approved") ??
-    null;
-  return candidate;
-}
-
-function hasGeneratedSignal(text: string) {
-  return /已完成|已整理|已进入|可确认|需求规格/.test(text);
+  if (!message.artifactRefs?.length) return null;
+  return artifacts.find((item) => item.artifactId && message.artifactRefs?.includes(item.artifactId)) ?? null;
 }
 
 type QuickReplyChoice = {
@@ -173,8 +153,7 @@ type QuickReplyChoice = {
   recommended?: boolean;
 };
 
-function getQuickReplyChoices(message: ChatMessage, artifact: ArtifactItem | null): QuickReplyChoice[] {
-  if (artifact) return [];
+function getQuickReplyChoices(message: ChatMessage, _artifact: ArtifactItem | null): QuickReplyChoice[] {
   if (message.quickReplies?.length) {
     return message.quickReplies.map((reply) => ({
       label: reply.label,

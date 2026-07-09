@@ -1,5 +1,5 @@
 import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
-import type { MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
+import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
 
 export type MainConversationAgentInput = {
   userMessage: string;
@@ -8,6 +8,15 @@ export type MainConversationAgentInput = {
     grade?: string | null;
     subject?: string | null;
     topic?: string | null;
+  };
+  conversationContext?: {
+    recentMessages: Array<{ role: "teacher" | "assistant" | "system"; content: string }>;
+    latestAssistantContent?: string;
+    pendingDeliveryPlan?: {
+      teacherRequest: string;
+      toolPlan: CapabilityToolPlan;
+      deliveryPlan?: DeliveryPlan;
+    };
   };
 };
 
@@ -19,6 +28,22 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
   return {
     async respond(input) {
       const text = input.userMessage.trim();
+      const pendingPlan = input.conversationContext?.pendingDeliveryPlan;
+
+      if (pendingPlan && isShortConfirmation(text)) {
+        return {
+          assistantMessage: {
+            body: pendingPlan.toolPlan.reasonForUser,
+          },
+          state: "running_tool",
+          quickReplies: [],
+          recommendedOptions: [],
+          toolPlan: pendingPlan.toolPlan,
+          deliveryPlan: pendingPlan.deliveryPlan,
+          shouldRunToolNow: true,
+          runtimeKind: "deterministic",
+        };
+      }
 
       if (isCasualChat(text)) {
         return {
@@ -123,6 +148,12 @@ function isCasualChat(text: string): boolean {
 
 function isExplorationOnly(text: string): boolean {
   return /聊聊|想法|创意|怎么设计|怎么上/.test(text) && !/帮我做|生成|做一个|做份|输出/.test(text);
+}
+
+function isShortConfirmation(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "").toLowerCase();
+  if (["开始", "确认", "确认开始", "可以", "好的", "好", "ok", "继续", "下一步", "继续下一步", "没问题"].includes(normalized)) return true;
+  return /确认开始|按这个计划推进|开始生成|可以生成|继续下一步|继续推进|继续生成/.test(normalized);
 }
 
 function defaultCollectionReplies(): QuickReply[] {

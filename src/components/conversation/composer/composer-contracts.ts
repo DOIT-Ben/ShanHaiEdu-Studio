@@ -48,10 +48,8 @@ export function getTextareaHeightPlan(value: string, options: { minRows?: number
 }
 
 export function normalizeQuickReplies(replies: ComposerQuickReply[]): ComposerQuickReply[] {
-  return [...replies]
+  return replies
     .filter((reply) => reply.label.trim() && reply.prompt.trim())
-    .sort((left, right) => Number(Boolean(right.recommended)) - Number(Boolean(left.recommended)))
-    .slice(0, 3)
     .map((reply) => ({
       label: reply.label.trim(),
       prompt: reply.prompt.trim(),

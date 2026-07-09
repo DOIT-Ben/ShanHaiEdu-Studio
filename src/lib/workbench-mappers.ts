@@ -1,5 +1,5 @@
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ArtifactKind, ArtifactStatus, ChatMessage, ProjectItem, ProjectStatus, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ArtifactKind, ArtifactStatus, ChatDeliveryPlan, ChatMessage, ProjectItem, ProjectStatus, WorkbenchSnapshot } from "@/lib/types";
 
 export type BackendProjectRecord = {
   id: string;
@@ -20,7 +20,32 @@ export type BackendMessageRecord = {
   role: "teacher" | "assistant" | "system";
   content: string;
   artifactRefs: string[];
+  metadata?: Record<string, unknown>;
   createdAt: string;
+};
+
+type BackendPendingDeliveryPlan = {
+  status?: string;
+  toolPlan?: {
+    capabilityId?: string;
+  };
+  deliveryPlan?: BackendDeliveryPlan;
+};
+
+type BackendDeliveryPlan = {
+  id?: string;
+  title?: string;
+  summary?: string;
+  currentStepId?: string;
+  steps?: BackendDeliveryPlanStep[];
+};
+
+type BackendDeliveryPlanStep = {
+  id?: string;
+  title?: string;
+  teacherDescription?: string;
+  status?: ChatDeliveryPlan["steps"][number]["status"];
+  requiresConfirmation?: boolean;
 };
 
 export type BackendNodeRecord = {
@@ -105,17 +130,79 @@ function mapBackendProject(project: BackendProjectRecord): ProjectItem {
 }
 
 function mapBackendMessage(message: BackendMessageRecord): ChatMessage {
+  const pendingPlan = pendingDeliveryPlanFromMessage(message);
+  const deliveryPlan = toChatDeliveryPlan(pendingPlan?.deliveryPlan);
+  const quickReplies = quickRepliesFromPendingPlan(pendingPlan, deliveryPlan);
+
   return {
     id: message.id,
     speaker: message.role === "assistant" ? "assistant" : "teacher",
     body: teacherVisibleMessageBody(message),
     timeLabel: formatDateLabel(message.createdAt),
+    artifactRefs: message.artifactRefs,
+    ...(quickReplies.length ? { quickReplies } : {}),
+    ...(deliveryPlan ? { deliveryPlan } : {}),
   };
 }
 
 function teacherVisibleMessageBody(message: BackendMessageRecord) {
-  if (!message.artifactRefs.length || message.content.includes("引用：")) return message.content;
-  return `${message.content}\n\n引用：${message.artifactRefs.join("；")}`;
+  return message.content;
+}
+
+function pendingDeliveryPlanFromMessage(message: BackendMessageRecord): BackendPendingDeliveryPlan | null {
+  if (message.role !== "assistant") return null;
+  const value = message.metadata?.pendingDeliveryPlan;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const pendingPlan = value as BackendPendingDeliveryPlan;
+  return pendingPlan.status === "pending" ? pendingPlan : null;
+}
+
+function quickRepliesFromPendingPlan(pendingPlan: BackendPendingDeliveryPlan | null, deliveryPlan?: ChatDeliveryPlan): NonNullable<ChatMessage["quickReplies"]> {
+  if (!pendingPlan?.toolPlan?.capabilityId) return [];
+  const hasCompletedStep = Boolean(deliveryPlan?.steps.some((step) => step.status === "succeeded"));
+  return [
+    {
+      label: hasCompletedStep ? "继续下一步" : "确认开始",
+      prompt: hasCompletedStep ? "继续下一步" : "确认开始",
+      recommended: true,
+    },
+  ];
+}
+
+function toChatDeliveryPlan(plan?: BackendDeliveryPlan): ChatDeliveryPlan | undefined {
+  const steps = plan?.steps?.map(toChatDeliveryPlanStep).filter((step): step is ChatDeliveryPlan["steps"][number] => Boolean(step));
+  if (!plan?.title || !plan.summary || !steps?.length) return undefined;
+
+  return {
+    id: plan.id ?? `delivery-plan-${plan.title}`,
+    title: plan.title,
+    summary: plan.summary,
+    steps,
+  };
+}
+
+function toChatDeliveryPlanStep(step: BackendDeliveryPlanStep): ChatDeliveryPlan["steps"][number] | null {
+  if (!step.id || !step.title || !step.teacherDescription || !step.status) return null;
+
+  return {
+    id: step.id,
+    title: step.title,
+    teacherDescription: step.teacherDescription,
+    status: step.status,
+    statusLabel: deliveryPlanStatusLabel(step.status),
+    requiresConfirmation: Boolean(step.requiresConfirmation),
+  };
+}
+
+function deliveryPlanStatusLabel(status: ChatDeliveryPlan["steps"][number]["status"]) {
+  const labels: Record<ChatDeliveryPlan["steps"][number]["status"], string> = {
+    awaiting_confirmation: "等待确认",
+    pending: "待推进",
+    running: "正在推进",
+    succeeded: "已完成",
+    failed: "需要处理",
+  };
+  return labels[status];
 }
 
 function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, string | string[]> {
@@ -123,11 +210,8 @@ function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, st
   if (artifact.markdownContent) content["正文"] = artifact.markdownContent;
   for (const [key, value] of Object.entries(artifact.structuredContent ?? {})) {
     if (!isVisibleStructuredLabel(key)) continue;
-    if (Array.isArray(value)) {
-      content[key] = value.map(String);
-    } else if (value !== null && value !== undefined) {
-      content[key] = String(value);
-    }
+    const visibleValue = toTeacherVisibleStructuredValue(value);
+    if (visibleValue) content[key] = visibleValue;
   }
   if (!Object.keys(content).length) content.说明 = artifact.summary || "还没有可复用内容。";
   return content;
@@ -136,9 +220,24 @@ function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, st
 function previewFieldsFromContent(artifact: BackendArtifactRecord): { label: string; value: string }[] {
   const fields = Object.entries(artifact.structuredContent ?? {})
     .filter(([label]) => isVisibleStructuredLabel(label))
+    .map(([label, value]) => ({ label, value: toTeacherVisibleStructuredValue(value) }))
+    .filter((field): field is { label: string; value: string | string[] } => Boolean(field.value))
     .slice(0, 3)
-    .map(([label, value]) => ({ label, value: Array.isArray(value) ? value.map(String).join("、") : String(value) }));
+    .map(({ label, value }) => ({ label, value: Array.isArray(value) ? value.join("、") : value }));
   return fields.length ? fields : [{ label: "内容", value: artifact.summary || "已生成内容" }];
+}
+
+function toTeacherVisibleStructuredValue(value: unknown): string | string[] | null {
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value)) {
+    const entries = value
+      .filter((entry) => typeof entry === "string" || typeof entry === "number")
+      .map(String)
+      .filter(Boolean);
+    return entries.length ? entries : null;
+  }
+  return null;
 }
 
 function isVisibleStructuredLabel(label: string) {
@@ -157,6 +256,7 @@ function isVisibleStructuredLabel(label: string) {
     ["capability", "id"],
     ["runtime", "kind"],
     ["provider", "status"],
+    ["place", "holder"],
   ].map((parts) => parts.join(""));
   return !internalTerms.some((term) => lower.includes(term));
 }

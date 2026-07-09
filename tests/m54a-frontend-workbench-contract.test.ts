@@ -20,16 +20,17 @@ describe("M54-A frontend workbench contracts", () => {
     expect(plan.overflowY).toBe("auto");
   });
 
-  it("keeps quick replies short, recommended-first, and non-sending", () => {
+  it("preserves model quick reply order and keeps replies non-sending", () => {
     const replies = normalizeQuickReplies([
       { label: "普通", prompt: "普通" },
       { label: "推荐", prompt: "推荐", recommended: true },
       { label: "补充", prompt: "补充" },
       { label: "多余", prompt: "多余" },
+      { label: "第五条", prompt: "第五条" },
     ]);
 
-    expect(replies).toHaveLength(3);
-    expect(replies[0]).toMatchObject({ label: "推荐", recommended: true });
+    expect(replies).toHaveLength(5);
+    expect(replies.map((reply) => reply.label)).toEqual(["普通", "推荐", "补充", "多余", "第五条"]);
     expect(applyQuickReplyToDraft("确认开始")).toEqual({ draft: "确认开始", shouldSend: false });
   });
 

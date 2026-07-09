@@ -12,8 +12,8 @@ function readSource(relativePath) {
 test("ChatTranscript does not show inline artifacts for ungenerated workflow nodes", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
 
-  assert.match(source, /if \(!item\.artifactId\) return null/);
-  assert.match(source, /hasGeneratedSignal/);
+  assert.match(source, /message\.artifactRefs/);
+  assert.doesNotMatch(source, /hasGeneratedSignal/);
   assert.doesNotMatch(source, /已生成\|生成\|产物\|草稿\|说明书\|教案\|大纲\|视频\|交付/);
 });
 
@@ -26,6 +26,7 @@ test("ChatTranscript renders recommended quick reply choices for semi-auto clari
   assert.match(quickReplySource, /data-recommended-choice/);
   assert.match(quickReplySource, /推荐/);
   assert.match(source, /getQuickReplyChoices/);
+  assert.doesNotMatch(source, /!artifact\s*&&\s*quickReplies\.length/);
   assert.doesNotMatch(source, /我想做三年级数学公开课/);
   assert.doesNotMatch(source, /先帮我整理备课需求/);
 });
@@ -50,12 +51,10 @@ test("ProjectSidebar can collapse the public course section and keeps disabled f
   assert.doesNotMatch(source, /回收站[\s\S]*w-full justify-start/);
 });
 
-test("Deterministic conversation gate separates casual chat from explicit lesson work", () => {
-  const source = readSource("src/server/conversation/conversation-orchestrator.ts");
+test("Message route uses model-first main conversation agent instead of deterministic pre-gates", () => {
+  const source = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
 
-  assert.match(source, /isCasualChat/);
-  assert.match(source, /isExplicitLessonWorkRequest/);
-  assert.match(source, /intent: "chat"/);
-  assert.match(source, /intent: "start_requirement"/);
-  assert.doesNotMatch(source, /"生成",\s*\n\s*"设计",/);
+  assert.match(source, /createMainConversationAgentFromEnv/);
+  assert.doesNotMatch(source, /createDeterministicMainConversationAgent/);
+  assert.doesNotMatch(source, /planCapabilityForRequest/);
 });

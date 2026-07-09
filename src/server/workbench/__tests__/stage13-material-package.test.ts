@@ -47,6 +47,28 @@ describe("Local Real MVP M13 final material package route", () => {
 
     snapshot = await readSnapshot(projectId);
     const finalDelivery = snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "final_delivery");
+    const pptxBuffer = await buildTinyPptx();
+    const pptxOutput = writeFixturePptx(pptxBuffer);
+    await createWorkbenchService().saveArtifact(projectId, {
+      nodeKey: "ppt_draft",
+      kind: "ppt_draft",
+      title: "真实 PPTX 文件",
+      status: "needs_review",
+      summary: "已生成本地 PPTX。",
+      markdownContent: "PPTX 文件说明。",
+      structuredContent: {
+        storage: {
+          cozePptx: {
+            localOutput: pptxOutput,
+            fileName: "percentage-outline.pptx",
+            bytes: pptxBuffer.length,
+            sha256: "fake-pptx-sha256",
+            generationMode: "coze_generated",
+            sourceArtifactId: pptOutline.id,
+          },
+        },
+      },
+    });
     const videoBuffer = buildTinyMp4();
     const videoOutput = writeFixtureVideo(videoBuffer);
     await createWorkbenchService().saveArtifact(projectId, {
@@ -141,6 +163,21 @@ function buildTinyMp4() {
 
 function buildTinyPng() {
   return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+}
+
+async function buildTinyPptx() {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", "<Types />");
+  zip.file("ppt/presentation.xml", "<presentation />");
+  return Buffer.from(await zip.generateAsync({ type: "nodebuffer" }));
+}
+
+function writeFixturePptx(buffer: Buffer) {
+  const dir = path.join(process.cwd(), ".tmp", "stage13-pptx-package-test");
+  mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, "percentage-outline.pptx");
+  writeFileSync(filePath, buffer);
+  return path.relative(process.cwd(), filePath).replaceAll("\\", "/");
 }
 
 function writeFixtureVideo(buffer: Buffer) {

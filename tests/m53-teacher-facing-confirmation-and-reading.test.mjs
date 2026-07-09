@@ -14,7 +14,7 @@ function readOptionalSource(relativePath) {
   return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : "";
 }
 
-test("message route asks for teacher confirmation before generating requirement artifacts", () => {
+test("message route lets the model-first agent decide before generating artifacts", () => {
   const routeSource = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
   const serviceSource = readSource("src/server/conversation/conversation-turn-service.ts");
 
@@ -23,14 +23,18 @@ test("message route asks for teacher confirmation before generating requirement 
   assert.doesNotMatch(routeSource, /runtime\.run/);
   assert.doesNotMatch(routeSource, /saveArtifact/);
 
-  assert.match(serviceSource, /isTeacherConfirmation/);
-  assert.match(serviceSource, /runConfirmedFirstArtifact/);
+  assert.match(serviceSource, /agent\.respond/);
+  assert.match(serviceSource, /conversationContext/);
+  assert.match(serviceSource, /findPendingDeliveryPlan/);
+  assert.match(serviceSource, /runPlannedArtifact/);
   assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
   assert.match(serviceSource, /saveArtifact/);
 
-  const nonConfirmationBranch = serviceSource.slice(serviceSource.indexOf("const agentTurn = await agent.respond"));
-  assert.match(nonConfirmationBranch, /return \{ message, assistantMessage, agentTurn \}/);
-  assert.doesNotMatch(nonConfirmationBranch.split(/return \{ message, assistantMessage, agentTurn \}/)[0], /saveArtifact/);
+  const agentDecisionBranch = serviceSource.slice(serviceSource.indexOf("const agentTurn = await agent.respond"));
+  assert.match(agentDecisionBranch, /if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/);
+  assert.match(agentDecisionBranch, /runPlannedArtifact/);
+  assert.match(agentDecisionBranch, /return \{ message, assistantMessage, agentTurn \}/);
+  assert.doesNotMatch(agentDecisionBranch.split(/if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/)[0], /saveArtifact/);
 });
 
 test("conversation inline artifact is a teacher-facing result card without backend labels", () => {
@@ -119,7 +123,7 @@ test("delivery plan card uses teacher-facing step labels without backend fields"
 
   assert.match(source, /DeliveryPlanCard/);
   assert.match(source, /备课推进计划|交付计划/);
-  assert.match(source, /等待确认|待推进|已完成/);
+  assert.match(source, /statusLabel/);
   assert.doesNotMatch(source, /capabilityId|artifactKind|schema|manifest|provider|node_id|storage|API|debug|local path/i);
 });
 

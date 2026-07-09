@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
+import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 
 const runtime = createAgentRuntimeFromEnv();
+const mainAgent = createMainConversationAgentFromEnv();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -28,7 +30,7 @@ export async function POST(request: Request, context: RouteContext) {
     try {
       const { projectId } = await context.params;
       const body = await request.json();
-      const turnService = createConversationTurnService({ service, runtime });
+      const turnService = createConversationTurnService({ service, runtime, agent: mainAgent });
       const response = await turnService.createTurn(projectId, {
         role: "teacher",
         content: String(body.body ?? body.content ?? "").trim(),

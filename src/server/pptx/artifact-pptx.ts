@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import JSZip from "jszip";
 import pptxgen from "pptxgenjs";
 import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
 
@@ -60,11 +61,21 @@ export async function buildStoredOrGeneratedArtifactPptxDownload(artifact: {
   structuredContent: Record<string, unknown>;
   updatedAt: string;
 }): Promise<PptxDownload> {
-  const stored = readStoredCozePptx(artifact.structuredContent);
+  const stored = await readStoredCozePptx(artifact.structuredContent);
   if (stored) {
     return stored;
   }
   return buildArtifactPptxDownload(toPptxDownloadableArtifact(artifact));
+}
+
+export async function buildStoredArtifactPptxDownload(artifact: {
+  structuredContent: Record<string, unknown>;
+}): Promise<PptxDownload> {
+  const stored = await readStoredCozePptx(artifact.structuredContent);
+  if (!stored) {
+    throw new Error("Real PPTX file is required before exporting the material package.");
+  }
+  return stored;
 }
 
 export function pptxDownloadHeaders(filename: string) {
@@ -103,7 +114,7 @@ export function toPptxDownloadableArtifact(artifact: {
   };
 }
 
-function readStoredCozePptx(structuredContent: Record<string, unknown>): PptxDownload | null {
+async function readStoredCozePptx(structuredContent: Record<string, unknown>): Promise<PptxDownload | null> {
   const storage = structuredContent.storage;
   if (!storage || typeof storage !== "object" || Array.isArray(storage)) return null;
   const cozePptx = (storage as { cozePptx?: unknown }).cozePptx;
@@ -122,6 +133,14 @@ function readStoredCozePptx(structuredContent: Record<string, unknown>): PptxDow
 
   const buffer = readFileSync(absolutePath);
   if (buffer.subarray(0, 2).toString("ascii") !== "PK") {
+    throw new Error("Stored PPTX file is invalid.");
+  }
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    if (!zip.file("ppt/presentation.xml")) {
+      throw new Error("Stored PPTX file is invalid.");
+    }
+  } catch {
     throw new Error("Stored PPTX file is invalid.");
   }
 

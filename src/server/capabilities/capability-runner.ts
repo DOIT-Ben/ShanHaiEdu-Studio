@@ -16,7 +16,6 @@ const capabilityRuntimeTaskMap: Partial<Record<CapabilityId, AgentRuntimeTask>> 
   requirement_spec: "requirement_spec",
   lesson_plan: "lesson_plan",
   ppt_outline: "ppt_outline",
-  intro_video: "intro_video_plan",
   final_package: "final_delivery_checklist",
 };
 
@@ -31,9 +30,6 @@ const runtimeArtifactMap: Record<AgentRuntimeTask, Pick<SaveArtifactDraft, "node
 
 export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilityInput): Promise<CapabilityRunResult> {
   const capability = getCapabilityDefinition(input.capabilityId);
-  const placeholder = buildExternalPlaceholderResult(input.capabilityId, input.userMessage);
-  if (placeholder) return placeholder;
-
   const task = capabilityRuntimeTaskMap[input.capabilityId];
 
   if (!task) {
@@ -83,57 +79,6 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       ? `${result.assistantMessage.title}\n\n${result.assistantMessage.body}`
       : result.assistantMessage.body,
     providerStatus: result.artifactDraft.generationMode === "model_generated" ? "real" : "deterministic_draft",
-  };
-}
-
-function buildExternalPlaceholderResult(capabilityId: CapabilityId, userMessage: string): CapabilityRunResult | null {
-  if (capabilityId !== "coze_ppt" && capabilityId !== "image_asset" && capabilityId !== "intro_video") return null;
-
-  const capability = getCapabilityDefinition(capabilityId);
-  const titles: Record<typeof capabilityId, string> = {
-    coze_ppt: "PPTX 生成接线占位",
-    image_asset: "课堂图片素材提示词",
-    intro_video: "导入视频分镜占位",
-  };
-  const summaries: Record<typeof capabilityId, string> = {
-    coze_ppt: "已把 PPTX 生成节点接入交付计划，当前先保存可检查的接线占位。",
-    image_asset: "已生成课堂图片素材提示词，后续可接入图片生成服务替换为真实图片。",
-    intro_video: "已生成导入视频分镜和生成提示，后续可接入视频生成服务替换为真实视频。",
-  };
-
-  const markdownContent = [
-    `# ${titles[capabilityId]}`,
-    "",
-    summaries[capabilityId],
-    "",
-    "## 当前用途",
-    "",
-    "- 让完整备课交付链路先能推进到本节点。",
-    "- 保存后续真实服务接入所需的草稿输入。",
-    "- 该结果是接线占位，不代表外部文件已经生成。",
-    "",
-    "## 原始需求",
-    "",
-    userMessage,
-  ].join("\n");
-
-  return {
-    status: "succeeded",
-    artifactDraft: {
-      nodeKey: capability.workflowNodeKey,
-      kind: capability.artifactKind,
-      title: titles[capabilityId],
-      summary: summaries[capabilityId],
-      markdownContent,
-      structuredContent: {
-        capabilityId,
-        generationMode: "deterministic_draft",
-        providerStatus: "deterministic_draft",
-        placeholder: true,
-      },
-    },
-    assistantSummary: `已完成「${capability.userLabel}」的接线占位，完整链路可以继续推进。`,
-    providerStatus: "deterministic_draft",
   };
 }
 

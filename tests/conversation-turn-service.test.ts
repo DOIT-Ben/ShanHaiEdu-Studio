@@ -129,6 +129,50 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(confirmBody.agentTurn.artifactRefs).toEqual([confirmBody.artifact.id]);
   });
 
+  it("lets the main agent confirm a pending plan from a short start reply", async () => {
+    const projectId = await createProject({
+      title: "M55-C 短确认项目",
+      grade: "四年级",
+      subject: "语文",
+      lessonTopic: "观潮",
+    });
+
+    const planningResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "四年级语文《观潮》第一课时，帮我先整理备课需求" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const planningBody = await planningResponse.json();
+
+    expect(planningBody.agentTurn).toMatchObject({
+      state: "awaiting_confirmation",
+      toolPlan: { capabilityId: "requirement_spec", requiresConfirmation: true },
+    });
+
+    const confirmResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "开始。" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const confirmBody = await confirmResponse.json();
+
+    expect(confirmResponse.status).toBe(201);
+    expect(confirmBody.agentTurn).toMatchObject({
+      state: "succeeded",
+      shouldRunToolNow: true,
+    });
+    expect(confirmBody.artifact).toMatchObject({ nodeKey: "requirement_spec", status: "needs_review" });
+
+    const messagesResponse = await getMessageRoute(new Request("http://localhost", { method: "GET" }), { params: Promise.resolve({ projectId }) });
+    const messagesBody = await messagesResponse.json();
+    const assistantPlanMessage = messagesBody.messages.find((message: { id: string }) => message.id === planningBody.assistantMessage.id);
+    expect(assistantPlanMessage.metadata.pendingDeliveryPlan.status).toBe("confirmed");
+  });
+
   it("returns a delivery plan for complete material package requests before confirmation", async () => {
     const projectId = await createProject({
       title: "M55-A 完整材料包项目",
@@ -336,17 +380,13 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       { params: Promise.resolve({ projectId }) },
     );
 
-    const expectedSteps = [
+    const internalSteps = [
       { content: "确认开始", capabilityId: "requirement_spec", nodeKey: "requirement_spec", nextCapabilityId: "lesson_plan" },
       { content: "继续下一步", capabilityId: "lesson_plan", nodeKey: "lesson_plan", nextCapabilityId: "ppt_outline" },
       { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "coze_ppt" },
-      { content: "继续下一步", capabilityId: "coze_ppt", nodeKey: "ppt_draft", nextCapabilityId: "image_asset" },
-      { content: "继续下一步", capabilityId: "image_asset", nodeKey: "image_prompts", nextCapabilityId: "intro_video" },
-      { content: "继续下一步", capabilityId: "intro_video", nodeKey: "video_storyboard", nextCapabilityId: "final_package" },
-      { content: "继续下一步", capabilityId: "final_package", nodeKey: "final_delivery", nextCapabilityId: null },
     ];
 
-    for (const step of expectedSteps) {
+    for (const step of internalSteps) {
       const response = await postMessageRoute(
         new Request("http://localhost", {
           method: "POST",
@@ -370,28 +410,36 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         },
       });
       expect(body.assistantMessage.content).not.toMatch(/schema|provider|node_id|storage|debug|local path|API/i);
-      if (step.capabilityId === "final_package") {
-        expect(body.artifact.markdownContent).toMatch(/接线占位|草稿|待接入/);
-        expect(body.artifact.markdownContent).not.toMatch(/教材证据包|可下载最小 PPTX 文件|真实图片已生成|真实视频已生成/);
-      }
-
-      if (step.nextCapabilityId) {
-        expect(body.agentTurn.deliveryPlan.currentStepId).toBe(step.nextCapabilityId);
-        expect(body.agentTurn.quickReplies).toEqual(
-          expect.arrayContaining([expect.objectContaining({ label: "继续下一步", prompt: "继续下一步" })]),
-        );
-        expect(body.assistantMessage.metadata).toMatchObject({
-          pendingDeliveryPlan: {
-            status: "pending",
-            toolPlan: { capabilityId: step.nextCapabilityId },
-            deliveryPlan: { currentStepId: step.nextCapabilityId },
-          },
-        });
-      } else {
-        expect(body.agentTurn.deliveryPlan.steps.every((deliveryStep: { status: string }) => deliveryStep.status === "succeeded")).toBe(true);
-        expect(body.assistantMessage.metadata.pendingDeliveryPlan).toBeUndefined();
-      }
+      expect(body.agentTurn.deliveryPlan.currentStepId).toBe(step.nextCapabilityId);
+      expect(body.agentTurn.quickReplies).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: "继续下一步", prompt: "继续下一步" })]),
+      );
+      expect(body.assistantMessage.metadata).toMatchObject({
+        pendingDeliveryPlan: {
+          status: "pending",
+          toolPlan: { capabilityId: step.nextCapabilityId },
+          deliveryPlan: { currentStepId: step.nextCapabilityId },
+        },
+      });
     }
+
+    const externalResponse = await postMessageRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ role: "teacher", content: "继续下一步" }),
+      }),
+      { params: Promise.resolve({ projectId }) },
+    );
+    const externalBody = await externalResponse.json();
+
+    expect(externalResponse.status).toBe(201);
+    expect(externalBody.agentTurn).toMatchObject({
+      state: "failed_retryable",
+      shouldRunToolNow: true,
+    });
+    expect(externalBody.artifact).toBeUndefined();
+    expect(externalBody.assistantMessage.content).toMatch(/没有保存占位成果|需要先生成/);
+    expect(externalBody.assistantMessage.content).not.toMatch(/schema|provider|node_id|storage|debug|local path|API|placeholder/i);
 
     const messagesResponse = await getMessageRoute(
       new Request("http://localhost", {
@@ -402,7 +450,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const messagesBody = await messagesResponse.json();
     const artifactRefs = messagesBody.messages.flatMap((message: { artifactRefs: string[] }) => message.artifactRefs);
 
-    expect(artifactRefs).toHaveLength(7);
+    expect(artifactRefs).toHaveLength(3);
   });
 });
 

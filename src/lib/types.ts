@@ -59,6 +59,7 @@ export type ChatMessage = {
   body: string;
   timeLabel?: string;
   tone?: "normal" | "focus" | "warning" | "error";
+  artifactRefs?: string[];
   quickReplies?: {
     label: string;
     prompt: string;

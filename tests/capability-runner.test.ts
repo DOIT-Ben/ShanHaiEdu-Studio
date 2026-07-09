@@ -99,10 +99,10 @@ describe("M54-B CapabilityRunner contract", () => {
     });
   });
 
-  it("returns honest placeholder artifacts for external capabilities before real providers are wired", async () => {
+  it("fails external capabilities instead of returning placeholder success from the text runtime", async () => {
     const runtime: AgentRuntime = {
       async run() {
-        throw new Error("external placeholder capabilities should not call the text runtime");
+        throw new Error("external capabilities should not call the text runtime");
       },
     };
 
@@ -118,50 +118,15 @@ describe("M54-B CapabilityRunner contract", () => {
       },
     };
 
-    const cozePpt = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "coze_ppt" });
-    const imageAsset = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "image_asset" });
-    const introVideo = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId: "intro_video" });
+    for (const capabilityId of ["coze_ppt", "image_asset", "intro_video"] as const) {
+      const result = await runCapabilityWithAgentRuntime({ ...baseInput, capabilityId });
 
-    expect(cozePpt).toMatchObject({
-      status: "succeeded",
-      artifactDraft: {
-        nodeKey: "ppt_draft",
-        kind: "ppt_draft",
-        structuredContent: {
-          capabilityId: "coze_ppt",
-          providerStatus: "deterministic_draft",
-          placeholder: true,
-        },
-      },
-      providerStatus: "deterministic_draft",
-    });
-    expect(imageAsset).toMatchObject({
-      status: "succeeded",
-      artifactDraft: {
-        nodeKey: "image_prompts",
-        kind: "image_prompts",
-        structuredContent: {
-          capabilityId: "image_asset",
-          providerStatus: "deterministic_draft",
-          placeholder: true,
-        },
-      },
-      providerStatus: "deterministic_draft",
-    });
-    expect(introVideo).toMatchObject({
-      status: "succeeded",
-      artifactDraft: {
-        nodeKey: "video_storyboard",
-        kind: "video_storyboard",
-        structuredContent: {
-          capabilityId: "intro_video",
-          providerStatus: "deterministic_draft",
-          placeholder: true,
-        },
-      },
-      providerStatus: "deterministic_draft",
-    });
-
-    expect(JSON.stringify([cozePpt, imageAsset, introVideo])).not.toMatch(/真实 PPTX 已生成|真实图片已生成|真实视频已生成/);
+      expect(result).toMatchObject({
+        status: "failed",
+        retryable: true,
+        errorCategory: "provider",
+      });
+      expect(JSON.stringify(result)).not.toMatch(/placeholder|deterministic_draft|真实 PPTX 已生成|真实图片已生成|真实视频已生成/);
+    }
   });
 });
