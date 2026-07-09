@@ -53,7 +53,9 @@ export type ToolExecutionResult =
       status: "succeeded";
       toolId: string;
       capabilityId: string;
+      provider?: string;
       artifactDraft: SaveArtifactDraft;
+      providerPayload?: Record<string, unknown>;
       assistantSummary: string;
       budgetEvent: AgentHarnessBudgetEvent;
     }
@@ -61,6 +63,7 @@ export type ToolExecutionResult =
       status: "needs_input";
       toolId: string;
       capabilityId: string;
+      provider?: string;
       missingInputs: string[];
       assistantPrompt: string;
       observation: ToolObservation;
@@ -71,6 +74,7 @@ export type ToolExecutionResult =
       status: "failed" | "retryable_failed";
       toolId: string;
       capabilityId: string;
+      provider?: string;
       observation: ToolObservation;
       artifactCreated: false;
       errorCategory?: string;
