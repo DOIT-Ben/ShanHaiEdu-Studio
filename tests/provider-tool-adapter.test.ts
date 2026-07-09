@@ -98,8 +98,57 @@ describe("M64-C ProviderToolAdapter", () => {
         structuredContent: {
           provider: "coze_ppt",
           fileName: "lesson.pptx",
+          localOutput: ".tmp/lesson.pptx",
+          bytes: 2048,
+          sha256: "sha256-value",
+          mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
           slideCount: 1,
           pptxValid: true,
+          artifactTruth: {
+            created: true,
+            persisted: true,
+            persistenceScope: "provider_local_file",
+            providerPersisted: true,
+            workbenchPersisted: false,
+            placeholder: false,
+            producedArtifactKind: "pptx_artifact",
+          },
+          qualityGate: {
+            passed: true,
+            gates: expect.arrayContaining(["pptx_valid", "presentation_xml_present", "slide_count_matches_design"]),
+          },
+        },
+      },
+      artifactTruth: {
+        created: true,
+        persisted: true,
+        persistenceScope: "provider_local_file",
+        providerPersisted: true,
+        workbenchPersisted: false,
+        placeholder: false,
+        producedArtifactKind: "pptx_artifact",
+      },
+      qualityGate: {
+        passed: true,
+        gates: expect.arrayContaining(["pptx_valid", "presentation_xml_present", "slide_count_matches_design"]),
+      },
+      providerPayload: {
+        localOutput: ".tmp/lesson.pptx",
+        bytes: 2048,
+        sha256: "sha256-value",
+        mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          persistenceScope: "provider_local_file",
+          providerPersisted: true,
+          workbenchPersisted: false,
+          placeholder: false,
+          producedArtifactKind: "pptx_artifact",
+        },
+        qualityGate: {
+          passed: true,
+          gates: expect.arrayContaining(["pptx_valid", "presentation_xml_present", "slide_count_matches_design"]),
         },
       },
       assistantSummary: expect.stringContaining("PPTX"),
@@ -111,6 +160,40 @@ describe("M64-C ProviderToolAdapter", () => {
     });
     expect("artifactCreated" in result).toBe(false);
     expect("observation" in result).toBe(false);
+  });
+
+  it("maps invalid ppt design and validation failures to quality gate failures without artifact creation", async () => {
+    const result = await executeProviderTool({
+      tool: getToolDefinition("generate_pptx_from_design"),
+      projectId: "project-a",
+      userInstruction: "生成 PPTX",
+      artifactRefs: [pptDesignRef()],
+      runCozePpt: async () => {
+        throw new Error("invalid PPT design: validation failed, slide count mismatch");
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      provider: "coze_ppt",
+      artifactCreated: false,
+      errorCategory: "quality_gate_failed",
+      observation: {
+        kind: "quality_gate_failed",
+        artifactCreated: false,
+        retryPolicy: {
+          retryable: false,
+          nextAction: "ask_teacher",
+        },
+      },
+      budgetEvent: {
+        capabilityId: "coze_ppt",
+        status: "failed",
+        kind: "quality_gate_failed",
+      },
+    });
   });
 
   it("normalizes provider runner failure into a provider unavailable observation and budget event", async () => {

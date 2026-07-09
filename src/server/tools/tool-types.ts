@@ -40,6 +40,21 @@ export type ToolDefinition = {
   blockedReason?: string;
 };
 
+export type ToolArtifactTruth = {
+  created: boolean;
+  persisted: boolean;
+  persistenceScope?: "provider_local_file" | "workbench_artifact" | "none";
+  providerPersisted?: boolean;
+  workbenchPersisted?: boolean;
+  placeholder: boolean;
+  producedArtifactKind: string;
+};
+
+export type ToolQualityGateResult = {
+  passed: boolean;
+  gates: string[];
+};
+
 export type OpenAiFunctionToolSchema = {
   type: "function";
   name: string;
@@ -55,6 +70,8 @@ export type ToolExecutionResult =
       capabilityId: string;
       provider?: string;
       artifactDraft: SaveArtifactDraft;
+      artifactTruth?: ToolArtifactTruth;
+      qualityGate?: ToolQualityGateResult;
       providerPayload?: Record<string, unknown>;
       assistantSummary: string;
       budgetEvent: AgentHarnessBudgetEvent;

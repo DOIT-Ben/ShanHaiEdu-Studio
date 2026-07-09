@@ -2,7 +2,7 @@ import { generateCozePptFromArtifact, type CozePptGenerationResult } from "@/ser
 import { createToolObservation, type ToolObservationKind, type ToolObservationRetryAction } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
-import type { ToolDefinition, ToolExecutionResult } from "./tool-types";
+import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 
 export type ProviderArtifactRef = {
   kind: string;
@@ -25,6 +25,7 @@ export type ProviderToolAdapterInput = {
 };
 
 const COZE_PPT_PROVIDER = "coze_ppt";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 export async function executeProviderTool(input: ProviderToolAdapterInput): Promise<ToolExecutionResult> {
   const capabilityId = input.tool.capabilityId ?? "unknown";
@@ -76,28 +77,22 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
 
     return buildCozePptSuccessResult(input, capabilityId, result);
   } catch (error) {
-    const retryable = input.tool.failurePolicy.retryable;
-    return buildFailureResult(input, {
-      capabilityId,
-      provider,
-      status: retryable ? "retryable_failed" : "failed",
-      kind: "provider_unavailable",
-      userMessage: "PPTX 生成服务暂时没有完成这一步，可以稍后重试。",
-      internalReason: error instanceof Error ? error.message : "Unknown coze_ppt provider error",
-      retryable,
-      errorCategory: "provider_unavailable",
-    });
+    return buildFailureResult(input, classifyCozePptFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable));
   }
 }
 
 function buildCozePptSuccessResult(input: ProviderToolAdapterInput, capabilityId: string, providerResult: CozePptGenerationResult): ToolExecutionResult {
-  const providerPayload = cozePptPayload(providerResult);
+  const artifactTruth = buildCozePptArtifactTruth(input);
+  const qualityGate = buildCozePptQualityGate();
+  const providerPayload = cozePptPayload(providerResult, artifactTruth, qualityGate);
 
   return {
     status: "succeeded",
     toolId: input.tool.id,
     capabilityId,
     provider: COZE_PPT_PROVIDER,
+    artifactTruth,
+    qualityGate,
     artifactDraft: {
       nodeKey: input.tool.producedArtifactKind ?? "pptx_artifact",
       kind: input.tool.producedArtifactKind ?? "pptx_artifact",
@@ -108,6 +103,39 @@ function buildCozePptSuccessResult(input: ProviderToolAdapterInput, capabilityId
     providerPayload,
     assistantSummary: `真实 PPTX 已生成并通过基础校验：${providerResult.slideCount} 页。`,
     budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+  };
+}
+
+function classifyCozePptFailure(
+  error: unknown,
+  capabilityId: string,
+  provider: string | undefined,
+  providerRetryable: boolean,
+): Parameters<typeof buildFailureResult>[1] {
+  const internalReason = error instanceof Error ? error.message : "Unknown coze_ppt provider error";
+
+  if (isCozePptQualityGateFailure(internalReason)) {
+    return {
+      capabilityId,
+      provider,
+      status: "failed",
+      kind: "quality_gate_failed",
+      userMessage: "PPTX 没有通过交付校验，请先调整设计稿或生成结果后再继续。",
+      internalReason,
+      retryable: false,
+      errorCategory: "quality_gate_failed",
+    };
+  }
+
+  return {
+    capabilityId,
+    provider,
+    status: providerRetryable ? "retryable_failed" : "failed",
+    kind: "provider_unavailable",
+    userMessage: "PPTX 生成服务暂时没有完成这一步，可以稍后重试。",
+    internalReason,
+    retryable: providerRetryable,
+    errorCategory: "provider_unavailable",
   };
 }
 
@@ -176,18 +204,59 @@ function buildFailureResult(
   };
 }
 
-function cozePptPayload(result: CozePptGenerationResult): Record<string, unknown> {
+function cozePptPayload(result: CozePptGenerationResult, artifactTruth: ToolArtifactTruth, qualityGate: ToolQualityGateResult): Record<string, unknown> {
   return {
     provider: COZE_PPT_PROVIDER,
     fileName: result.fileName,
     localOutput: result.localOutput,
+    mime: PPTX_MIME,
     bytes: result.bytes,
     sha256: result.sha256,
     requestedPageCount: result.requestedPageCount,
     slideCount: result.slideCount,
     pptxValid: result.pptxValid,
     hasPresentationXml: result.hasPresentationXml,
+    artifactTruth,
+    qualityGate,
   };
+}
+
+function buildCozePptArtifactTruth(input: ProviderToolAdapterInput): ToolArtifactTruth {
+  return {
+    created: true,
+    persisted: true,
+    persistenceScope: "provider_local_file",
+    providerPersisted: true,
+    workbenchPersisted: false,
+    placeholder: false,
+    producedArtifactKind: input.tool.producedArtifactKind ?? "pptx_artifact",
+  };
+}
+
+function buildCozePptQualityGate(): ToolQualityGateResult {
+  return {
+    passed: true,
+    gates: ["pptx_valid", "presentation_xml_present", "slide_count_matches_design"],
+  };
+}
+
+function isCozePptQualityGateFailure(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return (
+    normalized.includes("invalid ppt design") ||
+    normalized.includes("invalid_ppt_design") ||
+    normalized.includes("invalid pptx") ||
+    normalized.includes("invalid_pptx") ||
+    normalized.includes("invalid_coze_pptx") ||
+    normalized.includes("slide count mismatch") ||
+    normalized.includes("slide_count_mismatch") ||
+    normalized.includes("validation failed") ||
+    normalized.includes("quality gate") ||
+    normalized.includes("quality_gate") ||
+    reason.includes("PPT 设计稿未逐页完整") ||
+    reason.includes("范围合并页") ||
+    reason.includes("独立四层设计")
+  );
 }
 
 function isCozePptTool(tool: ToolDefinition): boolean {
@@ -263,7 +332,7 @@ function resolveBudgetKind(kind: ToolObservationKind): AgentHarnessBudgetEventKi
 function resolveRetryAction(kind: ToolObservationKind, retryable: boolean): ToolObservationRetryAction {
   if (kind === "provider_unavailable") return "wait_for_provider";
   if (kind === "blocked_by_policy") return "ask_teacher";
-  if (kind === "quality_gate_failed") return "fix_inputs";
+  if (kind === "quality_gate_failed") return "ask_teacher";
   return retryable ? "retry_later" : "do_not_retry_automatically";
 }
 
