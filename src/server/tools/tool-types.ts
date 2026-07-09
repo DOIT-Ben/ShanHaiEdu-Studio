@@ -63,6 +63,7 @@ export type ToolExecutionResult =
       capabilityId: string;
       missingInputs: string[];
       assistantPrompt: string;
+      observation: ToolObservation;
       artifactCreated: false;
       budgetEvent: AgentHarnessBudgetEvent;
     }

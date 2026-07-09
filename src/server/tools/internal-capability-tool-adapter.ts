@@ -72,8 +72,12 @@ export async function executeInternalCapabilityTool(
         capabilityId,
         missingInputs: [...result.missingInputs],
         assistantPrompt: result.assistantPrompt,
+        observation: createBlockedObservation(input, capabilityId, {
+          teacherSafeSummary: result.assistantPrompt,
+          internalReasonSanitized: `Needs teacher input: ${result.missingInputs.join(", ")}`,
+        }),
         artifactCreated: false,
-        budgetEvent: buildBudgetEvent(input, capabilityId, "failed", "tool_failed"),
+        budgetEvent: buildBudgetEvent(input, capabilityId, "blocked", "blocked_by_policy"),
       };
     }
 
@@ -105,12 +109,15 @@ function buildFailureResult(
     errorCategory: string;
   },
 ): ToolExecutionResult {
-  const observationKind = resolveObservationKind(failure.errorCategory);
-  const budgetStatus = failure.retryable ? "retryable_failed" : "failed";
+  const normalizedErrorCategory = normalizeErrorCategory(failure.errorCategory);
+  const observationKind = resolveObservationKind(normalizedErrorCategory);
+  const retryable = resolveRetryable(observationKind, failure.retryable);
+  const resultStatus = retryable ? "retryable_failed" : "failed";
+  const budgetStatus = observationKind === "blocked_by_policy" ? "blocked" : resultStatus;
   const budgetKind = resolveBudgetKind(observationKind);
 
   return {
-    status: budgetStatus,
+    status: resultStatus,
     toolId: input.tool.id,
     capabilityId: failure.capabilityId,
     observation: createToolObservation({
@@ -122,26 +129,59 @@ function buildFailureResult(
       teacherSafeSummary: failure.userMessage,
       internalReasonSanitized: failure.internalReason,
       retryPolicy: {
-        retryable: failure.retryable,
-        nextAction: resolveRetryAction(observationKind, failure.retryable),
+        retryable,
+        nextAction: resolveRetryAction(observationKind, retryable),
       },
     }),
     artifactCreated: false,
-    errorCategory: failure.errorCategory,
+    errorCategory: normalizedErrorCategory,
     budgetEvent: buildBudgetEvent(input, failure.capabilityId, budgetStatus, budgetKind),
   };
 }
 
+function createBlockedObservation(
+  input: InternalCapabilityToolInput,
+  capabilityId: string,
+  details: { teacherSafeSummary: string; internalReasonSanitized: string },
+) {
+  return createToolObservation({
+    projectId: input.projectId,
+    sourceMessageId: input.sourceMessageId,
+    capabilityId,
+    expectedArtifactKind: input.tool.producedArtifactKind,
+    kind: "blocked_by_policy",
+    teacherSafeSummary: details.teacherSafeSummary,
+    internalReasonSanitized: details.internalReasonSanitized,
+    retryPolicy: {
+      retryable: false,
+      nextAction: "ask_teacher",
+    },
+  });
+}
+
+function normalizeErrorCategory(errorCategory: string): string {
+  if (errorCategory === "permission") return "blocked_by_policy";
+  return errorCategory;
+}
+
 function resolveObservationKind(errorCategory: string): ToolObservationKind {
+  if (errorCategory === "blocked_by_policy") return "blocked_by_policy";
   if (errorCategory === "validation") return "quality_gate_failed";
   return "tool_failed";
 }
 
 function resolveBudgetKind(kind: ToolObservationKind): AgentHarnessBudgetEventKind {
+  if (kind === "blocked_by_policy") return "blocked_by_policy";
   return kind === "quality_gate_failed" ? "quality_gate_failed" : "tool_failed";
 }
 
+function resolveRetryable(kind: ToolObservationKind, retryable: boolean): boolean {
+  if (kind === "blocked_by_policy") return false;
+  return retryable;
+}
+
 function resolveRetryAction(kind: ToolObservationKind, retryable: boolean): ToolObservationRetryAction {
+  if (kind === "blocked_by_policy") return "ask_teacher";
   if (kind === "quality_gate_failed") return "fix_inputs";
   return retryable ? "retry_later" : "do_not_retry_automatically";
 }

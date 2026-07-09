@@ -202,9 +202,57 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       missingInputs: ["requirement_spec"],
       assistantPrompt: "请先确认备课需求。",
       artifactCreated: false,
+      observation: {
+        kind: "blocked_by_policy",
+        artifactCreated: false,
+        retryPolicy: {
+          retryable: false,
+          nextAction: "ask_teacher",
+        },
+      },
       budgetEvent: {
-        status: "failed",
-        kind: "tool_failed",
+        status: "blocked",
+        kind: "blocked_by_policy",
+      },
+    });
+  });
+
+  it("maps permission failures to a non-retryable policy block observation", async () => {
+    const result = await executeInternalCapabilityTool(
+      {
+        tool: getToolDefinition("create_lesson_plan"),
+        runtime: fakeRuntime(),
+        projectId: "project-a",
+        userMessage: "生成教案",
+        projectContext,
+      },
+      {
+        runCapability: async () => ({
+          status: "failed",
+          userMessage: "需要教师先确认前置材料后才能继续。",
+          retryable: true,
+          errorCategory: "permission",
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "failed",
+      toolId: "create_lesson_plan",
+      capabilityId: "lesson_plan",
+      artifactCreated: false,
+      errorCategory: "blocked_by_policy",
+      observation: {
+        kind: "blocked_by_policy",
+        artifactCreated: false,
+        retryPolicy: {
+          retryable: false,
+          nextAction: "ask_teacher",
+        },
+      },
+      budgetEvent: {
+        status: "blocked",
+        kind: "blocked_by_policy",
       },
     });
   });
