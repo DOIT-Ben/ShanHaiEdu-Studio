@@ -1,4 +1,7 @@
 import type { CapabilityId } from "@/server/capabilities/types";
+import type { SaveArtifactDraft } from "@/server/capabilities/types";
+import type { ToolObservation } from "@/server/capabilities/tool-observation";
+import type { AgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
 
 export type ToolAdapterKind = "internal_capability" | "provider" | "mcp";
 
@@ -44,3 +47,31 @@ export type OpenAiFunctionToolSchema = {
   parameters: JsonSchemaObject;
   strict: true;
 };
+
+export type ToolExecutionResult =
+  | {
+      status: "succeeded";
+      toolId: string;
+      capabilityId: string;
+      artifactDraft: SaveArtifactDraft;
+      assistantSummary: string;
+      budgetEvent: AgentHarnessBudgetEvent;
+    }
+  | {
+      status: "needs_input";
+      toolId: string;
+      capabilityId: string;
+      missingInputs: string[];
+      assistantPrompt: string;
+      artifactCreated: false;
+      budgetEvent: AgentHarnessBudgetEvent;
+    }
+  | {
+      status: "failed" | "retryable_failed";
+      toolId: string;
+      capabilityId: string;
+      observation: ToolObservation;
+      artifactCreated: false;
+      errorCategory?: string;
+      budgetEvent: AgentHarnessBudgetEvent;
+    };
