@@ -450,9 +450,24 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           structuredContent: expect.objectContaining({ pages: [{ page: 1, title: "导入" }] }),
         }),
       ]);
+      expect(capturedRouterInput?.project).toMatchObject({
+        id: project.id,
+        grade: "五年级",
+        subject: "数学",
+        lessonTopic: "百分数",
+      });
       expect(body.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false, artifactRefs: [] });
       expect(body.artifact).toBeUndefined();
       expect(artifacts).toHaveLength(1);
+      expect(await service.getGenerationJobs(project.id)).toEqual([
+        expect.objectContaining({
+          kind: "pptx",
+          sourceArtifactId: design.id,
+          status: "failed",
+          resultArtifactId: null,
+          errorMessage: "PPTX 没有通过交付校验，请先调整设计稿后再继续。",
+        }),
+      ]);
       expect(observations).toEqual([
         expect.objectContaining({ capabilityId: "coze_ppt", kind: "quality_gate_failed", artifactCreated: false }),
       ]);
@@ -462,6 +477,93 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           actionKey: "coze_ppt:pptx_artifact",
           status: "failed",
           kind: "quality_gate_failed",
+        }),
+      ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("COZE_API_TOKEN", previousToken);
+      restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
+
+  it("routes coze_ppt success through ToolRouter and records succeeded generation job", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousToken = process.env.COZE_API_TOKEN;
+    const previousRunUrl = process.env.COZE_PPT_RUN_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.COZE_API_TOKEN = "test-token";
+    process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M64-E router coze success 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const design = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "已确认 PPT 设计稿",
+        status: "needs_review",
+        summary: "逐页四层设计稿已确认。",
+        markdownContent: "# 已确认 PPT 设计稿",
+        structuredContent: { pages: [{ page: 1, title: "导入" }] },
+      });
+      await service.approveArtifact(project.id, design.id);
+      const actionId = await seedPendingPlan(service, project.id, "coze_ppt", "pptx_artifact");
+      let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
+      const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
+        capturedRouterInput = input;
+        return {
+          status: "succeeded",
+          toolId: "generate_pptx_from_design",
+          capabilityId: "coze_ppt",
+          provider: "coze_ppt",
+          artifactDraft: {
+            nodeKey: "pptx_artifact",
+            kind: "pptx_artifact",
+            title: "真实 PPTX 文件",
+            summary: "Router 已生成真实 PPTX。",
+            markdownContent: "# 真实 PPTX 文件",
+            structuredContent: { slideCount: 1, fromRouter: true },
+          },
+          assistantSummary: "真实 PPTX 已生成并通过基础校验：1 页。",
+          budgetEvent: {
+            capabilityId: "coze_ppt",
+            actionKey: "generate_pptx_from_design:pptx_artifact",
+            status: "succeeded",
+            kind: "tool_succeeded",
+            createdAt: "2026-07-10T00:00:00.000Z",
+          },
+        };
+      });
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("coze_ppt", "pptx_artifact"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX", confirmedActionId: actionId });
+      const jobs = await service.getGenerationJobs(project.id);
+
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(capturedRouterInput?.project).toMatchObject({
+        id: project.id,
+        grade: "五年级",
+        subject: "数学",
+        lessonTopic: "百分数",
+      });
+      expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true, artifactRefs: [body.artifact!.id] });
+      expect(body.artifact).toMatchObject({
+        nodeKey: "pptx_artifact",
+        kind: "pptx_artifact",
+        status: "needs_review",
+        structuredContent: { slideCount: 1, fromRouter: true },
+      });
+      expect(jobs).toEqual([
+        expect.objectContaining({
+          kind: "pptx",
+          sourceArtifactId: design.id,
+          status: "succeeded",
+          resultArtifactId: body.artifact!.id,
+          errorMessage: null,
         }),
       ]);
     } finally {

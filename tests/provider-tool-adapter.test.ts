@@ -162,6 +162,51 @@ describe("M64-C ProviderToolAdapter", () => {
     expect("observation" in result).toBe(false);
   });
 
+  it("passes real project metadata to the coze_ppt provider runner when provided", async () => {
+    const tool = getToolDefinition("generate_pptx_from_design");
+    let calledWith: Parameters<NonNullable<ProviderToolAdapterInput["runCozePpt"]>>[0] | undefined;
+
+    await executeProviderTool({
+      tool,
+      projectId: "project-a",
+      project: {
+        id: "project-a",
+        title: "真实项目上下文",
+        status: "active",
+        currentNodeKey: "ppt_design_draft",
+        grade: "五年级",
+        subject: "数学",
+        textbookVersion: "人教版",
+        lessonTopic: "百分数",
+        createdAt: "2026-07-10T00:00:00.000Z",
+        updatedAt: "2026-07-10T00:00:00.000Z",
+      },
+      userInstruction: "请生成真实 PPTX",
+      artifactRefs: [pptDesignRef()],
+      runCozePpt: async (input) => {
+        calledWith = input;
+        return {
+          fileName: "lesson.pptx",
+          localOutput: ".tmp/lesson.pptx",
+          bytes: 2048,
+          sha256: "sha256-value",
+          requestedPageCount: 1,
+          slideCount: 1,
+          pptxValid: true,
+          hasPresentationXml: true,
+        };
+      },
+    });
+
+    expect(calledWith?.project).toMatchObject({
+      id: "project-a",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+      textbookVersion: "人教版",
+    });
+  });
+
   it("maps invalid ppt design and validation failures to quality gate failures without artifact creation", async () => {
     const result = await executeProviderTool({
       tool: getToolDefinition("generate_pptx_from_design"),

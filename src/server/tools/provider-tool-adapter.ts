@@ -18,6 +18,7 @@ export type RunCozePptProvider = (input: { project: ProjectRecord; artifact: Art
 export type ProviderToolAdapterInput = {
   tool: ToolDefinition;
   projectId: string;
+  project?: ProjectRecord;
   userInstruction?: string | null;
   artifactRefs: ProviderArtifactRef[];
   sourceMessageId?: string;
@@ -71,7 +72,7 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
 
   try {
     const result = await runCozePpt({
-      project: buildProjectRecord(input.projectId),
+      project: input.project ?? buildProjectRecord(input.projectId),
       artifact: buildArtifactRecord(input.projectId, sourceArtifact, "ppt_design_draft"),
     });
 

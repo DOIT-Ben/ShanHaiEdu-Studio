@@ -528,9 +528,22 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   const userInstruction = input.reference ? `${generationUserMessage}\n\n引用：${input.reference}` : generationUserMessage;
   const approvedArtifacts = buildApprovedArtifactInputs(input.artifacts);
   const artifactRefs = buildProviderArtifactRefs(input.artifacts);
+
+  const sourceArtifact = toolPlan.capabilityId === "coze_ppt" ? findExternalSourceArtifact("coze_ppt", input.artifacts) : null;
+  let jobId: string | null = null;
+  if (sourceArtifact) {
+    const queuedJob = await input.service.createGenerationJob(input.project.id, {
+      kind: "pptx",
+      sourceArtifactId: sourceArtifact.id,
+    });
+    jobId = queuedJob.id;
+    await input.service.startGenerationJob(input.project.id, jobId);
+  }
+
   const result = await input.toolRouter({
     capabilityId: toolPlan.capabilityId,
     projectId: input.project.id,
+    project: input.project,
     userInstruction,
     runtime: input.runtime,
     projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
@@ -540,6 +553,9 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   });
 
   if (result.status !== "succeeded") {
+    if (jobId) {
+      await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: result.observation.teacherSafeSummary });
+    }
     const budgetEvent = normalizeToolRouterBudgetEvent(result, toolPlan);
     const failedTurn: MainAgentTurn = {
       ...plannedTurn,
@@ -568,6 +584,9 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
   });
+  if (jobId) {
+    await input.service.finishGenerationJob(input.project.id, jobId, { resultArtifactId: artifact.id });
+  }
   const advancedDeliveryPlan = plannedTurn.deliveryPlan
     ? advanceDeliveryPlan(plannedTurn.deliveryPlan, toolPlan.capabilityId)
     : null;

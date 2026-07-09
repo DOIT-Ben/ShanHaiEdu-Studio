@@ -101,6 +101,18 @@ describe("M64-D ToolRouter Core", () => {
       {
         toolName: "generate_pptx_from_design",
         projectId: "project-a",
+        project: {
+          id: "project-a",
+          title: "真实项目上下文",
+          status: "active",
+          currentNodeKey: "ppt_design_draft",
+          grade: "五年级",
+          subject: "数学",
+          textbookVersion: "人教版",
+          lessonTopic: "百分数",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          updatedAt: "2026-07-10T00:00:00.000Z",
+        },
         userInstruction: "生成真实 PPTX",
         artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
         sourceMessageId: "message-a",
@@ -117,6 +129,12 @@ describe("M64-D ToolRouter Core", () => {
         capabilityId: "coze_ppt",
       },
       projectId: "project-a",
+      project: expect.objectContaining({
+        id: "project-a",
+        grade: "五年级",
+        subject: "数学",
+        lessonTopic: "百分数",
+      }),
       userInstruction: "生成真实 PPTX",
       artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
     });

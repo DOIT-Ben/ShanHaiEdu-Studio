@@ -2,6 +2,7 @@ import type { AgentProjectContext, AgentRuntime, ApprovedArtifactInput } from "@
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
+import type { ProjectRecord } from "@/server/workbench/types";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "./tool-registry";
@@ -14,6 +15,7 @@ export type ToolRouterInput = {
   userInstruction?: string | null;
   artifactRefs?: ProviderArtifactRef[];
   runtime?: AgentRuntime;
+  project?: ProjectRecord;
   projectContext?: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
   sourceMessageId?: string;
@@ -97,6 +99,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
     return providerExecutor({
       tool,
       projectId: input.projectId,
+      project: input.project,
       userInstruction: input.userInstruction,
       artifactRefs: input.artifactRefs ?? [],
       sourceMessageId: input.sourceMessageId,
