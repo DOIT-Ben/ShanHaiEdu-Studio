@@ -5,6 +5,7 @@ import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifac
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState, WorkbenchSnapshot } from "@/lib/types";
+import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
 
@@ -19,6 +20,7 @@ export function useWorkbenchController() {
   const [input, setInput] = useState("");
   const [reference, setReference] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [executionFeedback, setExecutionFeedback] = useState<WorkbenchExecutionFeedback | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
@@ -250,6 +252,7 @@ export function useWorkbenchController() {
     setReference(null);
     sendingRef.current = true;
     setSending(true);
+    setExecutionFeedback({ label: "正在理解你的备课要求", stageIndex: 1 });
     setMessages((current) => [...current, optimisticMessage]);
     flashComposerNotice("正在等待回复");
     try {
@@ -263,7 +266,9 @@ export function useWorkbenchController() {
         setMessages((current) => [...current, optimisticMessage]);
       }
 
+      setExecutionFeedback({ label: "正在组织教案、课件和素材任务", stageIndex: 2 });
       const snapshot = await dataSource.sendMessage(targetProjectId, body, reference);
+      setExecutionFeedback({ label: "正在保存本轮成果", stageIndex: 3 });
       applySnapshot(snapshot);
       flashComposerNotice("已发送");
     } catch {
@@ -274,6 +279,7 @@ export function useWorkbenchController() {
     } finally {
       sendingRef.current = false;
       setSending(false);
+      setExecutionFeedback(null);
     }
   }
 
@@ -305,6 +311,7 @@ export function useWorkbenchController() {
     reference,
     setReference,
     sending,
+    executionFeedback,
     notice,
     composerNotice,
     flashComposerNotice,

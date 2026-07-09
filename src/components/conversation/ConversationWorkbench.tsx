@@ -8,6 +8,7 @@ import { StageProgress } from "@/components/conversation/StageProgress";
 import { ChatTranscript } from "@/components/conversation/ChatTranscript";
 import { PromptComposer } from "@/components/conversation/PromptComposer";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import { deriveWorkbenchStageIndex, type WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 type ConversationWorkbenchProps = {
   project: ProjectItem | null;
@@ -20,6 +21,7 @@ type ConversationWorkbenchProps = {
   input: string;
   reference: string | null;
   sending: boolean;
+  executionFeedback: WorkbenchExecutionFeedback | null;
   notice: string | null;
   composerNotice: string | null;
   onInputChange: (value: string) => void;
@@ -44,6 +46,7 @@ export function ConversationWorkbench({
   input,
   reference,
   sending,
+  executionFeedback,
   notice,
   composerNotice,
   onInputChange,
@@ -70,7 +73,7 @@ export function ConversationWorkbench({
   return (
     <main className="flex h-full min-h-0 flex-col bg-card">
       <WorkbenchTopbar project={project} currentUser={currentUser} compact={compact} onOpenArtifacts={onOpenArtifacts} onLogout={onLogout} />
-      <StageProgress activeIndex={stageIndexFromProject(project)} compact={compact} />
+      <StageProgress activeIndex={deriveWorkbenchStageIndex({ project, artifacts, executionFeedback })} compact={compact} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-[1040px] px-4 pb-36 pt-4 sm:px-6 lg:pb-10">
           <div className="mx-auto max-w-[920px] space-y-8">
@@ -96,7 +99,9 @@ export function ConversationWorkbench({
               <ChatTranscript
                 messages={messages}
                 artifacts={artifacts}
+                projectId={project?.id ?? ""}
                 sending={sending}
+                executionFeedback={executionFeedback}
                 registerMessage={registerMessage}
                 onQuickReplySelect={onQuickReplySelect}
               />
@@ -124,13 +129,4 @@ export function ConversationWorkbench({
       />
     </main>
   );
-}
-
-function stageIndexFromProject(project: ProjectItem | null) {
-  const step = project?.currentStep ?? "";
-  if (/教材|教案|教学/.test(step)) return 1;
-  if (/PPT|图片|视频|导入|资源/.test(step)) return 2;
-  if (/检查|优化|重审/.test(step)) return 3;
-  if (/交付|完成/.test(step)) return 4;
-  return 0;
 }

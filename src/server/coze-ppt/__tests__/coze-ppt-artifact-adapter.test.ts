@@ -14,7 +14,7 @@ vi.mock("@/server/coze-ppt/coze-ppt-run", async () => {
   };
 });
 
-import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
+import { extractCozePptResult, generateCozePptFromArtifact, resolvePptDesignPageCount, validatePptxBuffer } from "@/server/coze-ppt/coze-ppt-run";
 
 describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
   beforeEach(() => {
@@ -30,13 +30,13 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
       lessonTopic: "百分数",
     });
     const sourceArtifact = await service.saveArtifact(project.id, {
-      nodeKey: "ppt_draft",
-      kind: "ppt_draft",
-      title: "PPT 大纲与逐页脚本",
+      nodeKey: "ppt_design_draft",
+      kind: "ppt_design_draft",
+      title: "逐页四层 PPT 设计稿",
       status: "needs_review",
-      summary: "用于生成真实 Coze PPTX 的大纲。",
-      markdownContent: "第 1 页：百分数导入。",
-      structuredContent: { 页面结构: "1 页" },
+      summary: "用于生成真实 Coze PPTX 的逐页四层设计稿。",
+      markdownContent: "第 1 页：底图：纯白课堂场景；元素：问题气泡；文字：百分数导入；排版：左文右图。",
+      structuredContent: { 页面结构: "1 页", 四层设计: "底图、元素、文字、排版" },
     });
     const pptxBuffer = await buildTinyPptx();
     const outputPath = writeFixturePptx(pptxBuffer);
@@ -46,6 +46,8 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
       localOutput: outputPath,
       bytes: pptxBuffer.length,
       sha256: "fake-sha256",
+      requestedPageCount: 1,
+      slideCount: 1,
       pptxValid: true,
       hasPresentationXml: true,
     });
@@ -55,7 +57,8 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
     });
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.artifact.title).toContain("真实 PPTX");
+    expect(body.artifact.title).toContain("真实 1 页 PPTX");
+    expect(body.artifact.structuredContent.实际页数).toBe("1 页");
     expect(body.artifact.structuredContent.storage.cozePptx.localOutput).toBe(outputPath);
     expect(JSON.stringify(body)).not.toContain("Bearer ");
     expect(JSON.stringify(body)).not.toMatch(/https:\/\/.+pptx/i);
@@ -87,12 +90,53 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
     expect(response.status).toBe(400);
     expect(generateCozePptFromArtifact).not.toHaveBeenCalled();
   });
+
+  it("extracts the answer message before OpenAPI follow-up suggestions", () => {
+    const result = extractCozePptResult({
+      data: [
+        {
+          role: "assistant",
+          type: "answer",
+          content: JSON.stringify({ status: "completed", pptx_url: "https://example.test/result.pptx", file_name: "ten-pages.pptx" }),
+        },
+        { role: "assistant", type: "verbose", content: JSON.stringify({ msg_type: "generate_answer_finish" }) },
+        { role: "assistant", type: "follow_up", content: "要不要继续修改？" },
+      ],
+    });
+
+    expect(result.fileName).toBe("ten-pages.pptx");
+    expect(result.pptxUrl).toBe("https://example.test/result.pptx");
+  });
+
+  it("reads requested page count from page ranges and validates actual slide count", async () => {
+    const markdown = [
+      "## 页面清单",
+      "- 第 1 页：课题与生活情境开场。",
+      "- 第 2-3 页：观察问题与学生猜想。",
+      "- 第 4-8 页：概念探究、例题拆解、板书同步。",
+      "- 第 9-12 页：练习巩固、课堂总结、迁移延伸。",
+      "",
+      "## 第 1 页四层设计",
+      "## 第 2 页四层设计",
+    ].join("\n");
+
+    expect(resolvePptDesignPageCount(markdown)).toBe(12);
+
+    const pptxBuffer = await buildTinyPptx(2);
+    const validation = await validatePptxBuffer(pptxBuffer);
+
+    expect(validation.valid).toBe(true);
+    expect(validation.slideCount).toBe(2);
+  });
 });
 
-async function buildTinyPptx() {
+async function buildTinyPptx(slideCount = 1) {
   const zip = new JSZip();
   zip.file("[Content_Types].xml", "<Types />");
   zip.file("ppt/presentation.xml", "<presentation />");
+  for (let index = 1; index <= slideCount; index += 1) {
+    zip.file(`ppt/slides/slide${index}.xml`, `<slide>${index}</slide>`);
+  }
   return Buffer.from(await zip.generateAsync({ type: "nodebuffer" }));
 }
 

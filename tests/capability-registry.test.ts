@@ -9,6 +9,7 @@ describe("M54-B CapabilityRegistry", () => {
       "requirement_spec",
       "lesson_plan",
       "ppt_outline",
+      "ppt_design",
       "coze_ppt",
       "image_asset",
       "intro_video",
@@ -35,7 +36,10 @@ describe("M54-B CapabilityRegistry", () => {
     const imageAsset = getCapabilityDefinition("image_asset");
     const introVideo = getCapabilityDefinition("intro_video");
 
-    expect(cozePpt.upstreamCapabilities).toContain("ppt_outline");
+    const pptDesign = getCapabilityDefinition("ppt_design");
+
+    expect(pptDesign.upstreamCapabilities).toContain("ppt_outline");
+    expect(cozePpt.upstreamCapabilities).toContain("ppt_design");
     expect(cozePpt.requiresConfirmation).toBe(true);
     expect(imageAsset.requiresConfirmation).toBe(true);
     expect(introVideo.requiresConfirmation).toBe(true);

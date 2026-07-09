@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type ArtifactRailProps = {
+  projectId: string;
   items: ArtifactItem[];
   activeKey: string;
   variant?: "rail" | "drawer";
@@ -19,6 +20,7 @@ type ArtifactRailProps = {
 };
 
 export function ArtifactRail({
+  projectId,
   items,
   activeKey,
   variant = "rail",
@@ -116,7 +118,7 @@ export function ArtifactRail({
           onMouseEnter={keepPreviewOpen}
           onMouseLeave={closePreviewSoon}
         >
-          <ArtifactPreviewCard item={previewItem} onCopy={onCopy} onUseAsInput={onUseAsInput} onOpen={onOpen} />
+          <ArtifactPreviewCard projectId={projectId} item={previewItem} onCopy={onCopy} onUseAsInput={onUseAsInput} onOpen={onOpen} />
         </div>
       )}
     </aside>

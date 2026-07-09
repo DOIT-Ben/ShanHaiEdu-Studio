@@ -1,3 +1,5 @@
+> 历史口径提示：本文为本地真实 MVP 早期路线，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；任何文本 fallback、未校验 PPTX 或 placeholder 媒体都不得作为真实完成。
+
 # Local Real MVP 主线规划
 
 日期：2026-07-07

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(root, ".tmp", "video-smoke");
 const lastTaskPath = path.join(outputDir, "last-task.json");
+const MIN_VIDEO_BYTES = 1024;
 
 if (process.env.SHANHAI_VIDEO_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -23,7 +24,7 @@ export function extractTaskId(payload) {
 
 export function normalizeVideoStatus(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  if (["queued", "submitted", "processing", "in_progress", "running"].includes(normalized)) {
+  if (["pending", "queued", "submitted", "processing", "in_progress", "running"].includes(normalized)) {
     return "processing";
   }
   if (["completed", "complete", "success", "succeeded"].includes(normalized)) {
@@ -39,10 +40,12 @@ export function extractVideoResultUrl(payload) {
   const value = payload && typeof payload === "object" ? payload : {};
   const data = value.data && typeof value.data === "object" ? value.data : {};
   const result = value.result && typeof value.result === "object" ? value.result : {};
+  const results = Array.isArray(value.results) ? value.results : [];
   const candidates = [
     value.video_url,
     value.url,
     value.result_url,
+    results[0],
     data.video_url,
     data.url,
     data.result_url,
@@ -57,8 +60,17 @@ export function extractVideoResultUrl(payload) {
   return url.trim();
 }
 
-export function buildVideoEndpointUrl(baseUrl) {
+export function buildVideoEndpointUrl(baseUrl, channel = "octo") {
   const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "evolink") {
+    if (/\/v1\/videos\/generations$/i.test(normalized)) {
+      return normalized;
+    }
+    if (/\/v1$/i.test(normalized)) {
+      return `${normalized}/videos/generations`;
+    }
+    return `${normalized}/v1/videos/generations`;
+  }
   if (/\/v1\/videos$/i.test(normalized)) {
     return normalized;
   }
@@ -68,8 +80,35 @@ export function buildVideoEndpointUrl(baseUrl) {
   return `${normalized}/v1/videos`;
 }
 
-export function buildVideoQueryUrl(baseUrl, taskId) {
-  return `${buildVideoEndpointUrl(baseUrl)}/${encodeURIComponent(taskId)}`;
+export function buildVideoQueryUrl(baseUrl, taskId, channel = "octo") {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "evolink") {
+    const tasksBase = /\/v1\/tasks$/i.test(normalized)
+      ? normalized
+      : /\/v1$/i.test(normalized)
+        ? `${normalized}/tasks`
+        : normalized.replace(/\/v1\/videos\/generations$/i, "/v1/tasks").replace(/\/v1\/videos$/i, "/v1/tasks");
+    return `${tasksBase.endsWith("/v1/tasks") ? tasksBase : `${tasksBase}/v1/tasks`}/${encodeURIComponent(taskId)}`;
+  }
+  return `${buildVideoEndpointUrl(baseUrl, channel)}/${encodeURIComponent(taskId)}`;
+}
+
+export function buildVideoRequestBody(config, prompt) {
+  if (config.channel === "evolink") {
+    return {
+      model: config.model,
+      prompt,
+      duration: config.duration,
+      quality: config.quality,
+      mode: config.mode,
+      aspect_ratio: config.aspectRatio,
+    };
+  }
+  return {
+    model: config.model,
+    prompt,
+    size: config.size,
+  };
 }
 
 export function resolveVideoTaskId(env, cachedTask) {
@@ -102,27 +141,43 @@ export function classifyVideoWaitFailure({ lastStatus, hasTaskId }) {
 }
 
 export function validateMp4Buffer(buffer) {
-  if (buffer.length < 12) {
+  if (buffer.length < MIN_VIDEO_BYTES) {
     return { valid: false, mime: "application/octet-stream", extension: ".bin" };
   }
 
+  let hasFtyp = false;
   const searchLimit = Math.min(buffer.length - 4, 64);
   for (let index = 0; index <= searchLimit; index += 1) {
     if (buffer.subarray(index, index + 4).toString("ascii") === "ftyp") {
-      return { valid: true, mime: "video/mp4", extension: ".mp4" };
+      hasFtyp = true;
+      break;
     }
+  }
+
+  const moovSearchLimit = Math.min(buffer.length - 4, 1024 * 1024);
+  let hasMoov = false;
+  for (let index = 0; index <= moovSearchLimit; index += 1) {
+    if (buffer.subarray(index, index + 4).toString("ascii") === "moov") {
+      hasMoov = true;
+      break;
+    }
+  }
+
+  if (hasFtyp && hasMoov) {
+    return { valid: true, mime: "video/mp4", extension: ".mp4" };
   }
 
   return { valid: false, mime: "application/octet-stream", extension: ".bin" };
 }
 
 function readConfig(env) {
-  const apiKey = env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
-  const baseUrl = env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
+  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
+  const apiKey = wantsEvolink ? env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim() : env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
+  const baseUrl = wantsEvolink ? env.EVOLINK_VIDEO_BASE_URL?.trim() || env.EVOLINK_BASE_URL?.trim() || "https://api.evolink.ai" : env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
   if (!apiKey || !baseUrl) {
     return {
       ok: false,
-      missing: ["OCTO_API_KEY", "OCTO_BASE_URL"].filter((key) => !env[key]?.trim()),
+      missing: wantsEvolink ? ["EVOLINK_VIDEO_API_KEY"].filter(() => !(env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim())) : ["OCTO_API_KEY", "OCTO_BASE_URL"].filter((key) => !env[key]?.trim()),
     };
   }
 
@@ -130,9 +185,13 @@ function readConfig(env) {
     ok: true,
     apiKey,
     baseUrl: baseUrl.replace(/\/+$/, ""),
-    channel: env.OCTO_VIDEO_PROVIDER?.trim() || env.VIDEO_PROVIDER_MODE?.trim() || "octo",
-    model: env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim() || "omni_flash-10s",
+    channel: wantsEvolink ? "evolink" : env.OCTO_VIDEO_PROVIDER?.trim() || env.VIDEO_PROVIDER_MODE?.trim() || "octo",
+    model: env.EVOLINK_VIDEO_MODEL?.trim() || env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim() || (wantsEvolink ? "grok-imagine-text-to-video-beta" : "omni_flash-10s"),
     size: env.OMNI_DEFAULT_SIZE?.trim() || env.NEWAPI_DEFAULT_SIZE?.trim() || "1280x720",
+    duration: Number.parseInt(env.EVOLINK_VIDEO_DURATION_SECONDS || env.VIDEO_DURATION_SECONDS || "6", 10),
+    quality: env.EVOLINK_VIDEO_QUALITY?.trim() || env.VIDEO_QUALITY?.trim() || "480p",
+    mode: env.EVOLINK_VIDEO_STYLE_MODE?.trim() || env.VIDEO_STYLE_MODE?.trim() || "normal",
+    aspectRatio: env.EVOLINK_VIDEO_ASPECT_RATIO?.trim() || env.VIDEO_ASPECT_RATIO?.trim() || "16:9",
     timeoutMs: Number.parseInt(env.VIDEO_SMOKE_TIMEOUT_MS || "600000", 10),
     pollIntervalMs: Number.parseInt(env.VIDEO_SMOKE_POLL_INTERVAL_MS || "5000", 10),
     maxPolls: Number.parseInt(env.VIDEO_SMOKE_MAX_POLLS || "72", 10),
@@ -192,21 +251,17 @@ async function runVideoSmoke() {
 }
 
 async function submitVideoTask(config) {
-  const response = await fetch(buildVideoEndpointUrl(config.baseUrl), {
+  const response = await fetch(buildVideoEndpointUrl(config.baseUrl, config.channel), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: config.model,
-      prompt: [
+    body: JSON.stringify(buildVideoRequestBody(config, [
         "小学六年级数学百分数公开课导入视频。",
         "这是独立创意短片，只通过课程锚点回接百分数，不提前讲解知识点。",
         "画面温暖明亮，生活情境清晰，避免品牌、二维码、网址和复杂文字。",
-      ].join(" "),
-      size: config.size,
-    }),
+      ].join(" "))),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
 
@@ -219,7 +274,7 @@ async function submitVideoTask(config) {
 async function pollVideoTask(config, taskId) {
   let lastSummary = null;
   for (let attempt = 0; attempt < config.maxPolls; attempt += 1) {
-    const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId), {
+    const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId, config.channel), {
       method: "GET",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,

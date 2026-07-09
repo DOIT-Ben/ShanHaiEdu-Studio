@@ -64,6 +64,24 @@ test("refuses to build PPTX for non-PPT artifacts", async () => {
   );
 });
 
+test("M59 refuses route-level PPTX fallback when only a PPT outline exists", async () => {
+  const { buildStoredOrGeneratedArtifactPptxDownload } = loadArtifactPptxModule();
+  await assert.rejects(
+    () =>
+      buildStoredOrGeneratedArtifactPptxDownload({
+        id: "ppt-artifact-v1",
+        nodeKey: "ppt_draft",
+        kind: "ppt_draft",
+        title: "PPT 大纲与逐页脚本",
+        summary: "已规划页面结构、每页教学目标、课堂活动和视觉需求。",
+        markdownContent: "# PPT 大纲",
+        structuredContent: {},
+        updatedAt: "2026-07-09T02:00:00.000Z",
+      }),
+    /Real PPTX file is required before exporting the material package/,
+  );
+});
+
 function loadArtifactPptxModule() {
   assert.equal(existsSync(sourcePath), true, "src/server/pptx/artifact-pptx.ts should exist");
   const ts = require("typescript");

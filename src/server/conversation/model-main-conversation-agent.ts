@@ -31,6 +31,7 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "requirement_spec",
   "lesson_plan",
   "ppt_outline",
+  "ppt_design",
   "coze_ppt",
   "image_asset",
   "intro_video",
@@ -95,6 +96,22 @@ export function resolveMainAgentTimeoutMs(env: OpenAICompatibleEnv = process.env
 
 class ModelUnavailableMainConversationAgent implements MainConversationAgent {
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
+    const pendingPlan = input.conversationContext?.pendingDeliveryPlan;
+    if (pendingPlan && isModelFallbackConfirmation(input.userMessage)) {
+      return {
+        assistantMessage: {
+          body: pendingPlan.toolPlan.reasonForUser,
+        },
+        state: "running_tool",
+        quickReplies: [],
+        recommendedOptions: [],
+        toolPlan: pendingPlan.toolPlan,
+        deliveryPlan: pendingPlan.deliveryPlan,
+        shouldRunToolNow: true,
+        runtimeKind: "openai",
+      };
+    }
+
     return {
       assistantMessage: {
         body: "智能生成服务暂时不可用，暂时不能可靠理解并推进这次需求。请稍后重试，或联系管理员检查配置。",
@@ -106,6 +123,12 @@ class ModelUnavailableMainConversationAgent implements MainConversationAgent {
       runtimeKind: "openai",
     };
   }
+}
+
+function isModelFallbackConfirmation(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "").toLowerCase();
+  if (["开始", "确认", "确认开始", "可以", "好的", "好", "ok", "继续", "下一步", "继续下一步", "没问题"].includes(normalized)) return true;
+  return /确认开始|按这个计划推进|开始生成|可以生成|继续下一步|继续推进|继续生成/.test(normalized);
 }
 
 function buildMainAgentRequest(input: MainConversationAgentInput, model: string) {

@@ -13,7 +13,7 @@ export type RealAssetGenerationAction = {
 export function getRealAssetGenerationActions(item: ArtifactItem): RealAssetGenerationAction[] {
   if (!item.artifactId) return [];
 
-  if (item.nodeKey === "ppt_draft" || item.kind === "ppt_draft") {
+  if (item.nodeKey === "ppt_design_draft" || item.kind === "ppt_design_draft") {
     return [
       {
         kind: "pptx",
@@ -22,6 +22,11 @@ export function getRealAssetGenerationActions(item: ArtifactItem): RealAssetGene
         successNotice: "真实 PPTX 已生成，请下载后核对页面内容。",
         failureNotice: "这个 PPT 文件暂时没有生成成功，请稍后再试。",
       },
+    ];
+  }
+
+  if (item.nodeKey === "ppt_draft" || item.kind === "ppt_draft") {
+    return [
       {
         kind: "image",
         label: "生成课堂视觉图",

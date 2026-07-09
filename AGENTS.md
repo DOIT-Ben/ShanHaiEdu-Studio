@@ -9,6 +9,7 @@
 - 动手前必须明确目标、范围、关键假设、成功标准、风险和回退方式。
 - 任何需求增加、需求变更、架构调整或正式开发前，必须先在 `docs\` 写规划文档。
 - 规划通过后再实现；不能跳过调研、规划、测试定义和阶段验收。
+- 当前需求与质量门禁的唯一权威口径是 `docs\product\current-requirements-baseline.md`；旧阶段计划、历史报告、台账快照和 MVP 过渡方案若与该文档冲突，一律以该文档为准。
 
 ## 2. 固定开发链路
 
@@ -43,6 +44,7 @@
 - 当前产品目标是真实可用的线性 AI 备课媒体工作台，不是 mock 展示页。
 - MVP 可以能力较弱，但必须真实保存项目、对话、节点产物和确认状态。
 - mock、placeholder、deterministic 输出、演示数据不得伪装成真实生成或上线完成。
+- 文本 fallback、目标页数、设计稿页数、文件名、任务成功状态都不能冒充真实交付；PPTX 必须以真实 slideCount 校验，图片、视频和最终包必须以真实文件结构和质量门禁校验。
 - OpenAI SDK / OpenAI Agents SDK 只能在服务端 Runtime Adapter 层使用，不得直接放进 React 组件。
 - 项目、对话、节点、产物、版本、确认、失败恢复和交付包状态必须由后端业务层持久化。
 - 代码应保留可迁移边界：`AgentRuntime`、`WorkflowEngine`、`WorkflowRepository`、`ArtifactStorage`、`ProviderAdapter`。

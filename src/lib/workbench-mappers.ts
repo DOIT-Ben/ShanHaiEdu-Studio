@@ -92,6 +92,8 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   ppt_outline: "PPT 大纲",
   intro_video_plan: "导入",
   ppt_draft: "PPT 大纲",
+  ppt_design_draft: "PPT 设计稿",
+  pptx_artifact: "PPTX 文件",
   image_prompts: "图片",
   video_storyboard: "视频",
   final_delivery: "交付",

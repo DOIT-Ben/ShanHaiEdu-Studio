@@ -7,16 +7,20 @@ import { cn } from "@/lib/utils";
 import { GeneratingIndicator } from "@/components/conversation/messages/GeneratingIndicator";
 import { MessageActions } from "@/components/conversation/messages/MessageActions";
 import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
+import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
+import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
   artifacts?: ArtifactItem[];
+  projectId: string;
   sending?: boolean;
+  executionFeedback?: WorkbenchExecutionFeedback | null;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string) => void;
 };
 
-export function ChatTranscript({ messages, artifacts = [], sending = false, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], projectId, sending = false, executionFeedback = null, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
@@ -27,6 +31,7 @@ export function ChatTranscript({ messages, artifacts = [], sending = false, regi
             key={message.id}
             message={message}
             artifact={artifact}
+            projectId={projectId}
             registerMessage={registerMessage}
             onQuickReplySelect={onQuickReplySelect}
           />
@@ -34,7 +39,7 @@ export function ChatTranscript({ messages, artifacts = [], sending = false, regi
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
         );
       })}
-      {sending && <AssistantThinking />}
+      {sending && <AssistantThinking label={executionFeedback?.label} />}
     </div>
   );
 }
@@ -68,11 +73,13 @@ function TeacherMessage({
 function AssistantMessage({
   message,
   artifact,
+  projectId,
   registerMessage,
   onQuickReplySelect,
 }: {
   message: ChatMessage;
   artifact: ArtifactItem | null;
+  projectId: string;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string) => void;
 }) {
@@ -102,7 +109,7 @@ function AssistantMessage({
             <p>{message.body}</p>
           </div>
           {message.deliveryPlan && <DeliveryPlanCard plan={message.deliveryPlan} />}
-          {artifact && <TeacherArtifactCard item={artifact} />}
+          {artifact && <TeacherArtifactCard projectId={projectId} item={artifact} />}
           {quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
           )}
@@ -174,7 +181,7 @@ function QuickReplyChoices({
   return <QuickReplySuggestions choices={choices.map((choice) => ({ label: choice.label, prompt: choice.value, recommended: choice.recommended }))} onSelect={onSelect} />;
 }
 
-function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
+function TeacherArtifactCard({ projectId, item }: { projectId: string; item: ArtifactItem }) {
   const [expanded, setExpanded] = useState(false);
   const readableLines = Object.values(item.content)
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
@@ -206,6 +213,7 @@ function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
               ))}
             </div>
           )}
+          <ArtifactDownloadActions projectId={projectId} item={item} variant="inline" />
           <button
             type="button"
             data-inline-artifact-toggle
@@ -246,8 +254,8 @@ function TeacherArtifactCard({ item }: { item: ArtifactItem }) {
   );
 }
 
-function AssistantThinking() {
-  return <GeneratingIndicator mark={<ShanHaiMark active />} />;
+function AssistantThinking({ label }: { label?: string }) {
+  return <GeneratingIndicator mark={<ShanHaiMark active />} label={label} />;
 }
 
 function ShanHaiMark({ active = false }: { active?: boolean }) {

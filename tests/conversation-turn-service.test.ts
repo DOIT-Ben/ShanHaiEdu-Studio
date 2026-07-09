@@ -203,6 +203,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       "requirement_spec",
       "lesson_plan",
       "ppt_outline",
+      "ppt_design",
       "coze_ppt",
       "image_asset",
       "intro_video",
@@ -245,6 +246,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(confirmBody.agentTurn.deliveryPlan.steps.map((step: { status: string }) => step.status)).toEqual([
       "succeeded",
       "awaiting_confirmation",
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -383,7 +385,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const internalSteps = [
       { content: "确认开始", capabilityId: "requirement_spec", nodeKey: "requirement_spec", nextCapabilityId: "lesson_plan" },
       { content: "继续下一步", capabilityId: "lesson_plan", nodeKey: "lesson_plan", nextCapabilityId: "ppt_outline" },
-      { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "coze_ppt" },
+      { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "ppt_design" },
+      { content: "继续下一步", capabilityId: "ppt_design", nodeKey: "ppt_design_draft", nextCapabilityId: "coze_ppt" },
     ];
 
     for (const step of internalSteps) {
@@ -450,7 +453,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const messagesBody = await messagesResponse.json();
     const artifactRefs = messagesBody.messages.flatMap((message: { artifactRefs: string[] }) => message.artifactRefs);
 
-    expect(artifactRefs).toHaveLength(3);
+    expect(artifactRefs).toHaveLength(4);
   });
 });
 

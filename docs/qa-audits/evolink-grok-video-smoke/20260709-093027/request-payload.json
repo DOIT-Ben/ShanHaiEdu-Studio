@@ -1,0 +1,8 @@
+{
+  "model": "grok-imagine-text-to-video-beta",
+  "prompt": "A calm classroom intro scene for a primary math lesson, warm sunlight, students counting colorful blocks on a desk, gentle camera movement",
+  "duration": 6,
+  "quality": "480p",
+  "mode": "normal",
+  "aspect_ratio": "16:9"
+}

@@ -1,18 +1,15 @@
 "use client";
 
-import { Clipboard, Download, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
+import { Clipboard, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
+import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarkdownPreview } from "@/components/artifacts/MarkdownPreview";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
-import { useArtifactMarkdownDownload } from "@/hooks/useArtifactMarkdownDownload";
-import { useArtifactPptxDownload } from "@/hooks/useArtifactPptxDownload";
-import { useArtifactRealAssetDownload } from "@/hooks/useArtifactRealAssetDownload";
-import { useFinalPackageDownload } from "@/hooks/useFinalPackageDownload";
 
 type ArtifactDetailSheetProps = {
   projectId: string;
@@ -79,11 +76,6 @@ function ArtifactDetailContent({
   realAssetGenerationKey: string | null;
 }) {
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
-  const { downloadMarkdown, downloadLabel } = useArtifactMarkdownDownload(item);
-  const { canDownloadPptx, downloadPptx, downloadPptxLabel } = useArtifactPptxDownload(projectId, item);
-  const imageDownload = useArtifactRealAssetDownload(projectId, item, "image");
-  const videoDownload = useArtifactRealAssetDownload(projectId, item, "video");
-  const { canDownloadPackage, downloadPackage, downloadPackageLabel } = useFinalPackageDownload(projectId, item);
   const realAssetActions = getRealAssetGenerationActions(item);
 
   return (
@@ -114,34 +106,7 @@ function ArtifactDetailContent({
           <SendToBack className="h-4 w-4" />
           作为输入
         </Button>
-        <Button variant="secondary" disabled={!item.actions.canCopy} onClick={downloadMarkdown}>
-          <Download className="h-4 w-4" />
-          {downloadLabel}
-        </Button>
-        {canDownloadPptx && (
-          <Button variant="secondary" onClick={downloadPptx}>
-            <Download className="h-4 w-4" />
-            {downloadPptxLabel}
-          </Button>
-        )}
-        {imageDownload.canDownloadRealAsset && (
-          <Button variant="secondary" onClick={imageDownload.downloadRealAsset}>
-            <Download className="h-4 w-4" />
-            {imageDownload.downloadRealAssetLabel}
-          </Button>
-        )}
-        {videoDownload.canDownloadRealAsset && (
-          <Button variant="secondary" onClick={videoDownload.downloadRealAsset}>
-            <Download className="h-4 w-4" />
-            {videoDownload.downloadRealAssetLabel}
-          </Button>
-        )}
-        {canDownloadPackage && (
-          <Button variant="secondary" onClick={downloadPackage}>
-            <Download className="h-4 w-4" />
-            {downloadPackageLabel}
-          </Button>
-        )}
+        <ArtifactDownloadActions projectId={projectId} item={item} variant="default" />
         {realAssetActions.map((action) => {
           const actionKey = `${item.artifactId}:${action.kind}`;
           const pending = realAssetGenerationKey === actionKey;

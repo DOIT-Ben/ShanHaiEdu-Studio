@@ -5,7 +5,7 @@ import type { ArtifactRecord, WorkflowNodeKey } from "./types";
 import { createWorkbenchService } from "./service";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
-type LocalRealMvpRuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan" | "ppt_outline" | "intro_video_plan" | "final_delivery_checklist">;
+type LocalRealMvpRuntimeTask = Extract<AgentRuntimeTask, "textbook_evidence" | "lesson_plan" | "ppt_outline" | "ppt_design" | "intro_video_plan" | "final_delivery_checklist">;
 
 const runtime = new DeterministicRuntime();
 
@@ -32,6 +32,8 @@ export async function advanceM2AfterApproval(
   }
 
   if (approvedArtifact.nodeKey === "ppt_draft") {
+    await generateNextArtifactIfMissing(projectId, "ppt_design", service, agentRuntime, [approvedArtifact]);
+
     const approvedInputs = await service.getApprovedInputs(projectId, "intro_video_plan");
     const hasLessonInput = approvedInputs.some((artifact) => artifact.nodeKey === "lesson_plan");
     if (hasLessonInput) {
@@ -99,6 +101,7 @@ async function generateNextArtifactIfMissing(
 
 function workflowNodeKeyForTask(task: LocalRealMvpRuntimeTask): WorkflowNodeKey {
   if (task === "ppt_outline") return "ppt_draft";
+  if (task === "ppt_design") return "ppt_design_draft";
   if (task === "final_delivery_checklist") return "final_delivery";
   return task;
 }

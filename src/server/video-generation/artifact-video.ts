@@ -14,6 +14,7 @@ type VideoDownload = {
 };
 
 const videoMimeType = "video/mp4";
+const MIN_VIDEO_BYTES = 1024;
 
 export function buildStoredVideoDownload(artifact: ArtifactRecord): VideoDownload {
   const videoAsset = readVideoAsset(artifact);
@@ -59,17 +60,29 @@ function readVideoAsset(artifact: ArtifactRecord): VideoAsset {
 }
 
 function validateMp4Buffer(buffer: Buffer) {
-  if (buffer.length < 12) {
+  if (buffer.length < MIN_VIDEO_BYTES) {
     return false;
   }
 
+  let hasFtyp = false;
   const searchLimit = Math.min(buffer.length - 4, 64);
   for (let index = 0; index <= searchLimit; index += 1) {
     if (buffer.subarray(index, index + 4).toString("ascii") === "ftyp") {
-      return true;
+      hasFtyp = true;
+      break;
     }
   }
-  return false;
+
+  const moovSearchLimit = Math.min(buffer.length - 4, 1024 * 1024);
+  let hasMoov = false;
+  for (let index = 0; index <= moovSearchLimit; index += 1) {
+    if (buffer.subarray(index, index + 4).toString("ascii") === "moov") {
+      hasMoov = true;
+      break;
+    }
+  }
+
+  return hasFtyp && hasMoov;
 }
 
 function safeMp4FileName(fileName: unknown, fallback: string) {

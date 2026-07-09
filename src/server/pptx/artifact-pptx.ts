@@ -61,11 +61,7 @@ export async function buildStoredOrGeneratedArtifactPptxDownload(artifact: {
   structuredContent: Record<string, unknown>;
   updatedAt: string;
 }): Promise<PptxDownload> {
-  const stored = await readStoredCozePptx(artifact.structuredContent);
-  if (stored) {
-    return stored;
-  }
-  return buildArtifactPptxDownload(toPptxDownloadableArtifact(artifact));
+  return buildStoredArtifactPptxDownload(artifact);
 }
 
 export async function buildStoredArtifactPptxDownload(artifact: {
@@ -79,9 +75,11 @@ export async function buildStoredArtifactPptxDownload(artifact: {
 }
 
 export function pptxDownloadHeaders(filename: string) {
+  const safeFallback = asciiFallbackFileName(filename);
+  const encodedFilename = encodeRFC5987ValueChars(filename);
   return {
     "content-type": pptxMimeType,
-    "content-disposition": `attachment; filename="${filename}"`,
+    "content-disposition": `attachment; filename="${safeFallback}"; filename*=UTF-8''${encodedFilename}`,
   };
 }
 
@@ -153,6 +151,21 @@ async function readStoredCozePptx(structuredContent: Record<string, unknown>): P
 function safeFileName(value: string) {
   const cleaned = value.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, "-").trim();
   return cleaned.toLowerCase().endsWith(".pptx") ? cleaned : `${cleaned || "coze-ppt"}.pptx`;
+}
+
+function asciiFallbackFileName(value: string) {
+  const cleaned = value
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .trim();
+  const fallback = cleaned && cleaned !== ".pptx" ? cleaned : "pptx-file.pptx";
+  return fallback.toLowerCase().endsWith(".pptx") ? fallback : `${fallback}.pptx`;
+}
+
+function encodeRFC5987ValueChars(value: string) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 function addTitleSlide(pptx: pptxgen, item: PptxDownloadableArtifact) {

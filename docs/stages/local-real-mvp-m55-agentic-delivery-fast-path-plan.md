@@ -1,3 +1,5 @@
+> 历史口径提示：本文为快速打通链路阶段计划，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；外部节点占位草稿、placeholder 或 deterministic draft 不得作为当前真实交付成功。
+
 # M55 Agentic Delivery Fast Path 并发开发总规划
 
 日期：2026-07-08

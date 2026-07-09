@@ -1,0 +1,19 @@
+{
+  "created": 1783560627,
+  "id": "ta[redacted-key]",
+  "model": "grok-imagine-text-to-video-beta",
+  "object": "video.generation.task",
+  "progress": 1,
+  "status": "processing",
+  "task_info": {
+    "can_cancel": true,
+    "estimated_time": 138,
+    "video_duration": 6
+  },
+  "type": "video",
+  "usage": {
+    "billing_rule": "per_call",
+    "credits_reserved": 4.8,
+    "user_group": "default"
+  }
+}

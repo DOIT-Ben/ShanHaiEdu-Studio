@@ -1,3 +1,5 @@
+> 历史口径提示：本文为早期主线规划，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；本文中关于 deterministic 样例优先、暂不接真实 provider 或旧 fallback policy 的内容不得覆盖当前真实交付门禁。
+
 # Agent Workflow Runtime & PromptPack Governance Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

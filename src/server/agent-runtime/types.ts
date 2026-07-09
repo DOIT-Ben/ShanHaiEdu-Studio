@@ -3,6 +3,7 @@ export type AgentRuntimeTask =
   | "textbook_evidence"
   | "lesson_plan"
   | "ppt_outline"
+  | "ppt_design"
   | "intro_video_plan"
   | "final_delivery_checklist";
 

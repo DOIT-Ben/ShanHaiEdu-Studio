@@ -1,0 +1,20 @@
+{
+  "created": 1783560628,
+  "duration": 50,
+  "id": "ta[redacted-key]",
+  "model": "grok-imagine-text-to-video-beta",
+  "object": "video.generation.task",
+  "progress": 100,
+  "result_data": {
+    "urls": "[redacted-url host=files.evolink.ai]"
+  },
+  "results": "[redacted-url host=files.evolink.ai]",
+  "status": "completed",
+  "task_info": {
+    "can_cancel": false
+  },
+  "type": "video",
+  "usage": {
+    "credits_used": 4.8
+  }
+}

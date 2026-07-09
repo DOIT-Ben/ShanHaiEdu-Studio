@@ -15,8 +15,8 @@ export async function POST(request: Request, context: RouteContext) {
       projectId = params.projectId;
       const { artifactId } = params;
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
-      if (sourceArtifact.nodeKey !== "ppt_draft" && sourceArtifact.kind !== "ppt_draft") {
-        return NextResponse.json({ error: "这个 PPT 暂时不能生成真实文件。" }, { status: 400 });
+      if (sourceArtifact.nodeKey !== "ppt_design_draft" || sourceArtifact.kind !== "ppt_design_draft") {
+        return NextResponse.json({ error: "需要先生成 PPT 设计稿，才能生成真实 PPTX 文件。" }, { status: 400 });
       }
       const queuedJob = await service.createGenerationJob(projectId, {
         kind: "pptx",
@@ -26,16 +26,17 @@ export async function POST(request: Request, context: RouteContext) {
       await service.startGenerationJob(projectId, jobId);
 
       const generated = await generateCozePptFromArtifact({ project, artifact: sourceArtifact });
+      const pageLabel = `${generated.slideCount} 页`;
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "ppt_draft",
-        kind: "ppt_draft",
-        title: "真实 PPTX 文件",
+        nodeKey: "pptx_artifact",
+        kind: "pptx_artifact",
+        title: `真实 ${pageLabel} PPTX 文件`,
         status: "needs_review",
-        summary: "已生成可下载的真实 PPTX 文件，请下载后核对页面内容。",
+        summary: `已生成可下载的真实 ${pageLabel} PPTX 文件，请下载后核对页面内容。`,
         markdownContent: [
-          "# 真实 PPTX 文件",
+          `# 真实 ${pageLabel} PPTX 文件`,
           "",
-          "已基于当前 PPT 大纲生成真实 PPTX 文件。",
+          `已基于当前逐页四层 PPT 设计稿生成真实 ${pageLabel} PPTX 文件。`,
           "",
           "正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
         ].join("\n"),
@@ -46,12 +47,16 @@ export async function POST(request: Request, context: RouteContext) {
               fileName: generated.fileName,
               bytes: generated.bytes,
               sha256: generated.sha256,
+              slideCount: generated.slideCount,
+              requestedPageCount: generated.requestedPageCount,
               generationMode: "coze_generated",
               sourceArtifactId: sourceArtifact.id,
             },
           },
-          文件状态: "真实 PPTX 已生成",
+          文件状态: `真实 ${pageLabel} PPTX 已生成`,
           文件大小: `${generated.bytes} bytes`,
+          实际页数: pageLabel,
+          目标页数: `${generated.requestedPageCount} 页`,
         },
       });
       const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });

@@ -1,0 +1,12 @@
+{
+  "result_file": "result.mp4",
+  "file_size_bytes": 1297440,
+  "mp4_header_contains_ftyp": true,
+  "ffprobe": {
+    "duration": "6.041667",
+    "width": 752,
+    "height": 416,
+    "codec_name": "h264"
+  },
+  "download_error": null
+}

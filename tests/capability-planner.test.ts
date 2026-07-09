@@ -19,7 +19,7 @@ describe("M54-B CapabilityPlanner", () => {
       requiresConfirmation: true,
       expectedArtifactKind: "requirement_spec",
     });
-    expect(plan?.nextSuggestedCapabilities).toContain("coze_ppt");
+    expect(plan?.nextSuggestedCapabilities).toContain("ppt_design");
     expect(plan?.missingInputs).toEqual([]);
   });
 
@@ -36,16 +36,29 @@ describe("M54-B CapabilityPlanner", () => {
     });
   });
 
-  it("can plan Coze PPT when a PPT outline already exists", () => {
+  it("plans PPT design before Coze PPT when only a PPT outline already exists", () => {
     const plan = planCapabilityForRequest({
       userMessage: "根据现有大纲生成 PPTX",
       availableArtifactKinds: ["ppt_draft"],
     });
 
     expect(plan).toMatchObject({
+      capabilityId: "ppt_design",
+      requiresConfirmation: true,
+      expectedArtifactKind: "ppt_design_draft",
+    });
+  });
+
+  it("can plan Coze PPT when a four-layer PPT design draft already exists", () => {
+    const plan = planCapabilityForRequest({
+      userMessage: "根据现有设计稿生成 PPTX 文件",
+      availableArtifactKinds: ["ppt_design_draft"],
+    });
+
+    expect(plan).toMatchObject({
       capabilityId: "coze_ppt",
       requiresConfirmation: true,
-      expectedArtifactKind: "ppt_draft",
+      expectedArtifactKind: "pptx_artifact",
     });
   });
 
@@ -73,6 +86,7 @@ describe("M54-B CapabilityPlanner", () => {
       "requirement_spec",
       "lesson_plan",
       "ppt_outline",
+      "ppt_design",
       "coze_ppt",
       "image_asset",
       "intro_video",
@@ -80,6 +94,7 @@ describe("M54-B CapabilityPlanner", () => {
     ]);
     expect(plan?.steps.map((step) => step.status)).toEqual([
       "awaiting_confirmation",
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -111,6 +126,7 @@ describe("M54-B CapabilityPlanner", () => {
       ["requirement_spec", "succeeded"],
       ["lesson_plan", "awaiting_confirmation"],
       ["ppt_outline", "pending"],
+      ["ppt_design", "pending"],
       ["coze_ppt", "pending"],
       ["image_asset", "pending"],
       ["intro_video", "pending"],
@@ -128,13 +144,14 @@ describe("M54-B CapabilityPlanner", () => {
       availableArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_draft"],
     });
 
-    expect(toolPlan?.capabilityId).toBe("coze_ppt");
-    expect(plan?.currentStepId).toBe("coze_ppt");
+    expect(toolPlan?.capabilityId).toBe("ppt_design");
+    expect(plan?.currentStepId).toBe("ppt_design");
     expect(plan?.steps.map((step) => [step.capabilityId, step.status])).toEqual([
       ["requirement_spec", "succeeded"],
       ["lesson_plan", "succeeded"],
       ["ppt_outline", "succeeded"],
-      ["coze_ppt", "awaiting_confirmation"],
+      ["ppt_design", "awaiting_confirmation"],
+      ["coze_ppt", "pending"],
       ["image_asset", "pending"],
       ["intro_video", "pending"],
       ["final_package", "pending"],

@@ -34,7 +34,7 @@ export async function GET(request: Request, context: RouteContext) {
 
 async function getLatestPptArtifact(projectId: string, service: AuthenticatedWorkbenchRequest["service"]) {
   const artifacts = await service.getArtifacts(projectId);
-  const pptArtifacts = artifacts.filter((artifact) => artifact.nodeKey === "ppt_draft" && hasPptxAsset(artifact));
+  const pptArtifacts = artifacts.filter((artifact) => (artifact.nodeKey === "pptx_artifact" || artifact.nodeKey === "ppt_draft") && hasPptxAsset(artifact));
   const approved = pptArtifacts.filter((artifact) => artifact.isApproved);
   const candidates = approved.length ? approved : pptArtifacts;
   const latest = candidates.sort((left, right) => right.version - left.version)[0];

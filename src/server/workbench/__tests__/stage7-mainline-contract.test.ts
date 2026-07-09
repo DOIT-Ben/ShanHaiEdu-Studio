@@ -160,6 +160,8 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       "textbook_evidence",
       "lesson_plan",
       "ppt_draft",
+      "ppt_design_draft",
+      "pptx_artifact",
       "intro_video_plan",
       "image_prompts",
       "video_storyboard",

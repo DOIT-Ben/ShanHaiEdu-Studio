@@ -103,6 +103,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               input={controller.input}
               reference={controller.reference}
               sending={controller.sending}
+              executionFeedback={controller.executionFeedback}
               notice={controller.notice}
               composerNotice={controller.composerNotice}
               onInputChange={controller.setInput}
@@ -117,6 +118,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
             />
           </div>
           <ArtifactSidePanel
+            projectId={controller.activeProjectId}
             item={controller.sidePanelItem}
             open={controller.sidePanelOpen}
             onClose={() => controller.setSidePanelOpen(false)}
@@ -126,6 +128,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
           />
           <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
             <ArtifactRail
+              projectId={controller.activeProjectId}
               items={controller.artifacts}
               activeKey={controller.activeArtifact?.key ?? ""}
               previewDisabled={controller.sidePanelOpen}
@@ -141,6 +144,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         <SheetContent className="max-w-[390px]">
           <SheetTitle className="sr-only">线性产物</SheetTitle>
           <ArtifactRail
+            projectId={controller.activeProjectId}
             variant="drawer"
             items={controller.artifacts}
             activeKey={controller.activeArtifact?.key ?? ""}

@@ -122,6 +122,7 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, model: stri
       "只生成面向教师可阅读的 Markdown 文本产物。",
       "不要输出工程实现细节、密钥、调试信息、本地路径或底层错误。",
       "如果是导入视频方案，必须保持独立创意，不提前讲知识点结论，并通过课程锚点回到课堂。",
+      "如果是 PPT 设计稿，必须输出逐页四层 PPT 设计稿，并逐页写清底图、元素、文字、排版。",
       "artifactDraft.markdown 必须包含任务必备字段，并以 ## 自检清单 结尾。",
       "返回内容必须严格符合指定 JSON 结构。",
     ].join("\n"),

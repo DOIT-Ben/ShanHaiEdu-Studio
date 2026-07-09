@@ -725,6 +725,14 @@ test("real asset generation actions are teacher-facing and scoped to supported a
     kind: "ppt_draft",
     title: "PPT 大纲与逐页脚本",
   };
+  const pptDesignArtifact = {
+    ...seedArtifacts[1],
+    key: "artifact-ppt-design-v1",
+    artifactId: "artifact-ppt-design-v1",
+    nodeKey: "ppt_design_draft",
+    kind: "ppt_design_draft",
+    title: "PPT 设计稿",
+  };
   const videoArtifact = {
     ...seedArtifacts[1],
     key: "artifact-video-plan-v1",
@@ -743,17 +751,21 @@ test("real asset generation actions are teacher-facing and scoped to supported a
   };
 
   const pptActions = getRealAssetGenerationActions(pptArtifact);
-  assert.equal(pptActions.map((action) => action.kind).join(","), "pptx,image");
-  assert.equal(pptActions.map((action) => action.label).join(","), "生成真实 PPTX,生成课堂视觉图");
-  assert.match(pptActions[0].successNotice, /真实 PPTX/);
-  assert.match(pptActions[1].successNotice, /课堂视觉图/);
+  assert.equal(pptActions.map((action) => action.kind).join(","), "image");
+  assert.equal(pptActions.map((action) => action.label).join(","), "生成课堂视觉图");
+  assert.match(pptActions[0].successNotice, /课堂视觉图/);
+
+  const pptDesignActions = getRealAssetGenerationActions(pptDesignArtifact);
+  assert.equal(pptDesignActions.map((action) => action.kind).join(","), "pptx");
+  assert.equal(pptDesignActions.map((action) => action.label).join(","), "生成真实 PPTX");
+  assert.match(pptDesignActions[0].successNotice, /真实 PPTX/);
 
   const videoActions = getRealAssetGenerationActions(videoArtifact);
   assert.equal(videoActions.map((action) => action.kind).join(","), "video");
   assert.equal(videoActions.map((action) => action.label).join(","), "生成导入视频");
 
   assert.equal(getRealAssetGenerationActions(finalDeliveryArtifact).length, 0);
-  const visibleText = [...pptActions, ...videoActions].flatMap((action) => [action.label, action.pendingLabel, action.successNotice, action.failureNotice]).join("\n");
+  const visibleText = [...pptActions, ...pptDesignActions, ...videoActions].flatMap((action) => [action.label, action.pendingLabel, action.successNotice, action.failureNotice]).join("\n");
   assert.equal(/schema|manifest|provider|node_id|storage|API|debug|local path/i.test(visibleText), false);
 });
 

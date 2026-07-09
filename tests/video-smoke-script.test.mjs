@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
   buildVideoEndpointUrl,
+  buildVideoRequestBody,
   buildVideoQueryUrl,
   classifyVideoWaitFailure,
   extractTaskId,
@@ -23,6 +25,7 @@ test("extracts video task ids from common provider response shapes", () => {
 });
 
 test("normalizes video task statuses", () => {
+  assert.equal(normalizeVideoStatus("pending"), "processing");
   assert.equal(normalizeVideoStatus("queued"), "processing");
   assert.equal(normalizeVideoStatus("IN_PROGRESS"), "processing");
   assert.equal(normalizeVideoStatus("completed"), "completed");
@@ -35,6 +38,7 @@ test("extracts video result urls from common provider response shapes", () => {
   assert.equal(extractVideoResultUrl({ video_url: "https://video.example.test/a.mp4" }), "https://video.example.test/a.mp4");
   assert.equal(extractVideoResultUrl({ data: { result_url: "https://video.example.test/b.mp4" } }), "https://video.example.test/b.mp4");
   assert.equal(extractVideoResultUrl({ result: { url: "https://video.example.test/c.mp4" } }), "https://video.example.test/c.mp4");
+  assert.equal(extractVideoResultUrl({ results: ["https://video.example.test/d.mp4"] }), "https://video.example.test/d.mp4");
   assert.throws(() => extractVideoResultUrl({ data: {} }), /missing_video_result_url/);
 });
 
@@ -42,10 +46,71 @@ test("builds video submit endpoint from root, v1, or full endpoint base urls", (
   assert.equal(buildVideoEndpointUrl("https://video.example.test"), "https://video.example.test/v1/videos");
   assert.equal(buildVideoEndpointUrl("https://video.example.test/v1"), "https://video.example.test/v1/videos");
   assert.equal(buildVideoEndpointUrl("https://video.example.test/v1/videos"), "https://video.example.test/v1/videos");
+  assert.equal(buildVideoEndpointUrl("https://api.evolink.ai", "evolink"), "https://api.evolink.ai/v1/videos/generations");
+  assert.equal(buildVideoEndpointUrl("https://api.evolink.ai/v1/videos/generations", "evolink"), "https://api.evolink.ai/v1/videos/generations");
 });
 
 test("builds video query endpoint without exposing raw task ids in public output", () => {
   assert.equal(buildVideoQueryUrl("https://video.example.test/v1", "task id/1"), "https://video.example.test/v1/videos/task%20id%2F1");
+  assert.equal(buildVideoQueryUrl("https://api.evolink.ai", "task id/1", "evolink"), "https://api.evolink.ai/v1/tasks/task%20id%2F1");
+});
+
+test("builds Evolink Grok Imagine video request bodies", () => {
+  assert.deepEqual(
+    buildVideoRequestBody(
+      {
+        channel: "evolink",
+        model: "grok-imagine-text-to-video-beta",
+        size: "1280x720",
+        duration: 6,
+        quality: "480p",
+        mode: "normal",
+        aspectRatio: "16:9",
+      },
+      "A warm classroom intro video",
+    ),
+    {
+      model: "grok-imagine-text-to-video-beta",
+      prompt: "A warm classroom intro video",
+      duration: 6,
+      quality: "480p",
+      mode: "normal",
+      aspect_ratio: "16:9",
+    },
+  );
+});
+
+test("builds Evolink request bodies from API ledger EVOLINK_VIDEO_* environment aliases", () => {
+  const body = buildVideoRequestBody(
+    {
+      channel: "evolink",
+      model: "grok-imagine-text-to-video-beta",
+      size: "1280x720",
+      duration: 8,
+      quality: "720p",
+      mode: "fun",
+      aspectRatio: "9:16",
+    },
+    "A vertical classroom hook video",
+  );
+
+  assert.deepEqual(body, {
+    model: "grok-imagine-text-to-video-beta",
+    prompt: "A vertical classroom hook video",
+    duration: 8,
+    quality: "720p",
+    mode: "fun",
+    aspect_ratio: "9:16",
+  });
+
+  const scriptSource = readFileSync("scripts/video-smoke.mjs", "utf8");
+  assert.match(scriptSource, /EVOLINK_VIDEO_API_KEY/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_BASE_URL/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_MODEL/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_DURATION_SECONDS/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_QUALITY/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_STYLE_MODE/);
+  assert.match(scriptSource, /EVOLINK_VIDEO_ASPECT_RATIO/);
 });
 
 test("resolves video resume task id from explicit env before cached task metadata", () => {
@@ -83,11 +148,21 @@ test("classifies long-running queued video tasks as stuck instead of generic tim
   assert.equal(classifyVideoWaitFailure({ lastStatus: "processing", hasTaskId: false }), "video_task_timeout");
 });
 
-test("validates MP4 buffers by ftyp box", () => {
+test("validates MP4 buffers by ftyp and moov boxes with a minimum size", () => {
   const mp4 = Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(16)]);
   const validation = validateMp4Buffer(mp4);
-  assert.equal(validation.valid, true);
-  assert.equal(validation.mime, "video/mp4");
+  assert.equal(validation.valid, false, "tiny ftyp-only buffers must not count as real video artifacts");
+
+  const validMp4 = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x18]),
+    Buffer.from("ftypisom"),
+    Buffer.alloc(128),
+    Buffer.from("moov"),
+    Buffer.alloc(4096),
+  ]);
+  const validValidation = validateMp4Buffer(validMp4);
+  assert.equal(validValidation.valid, true);
+  assert.equal(validValidation.mime, "video/mp4");
 
   const invalid = validateMp4Buffer(Buffer.from("not a video"));
   assert.equal(invalid.valid, false);
@@ -97,6 +172,9 @@ test("video smoke fails without env and does not leak credentials", () => {
   const env = { ...process.env, SHANHAI_VIDEO_SKIP_DOTENV: "1" };
   delete env.OCTO_API_KEY;
   delete env.OCTO_BASE_URL;
+  delete env.EVOLINK_API_KEY;
+  delete env.EVOLINK_BASE_URL;
+  delete env.VIDEO_PROVIDER_MODE;
 
   const result = spawnSync(process.execPath, ["scripts/video-smoke.mjs"], {
     cwd: process.cwd(),
@@ -119,8 +197,11 @@ test("video smoke failure output does not leak selected channel credentials", ()
     SHANHAI_VIDEO_SKIP_DOTENV: "1",
     OCTO_API_KEY: "test-video-key-do-not-print",
     OCTO_BASE_URL: "http://127.0.0.1:9",
+    VIDEO_PROVIDER_MODE: "octo",
     VIDEO_SMOKE_TIMEOUT_MS: "1000",
   };
+  delete env.EVOLINK_API_KEY;
+  delete env.EVOLINK_BASE_URL;
 
   const result = spawnSync(process.execPath, ["scripts/video-smoke.mjs"], {
     cwd: process.cwd(),

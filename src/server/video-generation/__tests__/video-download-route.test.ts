@@ -96,7 +96,7 @@ describe("Local Real MVP M22 video download route", () => {
 });
 
 function buildTinyMp4() {
-  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(32)]);
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(256), Buffer.from("moov"), Buffer.alloc(1024)]);
 }
 
 function writeFixtureVideo(buffer: Buffer, fileName: string) {

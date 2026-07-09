@@ -10,6 +10,8 @@ export type ArtifactKind =
   | "ppt_outline"
   | "intro_video_plan"
   | "ppt_draft"
+  | "ppt_design_draft"
+  | "pptx_artifact"
   | "image_prompts"
   | "video_storyboard"
   | "final_delivery"

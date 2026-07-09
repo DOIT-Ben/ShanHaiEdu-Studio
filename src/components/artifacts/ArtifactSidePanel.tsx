@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Clipboard, PanelRightClose, SendToBack, Maximize2 } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
+import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MarkdownPreview } from "@/components/artifacts/MarkdownPreview";
@@ -10,6 +11,7 @@ import { ResizableHandle } from "@/components/artifacts/ResizableHandle";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 
 type ArtifactSidePanelProps = {
+  projectId: string;
   item: ArtifactItem | null;
   open: boolean;
   onClose: () => void;
@@ -19,6 +21,7 @@ type ArtifactSidePanelProps = {
 };
 
 export function ArtifactSidePanel({
+  projectId,
   item,
   open,
   onClose,
@@ -41,6 +44,7 @@ export function ArtifactSidePanel({
             onChange={setWidth}
           />
           <ArtifactSidePanelContent
+            projectId={projectId}
             item={item}
             onClose={onClose}
             onCopy={onCopy}
@@ -54,12 +58,14 @@ export function ArtifactSidePanel({
 }
 
 function ArtifactSidePanelContent({
+  projectId,
   item,
   onClose,
   onCopy,
   onUseAsInput,
   onOpenDetail,
 }: {
+  projectId: string;
   item: ArtifactItem;
   onClose: () => void;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
@@ -100,6 +106,7 @@ function ArtifactSidePanelContent({
           <SendToBack className="h-3.5 w-3.5" />
           作为输入
         </Button>
+        <ArtifactDownloadActions projectId={projectId} item={item} variant="compact" />
       </div>
     </div>
   );

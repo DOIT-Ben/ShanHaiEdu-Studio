@@ -240,7 +240,9 @@ async function runExternalProviderCapability(input: {
   const capabilityId = input.plannedTurn.toolPlan?.capabilityId;
   if (capabilityId !== "coze_ppt" && capabilityId !== "image_asset" && capabilityId !== "intro_video") return null;
 
-  const sourceArtifact = findExternalSourceArtifact(capabilityId, input.artifacts);
+  const sourceArtifact = capabilityId === "coze_ppt"
+    ? findExternalSourceArtifact("coze_ppt", input.artifacts)
+    : findExternalSourceArtifact(capabilityId, input.artifacts);
   if (!sourceArtifact) {
     const message = externalMissingSourceMessage(capabilityId);
     const failedTurn: MainAgentTurn = {
@@ -345,28 +347,33 @@ async function runExternalProviderCapability(input: {
 
 async function buildCozePptArtifactDraft(project: ProjectRecord, sourceArtifact: ArtifactRecord) {
   const generated = await generateCozePptFromArtifact({ project, artifact: sourceArtifact });
+  const pageLabel = `${generated.slideCount} 页`;
   return {
-    nodeKey: "ppt_draft" as const,
-    kind: "ppt_draft" as const,
-    title: "真实 12 页 PPTX 文件",
+    nodeKey: "pptx_artifact" as const,
+    kind: "pptx_artifact" as const,
+    title: `真实 ${pageLabel} PPTX 文件`,
     status: "needs_review" as const,
-    summary: "已生成可下载的真实 12 页 PPTX 文件，请下载后核对页面内容。",
+    summary: `已生成可下载的真实 ${pageLabel} PPTX 文件，请下载后核对页面内容。`,
     markdownContent: [
-      "# 真实 12 页 PPTX 文件",
+      `# 真实 ${pageLabel} PPTX 文件`,
       "",
-      "已基于当前 PPT 大纲生成真实 12 页 PPTX 文件。",
+      `已基于当前逐页四层 PPT 设计稿生成真实 ${pageLabel} PPTX 文件。`,
       "",
       "正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
     ].join("\n"),
     structuredContent: {
-      文件状态: "真实 12 页 PPTX 已生成",
+      文件状态: `真实 ${pageLabel} PPTX 已生成`,
       文件大小: `${generated.bytes} bytes`,
+      实际页数: pageLabel,
+      目标页数: `${generated.requestedPageCount} 页`,
       storage: {
         cozePptx: {
           localOutput: generated.localOutput,
           fileName: generated.fileName,
           bytes: generated.bytes,
           sha256: generated.sha256,
+          slideCount: generated.slideCount,
+          requestedPageCount: generated.requestedPageCount,
           generationMode: "coze_generated",
           sourceArtifactId: sourceArtifact.id,
         },
@@ -445,7 +452,10 @@ async function buildVideoArtifactDraft(project: ProjectRecord, sourceArtifact: A
 
 function findExternalSourceArtifact(capabilityId: "coze_ppt" | "image_asset" | "intro_video", artifacts: ArtifactRecord[]) {
   const candidates = [...artifacts].reverse();
-  if (capabilityId === "coze_ppt" || capabilityId === "image_asset") {
+  if (capabilityId === "coze_ppt") {
+    return candidates.find((artifact) => artifact.nodeKey === "ppt_design_draft" && artifact.kind === "ppt_design_draft") ?? null;
+  }
+  if (capabilityId === "image_asset") {
     return candidates.find((artifact) => artifact.nodeKey === "ppt_draft" && artifact.kind === "ppt_draft") ?? null;
   }
   return candidates.find((artifact) => artifact.nodeKey === "intro_video_plan" && artifact.kind === "intro_video_plan")
@@ -454,7 +464,7 @@ function findExternalSourceArtifact(capabilityId: "coze_ppt" | "image_asset" | "
 }
 
 function externalMissingSourceMessage(capabilityId: "coze_ppt" | "image_asset" | "intro_video") {
-  if (capabilityId === "coze_ppt") return "需要先生成并确认 PPT 大纲，才能生成真实 PPTX 文件。";
+  if (capabilityId === "coze_ppt") return "需要先生成 PPT 设计稿，才能生成真实 PPTX 文件。";
   if (capabilityId === "image_asset") return "需要先生成并确认 PPT 大纲，才能生成真实课堂视觉图。";
   return "需要先生成并确认导入方案或 PPT 大纲，才能生成真实导入视频。";
 }

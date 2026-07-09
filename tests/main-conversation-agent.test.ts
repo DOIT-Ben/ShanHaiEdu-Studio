@@ -52,6 +52,7 @@ describe("M54-B MainConversationAgent", () => {
       "整理备课需求",
       "生成公开课教案",
       "生成 PPT 大纲",
+      "生成 PPT 设计稿",
       "生成 PPTX 文件",
       "生成课堂图片素材",
       "生成导入视频素材",

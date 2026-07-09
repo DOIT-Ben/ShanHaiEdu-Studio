@@ -1,3 +1,5 @@
+> 历史口径提示：本文为早期 MVP 过渡方案，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；本文中关于可降级产物、deterministic fallback、第一版文本大纲/PPTX 过渡等表述若与当前基线冲突，一律废止。
+
 # ShanHaiEdu 媒体工作台 MVP 到生产架构方案
 
 日期：2026-07-07

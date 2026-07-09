@@ -2,6 +2,7 @@ export type CapabilityId =
   | "requirement_spec"
   | "lesson_plan"
   | "ppt_outline"
+  | "ppt_design"
   | "coze_ppt"
   | "image_asset"
   | "intro_video"

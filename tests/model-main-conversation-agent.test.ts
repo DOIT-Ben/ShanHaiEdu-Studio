@@ -125,6 +125,7 @@ describe("M55-C model-first main conversation agent", () => {
       "requirement_spec",
       "lesson_plan",
       "ppt_outline",
+      "ppt_design",
       "coze_ppt",
       "image_asset",
       "intro_video",
@@ -174,6 +175,40 @@ describe("M55-C model-first main conversation agent", () => {
     });
     expect(turn.assistantMessage.body).toContain("智能生成服务暂时不可用");
     expect(turn.assistantMessage.body).not.toMatch(/硬编码|主模型|模型通道|schema|provider|debug|local path/i);
+  });
+
+  it("continues an existing pending delivery plan even when model config is missing", async () => {
+    const agent = createMainConversationAgentFromEnv({ NODE_ENV: "development" });
+
+    const turn = await agent.respond({
+      userMessage: "继续下一步",
+      availableArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_draft", "ppt_design_draft"],
+      conversationContext: {
+        recentMessages: [],
+        pendingDeliveryPlan: {
+          teacherRequest: "五年级数学《百分数的认识》",
+          toolPlan: {
+            planId: "coze_ppt:test",
+            capabilityId: "coze_ppt",
+            reasonForUser: "我会生成真实 PPTX 文件。",
+            internalReason: "test",
+            inputDraft: { teacherGoal: "五年级数学《百分数的认识》" },
+            missingInputs: [],
+            upstreamPlan: [],
+            nextSuggestedCapabilities: ["image_asset"],
+            requiresConfirmation: true,
+            expectedArtifactKind: "pptx_artifact",
+          },
+        },
+      },
+    });
+
+    expect(turn).toMatchObject({
+      state: "running_tool",
+      runtimeKind: "openai",
+      shouldRunToolNow: true,
+      toolPlan: { capabilityId: "coze_ppt" },
+    });
   });
 
   it("uses a longer configurable timeout for model-first planning", () => {

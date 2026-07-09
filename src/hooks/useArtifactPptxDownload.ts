@@ -8,7 +8,7 @@ type DownloadState = "idle" | "done" | "failed";
 export function useArtifactPptxDownload(projectId: string, item: ArtifactItem) {
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
   const timerRef = useRef<number | null>(null);
-  const canDownloadPptx = Boolean(projectId && item.artifactId && item.nodeKey === "ppt_draft");
+  const canDownloadPptx = Boolean(projectId && item.artifactId && item.nodeKey === "pptx_artifact");
 
   useEffect(() => {
     setDownloadState("idle");

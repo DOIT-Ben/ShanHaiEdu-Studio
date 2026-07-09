@@ -15,6 +15,7 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "requirement_spec",
   "lesson_plan",
   "ppt_outline",
+  "ppt_design",
   "coze_ppt",
   "image_asset",
   "intro_video",
@@ -41,17 +42,22 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
     const missingInputs = normalizePptMissingInputs(missingLessonInputs(text, input.projectContext));
     const hasRequirementSpec = input.availableArtifactKinds.includes("requirement_spec");
     const hasPptOutline = input.availableArtifactKinds.includes("ppt_draft") || input.availableArtifactKinds.includes("ppt_outline");
+    const hasPptDesign = input.availableArtifactKinds.includes("ppt_design_draft");
     const wantsConcretePptx = /pptx|文件|下载|生成\s*ppt/i.test(text);
 
+    if (hasPptDesign && wantsConcretePptx) {
+      return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"]);
+    }
+
     if (hasPptOutline && wantsConcretePptx) {
-      return buildPlan("coze_ppt", text, [], [], ["ppt_outline"]);
+      return buildPlan("ppt_design", text, [], ["coze_ppt"], ["ppt_draft"]);
     }
 
     if (!hasRequirementSpec) {
-      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "coze_ppt"], []);
+      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "ppt_design"], []);
     }
 
-    return buildPlan("ppt_outline", text, missingInputs, ["coze_ppt"], []);
+    return buildPlan("ppt_outline", text, missingInputs, ["ppt_design"], []);
   }
 
   if (wantsLessonPlan(text)) {

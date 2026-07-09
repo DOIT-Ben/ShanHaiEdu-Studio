@@ -16,6 +16,7 @@ const capabilityRuntimeTaskMap: Partial<Record<CapabilityId, AgentRuntimeTask>> 
   requirement_spec: "requirement_spec",
   lesson_plan: "lesson_plan",
   ppt_outline: "ppt_outline",
+  ppt_design: "ppt_design",
   final_package: "final_delivery_checklist",
 };
 
@@ -24,6 +25,7 @@ const runtimeArtifactMap: Record<AgentRuntimeTask, Pick<SaveArtifactDraft, "node
   textbook_evidence: { nodeKey: "textbook_evidence", kind: "textbook_evidence" },
   lesson_plan: { nodeKey: "lesson_plan", kind: "lesson_plan" },
   ppt_outline: { nodeKey: "ppt_draft", kind: "ppt_draft" },
+  ppt_design: { nodeKey: "ppt_design_draft", kind: "ppt_design_draft" },
   intro_video_plan: { nodeKey: "intro_video_plan", kind: "intro_video_plan" },
   final_delivery_checklist: { nodeKey: "final_delivery", kind: "final_delivery" },
 };

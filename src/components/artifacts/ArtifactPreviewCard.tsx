@@ -2,19 +2,21 @@
 
 import { Clipboard, ExternalLink, SendToBack } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
+import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
 
 type ArtifactPreviewCardProps = {
+  projectId: string;
   item: ArtifactItem;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
 };
 
-export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: ArtifactPreviewCardProps) {
+export function ArtifactPreviewCard({ projectId, item, onCopy, onUseAsInput, onOpen }: ArtifactPreviewCardProps) {
   const meta = getArtifactStatusMeta(item.status);
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
 
@@ -49,6 +51,7 @@ export function ArtifactPreviewCard({ item, onCopy, onUseAsInput, onOpen }: Arti
           详情
         </Button>
       </div>
+      <ArtifactDownloadActions projectId={projectId} item={item} variant="compact" />
     </div>
   );
 }

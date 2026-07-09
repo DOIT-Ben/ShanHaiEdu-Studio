@@ -17,10 +17,16 @@ type VideoProviderConfig = {
   baseUrl: string;
   model: string;
   size: string;
+  duration: number;
+  quality: string;
+  mode: string;
+  aspectRatio: string;
   timeoutMs: number;
   pollIntervalMs: number;
   maxPolls: number;
 };
+
+const MIN_VIDEO_BYTES = 1024;
 
 export async function generateVideoFromArtifact(input: {
   project: ProjectRecord;
@@ -54,8 +60,17 @@ export async function generateVideoFromArtifact(input: {
   };
 }
 
-export function buildVideoEndpointUrl(baseUrl: string) {
+export function buildVideoEndpointUrl(baseUrl: string, channel = "octo") {
   const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "evolink") {
+    if (/\/v1\/videos\/generations$/i.test(normalized)) {
+      return normalized;
+    }
+    if (/\/v1$/i.test(normalized)) {
+      return `${normalized}/videos/generations`;
+    }
+    return `${normalized}/v1/videos/generations`;
+  }
   if (/\/v1\/videos$/i.test(normalized)) {
     return normalized;
   }
@@ -65,23 +80,55 @@ export function buildVideoEndpointUrl(baseUrl: string) {
   return `${normalized}/v1/videos`;
 }
 
-export function buildVideoQueryUrl(baseUrl: string, taskId: string) {
-  return `${buildVideoEndpointUrl(baseUrl)}/${encodeURIComponent(taskId)}`;
+export function buildVideoQueryUrl(baseUrl: string, taskId: string, channel = "octo") {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "evolink") {
+    const tasksBase = /\/v1\/tasks$/i.test(normalized)
+      ? normalized
+      : /\/v1$/i.test(normalized)
+        ? `${normalized}/tasks`
+        : normalized.replace(/\/v1\/videos\/generations$/i, "/v1/tasks").replace(/\/v1\/videos$/i, "/v1/tasks");
+    return `${tasksBase.endsWith("/v1/tasks") ? tasksBase : `${tasksBase}/v1/tasks`}/${encodeURIComponent(taskId)}`;
+  }
+  return `${buildVideoEndpointUrl(baseUrl, channel)}/${encodeURIComponent(taskId)}`;
+}
+
+export function buildVideoRequestBody(config: Pick<VideoProviderConfig, "channel" | "model" | "size" | "duration" | "quality" | "mode" | "aspectRatio">, prompt: string) {
+  if (config.channel === "evolink") {
+    return {
+      model: config.model,
+      prompt,
+      duration: config.duration,
+      quality: config.quality,
+      mode: config.mode,
+      aspect_ratio: config.aspectRatio,
+    };
+  }
+  return {
+    model: config.model,
+    prompt,
+    size: config.size,
+  };
 }
 
 function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {
-  const apiKey = env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
-  const baseUrl = env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
+  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
+  const apiKey = wantsEvolink ? env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim() : env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
+  const baseUrl = wantsEvolink ? env.EVOLINK_VIDEO_BASE_URL?.trim() || env.EVOLINK_BASE_URL?.trim() || "https://api.evolink.ai" : env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
   if (!apiKey || !baseUrl) {
     throw new Error("missing_VIDEO_PROVIDER_ENV");
   }
 
   return {
-    channel: env.OCTO_VIDEO_PROVIDER?.trim() || env.VIDEO_PROVIDER_MODE?.trim() || "octo",
+    channel: wantsEvolink ? "evolink" : env.OCTO_VIDEO_PROVIDER?.trim() || env.VIDEO_PROVIDER_MODE?.trim() || "octo",
     apiKey,
     baseUrl: baseUrl.replace(/\/+$/, ""),
-    model: env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim() || "omni_flash-10s",
+    model: env.EVOLINK_VIDEO_MODEL?.trim() || env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim() || (wantsEvolink ? "grok-imagine-text-to-video-beta" : "omni_flash-10s"),
     size: env.OMNI_DEFAULT_SIZE?.trim() || env.NEWAPI_DEFAULT_SIZE?.trim() || "1280x720",
+    duration: Number.parseInt(env.EVOLINK_VIDEO_DURATION_SECONDS || env.VIDEO_DURATION_SECONDS || "6", 10),
+    quality: env.EVOLINK_VIDEO_QUALITY?.trim() || env.VIDEO_QUALITY?.trim() || "480p",
+    mode: env.EVOLINK_VIDEO_STYLE_MODE?.trim() || env.VIDEO_STYLE_MODE?.trim() || "normal",
+    aspectRatio: env.EVOLINK_VIDEO_ASPECT_RATIO?.trim() || env.VIDEO_ASPECT_RATIO?.trim() || "16:9",
     timeoutMs: Number.parseInt(env.VIDEO_SMOKE_TIMEOUT_MS || "600000", 10),
     pollIntervalMs: Number.parseInt(env.VIDEO_SMOKE_POLL_INTERVAL_MS || "5000", 10),
     maxPolls: Number.parseInt(env.VIDEO_SMOKE_MAX_POLLS || "72", 10),
@@ -92,17 +139,13 @@ async function submitVideoTask(
   config: VideoProviderConfig,
   input: { project: ProjectRecord; artifact: ArtifactRecord },
 ) {
-  const response = await fetch(buildVideoEndpointUrl(config.baseUrl), {
+  const response = await fetch(buildVideoEndpointUrl(config.baseUrl, config.channel), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: config.model,
-      prompt: buildPrompt(input.project, input.artifact),
-      size: config.size,
-    }),
+    body: JSON.stringify(buildVideoRequestBody(config, buildPrompt(input.project, input.artifact))),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
 
@@ -115,7 +158,7 @@ async function submitVideoTask(
 async function pollVideoTask(config: VideoProviderConfig, taskId: string) {
   let lastStatus = "unknown";
   for (let attempt = 0; attempt < config.maxPolls; attempt += 1) {
-    const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId), {
+    const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId, config.channel), {
       method: "GET",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -156,10 +199,12 @@ function extractVideoResultUrl(payload: unknown) {
   const value = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const data = value.data && typeof value.data === "object" ? (value.data as Record<string, unknown>) : {};
   const result = value.result && typeof value.result === "object" ? (value.result as Record<string, unknown>) : {};
+  const results = Array.isArray(value.results) ? value.results : [];
   const candidates = [
     value.video_url,
     value.url,
     value.result_url,
+    results[0],
     data.video_url,
     data.url,
     data.result_url,
@@ -176,7 +221,7 @@ function extractVideoResultUrl(payload: unknown) {
 
 function normalizeVideoStatus(status: unknown) {
   const normalized = String(status || "").trim().toLowerCase();
-  if (["queued", "submitted", "processing", "in_progress", "running"].includes(normalized)) {
+  if (["pending", "queued", "submitted", "processing", "in_progress", "running"].includes(normalized)) {
     return "processing";
   }
   if (["completed", "complete", "success", "succeeded"].includes(normalized)) {
@@ -196,15 +241,30 @@ function readStatus(payload: unknown) {
 }
 
 function validateMp4Buffer(buffer: Buffer): { valid: true } | { valid: false } {
-  if (buffer.length < 12) {
+  if (buffer.length < MIN_VIDEO_BYTES) {
     return { valid: false };
   }
 
+  let hasFtyp = false;
   const searchLimit = Math.min(buffer.length - 4, 64);
   for (let index = 0; index <= searchLimit; index += 1) {
     if (buffer.subarray(index, index + 4).toString("ascii") === "ftyp") {
-      return { valid: true };
+      hasFtyp = true;
+      break;
     }
+  }
+
+  const moovSearchLimit = Math.min(buffer.length - 4, 1024 * 1024);
+  let hasMoov = false;
+  for (let index = 0; index <= moovSearchLimit; index += 1) {
+    if (buffer.subarray(index, index + 4).toString("ascii") === "moov") {
+      hasMoov = true;
+      break;
+    }
+  }
+
+  if (hasFtyp && hasMoov) {
+    return { valid: true };
   }
 
   return { valid: false };

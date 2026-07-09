@@ -1,3 +1,5 @@
+> 历史口径提示：本文为早期 PPTX 下载阶段计划，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；“只保证可打开和内容可读”的最小 PPTX 口径已不能作为当前真实 PPTX 交付标准。
+
 # Local Real MVP M11 PPTX 最小下载闭环规划
 
 日期：2026-07-07
