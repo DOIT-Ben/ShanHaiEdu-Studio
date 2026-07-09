@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/server/db/client";
+import { createWorkbenchActor } from "@/server/auth/actor";
 import { createWorkbenchService } from "../service";
 
-const actorA = {
+const actorA = createWorkbenchActor({
   userId: "local-stage29-user-a",
-  role: "teacher" as const,
   displayName: "本地教师 A",
-};
+  authMode: "local",
+});
 
-const actorB = {
+const actorB = createWorkbenchActor({
   userId: "local-stage29-user-b",
-  role: "teacher" as const,
   displayName: "本地教师 B",
-};
+  authMode: "local",
+});
 
 describe("Local Real MVP M29 local auth access", () => {
   it("assigns new projects to the current local actor and scopes project lists", async () => {

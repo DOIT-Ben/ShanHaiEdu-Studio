@@ -97,7 +97,7 @@ test("M58 shows teacher-readable execution feedback while sending", () => {
   assert.match(controllerSource, /正在保存本轮成果/);
   assert.match(conversationSource, /executionFeedback/);
   assert.match(conversationSource, /deriveWorkbenchStageIndex/);
-  assert.match(indicatorSource, /label \?\? getGeneratingLabel\(state\)/);
+  assert.match(indicatorSource, /label \?\? getTeacherGeneratingLabel\(state\)/);
 });
 
 function loadWorkbenchProgressModule() {

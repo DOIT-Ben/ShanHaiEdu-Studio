@@ -1,5 +1,16 @@
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ArtifactKind, ArtifactStatus, ChatDeliveryPlan, ChatMessage, ProjectItem, ProjectStatus, WorkbenchSnapshot } from "@/lib/types";
+import type {
+  ArtifactItem,
+  ArtifactKind,
+  ArtifactStatus,
+  ChatDeliveryPlan,
+  ChatMessage,
+  ConversationTurnJob,
+  ConversationTurnJobStatus,
+  ProjectItem,
+  ProjectStatus,
+  WorkbenchSnapshot,
+} from "@/lib/types";
 
 export type BackendProjectRecord = {
   id: string;
@@ -24,8 +35,20 @@ export type BackendMessageRecord = {
   createdAt: string;
 };
 
+type BackendConversationTurnJobRecord = {
+  id: string;
+  projectId: string;
+  teacherMessageId: string;
+  assistantMessageId: string | null;
+  status: ConversationTurnJobStatus;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type BackendPendingDeliveryPlan = {
   status?: string;
+  actionId?: string;
   toolPlan?: {
     capabilityId?: string;
   };
@@ -83,6 +106,7 @@ export type BackendSnapshot = {
   nodes: BackendNodeRecord[];
   artifacts: BackendArtifactRecord[];
   agentRuns?: unknown[];
+  turnJobs?: BackendConversationTurnJobRecord[];
 };
 
 const nodeTitleByKey: Record<ArtifactKind, string> = {
@@ -94,6 +118,15 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   ppt_draft: "PPT 大纲",
   ppt_design_draft: "PPT 设计稿",
   pptx_artifact: "PPTX 文件",
+  knowledge_anchor_extract: "知识锚点",
+  creative_theme_generate: "创意主题",
+  video_script_generate: "视频脚本",
+  storyboard_generate: "视频分镜",
+  asset_brief_generate: "资产说明",
+  asset_image_generate: "资产图",
+  video_segment_plan: "片段计划",
+  video_segment_generate: "分镜视频",
+  concat_only_assemble: "最终视频",
   image_prompts: "图片",
   video_storyboard: "视频",
   final_delivery: "交付",
@@ -131,16 +164,18 @@ function mapBackendProject(project: BackendProjectRecord): ProjectItem {
   };
 }
 
-function mapBackendMessage(message: BackendMessageRecord): ChatMessage {
+function mapBackendMessage(message: BackendMessageRecord, turnJobsByTeacherMessageId = new Map<string, ConversationTurnJob>()): ChatMessage {
   const pendingPlan = pendingDeliveryPlanFromMessage(message);
-  const deliveryPlan = toChatDeliveryPlan(pendingPlan?.deliveryPlan);
+  const deliveryPlan = toChatDeliveryPlan(pendingPlan?.deliveryPlan, pendingActionId(pendingPlan));
   const quickReplies = quickRepliesFromPendingPlan(pendingPlan, deliveryPlan);
+  const turnJob = message.role === "teacher" ? turnJobsByTeacherMessageId.get(message.id) : undefined;
 
   return {
     id: message.id,
     speaker: message.role === "assistant" ? "assistant" : "teacher",
     body: teacherVisibleMessageBody(message),
     timeLabel: formatDateLabel(message.createdAt),
+    ...(turnJob && turnJob.status !== "succeeded" ? { turnStatus: turnJob.status, turnStatusLabel: turnJob.statusLabel } : {}),
     artifactRefs: message.artifactRefs,
     ...(quickReplies.length ? { quickReplies } : {}),
     ...(deliveryPlan ? { deliveryPlan } : {}),
@@ -148,7 +183,49 @@ function mapBackendMessage(message: BackendMessageRecord): ChatMessage {
 }
 
 function teacherVisibleMessageBody(message: BackendMessageRecord) {
-  return message.content;
+  return sanitizeTeacherVisibleText(message.content);
+}
+
+function sanitizeTeacherVisibleText(value: string) {
+  return value
+    .replace(/schema/gi, "结构")
+    .replace(/manifest/gi, "清单")
+    .replace(/provider/gi, "生成服务")
+    .replace(/node_id/gi, "节点")
+    .replace(/storage/gi, "文件保存")
+    .replace(/\bAPI\b/g, "接口")
+    .replace(/debug/gi, "排查")
+    .replace(/local path/gi, "本地位置")
+    .replace(/capabilityId/gi, "能力")
+    .replace(/runtimeKind/gi, "运行方式")
+    .replace(/providerStatus/gi, "生成状态")
+    .replace(/placeholder/gi, "临时内容");
+}
+
+function mapBackendTurnJob(job: BackendConversationTurnJobRecord): ConversationTurnJob {
+  return {
+    id: job.id,
+    projectId: job.projectId,
+    teacherMessageId: job.teacherMessageId,
+    assistantMessageId: job.assistantMessageId,
+    status: job.status,
+    statusLabel: turnStatusLabel(job.status),
+    errorMessage: job.errorMessage ? sanitizeTeacherVisibleText(job.errorMessage) : null,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+}
+
+function turnStatusLabel(status: ConversationTurnJobStatus) {
+  const labels: Record<ConversationTurnJobStatus, string> = {
+    queued: "排队中",
+    running: "正在生成",
+    succeeded: "已完成",
+    failed: "生成失败，可重试",
+    canceled: "已取消",
+    blocked: "未达标，需要处理",
+  };
+  return labels[status];
 }
 
 function pendingDeliveryPlanFromMessage(message: BackendMessageRecord): BackendPendingDeliveryPlan | null {
@@ -162,25 +239,32 @@ function pendingDeliveryPlanFromMessage(message: BackendMessageRecord): BackendP
 function quickRepliesFromPendingPlan(pendingPlan: BackendPendingDeliveryPlan | null, deliveryPlan?: ChatDeliveryPlan): NonNullable<ChatMessage["quickReplies"]> {
   if (!pendingPlan?.toolPlan?.capabilityId) return [];
   const hasCompletedStep = Boolean(deliveryPlan?.steps.some((step) => step.status === "succeeded"));
+  const actionId = pendingActionId(pendingPlan);
   return [
     {
       label: hasCompletedStep ? "继续下一步" : "确认开始",
       prompt: hasCompletedStep ? "继续下一步" : "确认开始",
+      ...(actionId ? { actionId } : {}),
       recommended: true,
     },
   ];
 }
 
-function toChatDeliveryPlan(plan?: BackendDeliveryPlan): ChatDeliveryPlan | undefined {
+function toChatDeliveryPlan(plan?: BackendDeliveryPlan, actionId?: string): ChatDeliveryPlan | undefined {
   const steps = plan?.steps?.map(toChatDeliveryPlanStep).filter((step): step is ChatDeliveryPlan["steps"][number] => Boolean(step));
   if (!plan?.title || !plan.summary || !steps?.length) return undefined;
 
   return {
     id: plan.id ?? `delivery-plan-${plan.title}`,
+    ...(actionId ? { actionId } : {}),
     title: plan.title,
     summary: plan.summary,
     steps,
   };
+}
+
+function pendingActionId(pendingPlan: BackendPendingDeliveryPlan | null) {
+  return typeof pendingPlan?.actionId === "string" && pendingPlan.actionId.trim() ? pendingPlan.actionId.trim() : undefined;
 }
 
 function toChatDeliveryPlanStep(step: BackendDeliveryPlanStep): ChatDeliveryPlan["steps"][number] | null {
@@ -209,13 +293,13 @@ function deliveryPlanStatusLabel(status: ChatDeliveryPlan["steps"][number]["stat
 
 function contentFromArtifact(artifact: BackendArtifactRecord): Record<string, string | string[]> {
   const content: Record<string, string | string[]> = {};
-  if (artifact.markdownContent) content["正文"] = artifact.markdownContent;
+  if (artifact.markdownContent) content["正文"] = sanitizeTeacherVisibleText(artifact.markdownContent);
   for (const [key, value] of Object.entries(artifact.structuredContent ?? {})) {
     if (!isVisibleStructuredLabel(key)) continue;
     const visibleValue = toTeacherVisibleStructuredValue(value);
     if (visibleValue) content[key] = visibleValue;
   }
-  if (!Object.keys(content).length) content.说明 = artifact.summary || "还没有可复用内容。";
+  if (!Object.keys(content).length) content.说明 = sanitizeTeacherVisibleText(artifact.summary || "还没有可复用内容。");
   return content;
 }
 
@@ -225,17 +309,17 @@ function previewFieldsFromContent(artifact: BackendArtifactRecord): { label: str
     .map(([label, value]) => ({ label, value: toTeacherVisibleStructuredValue(value) }))
     .filter((field): field is { label: string; value: string | string[] } => Boolean(field.value))
     .slice(0, 3)
-    .map(({ label, value }) => ({ label, value: Array.isArray(value) ? value.join("、") : value }));
-  return fields.length ? fields : [{ label: "内容", value: artifact.summary || "已生成内容" }];
+    .map(({ label, value }) => ({ label, value: sanitizeTeacherVisibleText(Array.isArray(value) ? value.join("、") : value) }));
+  return fields.length ? fields : [{ label: "内容", value: sanitizeTeacherVisibleText(artifact.summary || "已生成内容") }];
 }
 
 function toTeacherVisibleStructuredValue(value: unknown): string | string[] | null {
-  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "string") return value.trim() ? sanitizeTeacherVisibleText(value) : null;
   if (typeof value === "number") return String(value);
   if (Array.isArray(value)) {
     const entries = value
       .filter((entry) => typeof entry === "string" || typeof entry === "number")
-      .map(String)
+      .map((entry) => sanitizeTeacherVisibleText(String(entry)))
       .filter(Boolean);
     return entries.length ? entries : null;
   }
@@ -291,7 +375,7 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
     kind: artifact.kind,
     title: artifact.title || nodeTitleByKey[node.key] || node.title,
     status: mapStatus(artifact.status),
-    summary: artifact.summary || "已生成内容。",
+    summary: sanitizeTeacherVisibleText(artifact.summary || "已生成内容。"),
     updatedAt: formatDateLabel(artifact.updatedAt),
     reusable: artifact.isApproved || artifact.status === "approved" || artifact.status === "needs_review",
     sourceTitles: node.upstreamNodeKeys.map((key) => nodeTitleByKey[key] ?? key),
@@ -305,7 +389,23 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
     },
     content: contentFromArtifact(artifact),
     realAssetDownloads: realAssetDownloadsFromContent(artifact.structuredContent),
+    routeGenerationActions: routeGenerationActionsFromContent(artifact.structuredContent),
   };
+}
+
+function routeGenerationActionsFromContent(structuredContent: Record<string, unknown>) {
+  const actions = structuredContent.routeGenerationActions;
+  if (!isObjectRecord(actions)) return undefined;
+  const result: NonNullable<ArtifactItem["routeGenerationActions"]> = {};
+  for (const capabilityId of ["coze_ppt", "image_asset", "video_segment_generate"] as const) {
+    const action = actions[capabilityId];
+    if (!isObjectRecord(action)) continue;
+    const actionId = action.actionId;
+    if (typeof actionId === "string" && actionId.trim()) {
+      result[capabilityId] = { actionId: actionId.trim() };
+    }
+  }
+  return Object.keys(result).length ? result : undefined;
 }
 
 function realAssetDownloadsFromContent(structuredContent: Record<string, unknown>): RealAssetKind[] {
@@ -319,7 +419,7 @@ function realAssetDownloadsFromContent(structuredContent: Record<string, unknown
   return downloads;
 }
 
-function isObjectRecord(value: unknown) {
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
@@ -330,6 +430,8 @@ export function normalizeProjects(value: unknown): ProjectItem[] {
 
 export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
   if (!isBackendSnapshot(value)) return value as WorkbenchSnapshot;
+  const turnJobs = (value.turnJobs ?? []).map(mapBackendTurnJob);
+  const turnJobsByTeacherMessageId = new Map(turnJobs.map((job) => [job.teacherMessageId, job]));
   const artifactsByNode = new Map<string, BackendArtifactRecord>();
   for (const artifact of value.artifacts) {
     const current = artifactsByNode.get(artifact.nodeKey);
@@ -346,8 +448,9 @@ export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
 
   return {
     project: mapBackendProject(value.project),
-    messages: value.messages.filter((message) => message.role !== "system").map(mapBackendMessage),
+    messages: value.messages.filter((message) => message.role !== "system").map((message) => mapBackendMessage(message, turnJobsByTeacherMessageId)),
     artifacts,
+    turnJobs,
     activeArtifactKey: activeArtifact?.key ?? "",
   };
 }

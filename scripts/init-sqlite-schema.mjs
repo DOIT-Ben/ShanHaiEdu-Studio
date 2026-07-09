@@ -114,6 +114,26 @@ CREATE TABLE IF NOT EXISTS "GenerationJob" (
   CONSTRAINT "GenerationJob_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "teacherMessageId" TEXT NOT NULL,
+  "assistantMessageId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'queued',
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "maxAttempts" INTEGER NOT NULL DEFAULT 2,
+  "idempotencyKey" TEXT,
+  "lockedBy" TEXT,
+  "lockedUntil" DATETIME,
+  "errorCode" TEXT,
+  "errorMessage" TEXT,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  "startedAt" DATETIME,
+  "finishedAt" DATETIME,
+  CONSTRAINT "ConversationTurnJob_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS "AuthSession" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "userId" TEXT NOT NULL,
@@ -178,6 +198,9 @@ CREATE INDEX IF NOT EXISTS "Artifact_projectId_nodeKey_version_idx" ON "Artifact
 CREATE INDEX IF NOT EXISTS "AgentRun_projectId_nodeKey_startedAt_idx" ON "AgentRun"("projectId", "nodeKey", "startedAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_status_createdAt_idx" ON "GenerationJob"("projectId", "status", "createdAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_sourceArtifactId_idx" ON "GenerationJob"("sourceArtifactId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ConversationTurnJob_projectId_idempotencyKey_key" ON "ConversationTurnJob"("projectId", "idempotencyKey");
+CREATE INDEX IF NOT EXISTS "ConversationTurnJob_projectId_status_createdAt_idx" ON "ConversationTurnJob"("projectId", "status", "createdAt");
+CREATE INDEX IF NOT EXISTS "ConversationTurnJob_teacherMessageId_idx" ON "ConversationTurnJob"("teacherMessageId");
 CREATE UNIQUE INDEX IF NOT EXISTS "AuthSession_sessionTokenHash_key" ON "AuthSession"("sessionTokenHash");
 CREATE INDEX IF NOT EXISTS "AuthSession_userId_expiresAt_idx" ON "AuthSession"("userId", "expiresAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "ProjectMembership_projectId_userId_key" ON "ProjectMembership"("projectId", "userId");

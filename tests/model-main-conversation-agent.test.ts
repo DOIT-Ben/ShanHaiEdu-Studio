@@ -32,6 +32,58 @@ describe("M55-C model-first main conversation agent", () => {
     expect(turn.toolPlan).toBeUndefined();
   });
 
+  it("keeps teacher-facing clarification examples inside primary school scope", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: {
+        title: "可以，先确认 PPT 需求",
+        body: "当然可以。你可以直接这样回复：七年级数学，《有理数的加法》，新授课，约20页，简洁课堂风。",
+      },
+      state: "collecting_inputs",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({ userMessage: "帮我做小学课件 PPT", availableArtifactKinds: [] });
+
+    expect(client.lastPayload?.instructions).toContain("只服务小学");
+    expect(turn.state).toBe("collecting_inputs");
+    expect(turn.assistantMessage.body).toContain("小学");
+    expect(turn.assistantMessage.body).toContain("五年级数学");
+    expect(turn.assistantMessage.body).not.toMatch(/七年级|八年级|九年级|初中|高中|有理数|约20页/);
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.shouldRunToolNow).toBe(false);
+  });
+
+  it("rejects teacher requests outside primary school scope instead of planning junior-high content", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: {
+        body: "可以，我来为你整理七年级数学《有理数的加法》PPT。",
+      },
+      state: "awaiting_confirmation",
+      quickReplies: [{ label: "确认开始", prompt: "确认开始。", recommended: true }],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "ppt_outline",
+        reasonForUser: "我可以先为你生成 PPT 大纲。",
+        missingInputs: [],
+        nextSuggestedCapabilities: ["ppt_design"],
+        requiresConfirmation: true,
+      },
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({ userMessage: "帮我做七年级数学有理数的加法 PPT", availableArtifactKinds: [] });
+
+    expect(turn.state).toBe("collecting_inputs");
+    expect(turn.assistantMessage.body).toContain("当前版本先限定在小学");
+    expect(turn.assistantMessage.body).not.toMatch(/有理数|七年级/);
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.shouldRunToolNow).toBe(false);
+  });
+
   it("passes recent conversation and pending plan context to the model", async () => {
     const client = fakeResponsesClient({
       assistantMessage: { body: "收到，我会结合上一轮计划判断。" },
@@ -71,6 +123,83 @@ describe("M55-C model-first main conversation agent", () => {
 
     expect(client.lastPayload?.input).toContain("pendingDeliveryPlan");
     expect(client.lastPayload?.input).toContain("开始整理《观潮》第一课时备课需求");
+  });
+
+  it("passes the full ContextPackage boundary to the model request", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "我会只使用已确认产物继续判断。" },
+      state: "needs_input",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    await agent.respond({
+      userMessage: "继续下一步",
+      availableArtifactKinds: ["requirement_spec", "ppt_draft"],
+      conversationContext: {
+        recentMessages: [{ role: "teacher", content: "继续下一步" }],
+        contextPackage: {
+          mode: "snapshot",
+          project: {
+            id: "project-main-context",
+            title: "五年级百分数公开课",
+            grade: "五年级",
+            subject: "数学",
+            textbookVersion: null,
+            lessonTopic: "百分数",
+            currentNodeKey: "ppt_draft",
+          },
+          workflowNodes: [
+            { key: "requirement_spec", title: "需求规格", status: "approved", approvedArtifactId: "artifact-approved", staleReason: null },
+            { key: "ppt_draft", title: "PPT 大纲", status: "needs_review", approvedArtifactId: null, staleReason: null },
+          ],
+          sessionSummary: "## Objective\n- 五年级百分数公开课。",
+          recentMessages: [
+            { id: "message-1", role: "teacher", content: "继续下一步", artifactRefs: [], createdAt: "2026-07-09T00:00:00.000Z" },
+          ],
+          artifacts: [
+            { id: "artifact-approved", nodeKey: "requirement_spec", kind: "requirement_spec", title: "需求规格", status: "approved", summary: "已由教师确认", isApproved: true, version: 1 },
+            { id: "artifact-draft", nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT 大纲", status: "needs_review", summary: "待教师审阅", isApproved: false, version: 1 },
+          ],
+          guardrails: ["只有 approved artifact 可作为下游可信输入。"],
+          summaryValidation: { status: "passed", errors: [] },
+          tokenEstimate: 1234,
+        },
+      },
+    });
+
+    const requestInput = JSON.parse(client.lastPayload?.input ?? "{}");
+    expect(requestInput.contextPackage).toEqual({
+      mode: "snapshot",
+      project: {
+        id: "project-main-context",
+        title: "五年级百分数公开课",
+        grade: "五年级",
+        subject: "数学",
+        textbookVersion: null,
+        lessonTopic: "百分数",
+        currentNodeKey: "ppt_draft",
+      },
+      workflowNodes: [
+        { key: "requirement_spec", title: "需求规格", status: "approved", approvedArtifactId: "artifact-approved", staleReason: null },
+        { key: "ppt_draft", title: "PPT 大纲", status: "needs_review", approvedArtifactId: null, staleReason: null },
+      ],
+      sessionSummary: "## Objective\n- 五年级百分数公开课。",
+      recentMessages: [
+        { id: "message-1", role: "teacher", content: "继续下一步", artifactRefs: [], createdAt: "2026-07-09T00:00:00.000Z" },
+      ],
+      artifacts: [
+        { id: "artifact-approved", nodeKey: "requirement_spec", kind: "requirement_spec", title: "需求规格", status: "approved", summary: "已由教师确认", isApproved: true, version: 1 },
+        { id: "artifact-draft", nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT 大纲", status: "needs_review", summary: "待教师审阅", isApproved: false, version: 1 },
+      ],
+      guardrails: ["只有 approved artifact 可作为下游可信输入。"],
+      summaryValidation: { status: "passed", errors: [] },
+      tokenEstimate: 1234,
+    });
+    expect(client.lastPayload?.instructions).toContain("contextPackage");
+    expect(client.lastPayload?.instructions).toContain("summaryValidation.status=failed");
   });
 
   it("preserves all model quick replies without truncating them", async () => {
@@ -128,7 +257,15 @@ describe("M55-C model-first main conversation agent", () => {
       "ppt_design",
       "coze_ppt",
       "image_asset",
-      "intro_video",
+      "knowledge_anchor_extract",
+      "creative_theme_generate",
+      "video_script_generate",
+      "storyboard_generate",
+      "asset_brief_generate",
+      "asset_image_generate",
+      "video_segment_plan",
+      "video_segment_generate",
+      "concat_only_assemble",
       "final_package",
     ]);
   });
@@ -219,15 +356,15 @@ describe("M55-C model-first main conversation agent", () => {
   });
 });
 
-function fakeResponsesClient(output: unknown): OpenAIResponsesClient & { lastPayload?: { input?: string } } {
+function fakeResponsesClient(output: unknown): OpenAIResponsesClient & { lastPayload?: { input?: string; instructions?: string } } {
   const client = {
-    lastPayload: undefined as { input?: string } | undefined,
+    lastPayload: undefined as { input?: string; instructions?: string } | undefined,
     responses: {
-      async create(payload: { input?: string }) {
+      async create(payload: { input?: string; instructions?: string }) {
         client.lastPayload = payload;
         return { output_text: JSON.stringify(output) };
       },
     },
   };
-  return client as OpenAIResponsesClient & { lastPayload?: { input?: string } };
+  return client as OpenAIResponsesClient & { lastPayload?: { input?: string; instructions?: string } };
 }

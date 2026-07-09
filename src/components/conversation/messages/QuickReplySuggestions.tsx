@@ -5,7 +5,7 @@ import { normalizeQuickReplies, type ComposerQuickReply } from "@/components/con
 
 type QuickReplySuggestionsProps = {
   choices: ComposerQuickReply[];
-  onSelect?: (value: string) => void;
+  onSelect?: (value: string, actionId?: string) => void;
 };
 
 export function QuickReplySuggestions({ choices, onSelect }: QuickReplySuggestionsProps) {
@@ -20,7 +20,7 @@ export function QuickReplySuggestions({ choices, onSelect }: QuickReplySuggestio
           type="button"
           data-quick-reply-choice
           data-recommended-choice={choice.recommended ? "true" : undefined}
-          onClick={() => onSelect?.(choice.prompt)}
+          onClick={() => onSelect?.(choice.prompt, choice.actionId)}
           className={cn(
             "inline-flex min-h-8 items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-xs leading-5 text-foreground transition hover:border-[#b9ddd2] hover:bg-[#f7fbfa] focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35",
             choice.recommended && "border-[#b9ddd2] bg-[#f7fbfa] text-[#32685d]",

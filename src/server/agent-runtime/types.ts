@@ -5,6 +5,13 @@ export type AgentRuntimeTask =
   | "ppt_outline"
   | "ppt_design"
   | "intro_video_plan"
+  | "knowledge_anchor_extract"
+  | "creative_theme_generate"
+  | "video_script_generate"
+  | "storyboard_generate"
+  | "asset_brief_generate"
+  | "video_segment_plan"
+  | "concat_only_assemble"
   | "final_delivery_checklist";
 
 export type AgentRuntimeKind = "deterministic" | "openai";

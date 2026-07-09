@@ -1,5 +1,6 @@
 import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
+import type { ContextPackage } from "@/server/conversation/context-package";
 
 export type MainConversationAgentInput = {
   userMessage: string;
@@ -10,6 +11,7 @@ export type MainConversationAgentInput = {
     topic?: string | null;
   };
   conversationContext?: {
+    contextPackage?: ContextPackage;
     recentMessages: Array<{ role: "teacher" | "assistant" | "system"; content: string }>;
     latestAssistantContent?: string;
     pendingDeliveryPlan?: {

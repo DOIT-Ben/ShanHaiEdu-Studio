@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
+import {
+  assertRouteLevelGenerationConfirmation,
+  readConfirmedActionId,
+  readRouteGenerationBody,
+  routeLevelGenerationConfirmationStatus,
+} from "@/server/guards/route-level-generation-gate";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -14,10 +20,17 @@ export async function POST(request: Request, context: RouteContext) {
       const params = await context.params;
       projectId = params.projectId;
       const { artifactId } = params;
+      const body = await readRouteGenerationBody(request);
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
       if (sourceArtifact.nodeKey !== "ppt_design_draft" || sourceArtifact.kind !== "ppt_design_draft") {
         return NextResponse.json({ error: "需要先生成 PPT 设计稿，才能生成真实 PPTX 文件。" }, { status: 400 });
       }
+      assertRouteLevelGenerationConfirmation({
+        projectId,
+        capabilityId: "coze_ppt",
+        sourceArtifact,
+        confirmedActionId: readConfirmedActionId(body),
+      });
       const queuedJob = await service.createGenerationJob(projectId, {
         kind: "pptx",
         sourceArtifactId: sourceArtifact.id,
@@ -67,7 +80,8 @@ export async function POST(request: Request, context: RouteContext) {
         await service.failGenerationJob(projectId, jobId, { errorMessage: "Coze PPT generation failed" }).catch(() => null);
       }
       const message = error instanceof Error ? error.message : "Coze PPT generation failed";
-      const status = message.includes("not found") ? 404 : 400;
+      const confirmationStatus = routeLevelGenerationConfirmationStatus(error);
+      const status = confirmationStatus ?? (message.includes("not found") ? 404 : 400);
       return NextResponse.json({ error: "这个 PPT 文件暂时没有生成成功，请稍后再试。" }, { status });
     }
   });

@@ -16,9 +16,18 @@ export const DEFAULT_WORKFLOW_NODES: DefaultWorkflowNode[] = [
   { key: "ppt_design_draft", title: "PPT 设计稿", status: "not_started", order: 5, upstreamNodeKeys: ["ppt_draft"] },
   { key: "pptx_artifact", title: "PPTX 文件", status: "not_started", order: 6, upstreamNodeKeys: ["ppt_design_draft"] },
   { key: "intro_video_plan", title: "导入方案", status: "not_started", order: 7, upstreamNodeKeys: ["lesson_plan"] },
-  { key: "image_prompts", title: "图片提示词", status: "not_started", order: 8, upstreamNodeKeys: ["ppt_design_draft", "intro_video_plan"] },
-  { key: "video_storyboard", title: "视频分镜", status: "not_started", order: 9, upstreamNodeKeys: ["intro_video_plan", "image_prompts"] },
-  { key: "final_delivery", title: "最终交付", status: "not_started", order: 10, upstreamNodeKeys: ["requirement_spec", "lesson_plan", "ppt_draft", "intro_video_plan"] },
+  { key: "knowledge_anchor_extract", title: "知识锚点", status: "not_started", order: 8, upstreamNodeKeys: ["lesson_plan"] },
+  { key: "creative_theme_generate", title: "创意主题", status: "not_started", order: 9, upstreamNodeKeys: ["knowledge_anchor_extract"] },
+  { key: "video_script_generate", title: "视频脚本", status: "not_started", order: 10, upstreamNodeKeys: ["creative_theme_generate"] },
+  { key: "storyboard_generate", title: "视频分镜", status: "not_started", order: 11, upstreamNodeKeys: ["video_script_generate"] },
+  { key: "asset_brief_generate", title: "资产说明", status: "not_started", order: 12, upstreamNodeKeys: ["storyboard_generate"] },
+  { key: "asset_image_generate", title: "资产图", status: "not_started", order: 13, upstreamNodeKeys: ["asset_brief_generate"] },
+  { key: "video_segment_plan", title: "分镜视频计划", status: "not_started", order: 14, upstreamNodeKeys: ["storyboard_generate", "asset_image_generate"] },
+  { key: "video_segment_generate", title: "分镜视频", status: "not_started", order: 15, upstreamNodeKeys: ["video_segment_plan", "asset_image_generate"] },
+  { key: "concat_only_assemble", title: "只拼接成片", status: "not_started", order: 16, upstreamNodeKeys: ["video_segment_generate"] },
+  { key: "image_prompts", title: "图片提示词", status: "not_started", order: 17, upstreamNodeKeys: ["ppt_design_draft", "intro_video_plan"] },
+  { key: "video_storyboard", title: "视频分镜", status: "not_started", order: 18, upstreamNodeKeys: ["intro_video_plan", "image_prompts"] },
+  { key: "final_delivery", title: "最终交付", status: "not_started", order: 19, upstreamNodeKeys: ["requirement_spec", "lesson_plan", "ppt_draft", "concat_only_assemble"] },
 ];
 
 export const FIRST_WORKFLOW_NODE_KEY = DEFAULT_WORKFLOW_NODES[0].key;

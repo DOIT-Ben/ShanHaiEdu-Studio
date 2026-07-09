@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 
+const fullDeliveryCapabilityIds = [
+  "requirement_spec",
+  "lesson_plan",
+  "ppt_outline",
+  "ppt_design",
+  "coze_ppt",
+  "image_asset",
+  "knowledge_anchor_extract",
+  "creative_theme_generate",
+  "video_script_generate",
+  "storyboard_generate",
+  "asset_brief_generate",
+  "asset_image_generate",
+  "video_segment_plan",
+  "video_segment_generate",
+  "concat_only_assemble",
+  "final_package",
+];
+
 describe("M54-B CapabilityPlanner", () => {
   it("does not create a tool plan for casual chat", () => {
     const plan = planCapabilityForRequest({ userMessage: "你好", availableArtifactKinds: [] });
@@ -82,18 +101,17 @@ describe("M54-B CapabilityPlanner", () => {
       title: "公开课完整交付计划",
       currentStepId: "requirement_spec",
     });
-    expect(plan?.steps.map((step) => step.capabilityId)).toEqual([
-      "requirement_spec",
-      "lesson_plan",
-      "ppt_outline",
-      "ppt_design",
-      "coze_ppt",
-      "image_asset",
-      "intro_video",
-      "final_package",
-    ]);
+    expect(plan?.steps.map((step) => step.capabilityId)).toEqual(fullDeliveryCapabilityIds);
     expect(plan?.steps.map((step) => step.status)).toEqual([
       "awaiting_confirmation",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -129,7 +147,15 @@ describe("M54-B CapabilityPlanner", () => {
       ["ppt_design", "pending"],
       ["coze_ppt", "pending"],
       ["image_asset", "pending"],
-      ["intro_video", "pending"],
+      ["knowledge_anchor_extract", "pending"],
+      ["creative_theme_generate", "pending"],
+      ["video_script_generate", "pending"],
+      ["storyboard_generate", "pending"],
+      ["asset_brief_generate", "pending"],
+      ["asset_image_generate", "pending"],
+      ["video_segment_plan", "pending"],
+      ["video_segment_generate", "pending"],
+      ["concat_only_assemble", "pending"],
       ["final_package", "pending"],
     ]);
   });
@@ -153,7 +179,15 @@ describe("M54-B CapabilityPlanner", () => {
       ["ppt_design", "awaiting_confirmation"],
       ["coze_ppt", "pending"],
       ["image_asset", "pending"],
-      ["intro_video", "pending"],
+      ["knowledge_anchor_extract", "pending"],
+      ["creative_theme_generate", "pending"],
+      ["video_script_generate", "pending"],
+      ["storyboard_generate", "pending"],
+      ["asset_brief_generate", "pending"],
+      ["asset_image_generate", "pending"],
+      ["video_segment_plan", "pending"],
+      ["video_segment_generate", "pending"],
+      ["concat_only_assemble", "pending"],
       ["final_package", "pending"],
     ]);
   });

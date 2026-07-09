@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { buildStoredImageDownload, imageDownloadHeaders } from "@/server/image-generation/artifact-image";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
+import {
+  assertRouteLevelGenerationConfirmation,
+  readConfirmedActionId,
+  readRouteGenerationBody,
+  routeLevelGenerationConfirmationStatus,
+} from "@/server/guards/route-level-generation-gate";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -33,10 +39,17 @@ export async function POST(request: Request, context: RouteContext) {
       const params = await context.params;
       projectId = params.projectId;
       const { artifactId } = params;
+      const body = await readRouteGenerationBody(request);
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
       if (sourceArtifact.nodeKey !== "ppt_draft" || sourceArtifact.kind !== "ppt_draft") {
         return NextResponse.json({ error: "这个 PPT 暂时不能生成课堂视觉图。" }, { status: 400 });
       }
+      assertRouteLevelGenerationConfirmation({
+        projectId,
+        capabilityId: "image_asset",
+        sourceArtifact,
+        confirmedActionId: readConfirmedActionId(body),
+      });
       const queuedJob = await service.createGenerationJob(projectId, {
         kind: "image",
         sourceArtifactId: sourceArtifact.id,
@@ -46,8 +59,8 @@ export async function POST(request: Request, context: RouteContext) {
 
       const generated = await generateImageFromArtifact({ project, artifact: sourceArtifact });
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "ppt_draft",
-        kind: "ppt_draft",
+        nodeKey: "image_prompts",
+        kind: "image_prompts",
         title: "真实课堂视觉图",
         status: "needs_review",
         summary: "已生成一张可用于课件导入页的本地课堂视觉图，请下载或接入前继续核对画面内容。",
@@ -83,7 +96,8 @@ export async function POST(request: Request, context: RouteContext) {
         await service.failGenerationJob(projectId, jobId, { errorMessage: "Image generation failed" }).catch(() => null);
       }
       const message = error instanceof Error ? error.message : "Image generation failed";
-      const status = message.includes("not found") ? 404 : 400;
+      const confirmationStatus = routeLevelGenerationConfirmationStatus(error);
+      const status = confirmationStatus ?? (message.includes("not found") ? 404 : 400);
       return NextResponse.json({ error: "课堂视觉图暂时没有生成成功，请稍后再试。" }, { status });
     }
   });

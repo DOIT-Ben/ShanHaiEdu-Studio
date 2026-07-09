@@ -70,11 +70,33 @@ test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer
   assert.match(cozeSource, /\/v3\/chat/);
   assert.match(cozeSource, /COZE_PPT_BOT_ID/);
   assert.match(cozeSource, /resolvePptDesignPageCount/);
+  assert.match(cozeSource, /validatePptDesignDraftForCoze/);
+  assert.match(cozeSource, /validation\.slideCount !== requestedPageCount/);
+  assert.match(cozeSource, /coze_ppt_slide_count_mismatch/);
   assert.doesNotMatch(cozeSource, /页数：12 页/);
   assert.doesNotMatch(cozeSource, /完整 12 页课件/);
   assert.doesNotMatch(cozeSource, /当前 PPT 大纲：/);
   assert.match(routeSource, /kind !== "ppt_design_draft"/);
-  assert.match(conversationSource, /findExternalSourceArtifact\("coze_ppt"[\s\S]*ppt_design_draft/);
+  assert.match(conversationSource, /resolveExternalSourceArtifact\(input, capabilityId\)/);
+  assert.match(conversationSource, /findExternalSourceArtifact[\s\S]*ppt_design_draft/);
+  assert.match(conversationSource, /failGenerationJob[\s\S]*errorMessage: message/);
+});
+
+test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {
+  const validationSource = readSource("src/server/ppt-design/ppt-design-validation.ts");
+  const runnerSource = readSource("src/server/capabilities/capability-runner.ts");
+  const cozeSource = readSource("src/server/coze-ppt/coze-ppt-run.ts");
+  const deterministicSource = readSource("src/server/agent-runtime/deterministic-runtime.ts");
+
+  assert.match(validationSource, /range_merged_pages/);
+  assert.match(validationSource, /第\\s\*\(\\d\{1,2\}\)\\s\*\[-—~至到\]/);
+  assert.match(validationSource, /PPT 设计稿未逐页完整/);
+  assert.match(runnerSource, /input\.capabilityId === "ppt_design"[\s\S]*validatePptDesignDraftForCoze/);
+  assert.match(cozeSource, /validatePptDesignDraftForCoze\(input\.artifact\.markdownContent\)/);
+  const pptDesignBlock = deterministicSource.match(/ppt_design:[\s\S]*?intro_video_plan:/)?.[0] ?? deterministicSource;
+  assert.doesNotMatch(pptDesignBlock, /第 4-8 页/);
+  assert.doesNotMatch(pptDesignBlock, /第 9-12 页/);
+  assert.doesNotMatch(pptDesignBlock, /第 3-12 页四层延展规则/);
 });
 
 test("M59 does not expose PPTX download for text-only PPT outlines", () => {

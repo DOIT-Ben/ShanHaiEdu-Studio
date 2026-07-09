@@ -1,12 +1,17 @@
 import { prisma } from "@/server/db/client";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { WorkbenchActor } from "@/server/auth/actor";
+import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
 import type {
   AddMessageInput,
   CreateProjectInput,
+  EnqueueMessageAndConversationTurnInput,
+  EnqueueConversationTurnInput,
+  FailConversationTurnInput,
   CreateGenerationJobInput,
   FailGenerationJobInput,
+  FinishConversationTurnInput,
   FinishAgentRunInput,
   FinishGenerationJobInput,
   RegenerateArtifactInput,
@@ -170,7 +175,17 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
         const artifact = await tx.artifact.update({
           where: { id: artifactId },
-          data: { status: "approved", isApproved: true },
+          data: {
+            status: "approved",
+            isApproved: true,
+            structuredContentJson: JSON.stringify(withRouteGenerationActions({
+              projectId,
+              artifactId,
+              nodeKey: existing.nodeKey,
+              kind: existing.kind,
+              structuredContentJson: existing.structuredContentJson,
+            })),
+          },
         });
 
         await tx.workflowNode.update({
@@ -350,6 +365,225 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput) {
+      return client.$transaction(async (tx) => {
+        const teacherMessage = await tx.conversationMessage.findFirst({
+          where: { id: input.teacherMessageId, projectId, role: "teacher" },
+        });
+        if (!teacherMessage) {
+          throw new Error(`Teacher message not found: ${input.teacherMessageId}`);
+        }
+
+        if (input.idempotencyKey) {
+          const existing = await tx.conversationTurnJob.findFirst({
+            where: { projectId, idempotencyKey: input.idempotencyKey },
+          });
+          if (existing) return existing;
+        }
+
+        return tx.conversationTurnJob.create({
+          data: {
+            projectId,
+            teacherMessageId: input.teacherMessageId,
+            status: "queued",
+            attempts: 0,
+            maxAttempts: input.maxAttempts ?? 2,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+      });
+    },
+
+    async enqueueMessageAndConversationTurn(projectId: string, input: EnqueueMessageAndConversationTurnInput) {
+      async function findExistingByIdempotencyKey(idempotencyKey: string) {
+        const job = await client.conversationTurnJob.findFirst({
+          where: { projectId, idempotencyKey },
+        });
+        if (!job) return null;
+
+        const message = await client.conversationMessage.findFirst({
+          where: { id: job.teacherMessageId, projectId, role: "teacher" },
+        });
+        if (!message) {
+          throw new Error(`Teacher message not found: ${job.teacherMessageId}`);
+        }
+
+        return { message, job };
+      }
+
+      if (input.idempotencyKey) {
+        const existing = await findExistingByIdempotencyKey(input.idempotencyKey);
+        if (existing) return existing;
+      }
+
+      try {
+        return await client.$transaction(async (tx) => {
+          const message = await tx.conversationMessage.create({
+            data: {
+              projectId,
+              role: input.role,
+              content: input.content,
+              artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+              metadataJson: JSON.stringify(input.metadata ?? {}),
+            },
+          });
+
+          const job = await tx.conversationTurnJob.create({
+            data: {
+              projectId,
+              teacherMessageId: message.id,
+              status: "queued",
+              attempts: 0,
+              maxAttempts: input.maxAttempts ?? 2,
+              idempotencyKey: input.idempotencyKey,
+            },
+          });
+
+          return { message, job };
+        });
+      } catch (error) {
+        if (input.idempotencyKey && isUniqueConstraintError(error)) {
+          const existing = await findExistingByIdempotencyKey(input.idempotencyKey);
+          if (existing) return existing;
+        }
+        throw error;
+      }
+    },
+
+    async startNextConversationTurnJob(projectId: string, input: { lockedBy?: string; lockMs?: number } = {}) {
+      return client.$transaction(async (tx) => {
+        const now = new Date();
+        const running = await tx.conversationTurnJob.findFirst({
+          where: {
+            projectId,
+            status: "running",
+            OR: [{ lockedUntil: null }, { lockedUntil: { gt: now } }],
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        if (running) return null;
+
+        const expiredRunning = await tx.conversationTurnJob.findFirst({
+          where: {
+            projectId,
+            status: "running",
+            lockedUntil: { lte: now },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        if (expiredRunning) {
+          if (expiredRunning.attempts >= expiredRunning.maxAttempts) {
+            return tx.conversationTurnJob.update({
+              where: { id: expiredRunning.id },
+              data: {
+                status: "failed",
+                lockedBy: null,
+                lockedUntil: null,
+                errorCode: "attempts_exhausted",
+                errorMessage: "这条排队消息已达到最大重试次数，请重新发送或调整需求。",
+                finishedAt: now,
+              },
+            });
+          }
+
+          const lockMs = input.lockMs ?? 10 * 60 * 1000;
+          return tx.conversationTurnJob.update({
+            where: { id: expiredRunning.id },
+            data: {
+              status: "running",
+              attempts: expiredRunning.attempts + 1,
+              lockedBy: input.lockedBy ?? "local-worker",
+              lockedUntil: new Date(Date.now() + lockMs),
+              startedAt: now,
+              finishedAt: null,
+              errorCode: null,
+              errorMessage: null,
+            },
+          });
+        }
+
+        const next = await tx.conversationTurnJob.findFirst({
+          where: { projectId, status: "queued" },
+          orderBy: { createdAt: "asc" },
+        });
+        if (!next) return null;
+        if (next.attempts >= next.maxAttempts) {
+          return tx.conversationTurnJob.update({
+            where: { id: next.id },
+            data: {
+              status: "failed",
+              errorCode: "attempts_exhausted",
+              errorMessage: "这条排队消息已达到最大重试次数，请重新发送或调整需求。",
+              finishedAt: new Date(),
+            },
+          });
+        }
+
+        const lockMs = input.lockMs ?? 10 * 60 * 1000;
+        return tx.conversationTurnJob.update({
+          where: { id: next.id },
+          data: {
+            status: "running",
+            attempts: next.attempts + 1,
+            lockedBy: input.lockedBy ?? "local-worker",
+            lockedUntil: new Date(Date.now() + lockMs),
+            startedAt: new Date(),
+            finishedAt: null,
+            errorCode: null,
+            errorMessage: null,
+          },
+        });
+      });
+    },
+
+    async finishConversationTurnJob(projectId: string, jobId: string, input: FinishConversationTurnInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing) {
+          throw new Error(`ConversationTurnJob not found: ${jobId}`);
+        }
+        if (existing.status !== "running") {
+          throw new Error(`ConversationTurnJob is not running: ${jobId}`);
+        }
+        return tx.conversationTurnJob.update({
+          where: { id: jobId },
+          data: {
+            status: input.status ?? "succeeded",
+            assistantMessageId: input.assistantMessageId,
+            errorCode: input.errorCode ?? null,
+            errorMessage: input.errorMessage ?? null,
+            lockedBy: null,
+            lockedUntil: null,
+            finishedAt: new Date(),
+          },
+        });
+      });
+    },
+
+    async failConversationTurnJob(projectId: string, jobId: string, input: FailConversationTurnInput) {
+      return client.$transaction(async (tx) => {
+        const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing) {
+          throw new Error(`ConversationTurnJob not found: ${jobId}`);
+        }
+        if (existing.status !== "running") {
+          throw new Error(`ConversationTurnJob is not running: ${jobId}`);
+        }
+        return tx.conversationTurnJob.update({
+          where: { id: jobId },
+          data: {
+            status: "failed",
+            assistantMessageId: input.assistantMessageId,
+            errorCode: input.errorCode ?? null,
+            errorMessage: input.errorMessage,
+            lockedBy: null,
+            lockedUntil: null,
+            finishedAt: new Date(),
+          },
+        });
+      });
+    },
+
     async startGenerationJob(projectId: string, jobId: string) {
       return client.$transaction(async (tx) => {
         const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
@@ -450,5 +684,62 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         orderBy: { createdAt: "asc" },
       });
     },
+
+    async getConversationTurnJobs(projectId: string) {
+      return client.conversationTurnJob.findMany({
+        where: { projectId },
+        orderBy: { createdAt: "asc" },
+      });
+    },
   };
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+function withRouteGenerationActions(input: {
+  projectId: string;
+  artifactId: string;
+  nodeKey: string;
+  kind: string;
+  structuredContentJson: string;
+}) {
+  const structuredContent = parseStructuredContent(input.structuredContentJson);
+  const capabilityId = routeGenerationCapabilityForArtifact(input);
+  if (!capabilityId) return structuredContent;
+
+  return {
+    ...structuredContent,
+    routeGenerationActions: {
+      ...(isRecord(structuredContent.routeGenerationActions) ? structuredContent.routeGenerationActions : {}),
+      [capabilityId]: {
+        actionId: createHumanGateActionId({
+          projectId: input.projectId,
+          capabilityId,
+          messageId: input.artifactId,
+        }),
+      },
+    },
+  };
+}
+
+function routeGenerationCapabilityForArtifact(input: { nodeKey: string; kind: string }) {
+  if (input.nodeKey === "ppt_design_draft" && input.kind === "ppt_design_draft") return "coze_ppt";
+  if (input.nodeKey === "ppt_draft" && input.kind === "ppt_draft") return "image_asset";
+  if (input.nodeKey === "video_segment_plan" && input.kind === "video_segment_plan") return "video_segment_generate";
+  return null;
+}
+
+function parseStructuredContent(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

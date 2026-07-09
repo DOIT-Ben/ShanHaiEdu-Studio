@@ -46,12 +46,13 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     });
     const snapshot = await snapshotResponse.json();
 
-    expect(messageResponse.status).toBe(201);
+    expect(messageResponse.status).toBe(202);
     expect(messageBody).toMatchObject({
       message: { role: "teacher", content: "你好" },
-      assistantMessage: { role: "assistant", content: expect.stringContaining("我在") },
-      agentTurn: { state: "chatting", shouldRunToolNow: false },
+      job: { teacherMessageId: messageBody.message.id },
     });
+    expect(messageBody.assistantMessage).toBeUndefined();
+    expect(messageBody.agentTurn).toBeUndefined();
     expect(messageBody.artifact).toBeUndefined();
     expect(snapshot.messages.map((message: { content: string }) => message.content).join("\n")).not.toContain("需求规格说明书已生成");
     expect(snapshot.artifacts).toEqual([]);
@@ -139,7 +140,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     const snapshot = await snapshotResponse.json();
 
     expect(projectResponse.status).toBe(201);
-    await expect(messageResponse.json()).resolves.toMatchObject({ message: { role: "teacher", content: "我要做百分数公开课" } });
+    await expect(messageResponse.json()).resolves.toMatchObject({ message: { role: "teacher", content: "我要做百分数公开课" }, job: { status: "queued" } });
     expect(artifactResponse.status).toBe(201);
     expect(approveResponse.status).toBe(200);
     await expect(approvedInputsResponse.json()).resolves.toMatchObject({ artifacts: [{ id: artifactId, isApproved: true }] });
@@ -149,12 +150,11 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(runFinishResponse.status).toBe(200);
     expect(snapshot).toMatchObject({
       project: { id: projectId, title: "Stage 7 合同项目" },
-      messages: [
-        { role: "teacher", content: "我要做百分数公开课" },
-        { role: "assistant", content: expect.stringContaining("我理解你的任务") },
-      ],
       agentRuns: [{ id: runStartBody.run.id, status: "succeeded" }],
     });
+    expect(snapshot.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ role: "teacher", content: "我要做百分数公开课", artifactRefs: [], metadata: {} })]),
+    );
     expect(snapshot.nodes.map((node: { key: string }) => node.key)).toEqual([
       "requirement_spec",
       "textbook_evidence",
@@ -163,6 +163,15 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       "ppt_design_draft",
       "pptx_artifact",
       "intro_video_plan",
+      "knowledge_anchor_extract",
+      "creative_theme_generate",
+      "video_script_generate",
+      "storyboard_generate",
+      "asset_brief_generate",
+      "asset_image_generate",
+      "video_segment_plan",
+      "video_segment_generate",
+      "concat_only_assemble",
       "image_prompts",
       "video_storyboard",
       "final_delivery",

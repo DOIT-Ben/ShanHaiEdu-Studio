@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { createWorkbenchService } from "@/server/workbench/service";
 import type { WorkbenchRepository } from "@/server/workbench/repository";
+import type { AddMessageInput } from "@/server/workbench/types";
 
 describe("M40 public auth authorization", () => {
   it("allows owners and editors to write while viewers are read-only", async () => {
@@ -88,10 +89,14 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async getProject(projectId: string) {
       return projects[projectId as keyof typeof projects] ?? null;
     },
-    async addMessage(projectId: string, input) {
+    async addMessage(projectId: string, input: AddMessageInput) {
       const message = makeMessage(`message-${messages[projectId].length + 1}`, projectId, input.content);
       messages[projectId].push(message);
       return message;
+    },
+    async updateMessageMetadata(projectId: string, messageId: string, metadata: Record<string, unknown>) {
+      const message = messages[projectId]?.find((entry) => entry.id === messageId) ?? makeMessage(messageId, projectId);
+      return { ...message, metadata };
     },
     async saveArtifact() {
       return makeArtifact("artifactA", "projectA");
@@ -132,6 +137,26 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async getGenerationJobs(projectId: string) {
       return [makeGenerationJob("jobA", projectId)];
     },
+    async enqueueConversationTurn(projectId: string) {
+      return makeConversationTurnJob("turnJobA", projectId);
+    },
+    async enqueueMessageAndConversationTurn(projectId: string) {
+      const message = makeMessage(`message-${messages[projectId].length + 1}`, projectId, "需求");
+      messages[projectId].push(message);
+      return { message, job: makeConversationTurnJob("turnJobA", projectId) };
+    },
+    async startNextConversationTurnJob(projectId: string) {
+      return makeConversationTurnJob("turnJobA", projectId, "running");
+    },
+    async finishConversationTurnJob(projectId: string) {
+      return makeConversationTurnJob("turnJobA", projectId, "succeeded");
+    },
+    async failConversationTurnJob(projectId: string) {
+      return makeConversationTurnJob("turnJobA", projectId, "failed");
+    },
+    async getConversationTurnJobs(projectId: string) {
+      return [makeConversationTurnJob("turnJobA", projectId)];
+    },
     async getMessages(projectId: string) {
       return messages[projectId] ?? [];
     },
@@ -144,7 +169,7 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async getAgentRuns(projectId: string) {
       return [makeAgentRun("runA", projectId)];
     },
-  } as WorkbenchRepository;
+  } as unknown as WorkbenchRepository;
 }
 
 function makeProject(id: string, ownerUserId: string | null) {
@@ -230,6 +255,27 @@ function makeGenerationJob(id: string, projectId: string, status = "queued") {
     attempts: status === "queued" ? 0 : 1,
     maxAttempts: 2,
     resultArtifactId: null,
+    errorMessage: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    startedAt: status === "queued" ? null : new Date("2026-01-01T00:00:30.000Z"),
+    finishedAt: status === "succeeded" || status === "failed" ? new Date("2026-01-01T00:01:00.000Z") : null,
+  };
+}
+
+function makeConversationTurnJob(id: string, projectId: string, status = "queued") {
+  return {
+    id,
+    projectId,
+    teacherMessageId: "messageA",
+    assistantMessageId: null,
+    status,
+    attempts: status === "queued" ? 0 : 1,
+    maxAttempts: 2,
+    idempotencyKey: null,
+    lockedBy: null,
+    lockedUntil: null,
+    errorCode: null,
     errorMessage: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),

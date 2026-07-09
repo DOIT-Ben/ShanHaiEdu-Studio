@@ -12,6 +12,8 @@ playwright-report/
 blob-report/
 graphify-out/
 .env
+.env.local
+.env.*
 dev.db
 dev.db-journal
 data/
@@ -28,5 +30,6 @@ output/playwright/
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip
 ShanHaiEdu-API-Ledger-Standalone/
+API台账系统/PRIVATE-LOCAL-SECRETS/
 
 /src/generated/prisma

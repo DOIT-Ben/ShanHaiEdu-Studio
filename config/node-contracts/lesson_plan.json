@@ -1,0 +1,25 @@
+{
+  "id": "lesson_plan",
+  "workflowNodeKey": "lesson_plan",
+  "artifactKind": "lesson_plan",
+  "version": "v1",
+  "displayName": "公开课教案",
+  "purpose": "基于已确认需求和教材证据生成可用于公开课备课的结构化教案。",
+  "requiredInputs": ["requirement_spec", "project_context", "evidence_summary"],
+  "requiredOutputs": ["teaching_objectives", "key_points", "lesson_flow", "teacher_student_actions", "assessment_design"],
+  "constraints": [
+    "教学流程必须服务于已确认的课题和教学目标。",
+    "教材依据、课堂设计建议和模型推断必须分开表述。"
+  ],
+  "forbidden": [
+    "不得无证据编造教材页码、课标条文或学生学情。",
+    "不得把教案草稿伪装成已审核最终教案。"
+  ],
+  "qualityGates": [
+    "教案必须包含目标、重难点、流程、互动、评价和板书或呈现建议。",
+    "所有关键教学结论必须能回到需求规格或证据摘要。"
+  ],
+  "memoryReadPolicy": "teacher_and_project",
+  "memoryWritePolicy": "proposal",
+  "providerPolicy": "internal"
+}

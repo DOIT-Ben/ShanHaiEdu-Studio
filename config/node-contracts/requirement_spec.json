@@ -1,0 +1,25 @@
+{
+  "id": "requirement_spec",
+  "workflowNodeKey": "requirement_spec",
+  "artifactKind": "requirement_spec",
+  "version": "v1",
+  "displayName": "备课需求规格",
+  "purpose": "把教师自然输入整理成可确认、可追溯、可继续生成教案和素材的需求规格。",
+  "requiredInputs": ["teacher_goal", "project_context"],
+  "requiredOutputs": ["grade_subject_topic", "textbook_scope", "lesson_goals", "constraints", "open_questions"],
+  "constraints": [
+    "必须区分教师已明确需求、系统推断和仍需追问的不确定项。",
+    "必须保留年级、学科、教材版本、课题和课时等关键备课边界。"
+  ],
+  "forbidden": [
+    "不得替教师虚构教材版本、页码或课堂目标。",
+    "不得把未确认需求写成已确认结论。"
+  ],
+  "qualityGates": [
+    "需求规格必须包含可确认的教学目标、产物范围和待确认问题。",
+    "存在缺失关键信息时必须输出追问项，不能直接进入后续节点。"
+  ],
+  "memoryReadPolicy": "teacher_and_project",
+  "memoryWritePolicy": "proposal",
+  "providerPolicy": "internal"
+}

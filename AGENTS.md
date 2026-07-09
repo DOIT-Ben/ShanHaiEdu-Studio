@@ -11,7 +11,39 @@
 - 规划通过后再实现；不能跳过调研、规划、测试定义和阶段验收。
 - 当前需求与质量门禁的唯一权威口径是 `docs\product\current-requirements-baseline.md`；旧阶段计划、历史报告、台账快照和 MVP 过渡方案若与该文档冲突，一律以该文档为准。
 
-## 2. 固定开发链路
+## 2. 智能体架构主线
+
+任何山海智教智能体相关开发、架构调整、Provider 接入、节点契约、记忆系统、上下文压缩、质量门禁和工作流编排任务，必须先阅读并遵守以下文档：
+
+```text
+docs\product\current-requirements-baseline.md
+docs\architecture\2026-07-09-山海智教智能体-统一口径与工作准则.md
+docs\architecture\2026-07-09-山海智教智能体-核心设计串联.md
+docs\architecture\2026-07-09-山海智教智能体-MVP1-上下文契约与门禁规划.md
+```
+
+需要通用架构背景时，再阅读：
+
+```text
+docs\architecture\智能体设计架构\README.md
+docs\architecture\智能体设计架构\patterns\01-conversation-context-compaction.md
+docs\architecture\智能体设计架构\patterns\02-node-contract-control.md
+docs\architecture\智能体设计架构\patterns\03-memory-boundaries.md
+```
+
+后续实施必须遵守：
+
+```text
+通用架构定方法；
+五平面定职责；
+十二系统定边界；
+MVP 规划定顺序；
+代码实现定证据。
+```
+
+不得绕过 `ContextPackage`、`Node Contract`、`PlanGuard`、`HumanGate`、`Quality Gate` 直接实现功能；不得把完整长对话直接当作模型输入边界；不得把模型自评、deterministic draft、placeholder 或文本 fallback 伪装成真实交付。
+
+## 3. 固定开发链路
 
 任何阶段性开发都遵守：
 
@@ -30,7 +62,7 @@
 - 测试定义必须早于开发；开发完成后按阶段集中验收，不把零散小测当作通过。
 - 阶段内允许运行最小快速检查定位问题，但最终结论必须来自阶段验收。
 
-## 3. 反屎山原则
+## 4. 反屎山原则
 
 - 优先定向重构，不用补丁层层包裹问题。
 - 当单文件超过约 500 行、单函数/组件超过约 150 行，或同一文件承载多个无关职责时，新增功能前必须评估拆分。
@@ -39,7 +71,7 @@
 - 不重复造轮子；能复用成熟库、组件、协议、数据结构、skills 或项目既有模式时，优先复用。
 - 若暂缓重构，必须在规划或收尾记录中写明原因、后续拆分目标和删除条件。
 
-## 4. 产品与技术边界
+## 5. 产品与技术边界
 
 - 当前产品目标是真实可用的线性 AI 备课媒体工作台，不是 mock 展示页。
 - MVP 可以能力较弱，但必须真实保存项目、对话、节点产物和确认状态。
@@ -49,7 +81,7 @@
 - 项目、对话、节点、产物、版本、确认、失败恢复和交付包状态必须由后端业务层持久化。
 - 代码应保留可迁移边界：`AgentRuntime`、`WorkflowEngine`、`WorkflowRepository`、`ArtifactStorage`、`ProviderAdapter`。
 
-## 5. 前端体验边界
+## 6. 前端体验边界
 
 - 保留 Codex 风格工作台：左侧项目，中间对话，右侧压缩节点，点击打开阅读侧栏。
 - 中间对话区是主视觉；整体纯白、极简、低噪声。
@@ -59,7 +91,7 @@
 - 用户可见界面不得出现工程词：schema、manifest、provider、node_id、storage、API、debug、local path 等。
 - UI 改动必须做桌面和窄屏浏览器检查。
 
-## 6. 验证与审查
+## 7. 验证与审查
 
 - 宣称完成前必须有新鲜验证证据。
 - 构建通过必须有 `npm run build` exit 0。
@@ -69,7 +101,7 @@
 - 阶段验收后必须审查：是否符合需求基线、规划文档、测试文档，是否泄露敏感信息或工程词，是否产生屎山。
 - 无法验证时，必须说明原因和剩余风险。
 
-## 7. 清理、提交与安全
+## 8. 清理、提交与安全
 
 - 删除、清理、迁移后删除、批量覆盖等破坏性操作必须单独确认。
 - 默认归档或送回收站，不做不可恢复删除。

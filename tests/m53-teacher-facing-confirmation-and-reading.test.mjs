@@ -16,9 +16,11 @@ function readOptionalSource(relativePath) {
 
 test("message route lets the model-first agent decide before generating artifacts", () => {
   const routeSource = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
+  const queueSource = readSource("src/server/conversation/conversation-turn-queue.ts");
   const serviceSource = readSource("src/server/conversation/conversation-turn-service.ts");
 
-  assert.match(routeSource, /createConversationTurnService/);
+  assert.match(routeSource, /drainProjectConversationQueue/);
+  assert.match(queueSource, /createConversationTurnService/);
   assert.doesNotMatch(routeSource, /formatRequirementConfirmation/);
   assert.doesNotMatch(routeSource, /runtime\.run/);
   assert.doesNotMatch(routeSource, /saveArtifact/);
@@ -30,10 +32,12 @@ test("message route lets the model-first agent decide before generating artifact
   assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
   assert.match(serviceSource, /saveArtifact/);
 
-  const agentDecisionBranch = serviceSource.slice(serviceSource.indexOf("const agentTurn = await agent.respond"));
+  const agentDecisionStart = serviceSource.indexOf("const agentTurn = await input.agent.respond");
+  assert.notEqual(agentDecisionStart, -1);
+  const agentDecisionBranch = serviceSource.slice(agentDecisionStart);
   assert.match(agentDecisionBranch, /if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/);
   assert.match(agentDecisionBranch, /runPlannedArtifact/);
-  assert.match(agentDecisionBranch, /return \{ message, assistantMessage, agentTurn \}/);
+  assert.match(agentDecisionBranch, /return \{ message: input\.triggerMessage, assistantMessage, agentTurn \}/);
   assert.doesNotMatch(agentDecisionBranch.split(/if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/)[0], /saveArtifact/);
 });
 
@@ -113,7 +117,7 @@ test("assistant feedback actions clearly stay local until feedback collection is
 test("generating indicator keeps waiting text understandable for teachers", () => {
   const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
 
-  assert.match(generatingSource, /aria-label="正在准备回复"/);
+  assert.match(generatingSource, /aria-label="正在准备回复"|aria-label="正在生成"/);
   assert.match(generatingSource, /getGeneratingLabel/);
   assert.doesNotMatch(generatingSource, /debug|provider|schema|manifest|node_id|storage/i);
 });

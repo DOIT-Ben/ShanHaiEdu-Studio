@@ -14,13 +14,13 @@ type ChatTranscriptProps = {
   messages: ChatMessage[];
   artifacts?: ArtifactItem[];
   projectId: string;
-  sending?: boolean;
+  projectBusy?: boolean;
   executionFeedback?: WorkbenchExecutionFeedback | null;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
-  onQuickReplySelect?: (value: string) => void;
+  onQuickReplySelect?: (value: string, actionId?: string) => void;
 };
 
-export function ChatTranscript({ messages, artifacts = [], projectId, sending = false, executionFeedback = null, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], projectId, projectBusy = false, executionFeedback = null, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
@@ -39,7 +39,7 @@ export function ChatTranscript({ messages, artifacts = [], projectId, sending = 
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
         );
       })}
-      {sending && <AssistantThinking label={executionFeedback?.label} />}
+      {projectBusy && <AssistantThinking label={executionFeedback?.label} />}
     </div>
   );
 }
@@ -59,6 +59,11 @@ function TeacherMessage({
     >
       <div className="flex max-w-[78%] flex-col items-end gap-1.5 sm:max-w-[680px]">
         <span className="px-1 text-xs text-muted-foreground">你</span>
+        {message.turnStatusLabel && (
+          <span data-turn-status={message.turnStatus} className="px-1 text-xs text-muted-foreground" aria-live="polite">
+            {message.turnStatusLabel}
+          </span>
+        )}
         <div
           data-chat-bubble="user"
           className="break-words whitespace-pre-wrap rounded-2xl bg-[#f1f1f1] px-4 py-3 text-sm leading-7 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.025)] sm:px-5"
@@ -81,7 +86,7 @@ function AssistantMessage({
   artifact: ArtifactItem | null;
   projectId: string;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
-  onQuickReplySelect?: (value: string) => void;
+  onQuickReplySelect?: (value: string, actionId?: string) => void;
 }) {
   const quickReplies = getQuickReplyChoices(message, artifact);
 
@@ -157,6 +162,7 @@ function findInlineArtifact(message: ChatMessage, artifacts: ArtifactItem[]) {
 type QuickReplyChoice = {
   label: string;
   value: string;
+  actionId?: string;
   recommended?: boolean;
 };
 
@@ -165,6 +171,7 @@ function getQuickReplyChoices(message: ChatMessage, _artifact: ArtifactItem | nu
     return message.quickReplies.map((reply) => ({
       label: reply.label,
       value: reply.prompt,
+      actionId: reply.actionId,
       recommended: reply.recommended,
     }));
   }
@@ -176,9 +183,9 @@ function QuickReplyChoices({
   onSelect,
 }: {
   choices: QuickReplyChoice[];
-  onSelect?: (value: string) => void;
+  onSelect?: (value: string, actionId?: string) => void;
 }) {
-  return <QuickReplySuggestions choices={choices.map((choice) => ({ label: choice.label, prompt: choice.value, recommended: choice.recommended }))} onSelect={onSelect} />;
+  return <QuickReplySuggestions choices={choices.map((choice) => ({ label: choice.label, prompt: choice.value, actionId: choice.actionId, recommended: choice.recommended }))} onSelect={onSelect} />;
 }
 
 function TeacherArtifactCard({ projectId, item }: { projectId: string; item: ArtifactItem }) {

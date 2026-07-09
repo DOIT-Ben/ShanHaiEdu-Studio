@@ -8,6 +8,7 @@ export type TextareaHeightPlan = {
 export type ComposerQuickReply = {
   label: string;
   prompt: string;
+  actionId?: string;
   recommended?: boolean;
 };
 
@@ -53,6 +54,7 @@ export function normalizeQuickReplies(replies: ComposerQuickReply[]): ComposerQu
     .map((reply) => ({
       label: reply.label.trim(),
       prompt: reply.prompt.trim(),
+      actionId: reply.actionId?.trim() || undefined,
       recommended: reply.recommended || undefined,
     }));
 }

@@ -18,7 +18,15 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "ppt_design",
   "coze_ppt",
   "image_asset",
-  "intro_video",
+  "knowledge_anchor_extract",
+  "creative_theme_generate",
+  "video_script_generate",
+  "storyboard_generate",
+  "asset_brief_generate",
+  "asset_image_generate",
+  "video_segment_plan",
+  "video_segment_generate",
+  "concat_only_assemble",
   "final_package",
 ];
 

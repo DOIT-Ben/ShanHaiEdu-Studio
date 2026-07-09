@@ -10,6 +10,15 @@ export type WorkflowNodeKey =
   | "ppt_design_draft"
   | "pptx_artifact"
   | "intro_video_plan"
+  | "knowledge_anchor_extract"
+  | "creative_theme_generate"
+  | "video_script_generate"
+  | "storyboard_generate"
+  | "asset_brief_generate"
+  | "asset_image_generate"
+  | "video_segment_plan"
+  | "video_segment_generate"
+  | "concat_only_assemble"
   | "image_prompts"
   | "video_storyboard"
   | "final_delivery";
@@ -89,6 +98,8 @@ export type GenerationJobKind = "pptx" | "image" | "video";
 
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type ConversationTurnJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled" | "blocked";
+
 export type GenerationJobRecord = {
   id: string;
   projectId: string;
@@ -105,6 +116,25 @@ export type GenerationJobRecord = {
   finishedAt: string | null;
 };
 
+export type ConversationTurnJobRecord = {
+  id: string;
+  projectId: string;
+  teacherMessageId: string;
+  assistantMessageId: string | null;
+  status: ConversationTurnJobStatus;
+  attempts: number;
+  maxAttempts: number;
+  idempotencyKey: string | null;
+  lockedBy: string | null;
+  lockedUntil: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
 export type ProjectSnapshot = {
   project: ProjectRecord;
   messages: ConversationMessageRecord[];
@@ -112,6 +142,7 @@ export type ProjectSnapshot = {
   artifacts: ArtifactRecord[];
   agentRuns: AgentRunRecord[];
   generationJobs: GenerationJobRecord[];
+  turnJobs: ConversationTurnJobRecord[];
 };
 
 export type CreateProjectInput = {
@@ -169,5 +200,29 @@ export type FinishGenerationJobInput = {
 };
 
 export type FailGenerationJobInput = {
+  errorMessage: string;
+};
+
+export type EnqueueConversationTurnInput = {
+  teacherMessageId: string;
+  idempotencyKey?: string;
+  maxAttempts?: number;
+};
+
+export type EnqueueMessageAndConversationTurnInput = AddMessageInput & {
+  idempotencyKey?: string;
+  maxAttempts?: number;
+};
+
+export type FinishConversationTurnInput = {
+  assistantMessageId?: string;
+  status?: Extract<ConversationTurnJobStatus, "succeeded" | "blocked">;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+export type FailConversationTurnInput = {
+  assistantMessageId?: string;
+  errorCode?: string;
   errorMessage: string;
 };

@@ -2,6 +2,18 @@ import { createHash } from "node:crypto";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
+export const EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE = {
+  provider: "evolink",
+  textToVideoModel: "grok-imagine-text-to-video-beta",
+  imageToVideoModel: "grok-imagine-image-to-video-beta",
+  requestFields: { image_urls: { min: 1, max: 7 } },
+  imageUrls: { min: 1, max: 7 },
+  durationSeconds: { min: 6, max: 30 },
+  startEndFrame: "unverified",
+  resultUrlTtlHours: 24,
+  concurrency: "low",
+} as const;
+
 export type VideoGenerationResult = {
   fileName: string;
   localOutput: string;
@@ -31,7 +43,9 @@ const MIN_VIDEO_BYTES = 1024;
 export async function generateVideoFromArtifact(input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
+  upstreamArtifacts?: ArtifactRecord[];
 }): Promise<VideoGenerationResult> {
+  assertVideoProviderPreconditions(input);
   const config = readConfig(process.env);
   const submitPayload = await submitVideoTask(config, input);
   const taskId = extractTaskId(submitPayload);
@@ -91,6 +105,32 @@ export function buildVideoQueryUrl(baseUrl: string, taskId: string, channel = "o
     return `${tasksBase.endsWith("/v1/tasks") ? tasksBase : `${tasksBase}/v1/tasks`}/${encodeURIComponent(taskId)}`;
   }
   return `${buildVideoEndpointUrl(baseUrl, channel)}/${encodeURIComponent(taskId)}`;
+}
+
+export function assertVideoProviderPreconditions(input: {
+  artifact: ArtifactRecord;
+  upstreamArtifacts?: ArtifactRecord[];
+}): void {
+  if (
+    input.artifact.nodeKey !== "video_segment_plan" ||
+    input.artifact.kind !== "video_segment_plan" ||
+    !input.artifact.isApproved ||
+    input.artifact.status !== "approved"
+  ) {
+    throw new Error("missing_video_workflow_preconditions");
+  }
+
+  const upstreamKinds = new Set(
+    (input.upstreamArtifacts ?? [])
+      .filter((artifact) => artifact.isApproved && artifact.status === "approved")
+      .map((artifact) => artifact.kind),
+  );
+  const hasStoryboard = upstreamKinds.has("storyboard_generate");
+  const hasAssetImages = upstreamKinds.has("asset_image_generate");
+
+  if (!hasStoryboard || !hasAssetImages) {
+    throw new Error("missing_video_workflow_preconditions");
+  }
 }
 
 export function buildVideoRequestBody(config: Pick<VideoProviderConfig, "channel" | "model" | "size" | "duration" | "quality" | "mode" | "aspectRatio">, prompt: string) {
@@ -287,12 +327,12 @@ async function downloadVideo(url: string, timeoutMs: number) {
 
 function buildPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
   return [
-    "小学六年级数学百分数公开课导入视频。",
-    "这是独立创意短片，只通过课程锚点回接百分数，不提前讲解知识点。",
+    "小学公开课导入视频分镜片段。",
+    "只根据已确认视频_segment_plan生成单段视频；知识锚点、创意主题、视频脚本、分镜和资产图必须已在上游完成。",
     `课题：${project.lessonTopic || "百分数导入课"}。`,
     `年级：${project.grade || "六年级"}。`,
     "画面温暖明亮，生活情境清晰，避免品牌、二维码、网址和复杂文字。",
-    "当前导入视频方案：",
+    "当前分镜视频计划：",
     artifact.markdownContent.slice(0, 1600),
   ].join("\n");
 }

@@ -4,10 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
-import type { ArtifactItem, ChatMessage, ProjectItem, WorkbenchLoadState, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, ConversationTurnJob, ProjectItem, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
+const snapshotPollingIntervalMs = 1200;
+
+function hasPendingTurnStatus(status?: ChatMessage["turnStatus"] | ConversationTurnJob["status"]) {
+  return status === "queued" || status === "running";
+}
+
+function snapshotHasPendingTurn(snapshot: WorkbenchSnapshot) {
+  return snapshot.turnJobs.some((job) => hasPendingTurnStatus(job.status)) || snapshot.messages.some((message) => hasPendingTurnStatus(message.turnStatus));
+}
 
 export function useWorkbenchController() {
   const dataSource = useMemo(() => createDefaultWorkbenchDataSource(), []);
@@ -18,8 +27,10 @@ export function useWorkbenchController() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [input, setInput] = useState("");
+  const [pendingConfirmationActionId, setPendingConfirmationActionId] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const [composerSubmitting, setComposerSubmitting] = useState(false);
+  const [turnJobs, setTurnJobs] = useState<ConversationTurnJob[]>([]);
   const [executionFeedback, setExecutionFeedback] = useState<WorkbenchExecutionFeedback | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
@@ -40,7 +51,11 @@ export function useWorkbenchController() {
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [activeProjectId, projects],
   );
-  const sendingRef = useRef(false);
+  const projectBusy = useMemo(
+    () => turnJobs.some((job) => hasPendingTurnStatus(job.status)) || messages.some((message) => hasPendingTurnStatus(message.turnStatus)),
+    [messages, turnJobs],
+  );
+  const composerSubmittingRef = useRef(false);
   const composerNoticeTimer = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
@@ -48,6 +63,7 @@ export function useWorkbenchController() {
     window.localStorage.setItem(activeProjectStorageKey, snapshot.project.id);
     setMessages(snapshot.messages);
     setArtifacts(snapshot.artifacts);
+    setTurnJobs(snapshot.turnJobs ?? []);
     setActiveArtifactKey(snapshot.activeArtifactKey);
     setDetailItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
     setSidePanelItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
@@ -71,6 +87,34 @@ export function useWorkbenchController() {
   );
 
   useEffect(() => {
+    if (!activeProjectId || !projectBusy || composerSubmitting || loadState !== "ready") return;
+
+    let active = true;
+    let snapshotPollingTimer: number | null = null;
+
+    function scheduleNextSnapshotRefresh() {
+      snapshotPollingTimer = window.setTimeout(async () => {
+        try {
+          const snapshot = await dataSource.getProjectSnapshot(activeProjectId);
+          if (!active) return;
+          applySnapshot(snapshot);
+          if (snapshotHasPendingTurn(snapshot)) scheduleNextSnapshotRefresh();
+        } catch {
+          if (!active) return;
+          setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。");
+          scheduleNextSnapshotRefresh();
+        }
+      }, snapshotPollingIntervalMs);
+    }
+
+    scheduleNextSnapshotRefresh();
+    return () => {
+      active = false;
+      if (snapshotPollingTimer) window.clearTimeout(snapshotPollingTimer);
+    };
+  }, [activeProjectId, applySnapshot, composerSubmitting, dataSource, loadState, projectBusy]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadInitialState() {
@@ -84,6 +128,7 @@ export function useWorkbenchController() {
         if (!nextProjectId) {
           setMessages([]);
           setArtifacts([]);
+          setTurnJobs([]);
           setActiveProjectId("");
           window.localStorage.removeItem(activeProjectStorageKey);
           setLoadState("ready");
@@ -161,6 +206,7 @@ export function useWorkbenchController() {
 
   function useAsInput(item: ArtifactItem) {
     const text = artifactText(item);
+    setPendingConfirmationActionId(null);
     setReference(`${item.title}：${item.summary}`);
     setInput((current) => (current ? `${current}\n\n请基于：${text}` : `请基于：${text}`));
     setNotice(`已把「${item.title}」插入为下一步输入。`);
@@ -171,8 +217,14 @@ export function useWorkbenchController() {
   }
 
   function attachComposerFile(fileName: string, text: string) {
+    setPendingConfirmationActionId(null);
     setReference(`资料《${fileName}》：\n${text}`);
     flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
+  }
+
+  function updateInput(value: string) {
+    setPendingConfirmationActionId(null);
+    setInput(value);
   }
 
   async function confirmArtifact(item: ArtifactItem) {
@@ -213,7 +265,7 @@ export function useWorkbenchController() {
       return;
     }
     const action = getRealAssetGenerationActions(item).find((candidate) => candidate.kind === assetKind);
-    if (!action) {
+    if (!action?.actionId) {
       setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
       return;
     }
@@ -221,7 +273,7 @@ export function useWorkbenchController() {
     const nextGenerationKey = `${item.artifactId}:${assetKind}`;
     setRealAssetGenerationKey(nextGenerationKey);
     try {
-      const snapshot = await dataSource.generateRealAsset(activeProjectId, item.artifactId, assetKind);
+      const snapshot = await dataSource.generateRealAsset(activeProjectId, item.artifactId, assetKind, { confirmedActionId: action.actionId });
       applySnapshot(snapshot);
       setNotice(action.successNotice);
     } catch {
@@ -232,8 +284,8 @@ export function useWorkbenchController() {
   }
 
   async function sendPrompt() {
-    if (sendingRef.current || sending) {
-      flashComposerNotice("上一条还在回复，请稍等片刻。");
+    if (composerSubmittingRef.current || composerSubmitting) {
+      flashComposerNotice("正在发送，请稍候。");
       return;
     }
     if (!input.trim() && !reference) {
@@ -242,19 +294,23 @@ export function useWorkbenchController() {
     }
     let targetProjectId = activeProjectId;
     const body = input.trim();
+    const confirmationActionId = pendingConfirmationActionId;
     const displayBody = reference ? `${body || "请参考这份资料继续。"}\n\n引用：${reference}` : body;
     const optimisticMessage: ChatMessage = {
       id: `optimistic-teacher-${Date.now()}`,
       speaker: "teacher",
       body: displayBody,
+      turnStatus: projectBusy ? "queued" : "running",
+      turnStatusLabel: projectBusy ? "排队中" : "正在生成",
     };
     setInput("");
+    setPendingConfirmationActionId(null);
     setReference(null);
-    sendingRef.current = true;
-    setSending(true);
+    composerSubmittingRef.current = true;
+    setComposerSubmitting(true);
     setExecutionFeedback({ label: "正在理解你的备课要求", stageIndex: 1 });
     setMessages((current) => [...current, optimisticMessage]);
-    flashComposerNotice("正在等待回复");
+    flashComposerNotice(projectBusy ? "已加入队列" : "已发送，正在生成");
     try {
       if (!targetProjectId) {
         flashComposerNotice("正在新建项目并发送");
@@ -267,23 +323,26 @@ export function useWorkbenchController() {
       }
 
       setExecutionFeedback({ label: "正在组织教案、课件和素材任务", stageIndex: 2 });
-      const snapshot = await dataSource.sendMessage(targetProjectId, body, reference);
+      const sendOptions: WorkbenchSendMessageOptions | undefined = confirmationActionId ? { confirmedActionId: confirmationActionId } : undefined;
+      const snapshot = await dataSource.sendMessage(targetProjectId, body, reference, sendOptions);
       setExecutionFeedback({ label: "正在保存本轮成果", stageIndex: 3 });
       applySnapshot(snapshot);
       flashComposerNotice("已发送");
     } catch {
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
       setInput(body);
+      setPendingConfirmationActionId(confirmationActionId);
       setReference(reference);
       flashComposerNotice("发送没有成功，请稍后再试。");
     } finally {
-      sendingRef.current = false;
-      setSending(false);
+      composerSubmittingRef.current = false;
+      setComposerSubmitting(false);
       setExecutionFeedback(null);
     }
   }
 
-  function selectQuickReply(value: string) {
+  function selectQuickReply(value: string, actionId?: string) {
+    setPendingConfirmationActionId(actionId?.trim() || null);
     setInput(value);
     flashComposerNotice("已填入，可修改后发送。");
   }
@@ -307,10 +366,12 @@ export function useWorkbenchController() {
     sidebarCollapsed,
     setSidebarCollapsed,
     input,
-    setInput,
+    setInput: updateInput,
     reference,
     setReference,
-    sending,
+    composerSubmitting,
+    projectBusy,
+    turnJobs,
     executionFeedback,
     notice,
     composerNotice,

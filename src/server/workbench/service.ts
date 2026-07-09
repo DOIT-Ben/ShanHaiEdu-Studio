@@ -6,9 +6,14 @@ import type {
   AgentRunRecord,
   ArtifactRecord,
   ConversationMessageRecord,
+  ConversationTurnJobRecord,
   CreateGenerationJobInput,
   CreateProjectInput,
+  EnqueueMessageAndConversationTurnInput,
+  EnqueueConversationTurnInput,
+  FailConversationTurnInput,
   FailGenerationJobInput,
+  FinishConversationTurnInput,
   FinishAgentRunInput,
   FinishGenerationJobInput,
   GenerationJobRecord,
@@ -19,7 +24,7 @@ import type {
   StartAgentRunInput,
   WorkflowNodeRecord,
 } from "./types";
-import type { AgentRun, Artifact, ConversationMessage, GenerationJob, Project, WorkflowNode } from "@/generated/prisma/client";
+import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, WorkflowNode } from "@/generated/prisma/client";
 
 export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository(), actor?: WorkbenchActor) {
   async function ensureProjectAccess(projectId: string, access: "read" | "write" | "generate" = "read"): Promise<Project> {
@@ -152,6 +157,48 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return jobs.map(mapGenerationJob);
     },
 
+    async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput): Promise<ConversationTurnJobRecord> {
+      await ensureProjectAccess(projectId, "write");
+      const job = await repository.enqueueConversationTurn(projectId, input);
+      return mapConversationTurnJob(job);
+    },
+
+    async enqueueMessageAndConversationTurn(
+      projectId: string,
+      input: EnqueueMessageAndConversationTurnInput,
+    ): Promise<{ message: ConversationMessageRecord; job: ConversationTurnJobRecord }> {
+      await ensureProjectAccess(projectId, "write");
+      const result = await repository.enqueueMessageAndConversationTurn(projectId, input);
+      return { message: mapMessage(result.message), job: mapConversationTurnJob(result.job) };
+    },
+
+    async startNextConversationTurnJob(
+      projectId: string,
+      input: { lockedBy?: string; lockMs?: number } = {},
+    ): Promise<ConversationTurnJobRecord | null> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.startNextConversationTurnJob(projectId, input);
+      return job ? mapConversationTurnJob(job) : null;
+    },
+
+    async finishConversationTurnJob(projectId: string, jobId: string, input: FinishConversationTurnInput): Promise<ConversationTurnJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.finishConversationTurnJob(projectId, jobId, input);
+      return mapConversationTurnJob(job);
+    },
+
+    async failConversationTurnJob(projectId: string, jobId: string, input: FailConversationTurnInput): Promise<ConversationTurnJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.failConversationTurnJob(projectId, jobId, input);
+      return mapConversationTurnJob(job);
+    },
+
+    async getConversationTurnJobs(projectId: string): Promise<ConversationTurnJobRecord[]> {
+      await ensureProjectAccess(projectId);
+      const jobs = await repository.getConversationTurnJobs(projectId);
+      return jobs.map(mapConversationTurnJob);
+    },
+
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
       await ensureProjectAccess(projectId);
       const messages = await repository.getMessages(projectId);
@@ -164,14 +211,21 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return artifacts.map(mapArtifact);
     },
 
+    async getNodes(projectId: string): Promise<WorkflowNodeRecord[]> {
+      await ensureProjectAccess(projectId);
+      const nodes = await repository.getNodes(projectId);
+      return nodes.map(mapNode);
+    },
+
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
       const project = await ensureProjectAccess(projectId);
-      const [messages, nodes, artifacts, agentRuns, generationJobs] = await Promise.all([
+      const [messages, nodes, artifacts, agentRuns, generationJobs, turnJobs] = await Promise.all([
         repository.getMessages(projectId),
         repository.getNodes(projectId),
         repository.getArtifacts(projectId),
         repository.getAgentRuns(projectId),
         repository.getGenerationJobs(projectId),
+        repository.getConversationTurnJobs(projectId),
       ]);
 
       return {
@@ -181,6 +235,7 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
         artifacts: artifacts.map(mapArtifact),
         agentRuns: agentRuns.map(mapAgentRun),
         generationJobs: generationJobs.map(mapGenerationJob),
+        turnJobs: turnJobs.map(mapConversationTurnJob),
       };
     },
   };
@@ -275,6 +330,27 @@ function mapGenerationJob(job: GenerationJob): GenerationJobRecord {
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
     resultArtifactId: job.resultArtifactId,
+    errorMessage: job.errorMessage,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
+    startedAt: job.startedAt?.toISOString() ?? null,
+    finishedAt: job.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function mapConversationTurnJob(job: ConversationTurnJob): ConversationTurnJobRecord {
+  return {
+    id: job.id,
+    projectId: job.projectId,
+    teacherMessageId: job.teacherMessageId,
+    assistantMessageId: job.assistantMessageId,
+    status: job.status as ConversationTurnJobRecord["status"],
+    attempts: job.attempts,
+    maxAttempts: job.maxAttempts,
+    idempotencyKey: job.idempotencyKey,
+    lockedBy: job.lockedBy,
+    lockedUntil: job.lockedUntil?.toISOString() ?? null,
+    errorCode: job.errorCode,
     errorMessage: job.errorMessage,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),

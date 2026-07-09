@@ -1,0 +1,25 @@
+{
+  "id": "coze_ppt",
+  "workflowNodeKey": "pptx_artifact",
+  "artifactKind": "pptx_artifact",
+  "version": "v1",
+  "displayName": "PPTX 文件",
+  "purpose": "只基于已确认的 PPT 设计稿调用外部能力生成真实可下载的 PPTX 文件。",
+  "requiredInputs": ["approved_ppt_design_draft", "project_context"],
+  "requiredOutputs": ["pptx_file", "slide_count", "generation_metadata", "quality_check_result"],
+  "constraints": [
+    "调用外部生成能力前必须确认输入设计稿已通过人工确认。",
+    "生成结果必须以真实文件和 slideCount 校验为准。"
+  ],
+  "forbidden": [
+    "不得把文本 fallback、设计稿或任务成功状态伪装成真实 PPTX 文件。",
+    "不得在未通过人工确认时调用外部 PPTX 生成能力。"
+  ],
+  "qualityGates": [
+    "必须存在真实 PPTX 文件元数据和可校验的 slideCount。",
+    "失败时必须返回可重试状态和用户可理解的失败说明。"
+  ],
+  "memoryReadPolicy": "project",
+  "memoryWritePolicy": "none",
+  "providerPolicy": "external"
+}

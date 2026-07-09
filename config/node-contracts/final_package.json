@@ -1,0 +1,25 @@
+{
+  "id": "final_package",
+  "workflowNodeKey": "final_delivery",
+  "artifactKind": "final_delivery",
+  "version": "v1",
+  "displayName": "最终交付包",
+  "purpose": "把已确认的教案、PPT、图片、视频和交付说明打包为最终可交付材料。",
+  "requiredInputs": ["approved_artifacts", "project_context", "quality_gate_results"],
+  "requiredOutputs": ["delivery_package", "manifest", "missing_items", "delivery_check_result"],
+  "constraints": [
+    "最终包只能纳入已确认且通过质量门禁的真实产物。",
+    "必须列出缺失项、失败项和不可交付项。"
+  ],
+  "forbidden": [
+    "不得把未生成、未确认或未通过校验的产物放入最终交付包。",
+    "不得把最终包状态仅建立在模型自评或自然语言承诺上。"
+  ],
+  "qualityGates": [
+    "最终包必须包含可追溯的产物清单和质量门禁结果。",
+    "存在缺失或失败产物时必须阻止最终交付并给出下一步动作。"
+  ],
+  "memoryReadPolicy": "project",
+  "memoryWritePolicy": "project_auto",
+  "providerPolicy": "package"
+}

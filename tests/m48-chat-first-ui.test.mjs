@@ -37,20 +37,20 @@ test("MediaWorkbench keeps the artifact drawer available for narrow screens", ()
   assert.match(source, /variant="drawer"/);
 });
 
-test("Workbench controller gives immediate chat feedback and blocks duplicate sends while waiting", () => {
+test("Workbench controller gives immediate chat feedback and blocks duplicate submit clicks", () => {
   const source = readSource("src/hooks/useWorkbenchController.ts");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
 
-  assert.match(source, /const \[sending, setSending\] = useState\(false\)/);
-  assert.match(source, /const sendingRef = useRef\(false\)/);
-  assert.match(source, /if \(sendingRef\.current \|\| sending\) \{/);
-  assert.match(source, /sendingRef\.current = true/);
-  assert.match(source, /sendingRef\.current = false/);
+  assert.match(source, /const \[composerSubmitting, setComposerSubmitting\] = useState\(false\)/);
+  assert.match(source, /const composerSubmittingRef = useRef\(false\)/);
+  assert.match(source, /if \(composerSubmittingRef\.current \|\| composerSubmitting\) \{/);
+  assert.match(source, /composerSubmittingRef\.current = true/);
+  assert.match(source, /composerSubmittingRef\.current = false/);
   assert.match(source, /setMessages\(\(current\) => \[/);
   assert.match(source, /speaker: "teacher"/);
-  assert.match(source, /setSending\(true\)/);
-  assert.match(source, /setSending\(false\)/);
-  assert.match(source, /sending,/);
-  assert.match(composerSource, /sending: boolean/);
-  assert.match(composerSource, /disabled=\{sending\}/);
+  assert.match(source, /setComposerSubmitting\(true\)/);
+  assert.match(source, /setComposerSubmitting\(false\)/);
+  assert.match(source, /composerSubmitting,/);
+  assert.match(composerSource, /composerSubmitting: boolean/);
+  assert.match(composerSource, /disabled=\{composerSubmitting\}/);
 });

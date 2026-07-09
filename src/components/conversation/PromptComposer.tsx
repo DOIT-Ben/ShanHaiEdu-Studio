@@ -16,7 +16,8 @@ type PromptComposerProps = {
   value: string;
   reference: string | null;
   notice: string | null;
-  sending: boolean;
+  composerSubmitting: boolean;
+  projectBusy: boolean;
   onChange: (value: string) => void;
   onClearReference: () => void;
   onAttachFile: (fileName: string, text: string) => void;
@@ -31,7 +32,8 @@ export function PromptComposer({
   value,
   reference,
   notice,
-  sending,
+  composerSubmitting,
+  projectBusy,
   onChange,
   onClearReference,
   onAttachFile,
@@ -46,7 +48,7 @@ export function PromptComposer({
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    if (sending) return;
+    if (composerSubmitting) return;
     onSend();
   }
 
@@ -120,7 +122,7 @@ export function PromptComposer({
             className="hidden"
             onChange={handleFileChange}
             aria-label="选择文本资料"
-            disabled={sending}
+            disabled={composerSubmitting}
           />
           <Textarea
             ref={textareaRef}
@@ -129,8 +131,8 @@ export function PromptComposer({
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={sending}
-            placeholder="继续描述备课目标，或引用右侧产物继续生成"
+            disabled={composerSubmitting}
+            aria-label={projectBusy ? "正在生成中，也可以继续输入下一步要求" : "输入备课要求"}
             className="min-h-20 border-0 bg-transparent px-2 py-1 text-sm leading-6 shadow-none focus:ring-0"
           />
           <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-2">
@@ -142,7 +144,7 @@ export function PromptComposer({
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 aria-label="添加资料"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={sending}
+                disabled={composerSubmitting}
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
@@ -158,12 +160,12 @@ export function PromptComposer({
                 <RotateCcw className="h-4 w-4" />
               </Button>
               <span className="min-w-0 truncate text-xs text-muted-foreground" aria-live="polite">
-                {notice}
+                {notice ?? (projectBusy ? "正在生成中，你可以继续输入下一条要求。" : null)}
               </span>
             </div>
-            <Button type="button" variant="default" className="h-9 rounded-lg px-3.5" onClick={onSend} disabled={sending}>
+            <Button type="button" variant="default" className="h-9 rounded-lg px-3.5" onClick={onSend} disabled={composerSubmitting}>
               <CornerDownLeft className="h-4 w-4" />
-              {sending ? "等待回复" : "发送"}
+              {composerSubmitting ? "发送中" : projectBusy ? "加入队列" : "发送"}
             </Button>
           </div>
         </div>

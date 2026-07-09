@@ -1,0 +1,25 @@
+{
+  "id": "ppt_design",
+  "workflowNodeKey": "ppt_design_draft",
+  "artifactKind": "ppt_design_draft",
+  "version": "v1",
+  "displayName": "PPT 设计稿",
+  "purpose": "把 PPT 大纲转成逐页可执行的设计稿，明确页面目标、文字层、视觉层和素材需求。",
+  "requiredInputs": ["ppt_outline", "lesson_plan", "project_context"],
+  "requiredOutputs": ["page_plan", "visual_style", "text_layout", "asset_requirements"],
+  "constraints": [
+    "逐页说明页面目标、教学动作、文字层、视觉层和素材需求。",
+    "必须明确哪些内容是设计稿，哪些内容需要后续真实 PPTX 生成。"
+  ],
+  "forbidden": [
+    "不得把设计稿伪装成真实 PPTX 文件",
+    "不得用目标页数或文件名替代真实 PPTX 校验。"
+  ],
+  "qualityGates": [
+    "每页必须有明确标题、教学目标、核心内容和视觉要求。",
+    "设计稿必须能作为外部 PPTX 生成的结构化输入。"
+  ],
+  "memoryReadPolicy": "project",
+  "memoryWritePolicy": "none",
+  "providerPolicy": "internal"
+}

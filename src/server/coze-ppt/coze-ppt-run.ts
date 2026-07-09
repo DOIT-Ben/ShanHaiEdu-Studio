@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
+import { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
+
+export { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
 
 export type CozePptGenerationResult = {
   fileName: string;
@@ -55,8 +58,13 @@ export async function generateCozePptFromArtifact(input: {
     throw new Error("missing_ppt_design_draft");
   }
 
+  const designValidation = validatePptDesignDraftForCoze(input.artifact.markdownContent);
+  if (!designValidation.valid) {
+    throw new Error(designValidation.message);
+  }
+
   const config = readConfig(process.env);
-  const requestedPageCount = resolvePptDesignPageCount(input.artifact.markdownContent);
+  const requestedPageCount = designValidation.pageCount;
   const result = await generateCozePptxBuffer(config, input.project, input.artifact);
   const pptxBuffer = result.buffer;
   const validation = await validatePptxBuffer(pptxBuffer);
@@ -422,28 +430,6 @@ function buildPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
     "提示词模板节选：",
     promptTemplate,
   ].join("\n");
-}
-
-export function resolvePptDesignPageCount(markdownContent: string) {
-  const explicit = markdownContent.match(/(?:页数|总页数|共)[:：\s]*(\d{1,2})\s*页/);
-  if (explicit) {
-    const pageCount = Number.parseInt(explicit[1], 10);
-    if (Number.isFinite(pageCount) && pageCount >= 1 && pageCount <= 30) return pageCount;
-  }
-
-  const pageRanges = [...markdownContent.matchAll(/第\s*(\d{1,2})\s*(?:[-—~至到]\s*(\d{1,2}))?\s*页/g)];
-  const maxPageFromRanges = pageRanges.reduce((maxPage, match) => {
-    const start = Number.parseInt(match[1], 10);
-    const end = match[2] ? Number.parseInt(match[2], 10) : start;
-    const page = Math.max(start, end);
-    return Number.isFinite(page) && page >= 1 ? Math.max(maxPage, page) : maxPage;
-  }, 0);
-  if (maxPageFromRanges > 0) return Math.min(maxPageFromRanges, 30);
-
-  const pageMarkers = markdownContent.match(/(?:^|\n)#{1,4}\s*(?:第\s*)?\d{1,2}\s*页/g);
-  if (pageMarkers?.length) return Math.min(pageMarkers.length, 30);
-
-  return 12;
 }
 
 function readFixtureManifest(): { fixtures: Array<{ id: string; sha256?: string }> } {

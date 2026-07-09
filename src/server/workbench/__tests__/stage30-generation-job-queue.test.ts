@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { GET as getGenerationJobsRoute } from "@/app/api/workbench/projects/[projectId]/generation-jobs/route";
 import { POST as postImageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
+import { createWorkbenchActor } from "@/server/auth/actor";
+import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
 import { createWorkbenchService } from "../service";
 
@@ -8,17 +10,17 @@ vi.mock("@/server/image-generation/image-generation-run", () => ({
   generateImageFromArtifact: vi.fn(),
 }));
 
-const actorA = {
+const actorA = createWorkbenchActor({
   userId: "local-stage30-user-a",
-  role: "teacher" as const,
   displayName: "本地教师 A",
-};
+  authMode: "local",
+});
 
-const actorB = {
+const actorB = createWorkbenchActor({
   userId: "local-stage30-user-b",
-  role: "teacher" as const,
   displayName: "本地教师 B",
-};
+  authMode: "local",
+});
 
 describe("Local Real MVP M30 generation job queue", () => {
   it("persists generation job state transitions and restores them in snapshots", async () => {
@@ -55,8 +57,8 @@ describe("Local Real MVP M30 generation job queue", () => {
     expect(running.startedAt).not.toBeNull();
 
     const resultArtifact = await service.saveArtifact(project.id, {
-      nodeKey: "ppt_draft",
-      kind: "ppt_draft",
+      nodeKey: "image_prompts",
+      kind: "image_prompts",
       title: "真实课堂视觉图",
       status: "needs_review",
       summary: "已生成图片。",
@@ -129,8 +131,10 @@ describe("Local Real MVP M30 generation job queue", () => {
       summary: "用于生成图片。",
       markdownContent: "第 1 页：百分数导入。",
     });
+    await service.approveArtifact(project.id, sourceArtifact.id);
+    const confirmedActionId = createHumanGateActionId({ projectId: project.id, capabilityId: "image_asset", messageId: sourceArtifact.id });
 
-    const response = await postImageRoute(new Request("http://localhost", { method: "POST" }), {
+    const response = await postImageRoute(new Request("http://localhost", { method: "POST", body: JSON.stringify({ confirmedActionId }) }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
     const body = await response.json();
@@ -166,8 +170,10 @@ describe("Local Real MVP M30 generation job queue", () => {
       summary: "用于生成失败图片。",
       markdownContent: "第 1 页：百分数导入。",
     });
+    await service.approveArtifact(project.id, sourceArtifact.id);
+    const confirmedActionId = createHumanGateActionId({ projectId: project.id, capabilityId: "image_asset", messageId: sourceArtifact.id });
 
-    const response = await postImageRoute(new Request("http://localhost", { method: "POST" }), {
+    const response = await postImageRoute(new Request("http://localhost", { method: "POST", body: JSON.stringify({ confirmedActionId }) }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
     const body = await response.json();

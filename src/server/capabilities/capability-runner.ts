@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getCapabilityDefinition } from "./capability-registry";
+import { validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
 import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
 import type { CapabilityId, CapabilityRunResult, SaveArtifactDraft } from "./types";
 
@@ -17,6 +18,13 @@ const capabilityRuntimeTaskMap: Partial<Record<CapabilityId, AgentRuntimeTask>> 
   lesson_plan: "lesson_plan",
   ppt_outline: "ppt_outline",
   ppt_design: "ppt_design",
+  knowledge_anchor_extract: "knowledge_anchor_extract",
+  creative_theme_generate: "creative_theme_generate",
+  video_script_generate: "video_script_generate",
+  storyboard_generate: "storyboard_generate",
+  asset_brief_generate: "asset_brief_generate",
+  video_segment_plan: "video_segment_plan",
+  concat_only_assemble: "concat_only_assemble",
   final_package: "final_delivery_checklist",
 };
 
@@ -27,6 +35,13 @@ const runtimeArtifactMap: Record<AgentRuntimeTask, Pick<SaveArtifactDraft, "node
   ppt_outline: { nodeKey: "ppt_draft", kind: "ppt_draft" },
   ppt_design: { nodeKey: "ppt_design_draft", kind: "ppt_design_draft" },
   intro_video_plan: { nodeKey: "intro_video_plan", kind: "intro_video_plan" },
+  knowledge_anchor_extract: { nodeKey: "knowledge_anchor_extract", kind: "knowledge_anchor_extract" },
+  creative_theme_generate: { nodeKey: "creative_theme_generate", kind: "creative_theme_generate" },
+  video_script_generate: { nodeKey: "video_script_generate", kind: "video_script_generate" },
+  storyboard_generate: { nodeKey: "storyboard_generate", kind: "storyboard_generate" },
+  asset_brief_generate: { nodeKey: "asset_brief_generate", kind: "asset_brief_generate" },
+  video_segment_plan: { nodeKey: "video_segment_plan", kind: "video_segment_plan" },
+  concat_only_assemble: { nodeKey: "concat_only_assemble", kind: "concat_only_assemble" },
   final_delivery_checklist: { nodeKey: "final_delivery", kind: "final_delivery" },
 };
 
@@ -59,6 +74,30 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       retryable: capability.failureRecovery.retryable,
       errorCategory: "provider",
     };
+  }
+
+  const deterministic_runtime_blocked_real_asset =
+    result.artifactDraft.generationMode === "deterministic_draft" && capability.deterministicFallback === "blocked";
+
+  if (deterministic_runtime_blocked_real_asset) {
+    return {
+      status: "failed",
+      userMessage: capability.failureRecovery.userMessage,
+      retryable: capability.failureRecovery.retryable,
+      errorCategory: "validation",
+    } satisfies CapabilityRunResult & { status: "failed" };
+  }
+
+  if (input.capabilityId === "ppt_design") {
+    const designValidation = validatePptDesignDraftForCoze(result.artifactDraft.markdown);
+    if (!designValidation.valid) {
+      return {
+        status: "failed",
+        userMessage: designValidation.message,
+        retryable: true,
+        errorCategory: "validation",
+      };
+    }
   }
 
   const artifactTarget = runtimeArtifactMap[result.artifactDraft.nodeKey];

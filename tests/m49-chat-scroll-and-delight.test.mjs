@@ -20,9 +20,9 @@ test("ConversationWorkbench scrolls to the newest chat state", () => {
   assert.match(source, /useEffect/);
   assert.match(source, /scrollAnchorRef/);
   assert.match(source, /scrollIntoView\(\{ behavior: "smooth", block: "end" \}\)/);
-  assert.match(source, /\[messages\.length, sending\]/);
+  assert.match(source, /\[messages\.length, composerSubmitting, projectBusy\]/);
   assert.match(source, /data-chat-scroll-anchor/);
-  assert.match(source, /<ChatTranscript[\s\S]*sending=\{sending\}/);
+  assert.match(source, /<ChatTranscript[\s\S]*projectBusy=\{projectBusy\}/);
 });
 
 test("ChatTranscript renders AI identity and thinking feedback", () => {

@@ -102,7 +102,8 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               errorMessage={controller.errorMessage}
               input={controller.input}
               reference={controller.reference}
-              sending={controller.sending}
+              composerSubmitting={controller.composerSubmitting}
+              projectBusy={controller.projectBusy}
               executionFeedback={controller.executionFeedback}
               notice={controller.notice}
               composerNotice={controller.composerNotice}

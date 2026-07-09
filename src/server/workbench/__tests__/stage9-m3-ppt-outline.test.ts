@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { POST as postProjectRoute } from "@/app/api/workbench/projects/route";
-import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
 import { POST as postApproveArtifact } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/approve/route";
 import { GET as getSnapshotRoute } from "@/app/api/workbench/projects/[projectId]/snapshot/route";
+import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("Local Real MVP M3 PPT outline loop", () => {
   it("generates a PPT outline text artifact after approving the lesson plan", async () => {
@@ -10,23 +12,7 @@ describe("Local Real MVP M3 PPT outline loop", () => {
     const projectBody = await projectResponse.json();
     const projectId = projectBody.project.id;
 
-    await postMessageRoute(
-      new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({
-          role: "teacher",
-          content: "我想要生成一个小学五年级关于百分数这个知识点的公开课 PPT。",
-        }),
-      }),
-      { params: Promise.resolve({ projectId }) },
-    );
-    await postMessageRoute(
-      new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ role: "teacher", content: "确认开始" }),
-      }),
-      { params: Promise.resolve({ projectId }) },
-    );
+    await createRequirement(projectId, "我想要生成一个小学五年级关于百分数这个知识点的公开课 PPT。");
 
     let snapshot = await readSnapshot(projectId);
     await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "requirement_spec").id);
@@ -62,4 +48,15 @@ async function readSnapshot(projectId: string) {
     params: Promise.resolve({ projectId }),
   });
   return response.json();
+}
+
+async function createRequirement(projectId: string, content: string) {
+  const service = createWorkbenchService();
+  const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
+  const planningBody = await turnService.createTurn(projectId, { role: "teacher", content });
+  await turnService.createTurn(projectId, {
+    role: "teacher",
+    content: "确认开始",
+    confirmedActionId: `human:${projectId}:requirement_spec:${planningBody.assistantMessage?.id}`,
+  });
 }

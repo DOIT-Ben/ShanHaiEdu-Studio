@@ -20,7 +20,8 @@ type ConversationWorkbenchProps = {
   errorMessage: string | null;
   input: string;
   reference: string | null;
-  sending: boolean;
+  composerSubmitting: boolean;
+  projectBusy: boolean;
   executionFeedback: WorkbenchExecutionFeedback | null;
   notice: string | null;
   composerNotice: string | null;
@@ -29,7 +30,7 @@ type ConversationWorkbenchProps = {
   onAttachFile: (fileName: string, text: string) => void;
   onAttachFileError: (message: string) => void;
   onSend: () => void;
-  onQuickReplySelect?: (value: string) => void;
+  onQuickReplySelect?: (value: string, actionId?: string) => void;
   onRetry: () => void;
   onOpenArtifacts: () => void;
   onLogout?: () => Promise<void>;
@@ -45,7 +46,8 @@ export function ConversationWorkbench({
   errorMessage,
   input,
   reference,
-  sending,
+  composerSubmitting,
+  projectBusy,
   executionFeedback,
   notice,
   composerNotice,
@@ -64,7 +66,7 @@ export function ConversationWorkbench({
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, sending]);
+  }, [messages.length, composerSubmitting, projectBusy]);
 
   function registerMessage(id: string, node: HTMLElement | null) {
     messageRefs.current[id] = node;
@@ -84,7 +86,7 @@ export function ConversationWorkbench({
             )}
             {loadState === "loading" && (
               <div className="inline-flex max-w-full rounded-md bg-[#f5f5f5] px-3 py-2 text-sm text-muted-foreground">
-                正在取回项目内容...
+                正在取回项目内容…
               </div>
             )}
             {loadState === "error" && (
@@ -100,7 +102,7 @@ export function ConversationWorkbench({
                 messages={messages}
                 artifacts={artifacts}
                 projectId={project?.id ?? ""}
-                sending={sending}
+                projectBusy={projectBusy}
                 executionFeedback={executionFeedback}
                 registerMessage={registerMessage}
                 onQuickReplySelect={onQuickReplySelect}
@@ -119,7 +121,8 @@ export function ConversationWorkbench({
       <PromptComposer
         value={input}
         reference={reference}
-        sending={sending}
+        composerSubmitting={composerSubmitting}
+        projectBusy={projectBusy}
         notice={composerNotice}
         onChange={onInputChange}
         onClearReference={onClearReference}

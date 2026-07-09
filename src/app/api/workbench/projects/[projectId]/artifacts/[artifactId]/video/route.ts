@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { buildStoredVideoDownload, videoDownloadHeaders } from "@/server/video-generation/artifact-video";
-import { generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
+import { assertVideoProviderPreconditions, generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
+import {
+  assertRouteLevelGenerationConfirmation,
+  readConfirmedActionId,
+  readRouteGenerationBody,
+  routeLevelGenerationConfirmationStatus,
+} from "@/server/guards/route-level-generation-gate";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -33,10 +39,20 @@ export async function POST(request: Request, context: RouteContext) {
       const params = await context.params;
       projectId = params.projectId;
       const { artifactId } = params;
+      const body = await readRouteGenerationBody(request);
       const [project, sourceArtifact] = await Promise.all([service.getProject(projectId), service.getArtifact(projectId, artifactId)]);
-      if (sourceArtifact.nodeKey !== "intro_video_plan" || sourceArtifact.kind !== "intro_video_plan") {
+      const upstreamArtifacts = await service.getApprovedInputs(projectId, "video_segment_plan");
+      try {
+        assertVideoProviderPreconditions({ artifact: sourceArtifact, upstreamArtifacts });
+      } catch {
         return NextResponse.json({ error: "这个方案暂时不能生成导入视频。" }, { status: 400 });
       }
+      assertRouteLevelGenerationConfirmation({
+        projectId,
+        capabilityId: "video_segment_generate",
+        sourceArtifact,
+        confirmedActionId: readConfirmedActionId(body),
+      });
       const queuedJob = await service.createGenerationJob(projectId, {
         kind: "video",
         sourceArtifactId: sourceArtifact.id,
@@ -44,17 +60,17 @@ export async function POST(request: Request, context: RouteContext) {
       jobId = queuedJob.id;
       await service.startGenerationJob(projectId, jobId);
 
-      const generated = await generateVideoFromArtifact({ project, artifact: sourceArtifact });
+      const generated = await generateVideoFromArtifact({ project, artifact: sourceArtifact, upstreamArtifacts });
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "intro_video_plan",
-        kind: "intro_video_plan",
-        title: "真实导入视频",
+        nodeKey: "video_segment_generate",
+        kind: "video_segment_generate",
+        title: "真实分镜视频片段",
         status: "needs_review",
-        summary: "已生成一段本地导入视频，请播放后核对画面、节奏和课堂锚点。",
+        summary: "已生成一段本地分镜视频，请播放后核对画面、节奏和课堂锚点。",
         markdownContent: [
-          "# 真实导入视频",
+          "# 真实分镜视频片段",
           "",
-          "已基于当前导入视频方案生成一段本地 MP4。",
+          "已基于当前分镜视频计划生成一段本地 MP4。",
           "",
           "正式授课前请核对画面质量、节奏、课堂锚点、学生理解成本和是否提前讲解知识点。",
         ].join("\n"),
@@ -83,7 +99,8 @@ export async function POST(request: Request, context: RouteContext) {
         await service.failGenerationJob(projectId, jobId, { errorMessage: "Video generation failed" }).catch(() => null);
       }
       const message = error instanceof Error ? error.message : "Video generation failed";
-      const status = message.includes("not found") ? 404 : 400;
+      const confirmationStatus = routeLevelGenerationConfirmationStatus(error);
+      const status = confirmationStatus ?? (message.includes("not found") ? 404 : 400);
       return NextResponse.json({ error: "导入视频暂时没有生成成功，请稍后再试。" }, { status });
     }
   });

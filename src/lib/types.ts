@@ -14,6 +14,15 @@ export type ArtifactKind =
   | "pptx_artifact"
   | "image_prompts"
   | "video_storyboard"
+  | "knowledge_anchor_extract"
+  | "creative_theme_generate"
+  | "video_script_generate"
+  | "storyboard_generate"
+  | "asset_brief_generate"
+  | "asset_image_generate"
+  | "video_segment_plan"
+  | "video_segment_generate"
+  | "concat_only_assemble"
   | "final_delivery"
   | "final_delivery_checklist";
 
@@ -36,6 +45,8 @@ export type ArtifactActionState = {
   canRegenerate: boolean;
 };
 
+export type ArtifactRouteGenerationActions = Partial<Record<"coze_ppt" | "image_asset" | "video_segment_generate", { actionId: string }>>;
+
 export type ArtifactItem = {
   key: string;
   artifactId?: string;
@@ -52,6 +63,7 @@ export type ArtifactItem = {
   actions: ArtifactActionState;
   content: Record<string, string | string[]>;
   realAssetDownloads?: RealAssetKind[];
+  routeGenerationActions?: ArtifactRouteGenerationActions;
 };
 
 export type ChatMessage = {
@@ -61,13 +73,30 @@ export type ChatMessage = {
   body: string;
   timeLabel?: string;
   tone?: "normal" | "focus" | "warning" | "error";
+  turnStatus?: ConversationTurnJobStatus;
+  turnStatusLabel?: string;
   artifactRefs?: string[];
   quickReplies?: {
     label: string;
     prompt: string;
+    actionId?: string;
     recommended?: boolean;
   }[];
   deliveryPlan?: ChatDeliveryPlan;
+};
+
+export type ConversationTurnJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled" | "blocked";
+
+export type ConversationTurnJob = {
+  id: string;
+  projectId: string;
+  teacherMessageId: string;
+  assistantMessageId: string | null;
+  status: ConversationTurnJobStatus;
+  statusLabel: string;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ChatDeliveryPlanStepStatus = "pending" | "awaiting_confirmation" | "running" | "succeeded" | "failed";
@@ -83,15 +112,22 @@ export type ChatDeliveryPlanStep = {
 
 export type ChatDeliveryPlan = {
   id: string;
+  actionId?: string;
   title: string;
   summary: string;
   steps: ChatDeliveryPlanStep[];
+};
+
+export type WorkbenchSendMessageOptions = {
+  confirmedActionId?: string;
+  actionId?: string;
 };
 
 export type WorkbenchSnapshot = {
   project: ProjectItem;
   messages: ChatMessage[];
   artifacts: ArtifactItem[];
+  turnJobs: ConversationTurnJob[];
   activeArtifactKey: string;
 };
 
@@ -99,10 +135,10 @@ export type WorkbenchDataSource = {
   listProjects: () => Promise<ProjectItem[]>;
   createProject: () => Promise<WorkbenchSnapshot>;
   getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
-  sendMessage: (projectId: string, body: string, reference: string | null) => Promise<WorkbenchSnapshot>;
+  sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
-  generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind) => Promise<WorkbenchSnapshot>;
+  generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
 };
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";

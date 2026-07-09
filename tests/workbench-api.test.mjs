@@ -500,6 +500,7 @@ test("API client restores pending delivery plans from persisted assistant metada
         metadata: {
           pendingDeliveryPlan: {
             status: "pending",
+            actionId: "human:backend-project-a:lesson_plan:assistant-pending-plan",
             toolPlan: { capabilityId: "lesson_plan" },
             deliveryPlan: {
               id: "delivery:full-package",
@@ -543,7 +544,38 @@ test("API client restores pending delivery plans from persisted assistant metada
   assert.equal(lastAssistant.quickReplies.length, 1);
   assert.equal(lastAssistant.quickReplies[0].label, "继续下一步");
   assert.equal(lastAssistant.quickReplies[0].prompt, "继续下一步");
+  assert.equal(lastAssistant.quickReplies[0].actionId, "human:backend-project-a:lesson_plan:assistant-pending-plan");
   assert.equal(lastAssistant.quickReplies[0].recommended, true);
+  assert.equal(lastAssistant.deliveryPlan.actionId, "human:backend-project-a:lesson_plan:assistant-pending-plan");
+});
+
+test("API client posts confirmed action ids only for HumanGate confirmation messages", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => (String(url).endsWith("/messages") ? { assistantMessage: { id: "assistant-turn-1" } } : backendSnapshot),
+      };
+    },
+  });
+
+  await client.sendMessage("backend-project-a", "普通补充一句", null);
+  await client.sendMessage("backend-project-a", "确认开始", null, { actionId: "human:backend-project-a:lesson_plan:assistant-pending-plan" });
+  await client.sendMessage("backend-project-a", "继续下一步", null, { confirmedActionId: "human:backend-project-a:ppt_draft:assistant-next-plan" });
+
+  const postBodies = calls
+    .filter((call) => call.url.endsWith("/messages"))
+    .map((call) => JSON.parse(call.init.body));
+
+  assert.equal(Object.hasOwn(postBodies[0], "confirmedActionId"), false);
+  assert.equal(Object.hasOwn(postBodies[0], "actionId"), false);
+  assert.equal(postBodies[1].confirmedActionId, "human:backend-project-a:lesson_plan:assistant-pending-plan");
+  assert.equal(Object.hasOwn(postBodies[1], "actionId"), false);
+  assert.equal(postBodies[2].confirmedActionId, "human:backend-project-a:ppt_draft:assistant-next-plan");
+  assert.equal(Object.hasOwn(postBodies[2], "actionId"), false);
 });
 
 test("API client does not expose backend-only structured labels in visible artifact fields", async () => {
@@ -589,6 +621,46 @@ test("API client does not expose backend-only structured labels in visible artif
   assert.equal(visibleLabels.includes("nextSuggestedAction"), false);
   assert.equal(requirement.content["课题"], "百分数");
   assert.deepEqual(requirement.content["课堂问题"], ["生活中哪里见过百分数？"]);
+});
+
+test("API client preserves backend route generation action ids as internal artifact actions", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const snapshotWithRouteActions = {
+    ...backendSnapshot,
+    nodes: [
+      {
+        ...backendNodes[0],
+        key: "ppt_design_draft",
+        title: "PPT 设计稿",
+        status: "approved",
+      },
+    ],
+    artifacts: [
+      {
+        ...backendArtifact,
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        status: "approved",
+        isApproved: true,
+        structuredContent: {
+          routeGenerationActions: {
+            coze_ppt: { actionId: "human:backend-project-a:coze_ppt:artifact-requirement-v1" },
+          },
+        },
+      },
+    ],
+  };
+  const client = createWorkbenchApiClient({
+    fetcher: async () => ({
+      ok: true,
+      json: async () => snapshotWithRouteActions,
+    }),
+  });
+
+  const snapshot = await client.getProjectSnapshot("backend-project-a");
+  const pptDesign = snapshot.artifacts.find((item) => item.nodeKey === "ppt_design_draft");
+
+  assert.equal(pptDesign.routeGenerationActions.coze_ppt.actionId, "human:backend-project-a:coze_ppt:artifact-requirement-v1");
 });
 
 test("API client creates projects through backend shape and then reads a snapshot", async () => {
@@ -659,7 +731,7 @@ test("API client regenerates artifacts through the backend route and refreshes t
   assert.equal(snapshot.project.id, "backend-project-a");
 });
 
-test("API client triggers real asset generation through backend routes and refreshes the snapshot", async () => {
+test("API client triggers real asset generation through backend routes with HumanGate confirmation and refreshes the snapshot", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
   const client = createWorkbenchApiClient({
@@ -675,18 +747,23 @@ test("API client triggers real asset generation through backend routes and refre
     },
   });
 
-  await client.generateRealAsset("project-a", "artifact-ppt-v1", "pptx");
-  await client.generateRealAsset("project-a", "artifact-ppt-v1", "image");
-  await client.generateRealAsset("project-a", "artifact-video-plan-v1", "video");
+  await client.generateRealAsset("project-a", "artifact-ppt-v1", "pptx", { confirmedActionId: "human:project-a:coze_ppt:artifact-ppt-v1" });
+  await client.generateRealAsset("project-a", "artifact-ppt-v1", "image", { confirmedActionId: "human:project-a:image_asset:artifact-ppt-v1" });
+  await client.generateRealAsset("project-a", "artifact-video-plan-v1", "video", {
+    confirmedActionId: "human:project-a:video_segment_generate:artifact-video-plan-v1",
+  });
 
   assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-ppt-v1/coze-ppt");
   assert.equal(calls[0].init.method, "POST");
+  assert.equal(JSON.parse(calls[0].init.body).confirmedActionId, "human:project-a:coze_ppt:artifact-ppt-v1");
   assert.equal(calls[1].url, "/api/workbench/projects/project-a/snapshot");
   assert.equal(calls[2].url, "/api/workbench/projects/project-a/artifacts/artifact-ppt-v1/image");
   assert.equal(calls[2].init.method, "POST");
+  assert.equal(JSON.parse(calls[2].init.body).confirmedActionId, "human:project-a:image_asset:artifact-ppt-v1");
   assert.equal(calls[3].url, "/api/workbench/projects/project-a/snapshot");
   assert.equal(calls[4].url, "/api/workbench/projects/project-a/artifacts/artifact-video-plan-v1/video");
   assert.equal(calls[4].init.method, "POST");
+  assert.equal(JSON.parse(calls[4].init.body).confirmedActionId, "human:project-a:video_segment_generate:artifact-video-plan-v1");
   assert.equal(calls[5].url, "/api/workbench/projects/project-a/snapshot");
 });
 
@@ -724,6 +801,9 @@ test("real asset generation actions are teacher-facing and scoped to supported a
     nodeKey: "ppt_draft",
     kind: "ppt_draft",
     title: "PPT 大纲与逐页脚本",
+    routeGenerationActions: {
+      image_asset: { actionId: "human:project-a:image_asset:artifact-ppt-v1" },
+    },
   };
   const pptDesignArtifact = {
     ...seedArtifacts[1],
@@ -732,11 +812,26 @@ test("real asset generation actions are teacher-facing and scoped to supported a
     nodeKey: "ppt_design_draft",
     kind: "ppt_design_draft",
     title: "PPT 设计稿",
+    routeGenerationActions: {
+      coze_ppt: { actionId: "human:project-a:coze_ppt:artifact-ppt-design-v1" },
+    },
   };
   const videoArtifact = {
     ...seedArtifacts[1],
     key: "artifact-video-plan-v1",
     artifactId: "artifact-video-plan-v1",
+    nodeKey: "video_segment_plan",
+    kind: "video_segment_plan",
+    title: "分镜视频计划",
+    status: "approved",
+    routeGenerationActions: {
+      video_segment_generate: { actionId: "human:project-a:video_segment_generate:artifact-video-plan-v1" },
+    },
+  };
+  const introVideoPlanArtifact = {
+    ...seedArtifacts[1],
+    key: "artifact-intro-video-plan-v1",
+    artifactId: "artifact-intro-video-plan-v1",
     nodeKey: "intro_video_plan",
     kind: "intro_video_plan",
     title: "导入视频方案",
@@ -752,17 +847,21 @@ test("real asset generation actions are teacher-facing and scoped to supported a
 
   const pptActions = getRealAssetGenerationActions(pptArtifact);
   assert.equal(pptActions.map((action) => action.kind).join(","), "image");
+  assert.equal(pptActions[0].actionId, "human:project-a:image_asset:artifact-ppt-v1");
   assert.equal(pptActions.map((action) => action.label).join(","), "生成课堂视觉图");
   assert.match(pptActions[0].successNotice, /课堂视觉图/);
 
   const pptDesignActions = getRealAssetGenerationActions(pptDesignArtifact);
   assert.equal(pptDesignActions.map((action) => action.kind).join(","), "pptx");
+  assert.equal(pptDesignActions[0].actionId, "human:project-a:coze_ppt:artifact-ppt-design-v1");
   assert.equal(pptDesignActions.map((action) => action.label).join(","), "生成真实 PPTX");
   assert.match(pptDesignActions[0].successNotice, /真实 PPTX/);
 
   const videoActions = getRealAssetGenerationActions(videoArtifact);
   assert.equal(videoActions.map((action) => action.kind).join(","), "video");
-  assert.equal(videoActions.map((action) => action.label).join(","), "生成导入视频");
+  assert.equal(videoActions[0].actionId, "human:project-a:video_segment_generate:artifact-video-plan-v1");
+  assert.equal(videoActions.map((action) => action.label).join(","), "生成分镜视频");
+  assert.equal(getRealAssetGenerationActions(introVideoPlanArtifact).length, 0);
 
   assert.equal(getRealAssetGenerationActions(finalDeliveryArtifact).length, 0);
   const visibleText = [...pptActions, ...pptDesignActions, ...videoActions].flatMap((action) => [action.label, action.pendingLabel, action.successNotice, action.failureNotice]).join("\n");

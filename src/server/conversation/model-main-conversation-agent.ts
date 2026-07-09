@@ -34,7 +34,15 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "ppt_design",
   "coze_ppt",
   "image_asset",
-  "intro_video",
+  "knowledge_anchor_extract",
+  "creative_theme_generate",
+  "video_script_generate",
+  "storyboard_generate",
+  "asset_brief_generate",
+  "asset_image_generate",
+  "video_segment_plan",
+  "video_segment_generate",
+  "concat_only_assemble",
   "final_package",
 ];
 const capabilityIdEnum = getCapabilityDefinitions().map((capability) => capability.id);
@@ -51,6 +59,10 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
   }
 
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
+    if (isOutsidePrimarySchoolScope(input.userMessage)) {
+      return primaryScopeBoundaryTurn();
+    }
+
     try {
       const response = await this.client.responses.create(buildMainAgentRequest(input, this.model));
       return normalizeModelTurn(parseMainAgentOutput(response.output_text), input.userMessage, input.availableArtifactKinds);
@@ -136,12 +148,17 @@ function buildMainAgentRequest(input: MainConversationAgentInput, model: string)
     model,
     instructions: [
       "你是 ShanHaiEdu 的主控备课 Agent。",
+      "产品当前只服务小学公开课备课，默认范围是一至六年级；不要生成初中、高中或大学内容。",
+      "如果教师没有给年级，追问时示例必须使用小学一至六年级，例如“五年级数学《百分数的认识》，新授课，约10页”。",
+      "如果教师明确提出初中、高中或超出小学的内容，说明当前版本先限定在小学，并请教师改成小学年级、课题和材料要求；不要返回 toolPlan。",
       "不要用关键词门禁拦截用户。任何用户输入都先由你自然理解。",
       "你可以自由聊天、追问、整理需求、制定计划，或选择最合适的工具。",
       "只有当你认为需要产生或推进备课产物时，才返回 toolPlan；否则不要返回 toolPlan。",
       "如果信息不足，不要机械拒绝；自然说明你已经理解的信息，并追问下一步最有价值的问题。",
       "如果用户只给年级、学科、片段想法或问候，也要自然回应，不要复述系统门禁。",
       "你会收到最近对话和可能存在的 pendingDeliveryPlan。短回复如“开始”“好”“可以”“继续”要结合上下文理解。",
+      "如果收到 contextPackage，它是本轮可信上下文边界；只把 approved artifact 作为下游可信输入，needs_review 或 failed 只能作为待确认/风险状态。",
+      "如果 contextPackage.summaryValidation.status=failed，不要使用 sessionSummary 作事实依据，只使用最近消息、节点状态和 artifact 状态。",
       "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
       "不要输出工程词、底层字段名、schema、provider、node_id、storage、debug、local path 或密钥。",
       "返回内容必须严格符合 JSON 结构。",
@@ -149,6 +166,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput, model: string)
     input: JSON.stringify({
       userMessage: input.userMessage,
       projectContext: input.projectContext ?? {},
+      contextPackage: input.conversationContext?.contextPackage ?? null,
       conversationContext: input.conversationContext ?? {},
       availableArtifactKinds: input.availableArtifactKinds,
       availableCapabilities: getCapabilityDefinitions().map((capability) => ({
@@ -188,6 +206,10 @@ function parseMainAgentOutput(outputText: string | undefined): StructuredMainAge
 }
 
 function normalizeModelTurn(output: StructuredMainAgentOutput, teacherRequest: string, availableArtifactKinds: string[]): MainAgentTurn {
+  if (isOutsidePrimarySchoolScope(teacherRequest) || containsOutOfScopeTeachingContent(output)) {
+    return primaryScopeBoundaryTurn();
+  }
+
   const toolPlan = output.toolPlan ? buildModelToolPlan(output.toolPlan, teacherRequest) : undefined;
   const deliveryPlan = toolPlan && output.deliveryPlan?.mode === "full" ? buildFullDeliveryPlan(toolPlan.capabilityId, availableArtifactKinds) : undefined;
 
@@ -199,6 +221,47 @@ function normalizeModelTurn(output: StructuredMainAgentOutput, teacherRequest: s
     toolPlan,
     deliveryPlan,
     shouldRunToolNow: output.shouldRunToolNow === true,
+    runtimeKind: "openai",
+  };
+}
+
+function containsOutOfScopeTeachingContent(output: StructuredMainAgentOutput): boolean {
+  const visibleParts = [
+    output.assistantMessage?.title,
+    output.assistantMessage?.body,
+    ...(output.quickReplies ?? []).flatMap((reply) => [reply.label, reply.prompt]),
+    ...(output.recommendedOptions ?? []).flatMap((option) => [option.label, option.value]),
+    output.toolPlan?.reasonForUser,
+  ];
+
+  return visibleParts.some((part) => typeof part === "string" && isOutsidePrimarySchoolScope(part));
+}
+
+function isOutsidePrimarySchoolScope(text: string): boolean {
+  const normalized = text.replace(/\s+/g, "").toLowerCase();
+  if (!normalized) return false;
+
+  return /七年级|八年级|九年级|7年级|8年级|9年级|初一|初二|初三|初中|高中|高一|高二|高三|中考|高考|有理数|一次函数|二次函数|一元一次方程|一元二次方程|三角函数/.test(normalized);
+}
+
+function primaryScopeBoundaryTurn(): MainAgentTurn {
+  return {
+    assistantMessage: {
+      title: "先限定在小学范围",
+      body: "当前版本先限定在小学公开课备课。我可以继续帮你做小学一至六年级的课件、教案和课堂素材。你可以这样补充：五年级数学《百分数的认识》，新授课，约10页，简洁课堂风。",
+    },
+    state: "collecting_inputs",
+    quickReplies: [
+      { label: "五年级百分数", prompt: "五年级数学《百分数的认识》，新授课，约10页，简洁课堂风。", recommended: true },
+      { label: "三年级周长", prompt: "三年级数学《认识周长》，新授课，约10页，活动课堂风。" },
+      { label: "六年级比例", prompt: "六年级数学《比例的意义》，复习课，约10页，简洁课堂风。" },
+    ],
+    recommendedOptions: [
+      { slot: "grade", label: "一至六年级", value: "小学一至六年级", recommended: true },
+      { slot: "subject", label: "数学", value: "数学", recommended: true },
+      { slot: "output", label: "教案 + PPT", value: "教案和 PPT" },
+    ],
+    shouldRunToolNow: false,
     runtimeKind: "openai",
   };
 }

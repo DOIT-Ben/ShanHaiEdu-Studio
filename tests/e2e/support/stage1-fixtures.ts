@@ -3,6 +3,7 @@ export const stage1TeacherPrompt =
 
 export const stage1Selectors = {
   appTitle: "ShanHaiEdu 备课工作台",
-  composerPlaceholder: "继续描述备课目标，或引用右侧产物继续生成",
-  introNodeName: /导入.*已确认/,
+  composerName: "输入备课要求",
+  composerPlaceholder: "输入备课要求",
+  firstStepName: "确定目标",
 };

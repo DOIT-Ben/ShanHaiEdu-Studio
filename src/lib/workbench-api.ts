@@ -2,7 +2,7 @@ import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as s
 import { getWorkbenchCsrfToken } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -112,10 +112,10 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
     getProjectSnapshot(projectId) {
       return request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot);
     },
-    sendMessage(projectId, body, reference) {
+    sendMessage(projectId, body, reference, options) {
       return request<unknown>(`/api/workbench/projects/${projectId}/messages`, {
         method: "POST",
-        body: JSON.stringify({ role: "teacher", content: body, reference, artifactRefs: reference ? [reference] : [] }),
+        body: JSON.stringify(messagePostBody(body, reference, options)),
       }).then((turn) =>
         request<unknown>(`/api/workbench/projects/${projectId}/snapshot`)
           .then(normalizeSnapshot)
@@ -136,12 +136,30 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         }),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
-    generateRealAsset(projectId, artifactId, assetKind) {
+    generateRealAsset(projectId, artifactId, assetKind, options) {
+      const confirmedActionId = normalizedConfirmedActionId(options);
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactId}/${realAssetRouteSegment(assetKind)}`, {
         method: "POST",
+        body: JSON.stringify(confirmedActionId ? { confirmedActionId } : {}),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
   };
+}
+
+function messagePostBody(body: string, reference: string | null, options?: WorkbenchSendMessageOptions) {
+  const confirmedActionId = normalizedConfirmedActionId(options);
+  return {
+    role: "teacher",
+    content: body,
+    reference,
+    artifactRefs: reference ? [reference] : [],
+    ...(confirmedActionId ? { confirmedActionId } : {}),
+  };
+}
+
+function normalizedConfirmedActionId(options?: WorkbenchSendMessageOptions) {
+  const value = options?.confirmedActionId ?? options?.actionId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function mergeTurnAssistantMetadata(snapshot: WorkbenchSnapshot, turn: MessageTurnResponse): WorkbenchSnapshot {
@@ -229,6 +247,7 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       snapshots.set(projectId, {
         messages: clone(source.messages),
         artifacts: clone(source.artifacts),
+        turnJobs: [],
         activeArtifactKey: preferredActiveArtifactKey(source.artifacts),
       });
     }
@@ -280,6 +299,7 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
           },
         ],
         artifacts: clone(source.artifacts).map((item) => ({ ...item, status: item.key === "textbook-evidence" ? "needs_review" : "not_started" })),
+        turnJobs: [],
         activeArtifactKey: source.artifacts[0]?.key ?? "",
       });
       return snapshot(project.id);
@@ -295,6 +315,8 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
         id: `${projectId}-teacher-${timestamp}`,
         speaker: "teacher",
         body: reference ? `${body}\n\n引用：${reference}` : body,
+        turnStatus: "running",
+        turnStatusLabel: "正在生成",
       });
       current.messages.push({
         id: `${projectId}-assistant-${timestamp}`,

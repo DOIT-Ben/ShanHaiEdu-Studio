@@ -1,0 +1,103 @@
+import { estimateContextTokens, resolveContextBudgetMode } from "@/server/conversation/context-budget";
+import type { ContextPackage } from "@/server/conversation/context-package";
+import { compactSessionWithValidation } from "@/server/conversation/session-compactor";
+import type { ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeRecord } from "@/server/workbench/types";
+
+const CONTEXT_GUARDRAILS = [
+  "不得把未完成产物描述为已完成或可下载。",
+  "只有 approved artifact 可作为下游可信输入。",
+  "不得向教师暴露 provider、schema、storage、local path、debug 等工程细节。",
+];
+
+export function buildConversationContextPackage(input: {
+  project: ProjectRecord;
+  messages: ConversationMessageRecord[];
+  workflowNodes: WorkflowNodeRecord[];
+  artifacts: ArtifactRecord[];
+  maxInputTokens?: number;
+}): ContextPackage {
+  const recentMessages = input.messages.slice(-8);
+  const compacted = compactSessionWithValidation({
+    teacherGoal: input.project.title,
+    recentMessages: input.messages.map((message) => ({ role: message.role, content: message.content })),
+    artifacts: input.artifacts.map((artifact) => ({
+      id: artifact.id,
+      title: artifact.title,
+      kind: artifact.kind,
+      status: artifact.status,
+      isApproved: artifact.isApproved,
+    })),
+    guardrails: CONTEXT_GUARDRAILS,
+  });
+  const tokenEstimate = estimateContextTokens({
+    systemRules: CONTEXT_GUARDRAILS.join("\n"),
+    snapshot: compacted.summary,
+    messages: recentMessages.map((message) => `${message.role}: ${message.content}`),
+    artifacts: input.artifacts.map((artifact) => `${artifact.nodeKey}:${artifact.status}:${artifact.summary}`),
+  });
+  const budgetMode = resolveContextBudgetMode({ estimate: tokenEstimate, maxInputTokens: input.maxInputTokens ?? 12_000 });
+  const packageMode = compacted.validation.status === "failed" ? "fallback" : budgetMode === "compact_required" ? "snapshot" : "full";
+
+  return {
+    mode: packageMode,
+    project: {
+      id: input.project.id,
+      title: input.project.title,
+      grade: input.project.grade,
+      subject: input.project.subject,
+      textbookVersion: input.project.textbookVersion,
+      lessonTopic: input.project.lessonTopic,
+      currentNodeKey: input.project.currentNodeKey,
+    },
+    workflowNodes: input.workflowNodes.map((node) => ({
+      key: node.key,
+      title: node.title,
+      status: node.status,
+      approvedArtifactId: node.approvedArtifactId,
+      staleReason: node.staleReason,
+    })),
+    sessionSummary: packageMode === "snapshot" ? compacted.summary : undefined,
+    recentMessages: recentMessages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      artifactRefs: message.artifactRefs,
+      createdAt: message.createdAt,
+    })),
+    artifacts: input.artifacts.map((artifact) => ({
+      id: artifact.id,
+      nodeKey: artifact.nodeKey,
+      kind: artifact.kind,
+      title: artifact.title,
+      status: artifact.status,
+      summary: artifact.summary,
+      isApproved: artifact.isApproved,
+      version: artifact.version,
+    })),
+    guardrails: CONTEXT_GUARDRAILS,
+    summaryValidation: compacted.validation,
+    tokenEstimate,
+  };
+}
+
+export function contextPackageToMainAgentConversationContext(
+  contextPackage: ContextPackage,
+  pendingPlan: {
+    teacherRequest: string;
+    toolPlan: import("@/server/capabilities/types").CapabilityToolPlan;
+    deliveryPlan?: import("@/server/capabilities/types").DeliveryPlan;
+  } | null,
+) {
+  return {
+    contextPackage,
+    recentMessages: contextPackage.recentMessages.map((message) => ({ role: message.role, content: message.content })),
+    latestAssistantContent: [...contextPackage.recentMessages].reverse().find((message) => message.role === "assistant")?.content,
+    pendingDeliveryPlan: pendingPlan
+      ? {
+          teacherRequest: pendingPlan.teacherRequest,
+          toolPlan: pendingPlan.toolPlan,
+          deliveryPlan: pendingPlan.deliveryPlan,
+        }
+      : undefined,
+  };
+}

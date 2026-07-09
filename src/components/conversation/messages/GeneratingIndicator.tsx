@@ -4,14 +4,20 @@ import type { ReactNode } from "react";
 import { getGeneratingLabel, type GeneratingState } from "@/components/conversation/composer/composer-contracts";
 
 type GeneratingIndicatorProps = {
-  state?: GeneratingState;
+  state?: GeneratingState | "queued" | "running";
   label?: string;
   mark: ReactNode;
 };
 
+function getTeacherGeneratingLabel(state: GeneratingIndicatorProps["state"]) {
+  if (state === "queued") return "排队中";
+  if (state === "running") return "正在生成";
+  return getGeneratingLabel(state ?? "generating");
+}
+
 export function GeneratingIndicator({ state = "generating", label, mark }: GeneratingIndicatorProps) {
   return (
-    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="正在准备回复">
+    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="正在生成">
       <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[620px]">
         {mark}
         <div className="min-w-0 flex-1">
@@ -19,7 +25,7 @@ export function GeneratingIndicator({ state = "generating", label, mark }: Gener
             <span className="font-medium text-foreground">ShanHaiEdu AI</span>
           </div>
           <div className="inline-flex items-center gap-3 rounded-2xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm text-muted-foreground shadow-[0_12px_30px_rgba(29,74,66,0.05)]">
-            <span>{label ?? getGeneratingLabel(state)}</span>
+            <span>{label ?? getTeacherGeneratingLabel(state)}</span>
             <span className="flex items-center gap-1.5" aria-hidden="true">
               <span className="typing-dot" />
               <span className="typing-dot [animation-delay:140ms]" />
