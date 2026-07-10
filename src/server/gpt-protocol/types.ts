@@ -42,6 +42,7 @@ export type GptProtocolResponse = {
   assistantText: string;
   rawText: string;
   functionCalls: GptFunctionCall[];
+  outputItems: unknown[];
   outputItemsSummary: GptOutputItemSummary[];
   diagnostics: GptProtocolDiagnostics;
 };

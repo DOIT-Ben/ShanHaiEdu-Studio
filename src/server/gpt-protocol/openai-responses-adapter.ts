@@ -32,6 +32,7 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
           assistantText: rawText,
           rawText,
           functionCalls: extractFunctionCalls(rawResponse),
+          outputItems: extractOutputItems(rawResponse),
           outputItemsSummary: summarizeOutputItems(rawResponse),
           diagnostics: createDiagnostics("succeeded", options.model),
         };
@@ -40,6 +41,7 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
           assistantText: "",
           rawText: "",
           functionCalls: [],
+          outputItems: [],
           outputItemsSummary: [],
           diagnostics: createDiagnostics("failed", options.model, sanitizeDiagnosticText(extractErrorMessage(error))),
         };
@@ -92,6 +94,14 @@ function summarizeOutputItems(rawResponse: unknown): GptOutputItemSummary[] {
   }
 
   return rawResponse.output.filter(isRecord).map((item) => pickOutputItemSummary(item));
+}
+
+function extractOutputItems(rawResponse: unknown): unknown[] {
+  if (!isRecord(rawResponse) || !Array.isArray(rawResponse.output)) {
+    return [];
+  }
+
+  return rawResponse.output;
 }
 
 function extractFunctionCalls(rawResponse: unknown): GptFunctionCall[] {
