@@ -64,7 +64,7 @@ test("Conversation layout compresses when the artifact side panel is open", () =
   assert.match(stageSource, /data-stage-progress-compact/);
 });
 
-test("Unavailable sidebar and topbar buttons are not fake enabled controls", () => {
+test("Unavailable sidebar buttons stay disabled while collaboration is wired to real member management", () => {
   const sidebarSource = readSource("src/components/layout/ProjectSidebar.tsx");
   const topbarSource = readSource("src/components/conversation/WorkbenchTopbar.tsx");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
@@ -72,8 +72,9 @@ test("Unavailable sidebar and topbar buttons are not fake enabled controls", () 
 
   assert.match(sidebarSource, /disabled[\s\S]*回收站/);
   assert.match(sidebarSource, /title="回收站稍后开放"/);
-  assert.match(topbarSource, /disabled[\s\S]*协作/);
-  assert.match(topbarSource, /title="协作稍后开放"/);
+  assert.match(topbarSource, /onOpenMembers/);
+  assert.match(topbarSource, /title=\{project \? "管理协作成员" : "先选择项目"\}/);
+  assert.doesNotMatch(topbarSource, /title="协作稍后开放"/);
   assert.match(topbarSource, /aria-label=\{savedLabel\}/);
   assert.doesNotMatch(topbarSource, /<Button[\s\S]*\{savedLabel\}[\s\S]*<\/Button>/);
   assert.match(composerSource, /aria-label="重新生成"[\s\S]*title="请在产物详情中调整后重做"[\s\S]*disabled/);

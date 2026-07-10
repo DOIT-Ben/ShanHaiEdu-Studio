@@ -1,5 +1,5 @@
 import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as seedProjects } from "@/lib/mock-data";
-import { getWorkbenchCsrfToken } from "@/lib/csrf-token";
+import { getWorkbenchCsrfToken, isWorkbenchCsrfRequired } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
 import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
@@ -214,7 +214,7 @@ function deliveryPlanStatusLabel(status: ChatDeliveryPlan["steps"][number]["stat
 }
 
 function csrfHeader(method?: string): Record<string, string> {
-  if (process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE !== "password") return {};
+  if (!isWorkbenchCsrfRequired()) return {};
   if (!isWriteMethod(method ?? "GET")) return {};
   const token = getWorkbenchCsrfToken();
   return token ? { "x-shanhai-csrf": token } : {};

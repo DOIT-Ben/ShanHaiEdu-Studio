@@ -27,6 +27,7 @@ type ProjectSidebarProps = {
   onCreateProject?: () => void;
   currentUser?: PasswordAuthUser | null;
   onOpenFeedback?: OpenFeedback;
+  onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
 };
 
@@ -39,6 +40,7 @@ export function ProjectSidebar({
   onCreateProject,
   currentUser,
   onOpenFeedback,
+  onOpenUserManagement,
   onLogout,
 }: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -160,6 +162,7 @@ export function ProjectSidebar({
             projectId={activeProjectId || undefined}
             compact={collapsed}
             onOpenFeedback={onOpenFeedback}
+            onOpenUserManagement={onOpenUserManagement}
             onLogout={onLogout}
           />
         </div>

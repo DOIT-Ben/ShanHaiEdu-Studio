@@ -1,6 +1,6 @@
 # Local Real MVP 当前主线状态
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 ## 1. 当前主线
 
@@ -24,15 +24,15 @@ Local Real MVP
 | M66-R runtime loop | done | OpenAIRuntime native tool loop 已通过显式开关接入生产 Runtime Factory；首批只暴露 internal tools，provider 工具仍后置 |
 | M67 feedback center | implementation done / rollout pending | 工程实现与本地 E2E 已完成；真实服务器重启、回滚和备份恢复门禁待关闭 |
 | Agent workflow closure | implementation done / smoke pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与 package resolved Artifact 门禁已完成；真实外部 provider smoke 待执行 |
-| Multi-user management | accepted/next | 下一阶段：内测账号分配、登录、管理员用户管理、资源共享与隔离；公开注册继续关闭 |
+| M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放仍等待生产门禁和真实 provider smoke |
 | M68 conversation control | planned | 第一档：对话承诺、自然语言控制与执行一致性 |
 
 ## 3. 当前优先级
 
 当前优先级从高到低：
 
-1. 下一阶段：按用户指定顺序进入内测版本多用户管理，补齐账号分配、登录、管理员用户管理、会话撤销和跨用户资源共享/隔离；公开注册继续关闭。
-2. 后续进入前端功能需求收口，补齐按钮、输出提示、附件/菜单/欢迎态等第一档工作台体验。
+1. 下一阶段：进入 M70 前端功能需求收口，补齐按钮、输出提示、附件/菜单/欢迎态等第一档工作台体验。
+2. 多用户管理已具备工程闭环；真实用户开放仍需关闭生产门禁和真实 provider smoke。
 3. 真实外部 provider smoke 和一条真实教师任务端到端验收仍是邀请真实用户前门禁。
 4. 邀请真实用户前，在目标服务器关闭 M67 共享卷重启、release 回滚和备份恢复门禁。
 5. 架构后续：MCP Client Adapter 与 provider/package 工具进入 native loop 的安全输入扩展。
@@ -43,17 +43,16 @@ Local Real MVP
 建议立即进入：
 
 ```text
-M69 内测版本多用户管理阶段
+M70 前端功能需求收口阶段
 ```
 
 推荐拆分：
 
-1. 公开注册保持关闭，仅支持管理员分配账号和教师登录。
-2. 补齐管理员用户列表、搜索、邀请/创建、停用/启用、角色调整、凭据重置和会话撤销。
-3. 项目、对话、产物和反馈按 owner / membership 做服务端授权。
-4. 增加共享与隔离机制，支持管理员/项目成员边界内的受控访问。
-5. 完成后提交不推送，并自动进入前端功能需求收口阶段。
-6. 真实用户开放仍必须等待 M67 生产门禁和真实 provider smoke 关闭。
+1. 对齐 `docs\product\frontend-workbench-priority-requirements.md` 和 `docs\ui\frontend-workbench\local-real-mvp-m54a-open-items.md`。
+2. 优先收口首次欢迎态、附件拖放/截图粘贴、文件状态、模型/工具菜单、输出提示和窄屏交互。
+3. 保持 Codex 风格工作台，不做营销页、大 hero 或无关视觉重做。
+4. 完成后提交不推送。
+5. 真实用户开放仍必须等待 M67 生产门禁和真实 provider smoke 关闭。
 
 ## 5. 不做事项
 

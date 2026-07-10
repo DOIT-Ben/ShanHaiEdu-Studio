@@ -31,6 +31,7 @@ test("password auth client calls the public auth route contract", async () => {
   const loggedOut = await client.logout();
 
   assert.equal(current.authenticated, false);
+  assert.equal(current.enabled, true);
   assert.equal(registered.user.displayName, "王老师");
   assert.equal(loggedIn.user.email, "teacher@example.test");
   assert.equal(loggedOut.authenticated, false);
@@ -92,6 +93,40 @@ test("workbench api sends csrf header for password-mode write requests", async (
   }
 });
 
+test("runtime password auth state enables workbench csrf without a public build flag", async () => {
+  const previousMode = process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE;
+  delete process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE;
+  try {
+    const csrfStore = createCsrfStore("runtime-csrf-token");
+    const { createPasswordAuthClient } = loadAuthApiModule(csrfStore);
+    const { createWorkbenchApiClient } = loadWorkbenchApiModule(csrfStore);
+    const calls = [];
+    const authClient = createPasswordAuthClient({
+      baseUrl: "https://example.test",
+      fetcher: async (url, init) => {
+        calls.push({ url: String(url), init });
+        return jsonResponse(responseFor(String(url), init));
+      },
+    });
+    const workbenchClient = createWorkbenchApiClient({
+      baseUrl: "https://example.test",
+      fetcher: async (url, init) => {
+        calls.push({ url: String(url), init });
+        return jsonResponse({ project: { id: "project_1" } });
+      },
+    });
+
+    await authClient.me();
+    await workbenchClient.createProject();
+
+    const createProjectCall = calls.find((call) => call.url === "https://example.test/api/workbench/projects" && call.init?.method === "POST");
+    assert.ok(createProjectCall);
+    assert.equal(createProjectCall.init.headers["x-shanhai-csrf"], "runtime-csrf-token");
+  } finally {
+    restoreEnv("NEXT_PUBLIC_SHANHAI_AUTH_MODE", previousMode);
+  }
+});
+
 test("password auth gate shows account creation only when public registration is explicitly enabled", () => {
   assert.equal(renderPasswordAuthGate(undefined).includes("创建账号"), false);
   assert.equal(renderPasswordAuthGate("0").includes("创建账号"), false);
@@ -99,7 +134,7 @@ test("password auth gate shows account creation only when public registration is
 });
 
 function responseFor(url, init) {
-  if (url.endsWith("/api/auth/me")) return { authenticated: false, user: null };
+  if (url.endsWith("/api/auth/me")) return { enabled: true, authMode: "password", authenticated: false, user: null };
   if (url.endsWith("/api/auth/logout")) return { authenticated: false, user: null, revoked: true };
   if (url.endsWith("/api/auth/register") || url.endsWith("/api/auth/login")) {
     return {
@@ -129,6 +164,7 @@ function createCsrfStore(initialToken = null) {
   const store = {
     tokens: [],
     current: initialToken,
+    required: false,
   };
   return {
     tokens: store.tokens,
@@ -138,6 +174,12 @@ function createCsrfStore(initialToken = null) {
     },
     getWorkbenchCsrfToken() {
       return store.current ?? initialToken;
+    },
+    setWorkbenchCsrfRequired(required) {
+      store.required = required;
+    },
+    isWorkbenchCsrfRequired() {
+      return store.required || process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE === "password";
     },
   };
 }

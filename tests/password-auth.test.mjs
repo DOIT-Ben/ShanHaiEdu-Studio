@@ -96,6 +96,38 @@ test("current password user resolves only active non-expired sessions", async ()
   assert.deepEqual(expired, { authenticated: false, user: null });
 });
 
+test("disabled password users cannot log in or keep current sessions", async () => {
+  const db = createFakeAuthDb();
+  const auth = loadPasswordAuthModule(db);
+  const passphrase = "M69 disabled passphrase 2026!";
+  const registered = await auth.registerPasswordUser(
+    {
+      email: "disabled@example.test",
+      displayName: "停用教师",
+      password: passphrase,
+    },
+    serviceOptions(db),
+  );
+
+  db.localUsers[0].disabledAt = new Date("2026-07-08T00:00:00.000Z");
+  db.localUsers[0].disabledReason = "内测账号停用";
+
+  const wrongPasswordError = await captureRejection(() =>
+    auth.loginPasswordUser({ email: "disabled@example.test", password: "M69 wrong passphrase 2026!" }, serviceOptions(db)),
+  );
+  assert.equal(wrongPasswordError.status, 401);
+  assert.equal(wrongPasswordError.message, "账号或密码不正确。");
+
+  const loginError = await captureRejection(() =>
+    auth.loginPasswordUser({ email: "disabled@example.test", password: passphrase }, serviceOptions(db)),
+  );
+  assert.equal(loginError.status, 403);
+  assert.equal(loginError.message, "账号已停用，请联系管理员。");
+
+  const current = await auth.getCurrentPasswordUser(cookieRequest(registered.setCookieHeader), serviceOptions(db));
+  assert.deepEqual(current, { authenticated: false, user: null });
+});
+
 function serviceOptions(db) {
   return {
     db,
@@ -162,6 +194,12 @@ function createFakeAuthDb() {
         }
         const entry = { ...data, createdAt: new Date(), updatedAt: new Date() };
         localUsers.push(entry);
+        return entry;
+      },
+      async update({ where, data }) {
+        const entry = localUsers.find((candidate) => candidate.id === where.id);
+        if (!entry) throw new Error("LocalUser not found");
+        Object.assign(entry, data);
         return entry;
       },
     },

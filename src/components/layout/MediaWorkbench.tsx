@@ -6,6 +6,8 @@ import { PasswordAuthGate } from "@/components/auth/PasswordAuthGate";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
 import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
+import { AdminUserManagementDialog } from "@/components/admin/AdminUserManagementDialog";
+import { ProjectMembersDialog } from "@/components/admin/ProjectMembersDialog";
 import { ConversationWorkbench } from "@/components/conversation/ConversationWorkbench";
 import { FeedbackDialog } from "@/components/feedback/FeedbackDialog";
 import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
@@ -44,6 +46,8 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
   const controller = useWorkbenchController();
   const feedbackController = useFeedbackController();
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
+  const [userManagementOpen, setUserManagementOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   function selectProjectFromSheet(projectId: string) {
     controller.selectProject(projectId);
@@ -74,6 +78,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onCreateProject={controller.createProject}
               currentUser={currentUser}
               onOpenFeedback={feedbackController.openFeedback}
+              onOpenUserManagement={() => setUserManagementOpen(true)}
               onLogout={onLogout}
             />
           </div>
@@ -121,7 +126,9 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onQuickReplySelect={controller.selectQuickReply}
               onRetry={controller.retryActiveProject}
               onOpenArtifacts={() => controller.setRailOpen(true)}
+              onOpenMembers={() => setMembersOpen(true)}
               onOpenFeedback={feedbackController.openFeedback}
+              onOpenUserManagement={() => setUserManagementOpen(true)}
               onLogout={onLogout}
             />
           </div>
@@ -176,6 +183,8 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         realAssetGenerationKey={controller.realAssetGenerationKey}
       />
       <FeedbackDialog controller={feedbackController} />
+      <AdminUserManagementDialog open={userManagementOpen} currentUserId={currentUser?.id} onOpenChange={setUserManagementOpen} />
+      <ProjectMembersDialog open={membersOpen} projectId={controller.activeProjectId} currentUser={currentUser} onOpenChange={setMembersOpen} />
     </TooltipProvider>
   );
 }

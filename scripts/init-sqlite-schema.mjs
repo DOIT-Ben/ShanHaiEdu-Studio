@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS "LocalUser" (
   "authMode" TEXT NOT NULL DEFAULT 'local',
   "email" TEXT,
   "passwordHash" TEXT,
+  "disabledAt" DATETIME,
+  "disabledReason" TEXT,
+  "lastLoginAt" DATETIME,
+  "passwordResetAt" DATETIME,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL
 );
@@ -232,6 +236,10 @@ ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "Conversati
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
 ensureColumn(db, "LocalUser", "passwordHash", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordHash" TEXT');
+ensureColumn(db, "LocalUser", "disabledAt", 'ALTER TABLE "LocalUser" ADD COLUMN "disabledAt" DATETIME');
+ensureColumn(db, "LocalUser", "disabledReason", 'ALTER TABLE "LocalUser" ADD COLUMN "disabledReason" TEXT');
+ensureColumn(db, "LocalUser", "lastLoginAt", 'ALTER TABLE "LocalUser" ADD COLUMN "lastLoginAt" DATETIME');
+ensureColumn(db, "LocalUser", "passwordResetAt", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordResetAt" DATETIME');
 ensureColumn(db, "FeedbackRecord", "origin", 'ALTER TABLE "FeedbackRecord" ADD COLUMN "origin" TEXT NOT NULL DEFAULT \'global\'');
 assertNoFeedbackIdempotencyConflicts(db);
 db.exec(`

@@ -13,11 +13,13 @@ type WorkbenchTopbarProps = {
   currentUser?: PasswordAuthUser | null;
   compact?: boolean;
   onOpenArtifacts?: () => void;
+  onOpenMembers?: () => void;
   onOpenFeedback?: OpenFeedback;
+  onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
 };
 
-export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onOpenFeedback, onLogout }: WorkbenchTopbarProps) {
+export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onOpenMembers, onOpenFeedback, onOpenUserManagement, onLogout }: WorkbenchTopbarProps) {
   const projectTitle = project?.title ?? "未选择项目";
   const savedLabel = project?.updatedAt ? `已保存 ${project.updatedAt}` : "未保存";
 
@@ -44,9 +46,12 @@ export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenA
           <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           <span className={cn(compact && "sr-only")}>{savedLabel}</span>
         </div>
-        <Button disabled title="协作稍后开放" variant="secondary" size="sm" className="hidden sm:inline-flex">
+        <Button disabled={!project || !onOpenMembers} title={project ? "管理协作成员" : "先选择项目"} variant="secondary" size="sm" className="hidden sm:inline-flex" onClick={onOpenMembers}>
           <Users className="h-4 w-4" />
           <span className={cn(compact && "sr-only")}>协作</span>
+        </Button>
+        <Button disabled={!project || !onOpenMembers} title={project ? "管理协作成员" : "先选择项目"} aria-label="管理协作成员" variant="secondary" size="icon" className="sm:hidden" onClick={onOpenMembers}>
+          <Users className="h-4 w-4" />
         </Button>
         {onOpenArtifacts && (
           <Button variant="secondary" size="sm" className="hidden sm:inline-flex" onClick={onOpenArtifacts}>
@@ -71,6 +76,7 @@ export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenA
             currentUser={currentUser}
             projectId={project?.id}
             onOpenFeedback={onOpenFeedback}
+            onOpenUserManagement={onOpenUserManagement}
             onLogout={onLogout}
             compact
             align="end"

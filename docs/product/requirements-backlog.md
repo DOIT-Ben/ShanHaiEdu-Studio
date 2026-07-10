@@ -1,6 +1,6 @@
 # ShanHaiEdu 需求总账
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 > 本文件记录未完成需求、新增需求、延期需求和优先级。当前产品质量门禁仍以 `docs\product\current-requirements-baseline.md` 为最高产品口径；本文件负责把“还没做完、刚发现、需要拆分”的需求集中管理。
 
@@ -46,7 +46,7 @@
 
 ### RQ-012 多用户与用户管理
 
-- 状态：`accepted`
+- 状态：`done`（工程实现完成；真实用户开放仍等待生产门禁和真实 provider smoke）
 - 来源：2026-07-10 用户指定 M67 后的下一阶段需求。
 - 已有基础：M67 已具备 `LocalUser`、密码认证、管理员/教师角色、持久会话、项目成员关系、关闭公开注册、管理员 bootstrap、教师 invite API/CLI 和脱敏审计。
 - 问题：当前准入能力仍以脚本和单次邀请为主，缺少可供管理员日常使用的用户列表、状态管理、角色管理、会话撤销和项目归属检查；不能把“能创建两个测试账号”当作完整多用户产品能力。
@@ -58,7 +58,8 @@
   - 公开注册保持关闭；普通教师不能调用用户管理接口，也不能提升自身角色。
   - 桌面和窄屏具备可用的管理员用户管理入口，并有真实多账号 E2E 证据。
 - 不纳入：组织架构、学校多租户、SSO、社交登录、计费和复杂 RBAC；这些能力需要单独需求判断。
-- 优先级：下一阶段，先于 M68；阶段编号和详细计划在启动该阶段时定稿。
+- 阶段与测试：`docs\stages\local-real-mvp-m69-beta-user-management-plan.md`、`docs\stages\local-real-mvp-m69-beta-user-management-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m69-beta-user-management-closeout.md`。
 
 ### RQ-009 M54-A 前端聊天式工作台未完成项
 

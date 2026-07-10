@@ -46,6 +46,7 @@ export class PasswordAuthError extends Error {
 }
 
 const genericLoginError = "账号或密码不正确。";
+const disabledLoginError = "账号已停用，请联系管理员。";
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 7;
 
 export async function registerPasswordUser(
@@ -102,13 +103,19 @@ export async function loginPasswordUser(
   if (!user?.passwordHash || user.authMode !== "password") {
     throw new PasswordAuthError(genericLoginError, 401);
   }
-
   const isValid = await verifyPassword(normalized.password, user.passwordHash);
   if (!isValid) {
     throw new PasswordAuthError(genericLoginError, 401);
   }
+  if (user.disabledAt) {
+    throw new PasswordAuthError(disabledLoginError, 403);
+  }
 
   const result = await createPasswordSession(user, options);
+  await db.localUser.update({
+    where: { id: user.id },
+    data: { lastLoginAt: resolveNow(options), updatedAt: resolveNow(options) },
+  });
   await writeAuditLog(db, {
     actorUserId: user.id,
     action: "auth.login",
@@ -134,7 +141,7 @@ export async function getCurrentPasswordUser(request: Request, options: Password
     include: { user: true },
   });
 
-  if (!session?.user || session.user.authMode !== "password") {
+  if (!session?.user || session.user.authMode !== "password" || (session.user as StoredPasswordUser).disabledAt) {
     return { authenticated: false, user: null };
   }
 
@@ -315,4 +322,5 @@ type StoredPasswordUser = {
   role: string;
   authMode: string;
   passwordHash?: string | null;
+  disabledAt?: Date | string | null;
 };

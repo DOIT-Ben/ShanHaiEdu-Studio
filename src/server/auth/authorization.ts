@@ -28,11 +28,16 @@ export function canTriggerGeneration(project: ProjectLike, actor?: WorkbenchActo
 
 export function canManageProjectMembers(project: ProjectLike, actor?: WorkbenchActor) {
   if (!actor) return true;
+  if (actor.isAdmin) return true;
   if (project.ownerUserId === actor.userId) return true;
   return getProjectMembershipRole(actor, project.id) === "owner";
 }
 
 export function canManageFeedback(actor?: WorkbenchActor | null) {
+  return Boolean(actor?.userId?.trim() && actor.authMode === "password" && actor.isAdmin === true);
+}
+
+export function canManageUsers(actor?: WorkbenchActor | null) {
   return Boolean(actor?.userId?.trim() && actor.authMode === "password" && actor.isAdmin === true);
 }
 

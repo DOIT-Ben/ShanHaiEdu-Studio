@@ -289,6 +289,9 @@ test("invite API requires password admin and CSRF and never echoes the initial p
       canManageFeedback(actor) {
         return Boolean(actor?.userId?.trim() && actor.authMode === "password" && actor.isAdmin === true);
       },
+      canManageUsers(actor) {
+        return Boolean(actor?.userId?.trim() && actor.authMode === "password" && actor.isAdmin === true);
+      },
     },
     "@/server/auth/csrf": {
       publicCsrfHeaderName: "x-shanhai-csrf",

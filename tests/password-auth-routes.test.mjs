@@ -65,7 +65,7 @@ test("password auth API routes register, login, read current user, and logout", 
 
   const anonymous = await meRoute.GET(new Request("https://localhost/api/auth/me"));
   assert.equal(anonymous.status, 200);
-  assert.deepEqual(await anonymous.json(), { authenticated: false, user: null });
+  assert.deepEqual(await anonymous.json(), { enabled: true, authMode: "password", authenticated: false, user: null });
 
   const current = await meRoute.GET(
     new Request("https://localhost/api/auth/me", {
@@ -74,6 +74,8 @@ test("password auth API routes register, login, read current user, and logout", 
   );
   assert.equal(current.status, 200);
   assert.deepEqual(await current.json(), {
+    enabled: true,
+    authMode: "password",
     authenticated: true,
     user: userSummary("user_1", "teacher@example.test", "王老师"),
   });
@@ -169,6 +171,11 @@ async function assertSanitizedAuthBody(response, expected) {
 function loadRoute(sourcePath, auth) {
   return loadTsModule(path.join(root, sourcePath), {
     "@/server/auth/password-auth": auth,
+    "@/server/auth/session": {
+      resolveAuthMode() {
+        return "password";
+      },
+    },
     "@/server/auth/rate-limit": {
       checkRateLimit() {
         return { allowed: true, remaining: 1, retryAfterSeconds: 0 };

@@ -1,4 +1,4 @@
-import { canManageFeedback } from "@/server/auth/authorization";
+import { canManageUsers } from "@/server/auth/authorization";
 import { publicCsrfHeaderName, validateCsrfToken } from "@/server/auth/csrf";
 import { checkRateLimit } from "@/server/auth/rate-limit";
 import { resolveWorkbenchSession } from "@/server/auth/session";
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   if (!session.actor) {
     return NextResponse.json({ error: "请先登录。" }, { status: 401 });
   }
-  if (!canManageFeedback(session.actor) || !session.publicSession) {
+  if (!canManageUsers(session.actor) || !session.publicSession) {
     return NextResponse.json({ error: "无权执行此操作。" }, { status: 403 });
   }
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       email: body.email,
       displayName: body.displayName,
       initialPassword: body.initialPassword,
-      role: "teacher",
+      role: normalizeInviteRole(body.role),
       actorUserId: session.actor.userId,
       source: "admin_api",
     });
@@ -73,4 +73,8 @@ function isStatusError(error: unknown): error is { message: string; status: numb
     typeof (error as { message?: unknown }).message === "string" &&
     typeof (error as { status?: unknown }).status === "number"
   );
+}
+
+function normalizeInviteRole(value: unknown) {
+  return value === "admin" ? "admin" : "teacher";
 }

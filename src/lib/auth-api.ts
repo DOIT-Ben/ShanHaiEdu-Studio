@@ -1,4 +1,4 @@
-import { setWorkbenchCsrfToken } from "@/lib/csrf-token";
+import { setWorkbenchCsrfRequired, setWorkbenchCsrfToken } from "@/lib/csrf-token";
 
 export type PasswordAuthUser = {
   id: string;
@@ -9,6 +9,8 @@ export type PasswordAuthUser = {
 };
 
 export type PasswordAuthState = {
+  enabled?: boolean;
+  authMode?: "local" | "password" | "oauth" | "sso";
   authenticated: boolean;
   user: PasswordAuthUser | null;
   csrfToken?: string;
@@ -83,7 +85,12 @@ export function createPasswordAuthClient(options: PasswordAuthClientOptions = {}
 
 function captureCsrfToken(body: unknown) {
   if (!body || typeof body !== "object") return;
-  const state = body as { authenticated?: unknown; csrfToken?: unknown };
+  const state = body as { enabled?: unknown; authMode?: unknown; authenticated?: unknown; csrfToken?: unknown; user?: unknown };
+  if (typeof state.enabled === "boolean" || typeof state.authMode === "string") {
+    setWorkbenchCsrfRequired(state.enabled === true || state.authMode === "password");
+  } else if (state.authenticated === true || state.user) {
+    setWorkbenchCsrfRequired(true);
+  }
   if (typeof state.csrfToken === "string") {
     setWorkbenchCsrfToken(state.csrfToken);
     return;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, MessageSquareText, UserRound } from "lucide-react";
+import { LogOut, MessageSquareText, UserRound, Users } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
@@ -12,12 +12,13 @@ type ProfileMenuProps = {
   projectId?: string;
   compact?: boolean;
   onOpenFeedback: OpenFeedback;
+  onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
   className?: string;
   align?: "start" | "end";
 };
 
-export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFeedback, onLogout, className, align = "start" }: ProfileMenuProps) {
+export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFeedback, onOpenUserManagement, onLogout, className, align = "start" }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const displayName = currentUser?.displayName ?? "教师账户";
 
@@ -29,6 +30,11 @@ export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFee
   function logout() {
     setOpen(false);
     if (onLogout) void onLogout();
+  }
+
+  function openUserManagement() {
+    setOpen(false);
+    onOpenUserManagement?.();
   }
 
   return (
@@ -63,6 +69,16 @@ export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFee
           <MessageSquareText className="h-4 w-4 text-muted-foreground" />
           反馈
         </button>
+        {currentUser?.role === "admin" && onOpenUserManagement && (
+          <button
+            type="button"
+            onClick={openUserManagement}
+            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+          >
+            <Users className="h-4 w-4 text-muted-foreground" />
+            用户管理
+          </button>
+        )}
         {onLogout && (
           <button
             type="button"

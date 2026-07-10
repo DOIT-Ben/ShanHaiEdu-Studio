@@ -74,7 +74,7 @@ export async function resolveWorkbenchSession(
     },
   });
 
-  if (!session?.user || session.user.authMode !== authMode) {
+  if (!session?.user || session.user.authMode !== authMode || session.user.disabledAt) {
     return { actor: null, authMode, isNewSession: false, reason: "missing_public_session" };
   }
 

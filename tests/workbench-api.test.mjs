@@ -180,7 +180,9 @@ function loadWorkbenchApiModule(options = {}) {
     if (id === "@/lib/csrf-token") {
       return {
         getWorkbenchCsrfToken: () => null,
+        isWorkbenchCsrfRequired: () => false,
         setWorkbenchCsrfToken: () => {},
+        setWorkbenchCsrfRequired: () => {},
       };
     }
     if (id === "@/lib/workbench-mappers") {

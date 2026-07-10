@@ -34,7 +34,9 @@ type ConversationWorkbenchProps = {
   onQuickReplySelect?: (value: string, actionId?: string) => void;
   onRetry: () => void;
   onOpenArtifacts: () => void;
+  onOpenMembers?: () => void;
   onOpenFeedback: OpenFeedback;
+  onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
 };
 
@@ -61,7 +63,9 @@ export function ConversationWorkbench({
   onQuickReplySelect,
   onRetry,
   onOpenArtifacts,
+  onOpenMembers,
   onOpenFeedback,
+  onOpenUserManagement,
   onLogout,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -82,7 +86,9 @@ export function ConversationWorkbench({
         currentUser={currentUser}
         compact={compact}
         onOpenArtifacts={onOpenArtifacts}
+        onOpenMembers={onOpenMembers}
         onOpenFeedback={onOpenFeedback}
+        onOpenUserManagement={onOpenUserManagement}
         onLogout={onLogout}
       />
       <StageProgress activeIndex={deriveWorkbenchStageIndex({ project, artifacts, executionFeedback })} compact={compact} />

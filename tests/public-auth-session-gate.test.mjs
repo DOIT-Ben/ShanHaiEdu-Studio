@@ -42,6 +42,13 @@ test("public workbench session resolves only an active DB session and loads memb
       }),
     );
     assert.equal(revoked.actor, null);
+
+    const disabled = await session.resolveWorkbenchSession(
+      new Request("https://localhost/api/workbench/projects", {
+        headers: { cookie: "shanhai_session=disabled_public_session" },
+      }),
+    );
+    assert.equal(disabled.actor, null);
   } finally {
     restoreEnv("SHANHAI_AUTH_MODE", previousMode);
   }
@@ -85,6 +92,23 @@ function createFakeDb() {
       expiresAt: new Date(now + 60_000),
       revokedAt: new Date(now),
       user,
+    },
+    {
+      id: "auth_session_disabled",
+      userId: "user_disabled_1",
+      sessionTokenHash: sessionModule.hashPublicSessionToken("disabled_public_session"),
+      authMode: "password",
+      expiresAt: new Date(now + 60_000),
+      revokedAt: null,
+      user: {
+        id: "user_disabled_1",
+        email: "disabled@example.test",
+        displayName: "停用教师",
+        role: "teacher",
+        authMode: "password",
+        disabledAt: new Date(now),
+        memberships: [{ projectId: "project_shared", role: "editor" }],
+      },
     },
   ];
 
