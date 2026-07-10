@@ -73,7 +73,7 @@ test("M60 runtime guidance requires structured video pre-artifacts before segmen
   }
 });
 
-test("M60 does not let deterministic execution masquerade as real video assets or assembly", () => {
+test("M60/M68 does not let deterministic execution masquerade as real video assets or assembly", () => {
   const registrySource = readSource("src/server/capabilities/capability-registry.ts");
   const runnerSource = readSource("src/server/capabilities/capability-runner.ts");
   const conversationTurnSource = readSource("src/server/conversation/conversation-turn-service.ts");
@@ -84,8 +84,10 @@ test("M60 does not let deterministic execution masquerade as real video assets o
   assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*providerMode: "package"[\s\S]*deterministicFallback: "blocked"/);
   assert.match(runnerSource, /generationMode === "deterministic_draft"[\s\S]*deterministicFallback === "blocked"/);
   assert.match(runnerSource, /deterministic_runtime_blocked_real_asset/);
-  assert.match(toolRegistrySource, /id: "asset_image_generate"[\s\S]*blockedReason:/);
-  assert.match(toolRegistrySource, /id: "concat_only_assemble"[\s\S]*blockedReason:/);
+  assert.match(toolRegistrySource, /id: "asset_image_generate"[\s\S]*adapterKind: "provider"[\s\S]*implemented: true/);
+  assert.match(toolRegistrySource, /function packageTool[\s\S]*adapterKind: "package"[\s\S]*implemented: true/);
+  assert.match(toolRegistrySource, /packageTool\(\{[\s\S]*id: "concat_only_assemble"[\s\S]*producedArtifactKind: "concat_only_assemble"/);
+  assert.match(toolRegistrySource, /id: "intro_video"[\s\S]*blockedReason:/);
   assert.match(toolRouterSource, /!tool\.implemented \|\| tool\.blockedReason/);
   assert.match(toolRouterSource, /artifactCreated: false/);
   assert.match(conversationTurnSource, /listToolDefinitions\(\)[\s\S]*input\.toolRouter/);

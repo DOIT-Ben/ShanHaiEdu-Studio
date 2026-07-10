@@ -27,7 +27,7 @@ export const DEFAULT_WORKFLOW_NODES: DefaultWorkflowNode[] = [
   { key: "concat_only_assemble", title: "只拼接成片", status: "not_started", order: 16, upstreamNodeKeys: ["video_segment_generate"] },
   { key: "image_prompts", title: "图片提示词", status: "not_started", order: 17, upstreamNodeKeys: ["ppt_design_draft", "intro_video_plan"] },
   { key: "video_storyboard", title: "视频分镜", status: "not_started", order: 18, upstreamNodeKeys: ["intro_video_plan", "image_prompts"] },
-  { key: "final_delivery", title: "最终交付", status: "not_started", order: 19, upstreamNodeKeys: ["requirement_spec", "lesson_plan", "ppt_draft", "concat_only_assemble"] },
+  { key: "final_delivery", title: "最终交付", status: "not_started", order: 19, upstreamNodeKeys: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "concat_only_assemble"] },
 ];
 
 export const FIRST_WORKFLOW_NODE_KEY = DEFAULT_WORKFLOW_NODES[0].key;

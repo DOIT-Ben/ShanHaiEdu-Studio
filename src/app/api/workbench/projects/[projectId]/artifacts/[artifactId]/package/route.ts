@@ -4,6 +4,7 @@ import { buildStoredImageDownload } from "@/server/image-generation/artifact-ima
 import { buildFinalMaterialPackageDownload, materialPackageDownloadHeaders } from "@/server/package/artifact-package";
 import { buildStoredArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
 import { buildStoredVideoDownload } from "@/server/video-generation/artifact-video";
+import { readPackageAssetBuffer } from "@/server/tools/package-tool-adapter";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -14,6 +15,13 @@ export async function GET(request: Request, context: RouteContext) {
     try {
       const { projectId, artifactId } = await context.params;
       const finalDelivery = await service.getArtifact(projectId, artifactId);
+      if (hasPackageAsset(finalDelivery)) {
+        const storedPackage = readPackageAssetBuffer(finalDelivery);
+        return new Response(toArrayBuffer(storedPackage.buffer), {
+          status: 200,
+          headers: materialPackageDownloadHeaders(storedPackage.filename),
+        });
+      }
       const pptArtifact = await getLatestPptArtifact(projectId, service);
       const pptx = await buildStoredArtifactPptxDownload(pptArtifact);
       const image = await getLatestImageDownload(projectId, service);
@@ -93,6 +101,15 @@ function hasImageAsset(artifact: { structuredContent: Record<string, unknown> })
   }
   const imageAsset = (storage as { imageAsset?: unknown }).imageAsset;
   return Boolean(imageAsset && typeof imageAsset === "object" && !Array.isArray(imageAsset));
+}
+
+function hasPackageAsset(artifact: { structuredContent: Record<string, unknown> }) {
+  const storage = artifact.structuredContent.storage;
+  if (!storage || typeof storage !== "object" || Array.isArray(storage)) {
+    return false;
+  }
+  const packageAsset = (storage as { packageAsset?: unknown }).packageAsset;
+  return Boolean(packageAsset && typeof packageAsset === "object" && !Array.isArray(packageAsset));
 }
 
 function toArrayBuffer(buffer: Buffer): ArrayBuffer {

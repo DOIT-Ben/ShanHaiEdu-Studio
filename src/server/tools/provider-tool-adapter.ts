@@ -38,6 +38,7 @@ export type ProviderToolAdapterInput = {
 
 const COZE_PPT_PROVIDER = "coze_ppt";
 const IMAGE_PROVIDER = "image_asset";
+const ASSET_IMAGE_PROVIDER = "asset_image_generate";
 const VIDEO_PROVIDER = "video_segment_generate";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
@@ -104,9 +105,10 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
 }
 
 async function executeImageTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
-  const sourceArtifact = findResolvedArtifact(input, "ppt_draft");
+  const sourceArtifactKind = input.tool.capabilityId === ASSET_IMAGE_PROVIDER ? "asset_brief_generate" : "ppt_draft";
+  const sourceArtifact = findResolvedArtifact(input, sourceArtifactKind);
   if (!sourceArtifact) {
-    return buildNeedsInputResult(input, capabilityId, provider, ["ppt_draft"]);
+    return buildNeedsInputResult(input, capabilityId, provider, [sourceArtifactKind]);
   }
 
   try {
@@ -155,11 +157,13 @@ function buildImageSuccessResult(
   sourceArtifactId: string,
   providerResult: ImageGenerationResult,
 ): ToolExecutionResult {
-  const artifactTruth = buildProviderArtifactTruth(input, "image_prompts");
+  const isAssetImage = input.tool.capabilityId === ASSET_IMAGE_PROVIDER;
+  const producedKind = isAssetImage ? "asset_image_generate" : "image_prompts";
+  const artifactTruth = buildProviderArtifactTruth(input, producedKind);
   const qualityGate = { passed: true, gates: ["image_valid", "supported_image_mime"] } satisfies ToolQualityGateResult;
   const providerPayload = { provider: IMAGE_PROVIDER, ...providerResult, sourceArtifactId, artifactTruth, qualityGate };
   const structuredContent = {
-    文件状态: "真实课堂视觉图已生成",
+    文件状态: isAssetImage ? "真实视频资产图已生成" : "真实课堂视觉图已生成",
     文件大小: `${providerResult.bytes} bytes`,
     文件类型: providerResult.mime,
     storage: {
@@ -169,7 +173,7 @@ function buildImageSuccessResult(
         bytes: providerResult.bytes,
         sha256: providerResult.sha256,
         mime: providerResult.mime,
-        generationMode: "image_generated",
+        generationMode: isAssetImage ? "asset_image_generated" : "image_generated",
         sourceArtifactId,
       },
     },
@@ -185,15 +189,15 @@ function buildImageSuccessResult(
     artifactTruth,
     qualityGate,
     artifactDraft: {
-      nodeKey: input.tool.producedArtifactKind ?? "image_prompts",
-      kind: input.tool.producedArtifactKind ?? "image_prompts",
-      title: "真实课堂视觉图",
-      summary: "已生成一张可用于课件导入页的课堂视觉图，请核对画面内容。",
-      markdownContent: "# 真实课堂视觉图\n\n已基于当前 PPT 大纲生成课堂视觉图。",
+      nodeKey: input.tool.producedArtifactKind ?? producedKind,
+      kind: input.tool.producedArtifactKind ?? producedKind,
+      title: isAssetImage ? "真实视频资产图" : "真实课堂视觉图",
+      summary: isAssetImage ? "已生成一张可用于分镜视频的资产参考图，请核对角色、场景和风格。" : "已生成一张可用于课件导入页的课堂视觉图，请核对画面内容。",
+      markdownContent: isAssetImage ? "# 真实视频资产图\n\n已基于当前资产说明生成分镜视频参考图。" : "# 真实课堂视觉图\n\n已基于当前 PPT 大纲生成课堂视觉图。",
       structuredContent,
     },
     providerPayload,
-    assistantSummary: "真实课堂视觉图已生成并通过基础校验。",
+    assistantSummary: isAssetImage ? "真实视频资产图已生成并通过基础校验。" : "真实课堂视觉图已生成并通过基础校验。",
     budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
   };
 }
@@ -494,7 +498,10 @@ function isCozePptTool(tool: ToolDefinition): boolean {
 }
 
 function isImageTool(tool: ToolDefinition): boolean {
-  return tool.id === "generate_classroom_image" && tool.capabilityId === IMAGE_PROVIDER && tool.providerToolId === "image_asset.generate";
+  return (
+    (tool.id === "generate_classroom_image" && tool.capabilityId === IMAGE_PROVIDER && tool.providerToolId === "image_asset.generate") ||
+    (tool.id === "asset_image_generate" && tool.capabilityId === ASSET_IMAGE_PROVIDER && tool.providerToolId === "image_asset.generate_asset_reference")
+  );
 }
 
 function isVideoTool(tool: ToolDefinition): boolean {
@@ -503,6 +510,7 @@ function isVideoTool(tool: ToolDefinition): boolean {
 
 function resolveProvider(tool: ToolDefinition): string | undefined {
   if (tool.capabilityId === COZE_PPT_PROVIDER || tool.providerToolId?.startsWith("coze_ppt.")) return COZE_PPT_PROVIDER;
+  if (tool.capabilityId === ASSET_IMAGE_PROVIDER) return IMAGE_PROVIDER;
   return tool.capabilityId;
 }
 

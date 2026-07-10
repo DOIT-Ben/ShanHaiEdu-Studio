@@ -3,7 +3,7 @@ import type { SaveArtifactDraft } from "@/server/capabilities/types";
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { AgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
 
-export type ToolAdapterKind = "internal_capability" | "provider" | "mcp";
+export type ToolAdapterKind = "internal_capability" | "provider" | "package" | "mcp";
 
 export type ToolSideEffectLevel = "none" | "artifact_write" | "external_call" | "file_write" | "package_write";
 

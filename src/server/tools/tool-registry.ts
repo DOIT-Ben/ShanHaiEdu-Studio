@@ -133,6 +133,31 @@ function blockedTool(definition: {
   };
 }
 
+function packageTool(definition: {
+  id: string;
+  label: string;
+  description: string;
+  capabilityId: CapabilityId;
+  requiredArtifactKinds: string[];
+  producedArtifactKind: string;
+}): ToolDefinition {
+  return {
+    id: definition.id,
+    label: definition.label,
+    description: definition.description,
+    adapterKind: "package",
+    capabilityId: definition.capabilityId,
+    inputSchema: artifactInputSchema(definition.requiredArtifactKinds),
+    outputSchema: artifactOutputSchema(definition.producedArtifactKind),
+    requiresHumanGate: true,
+    sideEffectLevel: "package_write",
+    requiredArtifactKinds: definition.requiredArtifactKinds,
+    producedArtifactKind: definition.producedArtifactKind,
+    failurePolicy: defaultFailurePolicy,
+    implemented: true,
+  };
+}
+
 const toolDefinitions: ToolDefinition[] = [
   internalTool({
     id: "create_requirement_spec",
@@ -223,33 +248,37 @@ const toolDefinitions: ToolDefinition[] = [
     producedArtifactKind: "video_storyboard",
     blockedReason: "导入视频真实生成能力尚未完成接入，暂不注册为可执行工具。",
   }),
-  blockedTool({
+  {
     id: "asset_image_generate",
     label: "生成视频资产图",
     description: "根据资产说明生成统一风格图、角色参考图、道具参考图、场景参考图和关键帧图。",
+    adapterKind: "provider",
     capabilityId: "asset_image_generate",
+    providerToolId: "image_asset.generate_asset_reference",
+    inputSchema: artifactInputSchema(["asset_brief_generate"]),
+    outputSchema: artifactOutputSchema("asset_image_generate"),
+    requiresHumanGate: true,
+    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["asset_brief_generate"],
     producedArtifactKind: "asset_image_generate",
-    blockedReason: "视频资产图真实生成能力尚未完成接入，暂不注册为可执行工具。",
-  }),
-  blockedTool({
+    failurePolicy: defaultFailurePolicy,
+    implemented: true,
+  },
+  packageTool({
     id: "concat_only_assemble",
     label: "只拼接最终导入视频",
     description: "只按分镜顺序拼接已通过校验的片段，不重排、不加转场、不加滤镜、不重写内容。",
     capabilityId: "concat_only_assemble",
     requiredArtifactKinds: ["video_segment_generate"],
     producedArtifactKind: "concat_only_assemble",
-    blockedReason: "最终导入视频拼接能力尚未完成接入，暂不注册为可执行工具。",
-    sideEffectLevel: "package_write",
   }),
-  internalTool({
-    id: "create_final_delivery_checklist",
-    label: "创建最终交付清单",
-    description: "汇总已确认成果，创建最终交付前的检查清单。",
+  packageTool({
+    id: "create_final_package",
+    label: "打包最终交付材料",
+    description: "把已确认的教案、PPTX、课堂图片和导入视频打包成最终材料包。",
     capabilityId: "final_package",
-    requiredArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "concat_only_assemble"],
+    requiredArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "concat_only_assemble"],
     producedArtifactKind: "final_delivery",
-    sideEffectLevel: "package_write",
   }),
   {
     id: "generate_pptx_from_design",

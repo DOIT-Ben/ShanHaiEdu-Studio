@@ -146,7 +146,7 @@
 
 ### RQ-013 真实工具金路径闭环
 
-- 状态：`accepted`
+- 状态：`done`（工程实现完成；真实外部 provider smoke 待上线前执行）
 - 来源：M64-R / M66-R 收尾后剩余主线缺口。
 - 问题：ToolRegistry 和 Runtime native loop 已接通，但 `asset_image_generate`、`concat_only_assemble` 和工具层真实最终包仍未实现；provider 工具也不能从 native loop 直接使用裸 artifact refs。
 - 目标：用服务端 resolved Artifact、真实 Provider 和质量门禁跑通一个教师任务从输入到最终下载包的完整链路。
@@ -157,6 +157,8 @@
   - provider 工具只接受同项目、已批准、ID/kind/nodeKey 匹配的服务端 resolved Artifact。
   - 使用一个真实小学数学公开课任务完成需求、教案、PPT 设计、PPTX、图片、视频和最终材料包下载验收。
 - 优先级：下一阶段，先于公开注册和完整多用户管理。
+- 阶段与测试：`docs\stages\local-real-mvp-m68-real-tool-golden-path-plan.md`、`docs\stages\local-real-mvp-m68-real-tool-golden-path-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m68-real-tool-golden-path-closeout.md`。
 
 ### RQ-006 文档结构治理
 

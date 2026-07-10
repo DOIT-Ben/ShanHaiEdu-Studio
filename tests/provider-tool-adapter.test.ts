@@ -76,6 +76,13 @@ function pptDraftArtifact(overrides: Partial<ArtifactRecord> = {}) {
   });
 }
 
+function assetBriefArtifact(overrides: Partial<ArtifactRecord> = {}) {
+  return resolvedArtifact("asset_brief_generate", "artifact-asset-brief-a", {
+    markdownContent: "统一风格：明亮教室；角色：学生；道具：百分数卡片。",
+    ...overrides,
+  });
+}
+
 function videoArtifacts() {
   return [
     resolvedArtifact("video_segment_plan", "artifact-video-plan-a", { markdownContent: "S1：8 秒百分数悬念片段。" }),
@@ -307,6 +314,59 @@ describe("M64-C ProviderToolAdapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
       textbookVersion: "人教版",
+    });
+  });
+
+  it("generates video asset reference images from the approved asset brief", async () => {
+    let calledWith: Parameters<NonNullable<ProviderToolAdapterInput["runImage"]>>[0] | undefined;
+
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("asset_image_generate"),
+      projectId: "project-a",
+      artifactRefs: [artifactRef("asset_brief_generate", "artifact-asset-brief-a", "统一风格：明亮教室。")],
+      resolvedArtifacts: [assetBriefArtifact()],
+      runImage: async (input) => {
+        calledWith = input as Parameters<NonNullable<ProviderToolAdapterInput["runImage"]>>[0];
+        return {
+          fileName: "asset-reference.png",
+          localOutput: ".tmp/asset-reference.png",
+          bytes: 4096,
+          sha256: "asset-image-sha256",
+          imageValid: true,
+          mime: "image/png",
+        };
+      },
+    });
+
+    expect(calledWith).toMatchObject({
+      project: { id: "project-a" },
+      artifact: {
+        id: "artifact-asset-brief-a",
+        kind: "asset_brief_generate",
+        nodeKey: "asset_brief_generate",
+      },
+    });
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "asset_image_generate",
+      capabilityId: "asset_image_generate",
+      provider: "image_asset",
+      artifactDraft: {
+        nodeKey: "asset_image_generate",
+        kind: "asset_image_generate",
+        structuredContent: {
+          storage: {
+            imageAsset: {
+              fileName: "asset-reference.png",
+              localOutput: ".tmp/asset-reference.png",
+              generationMode: "asset_image_generated",
+              sourceArtifactId: "artifact-asset-brief-a",
+            },
+          },
+        },
+      },
+      artifactTruth: { created: true, persisted: true, placeholder: false, producedArtifactKind: "asset_image_generate" },
+      qualityGate: { passed: true, gates: expect.arrayContaining(["image_valid", "supported_image_mime"]) },
     });
   });
 

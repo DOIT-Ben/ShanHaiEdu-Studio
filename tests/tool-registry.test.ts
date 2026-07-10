@@ -83,7 +83,7 @@ describe("ToolRegistry", () => {
       "intro_video",
       "asset_image_generate",
       "concat_only_assemble",
-      "create_final_delivery_checklist",
+      "create_final_package",
       "generate_pptx_from_design",
       "generate_classroom_image",
       "generate_video_segment",
@@ -160,10 +160,11 @@ describe("ToolRegistry", () => {
     });
   });
 
-  it("requires all minimal final delivery artifacts before creating the final delivery checklist", () => {
-    const tool = getToolDefinition("create_final_delivery_checklist");
+  it("requires all real final delivery assets before creating the final package", () => {
+    const tool = getToolDefinition("create_final_package");
 
     expect(tool).toMatchObject({
+      adapterKind: "package",
       capabilityId: "final_package",
       implemented: true,
       requiredArtifactKinds: [
@@ -171,6 +172,7 @@ describe("ToolRegistry", () => {
         "lesson_plan",
         "ppt_design_draft",
         "pptx_artifact",
+        "image_prompts",
         "concat_only_assemble",
       ],
       producedArtifactKind: "final_delivery",
@@ -243,8 +245,8 @@ describe("ToolRegistry", () => {
     expect(((getToolDefinition("create_lesson_plan").inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength).toBe(1);
   });
 
-  it("registers blocked definitions without making deferred tools executable", () => {
-    for (const capabilityId of ["intro_video", "asset_image_generate", "concat_only_assemble"] as const) {
+  it("keeps only the legacy intro_video definition blocked", () => {
+    for (const capabilityId of ["intro_video"] as const) {
       const tool = getToolDefinitionByCapabilityId(capabilityId);
 
       expect(tool).toMatchObject({ capabilityId, implemented: false });
@@ -256,10 +258,31 @@ describe("ToolRegistry", () => {
     }
   });
 
-  it("returns blocked definitions by capability id so router can inspect them", () => {
+  it("registers asset image and concat tools as executable real-output tools", () => {
     expect(getToolDefinitionByCapabilityId("asset_image_generate")).toMatchObject({
       id: "asset_image_generate",
+      adapterKind: "provider",
       capabilityId: "asset_image_generate",
+      providerToolId: "image_asset.generate_asset_reference",
+      implemented: true,
+      requiredArtifactKinds: ["asset_brief_generate"],
+      producedArtifactKind: "asset_image_generate",
+    });
+
+    expect(getToolDefinitionByCapabilityId("concat_only_assemble")).toMatchObject({
+      id: "concat_only_assemble",
+      adapterKind: "package",
+      capabilityId: "concat_only_assemble",
+      implemented: true,
+      requiredArtifactKinds: ["video_segment_generate"],
+      producedArtifactKind: "concat_only_assemble",
+    });
+  });
+
+  it("returns blocked definitions by capability id so router can inspect them", () => {
+    expect(getToolDefinitionByCapabilityId("intro_video")).toMatchObject({
+      id: "intro_video",
+      capabilityId: "intro_video",
       implemented: false,
     });
   });
@@ -292,8 +315,8 @@ describe("ToolRegistry", () => {
     }
   });
 
-  it("does not expose blocked definitions as OpenAI executable tools", () => {
-    expect(() => toolDefinitionToOpenAiFunctionTool(getToolDefinition("asset_image_generate"))).toThrow(/not implemented/i);
+  it("does not expose the legacy blocked intro_video definition as an OpenAI executable tool", () => {
+    expect(() => toolDefinitionToOpenAiFunctionTool(getToolDefinition("intro_video"))).toThrow(/not implemented/i);
   });
 
   it("rejects unsafe OpenAI tool description and schema values", () => {

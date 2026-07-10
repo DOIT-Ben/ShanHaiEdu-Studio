@@ -362,7 +362,7 @@ describe("M64-D ToolRouter Core", () => {
     const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
     const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));
 
-    for (const toolName of ["intro_video", "asset_image_generate", "concat_only_assemble"]) {
+    for (const toolName of ["intro_video"]) {
       const result = await routeToolCall({ toolName, projectId: "project-a" }, { internalExecutor, providerExecutor });
 
       expect(result).toMatchObject({
@@ -382,6 +382,67 @@ describe("M64-D ToolRouter Core", () => {
 
     expect(internalExecutor).not.toHaveBeenCalled();
     expect(providerExecutor).not.toHaveBeenCalled();
+  });
+
+  it("routes package tools only after resolved artifact validation", async () => {
+    const packageExecutor = vi.fn(async ({ tool }) => ({
+      ...successResult(tool),
+      artifactTruth: {
+        created: true,
+        persisted: true,
+        persistenceScope: "provider_local_file" as const,
+        providerPersisted: true,
+        workbenchPersisted: false,
+        placeholder: false,
+        producedArtifactKind: tool.producedArtifactKind ?? tool.id,
+      },
+      qualityGate: { passed: true, gates: ["package_valid"] },
+    }));
+
+    const result = await routeFutureToolCall(
+      {
+        capabilityId: "concat_only_assemble",
+        projectId: "project-a",
+        artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-a" }],
+        resolvedArtifacts: [resolvedArtifact("video_segment_generate", "segment-a")],
+      },
+      { packageExecutor },
+    );
+
+    expect(packageExecutor).toHaveBeenCalledTimes(1);
+    expect(packageExecutor.mock.calls[0][0]).toMatchObject({
+      tool: { id: "concat_only_assemble", adapterKind: "package", capabilityId: "concat_only_assemble" },
+      projectId: "project-a",
+      artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-a" }],
+      resolvedArtifacts: [resolvedArtifact("video_segment_generate", "segment-a")],
+    });
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "concat_only_assemble",
+      capabilityId: "concat_only_assemble",
+    });
+  });
+
+  it("does not let bare refs invoke package tools", async () => {
+    const packageExecutor = vi.fn(async ({ tool }) => successResult(tool));
+
+    const result = await routeFutureToolCall(
+      {
+        capabilityId: "concat_only_assemble",
+        projectId: "project-a",
+        artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-a" }],
+      },
+      { packageExecutor },
+    );
+
+    expect(packageExecutor).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "needs_input",
+      toolId: "concat_only_assemble",
+      capabilityId: "concat_only_assemble",
+      missingInputs: ["video_segment_generate"],
+      artifactCreated: false,
+    });
   });
 
   it("returns needs_input when a required source artifact kind is missing and does not invoke provider executor", async () => {

@@ -53,6 +53,8 @@ test("builds a real final material ZIP package", async () => {
   const download = await buildFinalMaterialPackageDownload({
     finalDelivery: finalDeliveryArtifact,
     pptx: pptxDownload,
+    image: imageDownload,
+    video: videoDownload,
   });
 
   assert.match(download.filename, /^shanhai-final-delivery-v1-.+\.zip$/);
@@ -63,19 +65,51 @@ test("builds a real final material ZIP package", async () => {
   const entries = unzipEntries(download.buffer);
   assert.equal(entries.has("README.md"), true);
   assert.equal(entries.has("final-delivery.md"), true);
+  assert.equal(entries.has("manifest.json"), true);
   assert.equal(entries.has("ppt-outline.pptx"), true);
+  assert.equal(entries.has("classroom-visual.png"), true);
+  assert.equal(entries.has("intro-video.mp4"), true);
 
   const readme = entries.get("README.md").toString("utf8");
   const finalDelivery = entries.get("final-delivery.md").toString("utf8");
+  const manifest = JSON.parse(entries.get("manifest.json").toString("utf8"));
   const pptx = entries.get("ppt-outline.pptx");
 
-  assert.match(readme, /本材料包包含最终交付清单和真实 PPTX 文件/);
+  assert.match(readme, /本材料包包含最终交付清单、真实 PPTX 文件、课堂视觉图、导入视频文件/);
   assert.match(readme, /真实生成并通过 PPTX 结构校验的课件文件/);
-  assert.match(readme, /图片文件、视频成片、动画和视觉精修仍待生成或完善/);
+  assert.doesNotMatch(readme, /仍待生成或完善/);
   assert.match(finalDelivery, /# 最终交付清单/);
   assert.match(finalDelivery, /PPT 大纲可下载真实 PPTX 文件/);
+  assert.deepEqual(manifest.requiredAssets, ["pptx", "image", "video"]);
+  assert.equal(manifest.assets.pptx.filename, "ppt-outline.pptx");
+  assert.equal(manifest.assets.image.filename, "classroom-visual.png");
+  assert.equal(manifest.assets.video.filename, "intro-video.mp4");
   assert.equal(pptx.subarray(0, 2).toString("utf8"), "PK");
   assert.doesNotMatch(`${readme}\n${finalDelivery}`, /PPTX 文件已生成|图片文件已生成|视频成片已生成/);
+});
+
+test("refuses to build a final material ZIP when image or video is missing", async () => {
+  const { buildFinalMaterialPackageDownload } = loadArtifactPackageModule();
+
+  await assert.rejects(
+    () =>
+      buildFinalMaterialPackageDownload({
+        finalDelivery: finalDeliveryArtifact,
+        pptx: pptxDownload,
+        video: videoDownload,
+      }),
+    /Classroom visual image is required before exporting the material package/,
+  );
+
+  await assert.rejects(
+    () =>
+      buildFinalMaterialPackageDownload({
+        finalDelivery: finalDeliveryArtifact,
+        pptx: pptxDownload,
+        image: imageDownload,
+      }),
+    /Intro video file is required before exporting the material package/,
+  );
 });
 
 test("includes an existing intro video asset in the final material ZIP package", async () => {
@@ -83,6 +117,7 @@ test("includes an existing intro video asset in the final material ZIP package",
   const download = await buildFinalMaterialPackageDownload({
     finalDelivery: finalDeliveryArtifact,
     pptx: pptxDownload,
+    image: imageDownload,
     video: videoDownload,
   });
 
@@ -106,6 +141,7 @@ test("includes an existing classroom visual image asset in the final material ZI
     finalDelivery: finalDeliveryArtifact,
     pptx: pptxDownload,
     image: imageDownload,
+    video: videoDownload,
   });
 
   const entries = unzipEntries(download.buffer);

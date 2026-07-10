@@ -279,7 +279,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
     description: "把已确认的教案、PPT、图片、视频和交付说明打包。",
     inputSchema: { required: ["approvedArtifacts"] },
     outputSchema: { artifact: "final_package" },
-    upstreamCapabilities: ["requirement_spec", "lesson_plan", "ppt_design", "coze_ppt", "concat_only_assemble"],
+    upstreamCapabilities: ["requirement_spec", "lesson_plan", "ppt_design", "coze_ppt", "image_asset", "concat_only_assemble"],
     artifactKind: "final_delivery",
     workflowNodeKey: "final_delivery",
     requiresConfirmation: true,

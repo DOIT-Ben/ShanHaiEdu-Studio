@@ -5,6 +5,7 @@ import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type Ag
 import type { ProjectRecord } from "@/server/workbench/types";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
+import { executePackageTool, type PackageToolAdapterInput } from "./package-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "./tool-registry";
 import { isVerifiedProviderToolSuccess, type ToolDefinition, type ToolExecutionResult } from "./tool-types";
@@ -26,6 +27,7 @@ export type ToolRouterInput = {
 export type ToolRouterDependencies = {
   internalExecutor?: (input: InternalCapabilityToolInput) => Promise<ToolExecutionResult>;
   providerExecutor?: (input: ProviderToolAdapterInput) => Promise<ToolExecutionResult>;
+  packageExecutor?: (input: PackageToolAdapterInput) => Promise<ToolExecutionResult>;
   resolveToolDefinition?: (input: Pick<ToolRouterInput, "toolName" | "capabilityId">) => ToolDefinition;
 };
 
@@ -113,6 +115,17 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
     return result;
   }
 
+  if (tool.adapterKind === "package") {
+    const packageExecutor = dependencies.packageExecutor ?? executePackageTool;
+    return packageExecutor({
+      tool,
+      projectId: input.projectId,
+      artifactRefs: input.artifactRefs ?? [],
+      resolvedArtifacts: input.resolvedArtifacts ?? [],
+      sourceMessageId: input.sourceMessageId,
+    });
+  }
+
   return buildBlockedResult({
     input,
     toolId: tool.id,
@@ -150,7 +163,7 @@ function resolveToolDefinition(input: ToolRouterInput, dependencies: ToolRouterD
 }
 
 function findMissingArtifactKinds(tool: ToolDefinition, input: ToolRouterInput): string[] {
-  if (tool.adapterKind === "provider") {
+  if (tool.adapterKind === "provider" || tool.adapterKind === "package") {
     return tool.requiredArtifactKinds.filter((kind) => !hasResolvedArtifactRef(kind, input));
   }
 
