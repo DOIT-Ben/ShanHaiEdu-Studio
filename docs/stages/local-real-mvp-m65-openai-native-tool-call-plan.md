@@ -81,17 +81,23 @@ M64 已完成工具注册、内部工具适配器、Provider 适配器、ToolRou
    - 传入 `parallel_tool_calls: false`；
    - 解析 `response.output` 中的 `function_call`；
    - 摘要 reasoning / message / function_call，但不保存完整敏感 arguments 到诊断摘要。
-3. 新增 tool output serializer：
+3. 新增 `ToolCallIntent` 映射层：
+   - OpenAI `function_call` 只被解析为“模型意图”；
+   - 模型参数不得直接成为 `ToolRouterInput`；
+   - `projectId`、已确认 `artifactRefs`、`sourceMessageId`、HumanGate / PlanGuard / budget 状态必须来自后端/CTS 当前状态；
+   - 模型伪造 `projectId`、`artifactRefs`、`sourceMessageId`、provider 参数时必须被忽略或阻断。
+4. 新增 tool output serializer：
    - 将 `ToolExecutionResult` 转为安全 JSON 字符串；
-   - 仅暴露教师安全摘要、状态、artifact kind、artifact id/ref 等必要信息；
+   - 仅暴露教师语义字段，例如 `statusLabel`、`teacherSafeSummary`、`nextActionLabel`、`artifactTitle`、`artifactReadyForReview`；
+   - 内部 ID（`capabilityId`、`toolId`、`artifactKind`、provider 名、nodeKey）默认只能进入不可见 diagnostics，不能进入模型 continuation input；
    - 不回显 token、路径、provider 内部字段。
-4. 新增受控 tool-call loop runner：
+5. 新增受控 tool-call loop runner：
    - 调用模型；
    - 若有 function_call，调用 `ToolRouter`；
    - 追加 `function_call_output`；
    - 再次请求模型获得最终文本；
    - 最多 N 轮，默认 1-2 轮。
-5. 完整测试：解析、序列化、安全、loop 成功/失败/熔断。
+6. 完整测试：解析、意图降级、序列化、安全、loop 成功/失败/熔断。
 
 ### 4.2 不纳入范围
 
@@ -105,12 +111,13 @@ M64 已完成工具注册、内部工具适配器、Provider 适配器、ToolRou
 
 ## 5. 设计原则
 
-1. **模型只表达意图**：`function_call` 只能形成 `ToolRouterInput` 候选，不能直接写数据库、文件或调用 provider。
+1. **模型只表达意图**：`function_call` 只能形成 `ToolCallIntent`，不能直接形成 `ToolRouterInput`，更不能直接写数据库、文件或调用 provider。
 2. **后端继续做门禁**：ToolRouter / ConversationTurnService 仍控制 side effect。
 3. **工具暴露最小化**：首批只暴露已实现且适合模型选择的工具，blocked tool 不作为 callable 暴露，或作为不可执行状态由 router 返回。
-4. **禁止敏感回灌**：function_call arguments、tool output、diagnostics 都不能含 token、绝对路径、providerMode、API key、baseURL。
-5. **不破坏 M64 产物真伪门禁**：真实 PPTX 仍以 provider result / job lifecycle / artifactTruth 为准。
-6. **可回退**：M65 只新增 GPT protocol 能力，若 native loop 不稳定，可回退 M64 ToolRouter 直接执行链路。
+4. **server-authoritative 参数注入**：`projectId`、approved artifacts、source artifact refs、sourceMessageId、project context、generation job context 都来自后端状态，不采信模型参数。
+5. **禁止敏感与工程词回灌**：function_call arguments、tool output、diagnostics 都不能含 token、绝对路径、providerMode、API key、baseURL；continuation input 不包含 `capabilityId`、`toolId`、provider、nodeKey、schema 等可能被模型复述给教师的工程词。
+6. **不破坏 M64 产物真伪门禁**：真实 PPTX 仍以 provider result / job lifecycle / artifactTruth 为准。
+7. **可回退**：M65 只新增 GPT protocol 能力，若 native loop 不稳定，可回退 M64 ToolRouter 直接执行链路。
 
 ## 6. 分阶段任务
 
@@ -133,14 +140,18 @@ M64 已完成工具注册、内部工具适配器、Provider 适配器、ToolRou
 
 文件：
 
+- 新增：`src/server/gpt-protocol/tool-call-intent.ts`
 - 新增：`src/server/gpt-protocol/tool-output-serializer.ts`
+- 测试：`tests/gpt-tool-call-intent.test.ts`
 - 测试：`tests/gpt-tool-output-serializer.test.ts`
 
 验收：
 
+- `function_call` 可被解析成 `ToolCallIntent`，只保留 `toolName` 和低风险教师意图字段。
+- 模型伪造的 `projectId`、`artifactRefs`、`sourceMessageId`、provider 参数不会进入 `ToolRouterInput`。
 - `ToolExecutionResult` 成功/失败/needs_input 都可转为 `function_call_output.output` 字符串。
-- 输出只含安全字段：status、capabilityId、toolId、artifactKind、teacherSafeSummary、artifactCreated、nextAction。
-- 不含 local path、URL、token、provider、API key、baseURL、debug 等工程词或敏感值。
+- 输出只含教师语义字段：`statusLabel`、`teacherSafeSummary`、`nextActionLabel`、`artifactTitle`、`artifactReadyForReview`。
+- 输出不含 `capabilityId`、`toolId`、`artifactKind`、nodeKey、provider、local path、URL、token、API key、baseURL、debug 等工程词或敏感值。
 
 ### Task C：受控 OpenAI tool-call loop runner
 
@@ -151,7 +162,7 @@ M64 已完成工具注册、内部工具适配器、Provider 适配器、ToolRou
 
 验收：
 
-- 第一次模型返回 `function_call` 时，runner 调用注入的 `toolRouter`。
+- 第一次模型返回 `function_call` 时，runner 先降级为 `ToolCallIntent`，再由 server-side context 组装 `ToolRouterInput`，最后调用注入的 `toolRouter`。
 - runner 追加原 `response.output` 与 `function_call_output` 后进行 continuation。
 - reasoning items 若存在，保留在下一次 input items。
 - 最多轮次可配置；超限返回安全失败诊断。
@@ -192,7 +203,9 @@ npm run build
 
 - Adapter 传 tools 与 `parallel_tool_calls: false`。
 - Adapter 从 `response.output` 解析 `function_call`。
+- ToolCallIntent 忽略模型伪造的 `projectId` / `artifactRefs` / `sourceMessageId`。
 - Serializer 脱敏 tool output。
+- Serializer 输出和 final assistantText 不含 `capabilityId|toolId|artifactKind|provider|schema|debug|local path|API`。
 - Loop runner 执行 `function_call -> ToolRouter -> function_call_output -> final response`。
 - Loop runner 超限、未知工具、多工具调用、JSON arguments 解析失败。
 
@@ -211,7 +224,8 @@ npm run build
 |---|---|---|
 | 模型一次返回多个 tool calls | side effect 顺序不明 | M65 禁用并行；多调用安全失败 |
 | 模型参数 JSON 不合法 | ToolRouter 输入污染 | 解析失败不执行，写安全诊断 |
-| tool output 泄露内部字段 | 用户可见或模型回灌污染 | serializer allowlist + 脱敏测试 |
+| 模型伪造 projectId / artifactRefs | 越权或错误 side effect | ToolCallIntent 降级；server-authoritative 注入；伪造参数测试 |
+| tool output 泄露内部字段 | 用户可见或模型回灌污染 | 教师语义 allowlist + final assistantText 工程词测试 |
 | reasoning items 未传回 | reasoning 模型 continuation 失败 | 保留原 response.output items |
 | 与 structured output 冲突 | OpenAIRuntime 回归 | 默认不启用 native loop，显式开关 |
 | 绕过 CTS 门禁 | 产生未授权 side effect | loop runner 只走 ToolRouter，CTS 主链路仍做 gate |
@@ -227,7 +241,7 @@ npm run build
 ```text
 commit 1：docs M65 native tool_call 规划
 commit 2：GPT Protocol function_call 类型与 adapter
-commit 3：Tool output serializer
+commit 3：ToolCallIntent 与 tool output serializer
 commit 4：OpenAI tool-call loop runner
 commit 5：OpenAIRuntime 可选接线
 commit 6：M65 收尾验收
