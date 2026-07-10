@@ -3,6 +3,7 @@ import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { routeToolCall } from "@/server/tools/tool-router";
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { ToolDefinition, ToolExecutionResult } from "@/server/tools/tool-types";
+import type { ArtifactRecord } from "@/server/workbench/types";
 
 const forbiddenSensitiveText = /token|providerMode|API|api[_-]?key|Bearer\s+\S+|C:\\|\\Users\\|local path|SECRET|credential/i;
 
@@ -21,7 +22,7 @@ function fakeRuntime(): AgentRuntime {
   };
 }
 
-function successResult(tool: ToolDefinition): ToolExecutionResult {
+function successResult(tool: ToolDefinition): Extract<ToolExecutionResult, { status: "succeeded" }> {
   return {
     status: "succeeded",
     toolId: tool.id,
@@ -43,6 +44,54 @@ function successResult(tool: ToolDefinition): ToolExecutionResult {
     },
   };
 }
+
+function providerSuccessResult(tool: ToolDefinition): ToolExecutionResult {
+  return {
+    ...successResult(tool),
+    provider: tool.capabilityId,
+    artifactTruth: {
+      created: true,
+      persisted: true,
+      persistenceScope: "provider_local_file",
+      providerPersisted: true,
+      workbenchPersisted: false,
+      placeholder: false,
+      producedArtifactKind: tool.producedArtifactKind ?? tool.id,
+    },
+    qualityGate: {
+      passed: true,
+      gates: ["provider_output_valid"],
+    },
+  };
+}
+
+function resolvedArtifact(kind: ArtifactRecord["kind"], artifactId: string, overrides: Partial<ArtifactRecord> = {}): ArtifactRecord {
+  return {
+    id: artifactId,
+    projectId: "project-a",
+    nodeKey: kind,
+    title: `${kind} 已确认产物`,
+    kind,
+    status: "approved",
+    summary: `${kind} 已通过教师确认。`,
+    markdownContent: `# ${kind}`,
+    structuredContent: {},
+    version: 7,
+    isApproved: true,
+    createdAt: "2026-07-10T00:00:00.000Z",
+    updatedAt: "2026-07-10T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+type FutureToolRouterInput = Parameters<typeof routeToolCall>[0] & {
+  resolvedArtifacts?: ArtifactRecord[];
+};
+
+const routeFutureToolCall = routeToolCall as (
+  input: FutureToolRouterInput,
+  dependencies?: Parameters<typeof routeToolCall>[1],
+) => ReturnType<typeof routeToolCall>;
 
 function mcpToolDefinition(): ToolDefinition {
   return {
@@ -95,9 +144,10 @@ describe("M64-D ToolRouter Core", () => {
 
   it("routes a provider tool with required artifactRefs to the injected provider executor", async () => {
     const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
-    const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));
+    const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
+    const pptDesignArtifact = resolvedArtifact("ppt_design_draft", "artifact-ppt-design-a");
 
-    const result = await routeToolCall(
+    const result = await routeFutureToolCall(
       {
         toolName: "generate_pptx_from_design",
         projectId: "project-a",
@@ -115,6 +165,7 @@ describe("M64-D ToolRouter Core", () => {
         },
         userInstruction: "生成真实 PPTX",
         artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
+        resolvedArtifacts: [pptDesignArtifact],
         sourceMessageId: "message-a",
       },
       { internalExecutor, providerExecutor },
@@ -137,11 +188,173 @@ describe("M64-D ToolRouter Core", () => {
       }),
       userInstruction: "生成真实 PPTX",
       artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
+      resolvedArtifacts: [pptDesignArtifact],
     });
     expect(result).toMatchObject({
       status: "succeeded",
       toolId: "generate_pptx_from_design",
       capabilityId: "coze_ppt",
+    });
+  });
+
+  it("routes image_asset by capability id to the injected provider executor", async () => {
+    const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
+    const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
+    const pptDraftArtifact = resolvedArtifact("ppt_draft", "artifact-ppt-draft-a");
+
+    const result = await routeFutureToolCall(
+      {
+        capabilityId: "image_asset",
+        projectId: "project-a",
+        userInstruction: "生成课堂导入图",
+        artifactRefs: [{ kind: "ppt_draft", artifactId: "artifact-ppt-draft-a" }],
+        resolvedArtifacts: [pptDraftArtifact],
+      },
+      { internalExecutor, providerExecutor },
+    );
+
+    expect(providerExecutor).toHaveBeenCalledTimes(1);
+    expect(internalExecutor).not.toHaveBeenCalled();
+    expect(providerExecutor.mock.calls[0][0]).toMatchObject({
+      tool: {
+        id: "generate_classroom_image",
+        adapterKind: "provider",
+        capabilityId: "image_asset",
+      },
+      projectId: "project-a",
+      artifactRefs: [{ kind: "ppt_draft", artifactId: "artifact-ppt-draft-a" }],
+      resolvedArtifacts: [pptDraftArtifact],
+    });
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "generate_classroom_image",
+      capabilityId: "image_asset",
+    });
+  });
+
+  it("routes video_segment_generate by capability id to the injected provider executor", async () => {
+    const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
+    const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
+    const artifactRefs = [
+      { kind: "video_segment_plan", artifactId: "artifact-video-plan-a" },
+      { kind: "storyboard_generate", artifactId: "artifact-storyboard-a" },
+      { kind: "asset_image_generate", artifactId: "artifact-assets-a" },
+    ];
+    const resolvedArtifacts = [
+      resolvedArtifact("video_segment_plan", "artifact-video-plan-a"),
+      resolvedArtifact("storyboard_generate", "artifact-storyboard-a"),
+      resolvedArtifact("asset_image_generate", "artifact-assets-a"),
+    ];
+
+    const result = await routeFutureToolCall(
+      {
+        capabilityId: "video_segment_generate",
+        projectId: "project-a",
+        userInstruction: "生成真实分镜视频",
+        artifactRefs,
+        resolvedArtifacts,
+      },
+      { internalExecutor, providerExecutor },
+    );
+
+    expect(providerExecutor).toHaveBeenCalledTimes(1);
+    expect(internalExecutor).not.toHaveBeenCalled();
+    expect(providerExecutor.mock.calls[0][0]).toMatchObject({
+      tool: {
+        id: "generate_video_segment",
+        adapterKind: "provider",
+        capabilityId: "video_segment_generate",
+      },
+      projectId: "project-a",
+      artifactRefs,
+      resolvedArtifacts,
+    });
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "generate_video_segment",
+      capabilityId: "video_segment_generate",
+    });
+  });
+
+  it("returns needs_input without invoking the provider executor when only artifactRefs are supplied", async () => {
+    const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
+
+    const result = await routeFutureToolCall(
+      {
+        toolName: "generate_pptx_from_design",
+        projectId: "project-a",
+        artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
+      },
+      { providerExecutor },
+    );
+
+    expect(providerExecutor).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "needs_input",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      missingInputs: ["ppt_design_draft"],
+      artifactCreated: false,
+      observation: { kind: "blocked_by_policy", artifactCreated: false },
+      budgetEvent: { status: "blocked", kind: "blocked_by_policy" },
+    });
+  });
+
+  it.each([
+    ["cross-project", [resolvedArtifact("ppt_design_draft", "artifact-ppt-design-a", { projectId: "project-b" })]],
+    ["unapproved", [resolvedArtifact("ppt_design_draft", "artifact-ppt-design-a", { status: "needs_review", isApproved: false })]],
+    ["kind mismatch", [resolvedArtifact("lesson_plan", "artifact-ppt-design-a")]],
+    ["id mismatch", [resolvedArtifact("ppt_design_draft", "artifact-ppt-design-b")]],
+  ])("blocks %s resolved artifacts before provider execution", async (_caseName, resolvedArtifacts) => {
+    const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
+
+    const result = await routeFutureToolCall(
+      {
+        toolName: "generate_pptx_from_design",
+        projectId: "project-a",
+        artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
+        resolvedArtifacts,
+      },
+      { providerExecutor },
+    );
+
+    expect(providerExecutor).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "needs_input",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      missingInputs: ["ppt_design_draft"],
+      artifactCreated: false,
+      observation: { kind: "blocked_by_policy", artifactCreated: false },
+    });
+  });
+
+  it("converts provider success without artifact truth or quality gate evidence into quality_gate_failed", async () => {
+    const providerExecutor = vi.fn(async ({ tool }) => ({
+      ...successResult(tool),
+      provider: "coze_ppt",
+    }));
+
+    const result = await routeFutureToolCall(
+      {
+        toolName: "generate_pptx_from_design",
+        projectId: "project-a",
+        artifactRefs: [{ kind: "ppt_design_draft", artifactId: "artifact-ppt-design-a" }],
+        resolvedArtifacts: [resolvedArtifact("ppt_design_draft", "artifact-ppt-design-a")],
+      },
+      { providerExecutor },
+    );
+
+    expect(providerExecutor).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: "failed",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      provider: "coze_ppt",
+      artifactCreated: false,
+      errorCategory: "quality_gate_failed",
+      observation: { kind: "quality_gate_failed", artifactCreated: false },
+      budgetEvent: { status: "failed", kind: "quality_gate_failed" },
     });
   });
 

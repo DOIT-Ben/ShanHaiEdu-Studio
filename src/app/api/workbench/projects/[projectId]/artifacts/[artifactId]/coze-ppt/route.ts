@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
-import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
+import { routeToolCall } from "@/server/tools/tool-router";
+import { isVerifiedProviderToolSuccess } from "@/server/tools/tool-types";
+import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
 import {
   assertRouteLevelGenerationConfirmation,
   readConfirmedActionId,
@@ -38,39 +40,37 @@ export async function POST(request: Request, context: RouteContext) {
       jobId = queuedJob.id;
       await service.startGenerationJob(projectId, jobId);
 
-      const generated = await generateCozePptFromArtifact({ project, artifact: sourceArtifact });
-      const pageLabel = `${generated.slideCount} 页`;
+      const result = await routeToolCall({
+        capabilityId: "coze_ppt",
+        projectId,
+        project,
+        artifactRefs: [{
+          kind: sourceArtifact.kind,
+          artifactId: sourceArtifact.id,
+          title: sourceArtifact.title,
+          summary: sourceArtifact.summary,
+          markdownContent: sourceArtifact.markdownContent,
+          structuredContent: sourceArtifact.structuredContent,
+        }],
+        resolvedArtifacts: [sourceArtifact],
+      });
+      if (!isVerifiedProviderToolSuccess(result)) {
+        const teacherSafeError = result.status === "succeeded"
+          ? "PPTX 生成结果没有通过交付校验，我没有保存这份结果。"
+          : result.observation.teacherSafeSummary;
+        await service.failGenerationJob(projectId, jobId, { errorMessage: teacherSafeError });
+        jobId = null;
+        return NextResponse.json({ error: teacherSafeError }, { status: 400 });
+      }
+
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "pptx_artifact",
-        kind: "pptx_artifact",
-        title: `真实 ${pageLabel} PPTX 文件`,
+        nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
+        kind: result.artifactDraft.kind as ArtifactKind,
+        title: result.artifactDraft.title,
         status: "needs_review",
-        summary: `已生成可下载的真实 ${pageLabel} PPTX 文件，请下载后核对页面内容。`,
-        markdownContent: [
-          `# 真实 ${pageLabel} PPTX 文件`,
-          "",
-          `已基于当前逐页四层 PPT 设计稿生成真实 ${pageLabel} PPTX 文件。`,
-          "",
-          "正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
-        ].join("\n"),
-        structuredContent: {
-          storage: {
-            cozePptx: {
-              localOutput: generated.localOutput,
-              fileName: generated.fileName,
-              bytes: generated.bytes,
-              sha256: generated.sha256,
-              slideCount: generated.slideCount,
-              requestedPageCount: generated.requestedPageCount,
-              generationMode: "coze_generated",
-              sourceArtifactId: sourceArtifact.id,
-            },
-          },
-          文件状态: `真实 ${pageLabel} PPTX 已生成`,
-          文件大小: `${generated.bytes} bytes`,
-          实际页数: pageLabel,
-          目标页数: `${generated.requestedPageCount} 页`,
-        },
+        summary: result.artifactDraft.summary,
+        markdownContent: result.artifactDraft.markdownContent ?? "",
+        structuredContent: result.artifactDraft.structuredContent,
       });
       const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });
 

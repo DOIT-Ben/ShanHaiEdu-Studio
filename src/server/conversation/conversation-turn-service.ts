@@ -4,16 +4,14 @@ import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-
 import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import { appendToolObservationMetadata, createToolObservation, readActiveToolObservationsFromMessages, type ToolObservationKind } from "@/server/capabilities/tool-observation";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
-import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
+import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
-import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
-import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
-import { generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
 import { routeToolCall } from "@/server/tools/tool-router";
-import type { ToolExecutionResult } from "@/server/tools/tool-types";
+import { getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
+import { isVerifiedProviderToolSuccess, type ToolExecutionResult } from "@/server/tools/tool-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
@@ -34,24 +32,9 @@ type PendingDeliveryPlanSnapshot = PendingDeliveryPlanMetadata & {
   messageMetadata: Record<string, unknown>;
 };
 
-const unsupportedExternalCapabilityIds = new Set(["asset_image_generate", "concat_only_assemble"]);
-
-const toolRouterCapabilityIds = new Set<CapabilityId>([
-  "requirement_spec",
-  "lesson_plan",
-  "ppt_outline",
-  "ppt_design",
-  "knowledge_anchor_extract",
-  "creative_theme_generate",
-  "video_script_generate",
-  "storyboard_generate",
-  "asset_brief_generate",
-  "video_segment_plan",
-  "final_package",
-  "coze_ppt",
-  "asset_image_generate",
-  "concat_only_assemble",
-]);
+const toolRouterCapabilityIds = new Set<CapabilityId>(
+  listToolDefinitions().flatMap((tool) => tool.capabilityId ? [tool.capabilityId] : []),
+);
 
 export type ConversationTurnInput = {
   role?: "teacher" | "assistant" | "system";
@@ -405,9 +388,6 @@ async function runPlannedArtifact(input: {
   const toolRouterResult = await runToolRouterCapability(input);
   if (toolRouterResult) return toolRouterResult;
 
-  const externalResult = await runExternalProviderCapability(input);
-  if (externalResult) return externalResult;
-
   const result = await runCapabilityWithAgentRuntime({
     runtime: input.runtime,
     projectId: input.project.id,
@@ -529,18 +509,18 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   const approvedArtifacts = buildApprovedArtifactInputs(input.artifacts);
   const artifactRefs = buildProviderArtifactRefs(input.artifacts);
 
-  const sourceArtifact = toolPlan.capabilityId === "coze_ppt" ? findExternalSourceArtifact("coze_ppt", input.artifacts) : null;
+  const generationJob = resolveProviderGenerationJob(toolPlan.capabilityId, input.artifacts);
   let jobId: string | null = null;
-  if (sourceArtifact) {
+  if (generationJob) {
     const queuedJob = await input.service.createGenerationJob(input.project.id, {
-      kind: "pptx",
-      sourceArtifactId: sourceArtifact.id,
+      kind: generationJob.kind,
+      sourceArtifactId: generationJob.sourceArtifact.id,
     });
     jobId = queuedJob.id;
     await input.service.startGenerationJob(input.project.id, jobId);
   }
 
-  const result = await input.toolRouter({
+  let result = await input.toolRouter({
     capabilityId: toolPlan.capabilityId,
     projectId: input.project.id,
     project: input.project,
@@ -549,8 +529,14 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
     approvedArtifacts,
     artifactRefs,
+    resolvedArtifacts: input.artifacts.filter(isApprovedArtifact),
     sourceMessageId: input.triggerMessage.id,
   });
+
+  const toolDefinition = getToolDefinitionByCapabilityId(toolPlan.capabilityId);
+  if (result.status === "succeeded" && toolDefinition.adapterKind === "provider" && !isVerifiedProviderToolSuccess(result)) {
+    result = buildUnverifiedProviderResult(input, toolPlan);
+  }
 
   if (result.status !== "succeeded") {
     if (jobId) {
@@ -643,6 +629,38 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   };
 }
 
+function buildUnverifiedProviderResult(
+  input: Parameters<typeof runPlannedArtifact>[0],
+  toolPlan: CapabilityToolPlan,
+): ToolExecutionResult {
+  const tool = getToolDefinitionByCapabilityId(toolPlan.capabilityId);
+  return {
+    status: "failed",
+    toolId: tool.id,
+    capabilityId: toolPlan.capabilityId,
+    provider: toolPlan.capabilityId,
+    observation: createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: toolPlan.capabilityId,
+      expectedArtifactKind: toolPlan.expectedArtifactKind,
+      kind: "quality_gate_failed",
+      teacherSafeSummary: "生成结果没有通过交付校验，我没有保存这份结果。请稍后重试。",
+      internalReasonSanitized: "Provider success lacked artifact truth or a passing quality gate.",
+      retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+    }),
+    artifactCreated: false,
+    errorCategory: "quality_gate_failed",
+    budgetEvent: buildAgentHarnessBudgetEvent({
+      capabilityId: toolPlan.capabilityId,
+      actionKey: buildToolActionKey(toolPlan),
+      expectedArtifactKind: toolPlan.expectedArtifactKind,
+      status: "failed",
+      kind: "quality_gate_failed",
+    }),
+  };
+}
+
 function buildApprovedArtifactInputs(artifacts: ArtifactRecord[]) {
   return artifacts.filter(isApprovedArtifact).map((artifact) => ({
     nodeKey: artifact.nodeKey,
@@ -680,298 +698,18 @@ function normalizeToolRouterBudgetEvent(result: ToolExecutionResult, toolPlan: C
   };
 }
 
-async function runExternalProviderCapability(input: {
-  service: WorkbenchService;
-  project: ProjectRecord;
-  artifacts: ArtifactRecord[];
-  pendingPlan: PendingDeliveryPlanSnapshot | null;
-  plannedTurn: MainAgentTurn;
-  reference: string;
-  triggerMessage: ConversationMessageRecord;
-  generationUserMessage: string;
-}): Promise<MessageTurnResponse | null> {
-  const capabilityId = input.plannedTurn.toolPlan?.capabilityId;
-  if (capabilityId && unsupportedExternalCapabilityIds.has(capabilityId)) {
-    const message = unsupportedExternalCapabilityMessage(capabilityId);
-    const failureMetadata = createToolFailureObservationMetadata({
-      projectId: input.project.id,
-      sourceMessageId: input.triggerMessage.id,
-      capabilityId,
-      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
-      kind: "blocked_by_policy",
-      status: "blocked",
-      teacherSafeSummary: message,
-      internalReasonSanitized: `unsupported_external_capability:${capabilityId}`,
-      retryable: false,
-    });
-    const failedTurn: MainAgentTurn = {
-      ...input.plannedTurn,
-      assistantMessage: { body: message },
-      state: "failed_blocked",
-      shouldRunToolNow: false,
-      artifactRefs: [],
-    };
-    const assistantMessage = await input.service.addMessage(input.project.id, {
-      role: "assistant",
-      content: message,
-      metadata: failureMetadata,
-    });
-    return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
-  }
+function resolveProviderGenerationJob(capabilityId: CapabilityId, artifacts: ArtifactRecord[]) {
   if (capabilityId !== "coze_ppt" && capabilityId !== "image_asset" && capabilityId !== "video_segment_generate") return null;
+  const sourceArtifact = findProviderSourceArtifact(capabilityId, artifacts);
+  if (!sourceArtifact) return null;
 
-  const sourceArtifact = await resolveExternalSourceArtifact(input, capabilityId);
-  if (!sourceArtifact) {
-    const message = externalMissingSourceMessage(capabilityId);
-    const failureMetadata = createToolFailureObservationMetadata({
-      projectId: input.project.id,
-      sourceMessageId: input.triggerMessage.id,
-      capabilityId,
-      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
-      kind: "blocked_by_policy",
-      status: "blocked",
-      teacherSafeSummary: message,
-      internalReasonSanitized: `missing_external_source:${capabilityId}`,
-      retryable: false,
-    });
-    const failedTurn: MainAgentTurn = {
-      ...input.plannedTurn,
-      assistantMessage: { body: message },
-      state: "failed_retryable",
-      shouldRunToolNow: false,
-      artifactRefs: [],
-    };
-    const assistantMessage = await input.service.addMessage(input.project.id, {
-      role: "assistant",
-      content: message,
-      metadata: failureMetadata,
-    });
-    return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
-  }
-
-  let jobId: string | null = null;
-  try {
-    const jobKind = capabilityId === "coze_ppt" ? "pptx" : capabilityId === "image_asset" ? "image" : "video";
-    const queuedJob = await input.service.createGenerationJob(input.project.id, {
-      kind: jobKind,
-      sourceArtifactId: sourceArtifact.id,
-    });
-    jobId = queuedJob.id;
-    await input.service.startGenerationJob(input.project.id, jobId);
-
-    const artifactDraft = capabilityId === "coze_ppt"
-      ? await buildCozePptArtifactDraft(input.project, sourceArtifact)
-      : capabilityId === "image_asset"
-        ? await buildImageArtifactDraft(input.project, sourceArtifact)
-        : await buildVideoArtifactDraft(input.project, sourceArtifact, input.artifacts);
-
-    const artifact = await input.service.saveArtifact(input.project.id, artifactDraft);
-    await input.service.finishGenerationJob(input.project.id, jobId, { resultArtifactId: artifact.id });
-
-    const advancedDeliveryPlan = input.plannedTurn.deliveryPlan
-      ? advanceDeliveryPlan(input.plannedTurn.deliveryPlan, capabilityId)
-      : null;
-    const nextToolPlan = advancedDeliveryPlan?.nextCapabilityId
-      ? buildContinuedToolPlan(advancedDeliveryPlan.nextCapabilityId, input.generationUserMessage, advancedDeliveryPlan.deliveryPlan)
-      : null;
-    if (input.pendingPlan) {
-      await input.service.updateMessageMetadata(input.project.id, input.pendingPlan.messageId, {
-        ...input.pendingPlan.messageMetadata,
-        pendingDeliveryPlan: {
-          ...input.pendingPlan,
-          status: "confirmed",
-          messageId: undefined,
-          messageMetadata: undefined,
-        },
-      });
-    }
-
-    const assistantSummary = externalSuccessMessage(capabilityId, artifact.title);
-    const succeededTurn: MainAgentTurn = {
-      ...input.plannedTurn,
-      assistantMessage: { body: assistantSummary },
-      state: "succeeded",
-      toolPlan: nextToolPlan ?? input.plannedTurn.toolPlan,
-      deliveryPlan: advancedDeliveryPlan?.deliveryPlan ?? input.plannedTurn.deliveryPlan,
-      quickReplies: nextToolPlan ? [{ label: "继续下一步", prompt: "继续下一步", recommended: true }] : [],
-      shouldRunToolNow: true,
-      artifactRefs: [artifact.id],
-    };
-    const assistantMessage = await addAssistantMessageWithPendingActionId(input.service, input.project.id, {
-      role: "assistant",
-      content: assistantSummary,
-      artifactRefs: [artifact.id],
-      metadata: mergeMessageMetadata(
-        nextToolPlan && advancedDeliveryPlan
-        ? {
-            pendingDeliveryPlan: {
-              status: "pending",
-              teacherRequest: input.generationUserMessage,
-              toolPlan: nextToolPlan,
-              deliveryPlan: advancedDeliveryPlan.deliveryPlan,
-              runtimeKind: input.plannedTurn.runtimeKind,
-            },
-          }
-        : undefined,
-        input.plannedTurn.toolPlan ? createToolSucceededBudgetMetadata(input.plannedTurn.toolPlan) : undefined,
-      ),
-    });
-
-    return { message: input.triggerMessage, assistantMessage, agentTurn: succeededTurn, artifact };
-  } catch (error) {
-    const message = externalFailedMessage(capabilityId, error);
-    const failureMetadata = createToolFailureObservationMetadata({
-      projectId: input.project.id,
-      jobId: jobId ?? undefined,
-      sourceMessageId: input.triggerMessage.id,
-      capabilityId,
-      expectedArtifactKind: input.plannedTurn.toolPlan?.expectedArtifactKind,
-      kind: message.includes("逐页完整") ? "quality_gate_failed" : "tool_failed",
-      status: "retryable_failed",
-      teacherSafeSummary: message,
-      internalReasonSanitized: error instanceof Error ? error.message : "external_provider_failed",
-      retryable: true,
-    });
-    if (jobId) {
-      await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: message }).catch(() => null);
-    }
-    const failedTurn: MainAgentTurn = {
-      ...input.plannedTurn,
-      assistantMessage: { body: message },
-      state: "failed_retryable",
-      shouldRunToolNow: false,
-      artifactRefs: [],
-    };
-    const assistantMessage = await input.service.addMessage(input.project.id, {
-      role: "assistant",
-      content: message,
-      metadata: failureMetadata,
-    });
-    return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn };
-  }
-}
-
-async function buildCozePptArtifactDraft(project: ProjectRecord, sourceArtifact: ArtifactRecord) {
-  const generated = await generateCozePptFromArtifact({ project, artifact: sourceArtifact });
-  const pageLabel = `${generated.slideCount} 页`;
   return {
-    nodeKey: "pptx_artifact" as const,
-    kind: "pptx_artifact" as const,
-    title: `真实 ${pageLabel} PPTX 文件`,
-    status: "needs_review" as const,
-    summary: `已生成可下载的真实 ${pageLabel} PPTX 文件，请下载后核对页面内容。`,
-    markdownContent: [
-      `# 真实 ${pageLabel} PPTX 文件`,
-      "",
-      `已基于当前逐页四层 PPT 设计稿生成真实 ${pageLabel} PPTX 文件。`,
-      "",
-      "正式授课前请核对教材、页码、例题、页面顺序和课堂节奏。",
-    ].join("\n"),
-    structuredContent: {
-      文件状态: `真实 ${pageLabel} PPTX 已生成`,
-      文件大小: `${generated.bytes} bytes`,
-      实际页数: pageLabel,
-      目标页数: `${generated.requestedPageCount} 页`,
-      storage: {
-        cozePptx: {
-          localOutput: generated.localOutput,
-          fileName: generated.fileName,
-          bytes: generated.bytes,
-          sha256: generated.sha256,
-          slideCount: generated.slideCount,
-          requestedPageCount: generated.requestedPageCount,
-          generationMode: "coze_generated",
-          sourceArtifactId: sourceArtifact.id,
-        },
-      },
-    },
+    kind: capabilityId === "coze_ppt" ? "pptx" as const : capabilityId === "image_asset" ? "image" as const : "video" as const,
+    sourceArtifact,
   };
 }
 
-async function buildImageArtifactDraft(project: ProjectRecord, sourceArtifact: ArtifactRecord) {
-  const generated = await generateImageFromArtifact({ project, artifact: sourceArtifact });
-  return {
-    nodeKey: "image_prompts" as const,
-    kind: "image_prompts" as const,
-    title: "真实课堂视觉图",
-    status: "needs_review" as const,
-    summary: "已生成一张可用于课件导入页的本地课堂视觉图，请下载或接入前继续核对画面内容。",
-    markdownContent: [
-      "# 真实课堂视觉图",
-      "",
-      "已基于当前 PPT 大纲生成一张本地课堂视觉图。",
-      "",
-      "正式授课前请核对画面是否贴合教材、课题、课堂问题和学生认知水平。",
-    ].join("\n"),
-    structuredContent: {
-      文件状态: "真实课堂视觉图已生成",
-      文件大小: `${generated.bytes} bytes`,
-      文件类型: generated.mime,
-      storage: {
-        imageAsset: {
-          localOutput: generated.localOutput,
-          fileName: generated.fileName,
-          bytes: generated.bytes,
-          sha256: generated.sha256,
-          mime: generated.mime,
-          generationMode: "image_generated",
-          sourceArtifactId: sourceArtifact.id,
-        },
-      },
-    },
-  };
-}
-
-async function buildVideoArtifactDraft(project: ProjectRecord, sourceArtifact: ArtifactRecord, upstreamArtifacts: ArtifactRecord[]) {
-  const generated = await generateVideoFromArtifact({ project, artifact: sourceArtifact, upstreamArtifacts });
-  return {
-    nodeKey: "video_segment_generate" as const,
-    kind: "video_segment_generate" as const,
-    title: "真实分镜视频片段",
-    status: "needs_review" as const,
-    summary: "已生成一段本地分镜视频，请播放后核对画面、节奏和课堂锚点。",
-    markdownContent: [
-      "# 真实分镜视频片段",
-      "",
-      "已基于当前分镜视频计划生成一段本地 MP4。",
-      "",
-      "正式授课前请核对画面质量、节奏、课堂锚点、学生理解成本和是否提前讲解知识点。",
-    ].join("\n"),
-    structuredContent: {
-      文件状态: "真实分镜视频片段已生成",
-      文件大小: `${generated.bytes} bytes`,
-      文件类型: generated.mime,
-      storage: {
-        videoAsset: {
-          localOutput: generated.localOutput,
-          fileName: generated.fileName,
-          bytes: generated.bytes,
-          sha256: generated.sha256,
-          mime: generated.mime,
-          generationMode: "video_generated",
-          sourceArtifactId: sourceArtifact.id,
-        },
-      },
-    },
-  };
-}
-
-async function resolveExternalSourceArtifact(
-  input: {
-    service: WorkbenchService;
-    project: ProjectRecord;
-    artifacts: ArtifactRecord[];
-    pendingPlan: PendingDeliveryPlanSnapshot | null;
-  },
-  capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate",
-) {
-  const approvedSource = findExternalSourceArtifact(capabilityId, input.artifacts);
-  if (approvedSource) return approvedSource;
-
-  return null;
-}
-
-function findExternalSourceArtifact(capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate", artifacts: ArtifactRecord[]) {
+function findProviderSourceArtifact(capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate", artifacts: ArtifactRecord[]) {
   const candidates = [...artifacts].reverse().filter((artifact) => artifact.isApproved && artifact.status === "approved");
   if (capabilityId === "coze_ppt") {
     return candidates.find((artifact) => artifact.nodeKey === "ppt_design_draft" && artifact.kind === "ppt_design_draft") ?? null;
@@ -980,31 +718,6 @@ function findExternalSourceArtifact(capabilityId: "coze_ppt" | "image_asset" | "
     return candidates.find((artifact) => artifact.nodeKey === "ppt_draft" && artifact.kind === "ppt_draft") ?? null;
   }
   return candidates.find((artifact) => artifact.nodeKey === "video_segment_plan" && artifact.kind === "video_segment_plan") ?? null;
-}
-
-function unsupportedExternalCapabilityMessage(capabilityId: string) {
-  if (capabilityId === "asset_image_generate") return "视频资产图需要接入真实图片生成后才能执行，我没有保存占位成果。";
-  return "最终视频拼接需要接入真实拼接流程后才能执行，我没有保存占位成果。";
-}
-
-function externalMissingSourceMessage(capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate") {
-  if (capabilityId === "coze_ppt") return "需要先生成 PPT 设计稿，才能生成真实 PPTX 文件。";
-  if (capabilityId === "image_asset") return "需要先生成并确认 PPT 大纲，才能生成真实课堂视觉图。";
-  return "需要先生成并确认分镜、资产图和分镜视频计划，才能生成真实分镜视频。";
-}
-
-function externalSuccessMessage(capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate", title: string) {
-  if (capabilityId === "coze_ppt") return `已生成「${title}」，这是真实 PPTX 文件，请下载核对。`;
-  if (capabilityId === "image_asset") return `已生成「${title}」，这是真实课堂视觉图，请核对画面内容。`;
-  return `已生成「${title}」，这是真实 MP4 分镜视频，请播放核对。`;
-}
-
-function externalFailedMessage(capabilityId: "coze_ppt" | "image_asset" | "video_segment_generate", error?: unknown) {
-  const detail = error instanceof Error ? error.message : "";
-  if (capabilityId === "coze_ppt" && detail.includes("PPT 设计稿未逐页完整")) return detail;
-  if (capabilityId === "coze_ppt") return "真实 PPTX 服务暂时没有生成成功，我没有保存占位成果。请稍后重试或检查服务配置。";
-  if (capabilityId === "image_asset") return "真实图片服务暂时没有生成成功，我没有保存占位成果。请稍后重试或检查服务配置。";
-  return "真实视频服务暂时没有生成成功，我没有保存占位成果。请稍后重试或检查服务配置。";
 }
 
 function advanceDeliveryPlan(deliveryPlan: DeliveryPlan, completedCapabilityId: string) {
@@ -1064,44 +777,6 @@ function createToolSucceededBudgetMetadata(toolPlan: CapabilityToolPlan): Record
       expectedArtifactKind: toolPlan.expectedArtifactKind,
       status: "succeeded",
       kind: "tool_succeeded",
-    }),
-  };
-}
-
-function createToolFailureObservationMetadata(input: {
-  projectId: string;
-  sourceMessageId?: string;
-  jobId?: string;
-  capabilityId: CapabilityId;
-  expectedArtifactKind?: string;
-  kind: ToolObservationKind;
-  status: AgentHarnessBudgetEventStatus;
-  teacherSafeSummary: string;
-  internalReasonSanitized: string;
-  retryable: boolean;
-}): Record<string, unknown> {
-  const observation = createToolObservation({
-    projectId: input.projectId,
-    sourceMessageId: input.sourceMessageId,
-    jobId: input.jobId,
-    capabilityId: input.capabilityId,
-    expectedArtifactKind: input.expectedArtifactKind,
-    kind: input.kind,
-    teacherSafeSummary: input.teacherSafeSummary,
-    internalReasonSanitized: input.internalReasonSanitized,
-    retryPolicy: {
-      retryable: input.retryable,
-      nextAction: input.retryable ? "retry_later" : input.kind === "quality_gate_failed" ? "fix_inputs" : "ask_teacher",
-    },
-  });
-
-  return {
-    ...appendToolObservationMetadata(undefined, observation),
-    agentHarnessBudgetEvent: buildAgentHarnessBudgetEvent({
-      capabilityId: input.capabilityId,
-      expectedArtifactKind: input.expectedArtifactKind,
-      status: input.status,
-      kind: input.kind,
     }),
   };
 }

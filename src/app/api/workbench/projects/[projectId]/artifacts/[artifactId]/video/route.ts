@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { buildStoredVideoDownload, videoDownloadHeaders } from "@/server/video-generation/artifact-video";
-import { assertVideoProviderPreconditions, generateVideoFromArtifact } from "@/server/video-generation/video-generation-run";
+import { assertVideoProviderPreconditions } from "@/server/video-generation/video-generation-run";
+import { routeToolCall } from "@/server/tools/tool-router";
+import { isVerifiedProviderToolSuccess } from "@/server/tools/tool-types";
+import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
 import {
   assertRouteLevelGenerationConfirmation,
   readConfirmedActionId,
@@ -60,36 +63,37 @@ export async function POST(request: Request, context: RouteContext) {
       jobId = queuedJob.id;
       await service.startGenerationJob(projectId, jobId);
 
-      const generated = await generateVideoFromArtifact({ project, artifact: sourceArtifact, upstreamArtifacts });
+      const result = await routeToolCall({
+        capabilityId: "video_segment_generate",
+        projectId,
+        project,
+        artifactRefs: [sourceArtifact, ...upstreamArtifacts].map((artifact) => ({
+          kind: artifact.kind,
+          artifactId: artifact.id,
+          title: artifact.title,
+          summary: artifact.summary,
+          markdownContent: artifact.markdownContent,
+          structuredContent: artifact.structuredContent,
+        })),
+        resolvedArtifacts: [sourceArtifact, ...upstreamArtifacts],
+      });
+      if (!isVerifiedProviderToolSuccess(result)) {
+        const teacherSafeError = result.status === "succeeded"
+          ? "分镜视频没有通过交付校验，我没有保存这份结果。"
+          : result.observation.teacherSafeSummary;
+        await service.failGenerationJob(projectId, jobId, { errorMessage: teacherSafeError });
+        jobId = null;
+        return NextResponse.json({ error: teacherSafeError }, { status: 400 });
+      }
+
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "video_segment_generate",
-        kind: "video_segment_generate",
-        title: "真实分镜视频片段",
+        nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
+        kind: result.artifactDraft.kind as ArtifactKind,
+        title: result.artifactDraft.title,
         status: "needs_review",
-        summary: "已生成一段本地分镜视频，请播放后核对画面、节奏和课堂锚点。",
-        markdownContent: [
-          "# 真实分镜视频片段",
-          "",
-          "已基于当前分镜视频计划生成一段本地 MP4。",
-          "",
-          "正式授课前请核对画面质量、节奏、课堂锚点、学生理解成本和是否提前讲解知识点。",
-        ].join("\n"),
-        structuredContent: {
-          storage: {
-            videoAsset: {
-              localOutput: generated.localOutput,
-              fileName: generated.fileName,
-              bytes: generated.bytes,
-              sha256: generated.sha256,
-              mime: generated.mime,
-              generationMode: "video_generated",
-              sourceArtifactId: sourceArtifact.id,
-            },
-          },
-          文件状态: "真实导入视频已生成",
-          文件大小: `${generated.bytes} bytes`,
-          文件类型: generated.mime,
-        },
+        summary: result.artifactDraft.summary,
+        markdownContent: result.artifactDraft.markdownContent ?? "",
+        structuredContent: result.artifactDraft.structuredContent,
       });
       const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });
 

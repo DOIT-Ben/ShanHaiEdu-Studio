@@ -187,6 +187,6 @@ describe("Local Real MVP M30 generation job queue", () => {
       status: "failed",
       attempts: 1,
     });
-    expect(jobs.at(-1)?.errorMessage).toContain("Image generation failed");
+    expect(jobs.at(-1)?.errorMessage).toBe("课堂视觉图生成服务暂时没有完成这一步，可以稍后重试。");
   });
 });

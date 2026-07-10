@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import { getToolDefinition, getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
 import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
 import type { ToolDefinition } from "@/server/tools/tool-types";
@@ -84,7 +85,58 @@ describe("ToolRegistry", () => {
       "concat_only_assemble",
       "create_final_delivery_checklist",
       "generate_pptx_from_design",
+      "generate_classroom_image",
+      "generate_video_segment",
     ]);
+  });
+
+  it("registers exactly one tool definition for every capability", () => {
+    const capabilityIds = getCapabilityDefinitions().map((capability) => capability.id);
+    const toolCapabilityIds = listToolDefinitions().map((tool) => tool.capabilityId);
+
+    expect(new Set(toolCapabilityIds)).toEqual(new Set(capabilityIds));
+  });
+
+  it("keeps every tool input and output artifact contract aligned with its capability", () => {
+    const capabilities = getCapabilityDefinitions();
+    const capabilitiesById = new Map(capabilities.map((capability) => [capability.id, capability]));
+
+    for (const tool of listToolDefinitions()) {
+      const capability = capabilitiesById.get(tool.capabilityId!);
+      expect(capability).toBeDefined();
+      const requiredArtifactKinds = capability!.upstreamCapabilities.map(
+        (upstreamId) => capabilitiesById.get(upstreamId)!.artifactKind,
+      );
+
+      expect(tool.requiredArtifactKinds).toEqual(requiredArtifactKinds);
+      expect(tool.producedArtifactKind).toBe(capability!.artifactKind);
+    }
+  });
+
+  it("does not register duplicate capability ids", () => {
+    const capabilityIds = listToolDefinitions().map((tool) => tool.capabilityId);
+
+    expect(capabilityIds).toHaveLength(new Set(capabilityIds).size);
+  });
+
+  it("maps classroom image generation to the image asset provider tool", () => {
+    expect(getToolDefinition("generate_classroom_image")).toMatchObject({
+      adapterKind: "provider",
+      capabilityId: "image_asset",
+      providerToolId: "image_asset.generate",
+      requiredArtifactKinds: ["ppt_draft"],
+      producedArtifactKind: "image_prompts",
+    });
+  });
+
+  it("maps video segment generation to the video provider tool", () => {
+    expect(getToolDefinition("generate_video_segment")).toMatchObject({
+      adapterKind: "provider",
+      capabilityId: "video_segment_generate",
+      providerToolId: "video_segment_generate.generate",
+      requiredArtifactKinds: ["video_segment_plan", "storyboard_generate", "asset_image_generate"],
+      producedArtifactKind: "video_segment_generate",
+    });
   });
 
   it("keeps provider tool routing fields explicit for executable provider tools", () => {

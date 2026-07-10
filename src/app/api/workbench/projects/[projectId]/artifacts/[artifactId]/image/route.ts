@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { buildStoredImageDownload, imageDownloadHeaders } from "@/server/image-generation/artifact-image";
-import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
+import { routeToolCall } from "@/server/tools/tool-router";
+import { isVerifiedProviderToolSuccess } from "@/server/tools/tool-types";
+import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
 import {
   assertRouteLevelGenerationConfirmation,
   readConfirmedActionId,
@@ -57,36 +59,37 @@ export async function POST(request: Request, context: RouteContext) {
       jobId = queuedJob.id;
       await service.startGenerationJob(projectId, jobId);
 
-      const generated = await generateImageFromArtifact({ project, artifact: sourceArtifact });
+      const result = await routeToolCall({
+        capabilityId: "image_asset",
+        projectId,
+        project,
+        artifactRefs: [{
+          kind: sourceArtifact.kind,
+          artifactId: sourceArtifact.id,
+          title: sourceArtifact.title,
+          summary: sourceArtifact.summary,
+          markdownContent: sourceArtifact.markdownContent,
+          structuredContent: sourceArtifact.structuredContent,
+        }],
+        resolvedArtifacts: [sourceArtifact],
+      });
+      if (!isVerifiedProviderToolSuccess(result)) {
+        const teacherSafeError = result.status === "succeeded"
+          ? "课堂视觉图没有通过交付校验，我没有保存这份结果。"
+          : result.observation.teacherSafeSummary;
+        await service.failGenerationJob(projectId, jobId, { errorMessage: teacherSafeError });
+        jobId = null;
+        return NextResponse.json({ error: teacherSafeError }, { status: 400 });
+      }
+
       const artifact = await service.saveArtifact(projectId, {
-        nodeKey: "image_prompts",
-        kind: "image_prompts",
-        title: "真实课堂视觉图",
+        nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
+        kind: result.artifactDraft.kind as ArtifactKind,
+        title: result.artifactDraft.title,
         status: "needs_review",
-        summary: "已生成一张可用于课件导入页的本地课堂视觉图，请下载或接入前继续核对画面内容。",
-        markdownContent: [
-          "# 真实课堂视觉图",
-          "",
-          "已基于当前 PPT 大纲生成一张本地课堂视觉图。",
-          "",
-          "正式授课前请核对画面是否贴合教材、课题、课堂问题和学生认知水平。",
-        ].join("\n"),
-        structuredContent: {
-          storage: {
-            imageAsset: {
-              localOutput: generated.localOutput,
-              fileName: generated.fileName,
-              bytes: generated.bytes,
-              sha256: generated.sha256,
-              mime: generated.mime,
-              generationMode: "image_generated",
-              sourceArtifactId: sourceArtifact.id,
-            },
-          },
-          文件状态: "真实课堂视觉图已生成",
-          文件大小: `${generated.bytes} bytes`,
-          文件类型: generated.mime,
-        },
+        summary: result.artifactDraft.summary,
+        markdownContent: result.artifactDraft.markdownContent ?? "",
+        structuredContent: result.artifactDraft.structuredContent,
       });
       const job = await service.finishGenerationJob(projectId, jobId, { resultArtifactId: artifact.id });
 

@@ -10,6 +10,23 @@ import type { routeToolCall } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { createWorkbenchService } from "@/server/workbench/service";
 
+const legacyProviderMocks = vi.hoisted(() => ({
+  generateImageFromArtifact: vi.fn(async () => {
+    throw new Error("legacy image provider bypass invoked");
+  }),
+  generateVideoFromArtifact: vi.fn(async () => {
+    throw new Error("legacy video provider bypass invoked");
+  }),
+}));
+
+vi.mock("@/server/image-generation/image-generation-run", () => ({
+  generateImageFromArtifact: legacyProviderMocks.generateImageFromArtifact,
+}));
+
+vi.mock("@/server/video-generation/video-generation-run", () => ({
+  generateVideoFromArtifact: legacyProviderMocks.generateVideoFromArtifact,
+}));
+
 const fullDeliveryCapabilityIds = [
   "requirement_spec",
   "lesson_plan",
@@ -486,6 +503,98 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     }
   });
 
+  it("blocks a succeeded coze_ppt result when artifact truth is missing and the quality gate failed", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousToken = process.env.COZE_API_TOKEN;
+    const previousRunUrl = process.env.COZE_PPT_RUN_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.COZE_API_TOKEN = "test-token";
+    process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M64-E router truth gate 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const design = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "已确认 PPT 设计稿",
+        status: "needs_review",
+        summary: "逐页四层设计稿已确认。",
+        markdownContent: "# 已确认 PPT 设计稿",
+        structuredContent: { pages: [{ page: 1, title: "导入" }] },
+      });
+      await service.approveArtifact(project.id, design.id);
+      const actionId = await seedPendingPlan(service, project.id, "coze_ppt", "pptx_artifact");
+      const toolRouter = vi.fn(async (): Promise<ToolExecutionResult> => ({
+        status: "succeeded",
+        toolId: "generate_pptx_from_design",
+        capabilityId: "coze_ppt",
+        provider: "coze_ppt",
+        artifactDraft: {
+          nodeKey: "pptx_artifact",
+          kind: "pptx_artifact",
+          title: "未通过校验的 PPTX",
+          summary: "Router 声称已生成 PPTX。",
+          markdownContent: "# 未通过校验的 PPTX",
+          structuredContent: { slideCount: 1, fromRouter: true },
+        },
+        qualityGate: {
+          passed: false,
+          gates: ["pptx_valid", "slide_count_matches_design"],
+        },
+        assistantSummary: "Router 声称 PPTX 已生成。",
+        budgetEvent: {
+          capabilityId: "coze_ppt",
+          actionKey: "generate_pptx_from_design:pptx_artifact",
+          status: "succeeded",
+          kind: "tool_succeeded",
+          createdAt: "2026-07-10T00:00:00.000Z",
+        },
+      }));
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("coze_ppt", "pptx_artifact"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX", confirmedActionId: actionId });
+      const artifacts = await service.getArtifacts(project.id);
+      const jobs = await service.getGenerationJobs(project.id);
+      const messages = await service.getMessages(project.id);
+      const observations = readActiveToolObservationsFromMessages(messages);
+      const events = readAgentHarnessBudgetEventsFromMessages(messages);
+
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(body.artifact).toBeUndefined();
+      expect(artifacts).toEqual([expect.objectContaining({ id: design.id, kind: "ppt_design_draft" })]);
+      expect(body.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false, artifactRefs: [] });
+      expect(jobs).toEqual([
+        expect.objectContaining({
+          kind: "pptx",
+          sourceArtifactId: design.id,
+          status: "failed",
+          resultArtifactId: null,
+          errorMessage: expect.any(String),
+        }),
+      ]);
+      expect(observations).toEqual([
+        expect.objectContaining({ capabilityId: "coze_ppt", kind: "quality_gate_failed", artifactCreated: false }),
+      ]);
+      expect(events.filter((event) => event.capabilityId === "coze_ppt")).toEqual([
+        expect.objectContaining({
+          capabilityId: "coze_ppt",
+          actionKey: "coze_ppt:pptx_artifact",
+          status: "failed",
+          kind: "quality_gate_failed",
+        }),
+      ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("COZE_API_TOKEN", previousToken);
+      restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
+
   it("routes coze_ppt success through ToolRouter and records succeeded generation job", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousToken = process.env.COZE_API_TOKEN;
@@ -515,6 +624,13 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           toolId: "generate_pptx_from_design",
           capabilityId: "coze_ppt",
           provider: "coze_ppt",
+          artifactTruth: {
+            created: true,
+            persisted: true,
+            placeholder: false,
+            producedArtifactKind: "pptx_artifact",
+          },
+          qualityGate: { passed: true, gates: ["pptx_valid"] },
           artifactDraft: {
             nodeKey: "pptx_artifact",
             kind: "pptx_artifact",
@@ -570,6 +686,233 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
       restoreEnv("COZE_API_TOKEN", previousToken);
       restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
+
+  it("routes confirmed image_asset through ToolRouter and completes its generation job from the router result", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousKey = process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY;
+    const previousBase = process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY = "test-key";
+    process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL = "https://example.invalid/image";
+    legacyProviderMocks.generateImageFromArtifact.mockClear();
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M64-R router image 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const outline = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_draft",
+        kind: "ppt_draft",
+        title: "已确认 PPT 大纲",
+        status: "needs_review",
+        summary: "课堂图片来源大纲已确认。",
+        markdownContent: "# PPT 大纲",
+      });
+      await service.approveArtifact(project.id, outline.id);
+      const design = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "已确认 PPT 设计稿",
+        status: "needs_review",
+        summary: "课堂图片设计约束已确认。",
+        markdownContent: "# PPT 设计稿",
+      });
+      await service.approveArtifact(project.id, design.id);
+      const actionId = await seedPendingPlan(service, project.id, "image_asset", "image_prompts");
+      let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
+      const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
+        capturedRouterInput = input;
+        return {
+          status: "succeeded",
+          toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        provider: "image_generation",
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          placeholder: false,
+          producedArtifactKind: "image_prompts",
+        },
+        qualityGate: { passed: true, gates: ["image_valid"] },
+          artifactDraft: {
+            nodeKey: "image_prompts",
+            kind: "image_prompts",
+            title: "Router 课堂视觉图",
+            summary: "Router 已生成课堂视觉图。",
+            markdownContent: "# Router 课堂视觉图",
+            structuredContent: { fromRouter: "image_asset", fileName: "router-image.png" },
+          },
+          assistantSummary: "Router 已生成课堂视觉图。",
+          budgetEvent: {
+            capabilityId: "image_asset",
+            actionKey: "generate_classroom_image:image_prompts",
+            status: "succeeded",
+            kind: "tool_succeeded",
+            createdAt: "2026-07-10T00:00:00.000Z",
+          },
+        };
+      });
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("image_asset", "image_prompts"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成课堂视觉图", confirmedActionId: actionId });
+      const jobs = await service.getGenerationJobs(project.id);
+
+      expect(legacyProviderMocks.generateImageFromArtifact.mock.calls.length).toBe(0);
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(capturedRouterInput).toMatchObject({
+        capabilityId: "image_asset",
+        projectId: project.id,
+        sourceMessageId: body.message.id,
+        artifactRefs: expect.arrayContaining([
+          expect.objectContaining({ artifactId: outline.id, kind: "ppt_draft" }),
+          expect.objectContaining({ artifactId: design.id, kind: "ppt_design_draft" }),
+        ]),
+      });
+      expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true, artifactRefs: [body.artifact!.id] });
+      expect(body.artifact).toMatchObject({
+        nodeKey: "image_prompts",
+        kind: "image_prompts",
+        status: "needs_review",
+        structuredContent: { fromRouter: "image_asset", fileName: "router-image.png" },
+      });
+      expect(jobs).toEqual([
+        expect.objectContaining({
+          kind: "image",
+          sourceArtifactId: outline.id,
+          status: "succeeded",
+          resultArtifactId: body.artifact!.id,
+          errorMessage: null,
+        }),
+      ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_API_KEY", previousKey);
+      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_BASE_URL", previousBase);
+    }
+  });
+
+  it("routes confirmed video_segment_generate through ToolRouter and completes its generation job from the router result", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousMode = process.env.VIDEO_PROVIDER_MODE;
+    const previousKey = process.env.EVOLINK_VIDEO_API_KEY;
+    const previousBase = process.env.EVOLINK_VIDEO_BASE_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.VIDEO_PROVIDER_MODE = "evolink";
+    process.env.EVOLINK_VIDEO_API_KEY = "test-key";
+    process.env.EVOLINK_VIDEO_BASE_URL = "https://example.invalid/video";
+    legacyProviderMocks.generateVideoFromArtifact.mockClear();
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M64-R router video 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const storyboard = await service.saveArtifact(project.id, {
+        nodeKey: "storyboard_generate",
+        kind: "storyboard_generate",
+        title: "已确认视频分镜",
+        status: "needs_review",
+        summary: "视频分镜已确认。",
+        markdownContent: "# 视频分镜",
+      });
+      await service.approveArtifact(project.id, storyboard.id);
+      const assetImages = await service.saveArtifact(project.id, {
+        nodeKey: "asset_image_generate",
+        kind: "asset_image_generate",
+        title: "已确认视频资产图",
+        status: "needs_review",
+        summary: "视频资产图已确认。",
+        markdownContent: "# 视频资产图",
+      });
+      await service.approveArtifact(project.id, assetImages.id);
+      const segmentPlan = await service.saveArtifact(project.id, {
+        nodeKey: "video_segment_plan",
+        kind: "video_segment_plan",
+        title: "已确认分镜视频计划",
+        status: "needs_review",
+        summary: "分镜视频计划已确认。",
+        markdownContent: "# 分镜视频计划",
+      });
+      await service.approveArtifact(project.id, segmentPlan.id);
+      const actionId = await seedPendingPlan(service, project.id, "video_segment_generate", "video_segment_generate");
+      let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
+      const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
+        capturedRouterInput = input;
+        return {
+          status: "succeeded",
+          toolId: "generate_video_segment",
+        capabilityId: "video_segment_generate",
+        provider: "video_generation",
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          placeholder: false,
+          producedArtifactKind: "video_segment_generate",
+        },
+        qualityGate: { passed: true, gates: ["video_valid"] },
+          artifactDraft: {
+            nodeKey: "video_segment_generate",
+            kind: "video_segment_generate",
+            title: "Router 分镜视频片段",
+            summary: "Router 已生成分镜视频片段。",
+            markdownContent: "# Router 分镜视频片段",
+            structuredContent: { fromRouter: "video_segment_generate", fileName: "router-segment.mp4" },
+          },
+          assistantSummary: "Router 已生成分镜视频片段。",
+          budgetEvent: {
+            capabilityId: "video_segment_generate",
+            actionKey: "generate_video_segment:video_segment_generate",
+            status: "succeeded",
+            kind: "tool_succeeded",
+            createdAt: "2026-07-10T00:00:00.000Z",
+          },
+        };
+      });
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("video_segment_generate", "video_segment_generate"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成分镜视频片段", confirmedActionId: actionId });
+      const jobs = await service.getGenerationJobs(project.id);
+
+      expect(legacyProviderMocks.generateVideoFromArtifact.mock.calls.length).toBe(0);
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(capturedRouterInput).toMatchObject({
+        capabilityId: "video_segment_generate",
+        projectId: project.id,
+        sourceMessageId: body.message.id,
+        artifactRefs: expect.arrayContaining([
+          expect.objectContaining({ artifactId: storyboard.id, kind: "storyboard_generate" }),
+          expect.objectContaining({ artifactId: assetImages.id, kind: "asset_image_generate" }),
+          expect.objectContaining({ artifactId: segmentPlan.id, kind: "video_segment_plan" }),
+        ]),
+      });
+      expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true, artifactRefs: [body.artifact!.id] });
+      expect(body.artifact).toMatchObject({
+        nodeKey: "video_segment_generate",
+        kind: "video_segment_generate",
+        status: "needs_review",
+        structuredContent: { fromRouter: "video_segment_generate", fileName: "router-segment.mp4" },
+      });
+      expect(jobs).toEqual([
+        expect.objectContaining({
+          kind: "video",
+          sourceArtifactId: segmentPlan.id,
+          status: "succeeded",
+          resultArtifactId: body.artifact!.id,
+          errorMessage: null,
+        }),
+      ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("VIDEO_PROVIDER_MODE", previousMode);
+      restoreEnv("EVOLINK_VIDEO_API_KEY", previousKey);
+      restoreEnv("EVOLINK_VIDEO_BASE_URL", previousBase);
     }
   });
 
@@ -713,7 +1056,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实课堂视觉图", confirmedActionId: actionId });
       const messages = await service.getMessages(project.id);
 
-      expect(body.agentTurn).toMatchObject({ state: "failed_retryable", shouldRunToolNow: false, artifactRefs: [] });
+      expect(body.agentTurn).toMatchObject({ state: "collecting_inputs", shouldRunToolNow: false, artifactRefs: [] });
       expect(body.artifact).toBeUndefined();
       expect(readActiveToolObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
         expect.objectContaining({ capabilityId: "image_asset", kind: "blocked_by_policy", artifactCreated: false }),

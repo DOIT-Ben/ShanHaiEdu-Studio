@@ -40,7 +40,7 @@ test("M60 registers the complete video workflow node and capability chain", () =
   assert.match(registrySource, /id: "video_script_generate"[\s\S]*upstreamCapabilities: \["creative_theme_generate"\]/);
   assert.match(registrySource, /id: "storyboard_generate"[\s\S]*upstreamCapabilities: \["video_script_generate"\]/);
   assert.match(registrySource, /id: "asset_image_generate"[\s\S]*upstreamCapabilities: \["asset_brief_generate"\]/);
-  assert.match(registrySource, /id: "video_segment_generate"[\s\S]*upstreamCapabilities: \["video_segment_plan", "asset_image_generate"\]/);
+  assert.match(registrySource, /id: "video_segment_generate"[\s\S]*upstreamCapabilities: \["video_segment_plan", "storyboard_generate", "asset_image_generate"\]/);
   assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*upstreamCapabilities: \["video_segment_generate"\]/);
 });
 
@@ -77,13 +77,18 @@ test("M60 does not let deterministic execution masquerade as real video assets o
   const registrySource = readSource("src/server/capabilities/capability-registry.ts");
   const runnerSource = readSource("src/server/capabilities/capability-runner.ts");
   const conversationTurnSource = readSource("src/server/conversation/conversation-turn-service.ts");
+  const toolRegistrySource = readSource("src/server/tools/tool-registry.ts");
+  const toolRouterSource = readSource("src/server/tools/tool-router.ts");
 
   assert.match(registrySource, /id: "asset_image_generate"[\s\S]*providerMode: "external"[\s\S]*deterministicFallback: "blocked"/);
   assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*providerMode: "package"[\s\S]*deterministicFallback: "blocked"/);
   assert.match(runnerSource, /generationMode === "deterministic_draft"[\s\S]*deterministicFallback === "blocked"/);
   assert.match(runnerSource, /deterministic_runtime_blocked_real_asset/);
-  assert.match(conversationTurnSource, /unsupportedExternalCapabilityIds[\s\S]*"asset_image_generate"[\s\S]*"concat_only_assemble"/);
-  assert.match(conversationTurnSource, /我没有保存占位成果/);
+  assert.match(toolRegistrySource, /id: "asset_image_generate"[\s\S]*blockedReason:/);
+  assert.match(toolRegistrySource, /id: "concat_only_assemble"[\s\S]*blockedReason:/);
+  assert.match(toolRouterSource, /!tool\.implemented \|\| tool\.blockedReason/);
+  assert.match(toolRouterSource, /artifactCreated: false/);
+  assert.match(conversationTurnSource, /listToolDefinitions\(\)[\s\S]*input\.toolRouter/);
 });
 
 test("M60 Evolink provider profile is conservative and does not claim start/end frame support", () => {

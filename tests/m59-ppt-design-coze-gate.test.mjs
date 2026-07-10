@@ -77,9 +77,10 @@ test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer
   assert.doesNotMatch(cozeSource, /完整 12 页课件/);
   assert.doesNotMatch(cozeSource, /当前 PPT 大纲：/);
   assert.match(routeSource, /kind !== "ppt_design_draft"/);
-  assert.match(conversationSource, /resolveExternalSourceArtifact\(input, capabilityId\)/);
-  assert.match(conversationSource, /findExternalSourceArtifact[\s\S]*ppt_design_draft/);
-  assert.match(conversationSource, /failGenerationJob[\s\S]*errorMessage: message/);
+  assert.match(routeSource, /routeToolCall\([\s\S]*capabilityId: "coze_ppt"/);
+  assert.match(conversationSource, /input\.toolRouter\([\s\S]*capabilityId: toolPlan\.capabilityId/);
+  assert.match(conversationSource, /findProviderSourceArtifact[\s\S]*ppt_design_draft/);
+  assert.match(conversationSource, /failGenerationJob[\s\S]*result\.observation\.teacherSafeSummary/);
 });
 
 test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {

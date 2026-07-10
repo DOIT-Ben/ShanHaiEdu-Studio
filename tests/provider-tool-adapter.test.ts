@@ -1,9 +1,100 @@
 import { describe, expect, it } from "vitest";
+import type { ImageGenerationResult } from "@/server/image-generation/image-generation-run";
 import { executeProviderTool, type ProviderToolAdapterInput } from "@/server/tools/provider-tool-adapter";
-import { getToolDefinition } from "@/server/tools/tool-registry";
-import type { ToolDefinition } from "@/server/tools/tool-types";
+import { getToolDefinition, getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
+import type { ToolDefinition, ToolExecutionResult } from "@/server/tools/tool-types";
+import type { VideoGenerationResult } from "@/server/video-generation/video-generation-run";
+import type { ArtifactRecord } from "@/server/workbench/types";
 
 const forbiddenSensitiveText = /token|providerMode|API|api[_-]?key|Bearer\s+\S+|C:\\|\\Users\\|local path|SECRET|credential/i;
+
+type FutureProviderToolAdapterInput = ProviderToolAdapterInput & {
+  resolvedArtifacts?: ArtifactRecord[];
+  runImage?: (input: unknown) => Promise<ImageGenerationResult>;
+  runVideo?: (input: unknown) => Promise<VideoGenerationResult>;
+};
+
+const executeFutureProviderTool = executeProviderTool as (input: FutureProviderToolAdapterInput) => Promise<ToolExecutionResult>;
+
+function projectRecord(): NonNullable<ProviderToolAdapterInput["project"]> {
+  return {
+    id: "project-a",
+    title: "百分数公开课",
+    status: "active",
+    currentNodeKey: "ppt_draft",
+    grade: "六年级",
+    subject: "数学",
+    textbookVersion: "人教版",
+    lessonTopic: "百分数",
+    createdAt: "2026-07-10T00:00:00.000Z",
+    updatedAt: "2026-07-10T00:00:00.000Z",
+  };
+}
+
+function artifactRef(kind: string, artifactId: string, markdownContent: string): ProviderToolAdapterInput["artifactRefs"][number] {
+  return {
+    kind,
+    artifactId,
+    title: `${kind} 已确认产物`,
+    summary: `${kind} 已通过教师确认。`,
+    markdownContent,
+  };
+}
+
+function resolvedArtifact(kind: ArtifactRecord["kind"], artifactId: string, overrides: Partial<ArtifactRecord> = {}): ArtifactRecord {
+  return {
+    id: artifactId,
+    projectId: "project-a",
+    nodeKey: kind,
+    title: `${kind} 已确认产物`,
+    kind,
+    status: "approved",
+    summary: `${kind} 已通过教师确认。`,
+    markdownContent: `# ${kind}`,
+    structuredContent: {},
+    version: 7,
+    isApproved: true,
+    createdAt: "2026-07-10T00:00:00.000Z",
+    updatedAt: "2026-07-10T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function pptDesignArtifact(overrides: Partial<ArtifactRecord> = {}) {
+  return resolvedArtifact("ppt_design_draft", "artifact-ppt-design-a", {
+    title: "逐页 PPT 设计稿",
+    summary: "已确认的逐页四层设计稿",
+    markdownContent: "第 1 页：底图：白板；元素：百分数问题；文字：百分数导入；排版：左文右图。",
+    ...overrides,
+  });
+}
+
+function pptDraftArtifact(overrides: Partial<ArtifactRecord> = {}) {
+  return resolvedArtifact("ppt_draft", "artifact-ppt-draft-a", {
+    markdownContent: "第 1 页：百分数生活情境导入。",
+    ...overrides,
+  });
+}
+
+function videoArtifacts() {
+  return [
+    resolvedArtifact("video_segment_plan", "artifact-video-plan-a", { markdownContent: "S1：8 秒百分数悬念片段。" }),
+    resolvedArtifact("storyboard_generate", "artifact-storyboard-a", { markdownContent: "S1：超市折扣镜头。" }),
+    resolvedArtifact("asset_image_generate", "artifact-assets-a", { markdownContent: "参考图：scene-1.png。" }),
+  ];
+}
+
+function pptDraftRef() {
+  return artifactRef("ppt_draft", "artifact-ppt-draft-a", "第 1 页：百分数生活情境导入。");
+}
+
+function videoArtifactRefs() {
+  return [
+    artifactRef("video_segment_plan", "artifact-video-plan-a", "S1：8 秒百分数悬念片段。"),
+    artifactRef("storyboard_generate", "artifact-storyboard-a", "S1：超市折扣镜头。"),
+    artifactRef("asset_image_generate", "artifact-assets-a", "参考图：scene-1.png。"),
+  ];
+}
 
 function pptDesignRef(overrides: Partial<ProviderToolAdapterInput["artifactRefs"][number]> = {}): ProviderToolAdapterInput["artifactRefs"][number] {
   return {
@@ -56,12 +147,14 @@ describe("M64-C ProviderToolAdapter", () => {
   it("wraps coze_ppt success through an injected provider runner without saving artifacts", async () => {
     const tool = getToolDefinition("generate_pptx_from_design");
     let calledWith: unknown;
+    const sourceArtifact = pptDesignArtifact({ version: 9 });
 
-    const result = await executeProviderTool({
+    const result = await executeFutureProviderTool({
       tool,
       projectId: "project-a",
       userInstruction: "请生成真实 PPTX",
       artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [sourceArtifact],
       sourceMessageId: "message-a",
       runCozePpt: async (input) => {
         calledWith = input;
@@ -84,8 +177,11 @@ describe("M64-C ProviderToolAdapter", () => {
         id: "artifact-ppt-design-a",
         kind: "ppt_design_draft",
         nodeKey: "ppt_design_draft",
+        version: 9,
+        status: "approved",
       },
     });
+    expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(sourceArtifact);
     expect(result).toMatchObject({
       status: "succeeded",
       toolId: "generate_pptx_from_design",
@@ -94,16 +190,22 @@ describe("M64-C ProviderToolAdapter", () => {
       artifactDraft: {
         nodeKey: "pptx_artifact",
         kind: "pptx_artifact",
-        title: "真实 PPTX 文件",
+        title: "真实 1 页 PPTX 文件",
         structuredContent: {
-          provider: "coze_ppt",
-          fileName: "lesson.pptx",
-          localOutput: ".tmp/lesson.pptx",
-          bytes: 2048,
-          sha256: "sha256-value",
-          mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          slideCount: 1,
-          pptxValid: true,
+          storage: {
+            cozePptx: {
+              fileName: "lesson.pptx",
+              localOutput: ".tmp/lesson.pptx",
+              bytes: 2048,
+              sha256: "sha256-value",
+              slideCount: 1,
+              requestedPageCount: 1,
+              generationMode: "coze_generated",
+              sourceArtifactId: "artifact-ppt-design-a",
+            },
+          },
+          实际页数: "1 页",
+          目标页数: "1 页",
           artifactTruth: {
             created: true,
             persisted: true,
@@ -166,7 +268,7 @@ describe("M64-C ProviderToolAdapter", () => {
     const tool = getToolDefinition("generate_pptx_from_design");
     let calledWith: Parameters<NonNullable<ProviderToolAdapterInput["runCozePpt"]>>[0] | undefined;
 
-    await executeProviderTool({
+    await executeFutureProviderTool({
       tool,
       projectId: "project-a",
       project: {
@@ -183,6 +285,7 @@ describe("M64-C ProviderToolAdapter", () => {
       },
       userInstruction: "请生成真实 PPTX",
       artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [pptDesignArtifact()],
       runCozePpt: async (input) => {
         calledWith = input;
         return {
@@ -207,12 +310,45 @@ describe("M64-C ProviderToolAdapter", () => {
     });
   });
 
+  it("uses the latest approved artifact ref when multiple versions share the required kind", async () => {
+    let sourceArtifactId = "";
+
+    await executeFutureProviderTool({
+      tool: getToolDefinition("generate_pptx_from_design"),
+      projectId: "project-a",
+      artifactRefs: [
+        pptDesignRef({ artifactId: "artifact-ppt-design-old" }),
+        pptDesignRef({ artifactId: "artifact-ppt-design-latest" }),
+      ],
+      resolvedArtifacts: [
+        pptDesignArtifact({ id: "artifact-ppt-design-old", version: 3 }),
+        pptDesignArtifact({ id: "artifact-ppt-design-latest", version: 8 }),
+      ],
+      runCozePpt: async ({ artifact }) => {
+        sourceArtifactId = artifact.id;
+        return {
+          fileName: "lesson.pptx",
+          localOutput: ".tmp/lesson.pptx",
+          bytes: 2048,
+          sha256: "sha256-value",
+          requestedPageCount: 1,
+          slideCount: 1,
+          pptxValid: true,
+          hasPresentationXml: true,
+        };
+      },
+    });
+
+    expect(sourceArtifactId).toBe("artifact-ppt-design-latest");
+  });
+
   it("maps invalid ppt design and validation failures to quality gate failures without artifact creation", async () => {
-    const result = await executeProviderTool({
+    const result = await executeFutureProviderTool({
       tool: getToolDefinition("generate_pptx_from_design"),
       projectId: "project-a",
       userInstruction: "生成 PPTX",
       artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [pptDesignArtifact()],
       runCozePpt: async () => {
         throw new Error("invalid PPT design: validation failed, slide count mismatch");
       },
@@ -242,11 +378,12 @@ describe("M64-C ProviderToolAdapter", () => {
   });
 
   it("normalizes provider runner failure into a provider unavailable observation and budget event", async () => {
-    const result = await executeProviderTool({
+    const result = await executeFutureProviderTool({
       tool: getToolDefinition("generate_pptx_from_design"),
       projectId: "project-a",
       userInstruction: "生成 PPTX",
       artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [pptDesignArtifact()],
       runCozePpt: async () => {
         throw new Error("coze provider timeout token=secret API_KEY=abc C:\\Users\\HB\\secret.pptx providerMode=openapi");
       },
@@ -274,7 +411,7 @@ describe("M64-C ProviderToolAdapter", () => {
   it("blocks coze_ppt when the required ppt_design_draft source artifact is missing and does not call the runner", async () => {
     let called = false;
 
-    const result = await executeProviderTool({
+    const result = await executeFutureProviderTool({
       tool: getToolDefinition("generate_pptx_from_design"),
       projectId: "project-a",
       userInstruction: "生成 PPTX",
@@ -300,6 +437,31 @@ describe("M64-C ProviderToolAdapter", () => {
         status: "blocked",
         kind: "blocked_by_policy",
       },
+    });
+  });
+
+  it("returns needs_input without calling the runner when only artifactRefs are supplied", async () => {
+    let called = false;
+
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_pptx_from_design"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef()],
+      runCozePpt: async () => {
+        called = true;
+        throw new Error("should_not_call_provider");
+      },
+    });
+
+    expect(called).toBe(false);
+    expect(result).toMatchObject({
+      status: "needs_input",
+      toolId: "generate_pptx_from_design",
+      capabilityId: "coze_ppt",
+      missingInputs: ["ppt_design_draft"],
+      artifactCreated: false,
+      observation: { kind: "blocked_by_policy", artifactCreated: false },
+      budgetEvent: { status: "blocked", kind: "blocked_by_policy" },
     });
   });
 
@@ -346,6 +508,7 @@ describe("M64-C ProviderToolAdapter", () => {
       tool: getToolDefinition("generate_pptx_from_design"),
       projectId: "project-a",
       artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [pptDesignArtifact()],
       runCozePpt: async () => {
         throw new Error("token=abc providerMode=cli API_KEY=sk-secret path=C:\\Users\\HB\\secret\\ppt.pptx Bearer abc.def");
       },
@@ -356,5 +519,323 @@ describe("M64-C ProviderToolAdapter", () => {
       expect(result.observation.teacherSafeSummary).not.toMatch(forbiddenSensitiveText);
       expect(result.observation.internalReasonSanitized).not.toMatch(forbiddenSensitiveText);
     }
+  });
+
+  describe("M64-R image_asset", () => {
+    it("passes the approved ppt draft to the image runner and returns a truth-gated image artifact draft", async () => {
+      let calledWith: unknown;
+      const sourceArtifact = pptDraftArtifact({ version: 11 });
+
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        project: projectRecord(),
+        userInstruction: "生成课堂导入图",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [sourceArtifact],
+        sourceMessageId: "message-a",
+        runImage: async (input) => {
+          calledWith = input;
+          return {
+            fileName: "percentage-intro.png",
+            localOutput: ".tmp/image-artifacts/percentage-intro.png",
+            bytes: 1024,
+            sha256: "image-sha256",
+            imageValid: true,
+            mime: "image/png",
+          };
+        },
+      });
+
+      expect(calledWith).toMatchObject({
+        project: { id: "project-a", grade: "六年级", subject: "数学", lessonTopic: "百分数" },
+        artifact: { id: "artifact-ppt-draft-a", kind: "ppt_draft", nodeKey: "ppt_draft", status: "approved", version: 11, isApproved: true },
+      });
+      expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(sourceArtifact);
+      expect(result).toMatchObject({
+        status: "succeeded",
+        toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        provider: "image_asset",
+        artifactDraft: {
+          nodeKey: "image_prompts",
+          kind: "image_prompts",
+          title: expect.stringContaining("课堂视觉图"),
+          structuredContent: {
+            storage: {
+              imageAsset: {
+                fileName: "percentage-intro.png",
+                localOutput: ".tmp/image-artifacts/percentage-intro.png",
+                bytes: 1024,
+                sha256: "image-sha256",
+                mime: "image/png",
+                generationMode: "image_generated",
+                sourceArtifactId: "artifact-ppt-draft-a",
+              },
+            },
+            artifactTruth: {
+              created: true,
+              persisted: true,
+              providerPersisted: true,
+              workbenchPersisted: false,
+              placeholder: false,
+              producedArtifactKind: "image_prompts",
+            },
+            qualityGate: {
+              passed: true,
+              gates: expect.arrayContaining(["image_valid", "supported_image_mime"]),
+            },
+          },
+        },
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          persistenceScope: "provider_local_file",
+          providerPersisted: true,
+          workbenchPersisted: false,
+          placeholder: false,
+          producedArtifactKind: "image_prompts",
+        },
+        qualityGate: {
+          passed: true,
+          gates: expect.arrayContaining(["image_valid", "supported_image_mime"]),
+        },
+      });
+    });
+
+    it("returns needs_input without calling the image runner when ppt_draft is missing", async () => {
+      let called = false;
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [artifactRef("lesson_plan", "artifact-lesson-a", "教案正文")],
+        runImage: async () => {
+          called = true;
+          throw new Error("should_not_call_image_runner");
+        },
+      });
+
+      expect(called).toBe(false);
+      expect(result).toMatchObject({
+        status: "needs_input",
+        toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        missingInputs: ["ppt_draft"],
+        artifactCreated: false,
+        observation: { kind: "blocked_by_policy", artifactCreated: false },
+      });
+    });
+
+    it("maps invalid_image_output to a quality gate failure without creating an artifact", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [pptDraftArtifact()],
+        runImage: async () => {
+          throw new Error("invalid_image_output");
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        artifactCreated: false,
+        errorCategory: "quality_gate_failed",
+        observation: { kind: "quality_gate_failed", artifactCreated: false },
+        budgetEvent: { status: "failed", kind: "quality_gate_failed" },
+      });
+    });
+
+    it("redacts image provider failures and does not create an artifact", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [pptDraftArtifact()],
+        runImage: async () => {
+          throw new Error("image request failed token=dummy API_KEY=dummy C:\\Users\\demo\\image.png providerMode=openapi");
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "retryable_failed",
+        toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        artifactCreated: false,
+        errorCategory: "provider_unavailable",
+        observation: { kind: "provider_unavailable", artifactCreated: false },
+      });
+      if ("observation" in result) {
+        expect(result.observation.teacherSafeSummary).not.toMatch(forbiddenSensitiveText);
+        expect(result.observation.internalReasonSanitized).not.toMatch(forbiddenSensitiveText);
+      }
+    });
+  });
+
+  describe("M64-R video_segment_generate", () => {
+    it("passes the segment plan and both upstream artifacts to the video runner and returns lineage with truth gates", async () => {
+      let calledWith: unknown;
+      const resolvedArtifacts = videoArtifacts();
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("video_segment_generate"),
+        projectId: "project-a",
+        project: projectRecord(),
+        userInstruction: "生成真实分镜视频",
+        artifactRefs: videoArtifactRefs(),
+        resolvedArtifacts,
+        sourceMessageId: "message-a",
+        runVideo: async (input) => {
+          calledWith = input;
+          return {
+            fileName: "percentage-segment.mp4",
+            localOutput: ".tmp/video-artifacts/percentage-segment.mp4",
+            bytes: 4096,
+            sha256: "video-sha256",
+            videoValid: true,
+            mime: "video/mp4",
+          };
+        },
+      });
+
+      expect(calledWith).toMatchObject({
+        project: { id: "project-a", grade: "六年级", subject: "数学", lessonTopic: "百分数" },
+        artifact: { id: "artifact-video-plan-a", kind: "video_segment_plan", nodeKey: "video_segment_plan", status: "approved", version: 7, isApproved: true },
+        upstreamArtifacts: expect.arrayContaining([
+          expect.objectContaining({ id: "artifact-storyboard-a", kind: "storyboard_generate", status: "approved", version: 7, isApproved: true }),
+          expect.objectContaining({ id: "artifact-assets-a", kind: "asset_image_generate", status: "approved", version: 7, isApproved: true }),
+        ]),
+      });
+      expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(resolvedArtifacts[0]);
+      expect((calledWith as { upstreamArtifacts: ArtifactRecord[] }).upstreamArtifacts).toEqual([resolvedArtifacts[1], resolvedArtifacts[2]]);
+      expect(result).toMatchObject({
+        status: "succeeded",
+        toolId: "generate_video_segment",
+        capabilityId: "video_segment_generate",
+        provider: "video_segment_generate",
+        artifactDraft: {
+          nodeKey: "video_segment_generate",
+          kind: "video_segment_generate",
+          title: expect.stringContaining("分镜视频片段"),
+          structuredContent: {
+            storage: {
+              videoAsset: {
+                fileName: "percentage-segment.mp4",
+                localOutput: ".tmp/video-artifacts/percentage-segment.mp4",
+                bytes: 4096,
+                sha256: "video-sha256",
+                mime: "video/mp4",
+                generationMode: "video_generated",
+                sourceArtifactId: "artifact-video-plan-a",
+                sourceArtifactIds: ["artifact-video-plan-a", "artifact-storyboard-a", "artifact-assets-a"],
+              },
+            },
+            artifactTruth: {
+              created: true,
+              persisted: true,
+              providerPersisted: true,
+              workbenchPersisted: false,
+              placeholder: false,
+              producedArtifactKind: "video_segment_generate",
+            },
+            qualityGate: {
+              passed: true,
+              gates: expect.arrayContaining(["video_valid", "mp4_ftyp_present", "mp4_moov_present"]),
+            },
+          },
+        },
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          persistenceScope: "provider_local_file",
+          providerPersisted: true,
+          workbenchPersisted: false,
+          placeholder: false,
+          producedArtifactKind: "video_segment_generate",
+        },
+        qualityGate: {
+          passed: true,
+          gates: expect.arrayContaining(["video_valid", "mp4_ftyp_present", "mp4_moov_present"]),
+        },
+      });
+    });
+
+    it("returns needs_input and does not call the video runner when any required artifact is missing", async () => {
+      const requiredKinds = ["video_segment_plan", "storyboard_generate", "asset_image_generate"];
+
+      for (const missingKind of requiredKinds) {
+        let called = false;
+        const result = await executeFutureProviderTool({
+          tool: getToolDefinitionByCapabilityId("video_segment_generate"),
+          projectId: "project-a",
+          artifactRefs: videoArtifactRefs().filter((artifact) => artifact.kind !== missingKind),
+          resolvedArtifacts: videoArtifacts().filter((artifact) => artifact.kind !== missingKind),
+          runVideo: async () => {
+            called = true;
+            throw new Error("should_not_call_video_runner");
+          },
+        });
+
+        expect(called).toBe(false);
+        expect(result).toMatchObject({
+          status: "needs_input",
+          toolId: "generate_video_segment",
+          capabilityId: "video_segment_generate",
+          missingInputs: [missingKind],
+          artifactCreated: false,
+          observation: { kind: "blocked_by_policy", artifactCreated: false },
+        });
+      }
+    });
+
+    it("maps invalid_video_output to a quality gate failure without creating an artifact", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("video_segment_generate"),
+        projectId: "project-a",
+        artifactRefs: videoArtifactRefs(),
+        resolvedArtifacts: videoArtifacts(),
+        runVideo: async () => {
+          throw new Error("invalid_video_output");
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        toolId: "generate_video_segment",
+        capabilityId: "video_segment_generate",
+        artifactCreated: false,
+        errorCategory: "quality_gate_failed",
+        observation: { kind: "quality_gate_failed", artifactCreated: false },
+        budgetEvent: { status: "failed", kind: "quality_gate_failed" },
+      });
+    });
+
+    it("redacts configuration, submit, poll, and download failures from video provider observations", async () => {
+      for (const failure of ["missing_VIDEO_PROVIDER_ENV", "video_submit_failed", "video_query_failed", "video_download_failed"]) {
+        const result = await executeFutureProviderTool({
+          tool: getToolDefinitionByCapabilityId("video_segment_generate"),
+          projectId: "project-a",
+          artifactRefs: videoArtifactRefs(),
+          resolvedArtifacts: videoArtifacts(),
+          runVideo: async () => {
+            throw new Error(`${failure} token=dummy API_KEY=dummy C:\\Users\\demo\\video.mp4 providerMode=evolink`);
+          },
+        });
+
+        expect(result).toMatchObject({
+          status: "retryable_failed",
+          toolId: "generate_video_segment",
+          capabilityId: "video_segment_generate",
+          artifactCreated: false,
+          errorCategory: "provider_unavailable",
+          observation: { kind: "provider_unavailable", artifactCreated: false },
+        });
+        if ("observation" in result) {
+          expect(result.observation.teacherSafeSummary).not.toMatch(forbiddenSensitiveText);
+          expect(result.observation.internalReasonSanitized).not.toMatch(forbiddenSensitiveText);
+        }
+      }
+    });
   });
 });

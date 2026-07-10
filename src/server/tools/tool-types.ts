@@ -97,3 +97,21 @@ export type ToolExecutionResult =
       errorCategory?: string;
       budgetEvent: AgentHarnessBudgetEvent;
     };
+
+export function isVerifiedProviderToolSuccess(
+  result: ToolExecutionResult,
+): result is Extract<ToolExecutionResult, { status: "succeeded" }> & {
+  provider: string;
+  artifactTruth: ToolArtifactTruth;
+  qualityGate: ToolQualityGateResult;
+} {
+  return (
+    result.status === "succeeded" &&
+    typeof result.provider === "string" &&
+    result.provider.length > 0 &&
+    result.artifactTruth?.created === true &&
+    result.artifactTruth.persisted === true &&
+    result.artifactTruth.placeholder === false &&
+    result.qualityGate?.passed === true
+  );
+}

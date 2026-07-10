@@ -3,10 +3,11 @@ import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
 import type { ProjectRecord } from "@/server/workbench/types";
+import type { ArtifactRecord } from "@/server/workbench/types";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "./tool-registry";
-import type { ToolDefinition, ToolExecutionResult } from "./tool-types";
+import { isVerifiedProviderToolSuccess, type ToolDefinition, type ToolExecutionResult } from "./tool-types";
 
 export type ToolRouterInput = {
   toolName?: string;
@@ -14,6 +15,7 @@ export type ToolRouterInput = {
   projectId: string;
   userInstruction?: string | null;
   artifactRefs?: ProviderArtifactRef[];
+  resolvedArtifacts?: ArtifactRecord[];
   runtime?: AgentRuntime;
   project?: ProjectRecord;
   projectContext?: AgentProjectContext;
@@ -96,14 +98,19 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
 
   if (tool.adapterKind === "provider") {
     const providerExecutor = dependencies.providerExecutor ?? executeProviderTool;
-    return providerExecutor({
+    const result = await providerExecutor({
       tool,
       projectId: input.projectId,
       project: input.project,
       userInstruction: input.userInstruction,
       artifactRefs: input.artifactRefs ?? [],
+      resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
     });
+    if (result.status === "succeeded" && !isVerifiedProviderToolSuccess(result)) {
+      return buildUnverifiedProviderResult(input, tool, result.provider);
+    }
+    return result;
   }
 
   return buildBlockedResult({
@@ -144,10 +151,27 @@ function resolveToolDefinition(input: ToolRouterInput, dependencies: ToolRouterD
 
 function findMissingArtifactKinds(tool: ToolDefinition, input: ToolRouterInput): string[] {
   if (tool.adapterKind === "provider") {
-    return tool.requiredArtifactKinds.filter((kind) => !hasArtifactRef(kind, input.artifactRefs));
+    return tool.requiredArtifactKinds.filter((kind) => !hasResolvedArtifactRef(kind, input));
   }
 
   return tool.requiredArtifactKinds.filter((kind) => !hasArtifactRef(kind, input.artifactRefs) && !hasApprovedArtifact(kind, input.approvedArtifacts));
+}
+
+function hasResolvedArtifactRef(kind: string, input: ToolRouterInput): boolean {
+  const refs = input.artifactRefs ?? [];
+  const artifacts = input.resolvedArtifacts ?? [];
+  return refs.some((ref) => {
+    if (ref.kind !== kind || !ref.artifactId.trim()) return false;
+    return artifacts.some(
+      (artifact) =>
+        artifact.id === ref.artifactId &&
+        artifact.projectId === input.projectId &&
+        artifact.kind === kind &&
+        artifact.nodeKey === kind &&
+        artifact.status === "approved" &&
+        artifact.isApproved === true,
+    );
+  });
 }
 
 function hasArtifactRef(kind: string, artifactRefs: ProviderArtifactRef[] | undefined): boolean {
@@ -218,6 +242,30 @@ function buildBlockedResult(details: {
     artifactCreated: false,
     errorCategory: details.errorCategory,
     budgetEvent: buildBudgetEvent(details.toolId, details.capabilityId, details.expectedArtifactKind, details.budgetStatus, details.budgetKind),
+  };
+}
+
+function buildUnverifiedProviderResult(input: ToolRouterInput, tool: ToolDefinition, provider?: string): ToolExecutionResult {
+  const capabilityId = tool.capabilityId ?? "unknown";
+  const teacherSafeSummary = "生成结果没有通过交付校验，我没有保存这份结果。请稍后重试。";
+  return {
+    status: "failed",
+    toolId: tool.id,
+    capabilityId,
+    provider,
+    observation: createToolObservation({
+      projectId: input.projectId,
+      sourceMessageId: input.sourceMessageId,
+      capabilityId,
+      expectedArtifactKind: tool.producedArtifactKind,
+      kind: "quality_gate_failed",
+      teacherSafeSummary,
+      internalReasonSanitized: "Provider success lacked artifact truth or a passing quality gate.",
+      retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+    }),
+    artifactCreated: false,
+    errorCategory: "quality_gate_failed",
+    budgetEvent: buildBudgetEvent(tool.id, capabilityId, tool.producedArtifactKind, "failed", "quality_gate_failed"),
   };
 }
 
