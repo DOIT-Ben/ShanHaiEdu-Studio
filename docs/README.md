@@ -12,9 +12,10 @@
 2. `docs\README.md`：文档分类和入口。
 3. `docs\product\current-requirements-baseline.md`：当前需求与质量门禁唯一权威口径。
 4. `docs\product\requirements-backlog.md`：未完成需求、新增需求、延期需求和优先级。
-5. `docs\mainlines\current-mainline-status.md`：当前主线状态、已完成阶段、下一阶段建议。
-6. 相关架构入口：`docs\architecture\README.md`。
-7. 当前阶段计划：`docs\stages\...-plan.md`。
+5. 当前专题需求，例如 `docs\product\beta-feedback-requirements.md`。
+6. `docs\mainlines\current-mainline-status.md`：当前主线状态、已完成阶段、下一阶段建议。
+7. 相关架构入口：`docs\architecture\README.md`。
+8. 当前阶段计划：`docs\stages\...-plan.md`。
 
 ## 2. 目录职责
 
@@ -53,6 +54,9 @@ AGENTS.md / 平台安全规则
 ```text
 docs\product\requirements-backlog.md
 docs\product\conversation-interaction-requirements.md
+docs\product\beta-feedback-requirements.md
+docs\product\frontend-workbench-priority-requirements.md
+docs\product\competitor-derived-second-tier-requirements.md
 docs\product\media-workflow-requirements.md
 docs\product\YYYY-MM-DD-主题-requirements.md
 ```

@@ -71,21 +71,49 @@ npm run build
 10. 配置 HTTPS。
 11. 执行公网验收。
 
+ShanHaiEdu 内测反馈中心上线时，固定使用 release 外共享目录：
+
+```text
+/opt/shanhai-edu-studio/shared/data/
+/opt/shanhai-edu-studio/shared/artifact-storage/
+```
+
+服务器 `.env` 中：
+
+- `DATABASE_URL` 指向 shared data 下的 SQLite 文件。
+- `ARTIFACT_STORAGE_ROOT` 指向 shared artifact-storage。
+- feedback 图片写入 `feedback` 子目录。
+- `SHANHAI_AUTH_MODE=password`。
+- `NEXT_PUBLIC_SHANHAI_AUTH_MODE=password`，并在构建阶段注入，保证前端显示密码登录门禁。
+- 公开自助注册开关保持关闭；内测账号通过受控 invite/bootstrap 流程创建。
+
+发布、回滚和替换 release 时不得覆盖 shared 目录。首个管理员通过一次性、服务器本地执行的 bootstrap 命令创建或提升为 `role=admin`；命令必须要求显式确认，只输出用户 ID/角色而不回显密码或 hash。完成后登录验证 `actor.isAdmin=true`，并删除一次性 bootstrap 输入。凭据不写入仓库。
+
+内测准入门禁：
+
+- 公网不显示“创建账号”，注册 API 在邀请开关关闭时返回 403。
+- 内测教师账号由管理员生成一次性邀请码或执行服务器本地 invite 命令创建。
+- 登录、注册/邀请和反馈提交需要速率限制与审计日志；未完成前不得开放公网内测。
+
 ## 5. 远程健康检查
 
 服务器内检查：
 
 ```bash
 curl -fsS http://127.0.0.1:<APP_PORT>/
-curl -fsS http://127.0.0.1:<APP_PORT>/api/workbench/projects
+curl -i http://127.0.0.1:<APP_PORT>/api/workbench/projects
 ```
+
+未认证的 `/api/workbench/projects` 预期返回 HTTP 401；不能把 200 当作 password 模式健康标准。登录后的业务检查通过受控测试账号或浏览器会话完成。
 
 公网检查：
 
 ```bash
 curl -I https://<PUBLIC_HOST>/
-curl -fsS https://<PUBLIC_HOST>/api/workbench/projects
+curl -i https://<PUBLIC_HOST>/api/workbench/projects
 ```
+
+公网未认证业务 API 预期返回 HTTP 401；公开注册 API 在邀请制关闭时预期返回 HTTP 403。
 
 浏览器检查：
 
@@ -131,6 +159,8 @@ curl -I https://<PUBLIC_HOST>/
 curl -I https://<PUBLIC_HOST>/api/workbench/projects
 ```
 
+第二条预期为受控的 HTTP 401，而不是匿名 200。
+
 ## 8. 回滚
 
 上线前必须有：
@@ -145,9 +175,15 @@ curl -I https://<PUBLIC_HOST>/api/workbench/projects
 
 1. 停止新服务。
 2. 恢复上一个 release 软链或目录。
-3. 恢复数据库备份，必要时恢复素材目录。
+3. 保持当前 shared 数据库和素材目录不变；如果旧 release 与新 schema 不兼容，先执行前向兼容修复或停止回滚，不得自动覆盖用户反馈。
 4. 重启进程守护。
-5. 重新执行公网 `curl` 与浏览器验收。
+5. 重新执行公网 `curl`、登录、反馈读取和浏览器验收。
+
+数据灾难恢复与代码 release 回滚必须分开：
+
+- 只有确认数据库或素材已经损坏，且用户接受备份时间点之后的数据损失时，才恢复数据库/素材备份。
+- 数据恢复前再次备份当前损坏现场，并记录恢复点和预计丢失窗口。
+- 不得把“代码发布失败”当作恢复旧数据库备份的理由。
 
 ## 9. 演示当天 Run Order
 
@@ -163,8 +199,10 @@ npm run demo:e2e:delivery
 ```bash
 npm run preflight:production
 curl -I https://<PUBLIC_HOST>/
-curl -fsS https://<PUBLIC_HOST>/api/workbench/projects
+curl -i https://<PUBLIC_HOST>/api/workbench/projects
 ```
+
+第三条预期为未认证 HTTP 401；后续业务检查通过受控内测账号登录完成。
 
 演示时：
 

@@ -11,6 +11,12 @@
 | `local-real-mvp-m54a-frontend-workbench-roadmap.md` | M54-A 前端聊天式工作台持续升级路线，定义阶段方向和组件化路线。 |
 | `local-real-mvp-m54a-frontend-workbench-deep-spec.md` | 图像参考驱动的深度开发规格，沉淀参考图、交互状态、组件边界和验收矩阵。 |
 | `local-real-mvp-m54a-frontend-workbench-test-plan.md` | M54-A0 测试定义，把参考图和工作台体验要求转成合同测试与浏览器验收。 |
+| `local-real-mvp-m54a-open-items.md` | 当前代码已落地能力和第一档待完成项，以实际代码证据校准 M54-A。 |
+
+产品需求入口：
+
+- `docs\product\beta-feedback-requirements.md`
+- `docs\product\frontend-workbench-priority-requirements.md`
 
 ## 历史 UI 阶段沉淀
 

@@ -2,11 +2,13 @@
 
 日期：2026-07-08
 
-状态：正式阶段路线 / 待测试定义与开发切片。
+状态：正式阶段路线 / 部分落地 / 第一档继续收口。
 
 深度开发规格：
 
 - `docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-deep-spec.md`
+- `docs/ui/frontend-workbench/local-real-mvp-m54a-open-items.md`
+- `docs/product/frontend-workbench-priority-requirements.md`
 
 ## 1. 终极目标
 
@@ -346,10 +348,11 @@ git diff --check
 
 ## 11. 最近下一步
 
-先进入 M54-A1 + M54-A4：
+先完成上线门槛反馈中心，再继续 M54-A 第一档收口：
 
-1. 写前端测试定义。
-2. 固定 `ConversationDecisionV2` 前端类型。
-3. 拆 `QuickReplySuggestions` 与 `GeneratingIndicator`。
-4. 修复发送、滚动到底、输入框高度。
-5. 用浏览器验收普通聊天、模糊需求、明确需求和确认流程。
+1. 完成 `docs\stages\local-real-mvp-beta-feedback-center-plan.md`：真实保存、分类提示、截图粘贴和受控查看。
+2. 收口首次欢迎态、头像菜单和全局反馈入口。
+3. 完成附件拖入、图片粘贴、PDF/DOCX/图片真实状态。
+4. 完成模型/工具菜单并清理未接假入口。
+5. 修普通聊天/业务任务分流和自然语言确认改道。
+6. 完成真实流式回复、响应式和最终浏览器验收。

@@ -2,12 +2,14 @@
 
 日期：2026-07-08
 
-状态：正式测试定义。开发 M54-A 前必须先按本文落测试或浏览器验收脚本。
+状态：正式测试定义 / 部分覆盖 / 第一档收口前必须补齐浏览器验收。
 
 上游规格：
 
 - `docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md`
 - `docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-deep-spec.md`
+- `docs/ui/frontend-workbench/local-real-mvp-m54a-open-items.md`
+- `docs/product/frontend-workbench-priority-requirements.md`
 
 ## 1. 目标
 
@@ -53,7 +55,7 @@ tests/m54a-frontend-workbench-contract.test.ts
 断言：
 
 - `getTextareaHeightPlan` 根据文本行数返回 min/max/overflow 状态。
-- `normalizeQuickReplies` 最多保留 3 条，推荐项排在前面。
+- `normalizeQuickReplies` 保留后端返回的可用建议并把推荐项排在前面；UI 展示层按布局选择首批 2-3 条，不在 normalize 层静默丢弃其余建议。
 - `applyQuickReplyToDraft` 只返回输入框草稿，不自动发送。
 - `normalizeAttachmentStatus` 不把 pending/failed 附件显示为已理解。
 - `getGeneratingLabel` 区分 `generating`、`streaming`、`saving_artifact`。
