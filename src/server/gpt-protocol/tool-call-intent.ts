@@ -24,10 +24,13 @@ export type CreateToolCallIntentOptions = {
 };
 
 const teacherSafeArgumentKeys = ["userInstruction", "teacherIntent", "notes"] as const;
+const degradedTeacherSemanticText = "已收到补充要求。";
 const internalControlFieldAssignmentPattern =
   /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|api[_-]?key|apikey|token|secret)\b\s*[:=]\s*[^\s,;，。)）]+/gi;
 const internalControlFieldNamePattern =
   /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|api[_-]?key|apikey|token|secret)\b/gi;
+const internalControlFieldNameDetectionPattern =
+  /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|api[_-]?key|apikey|token|secret)\b/i;
 
 export function createToolCallIntent(call: GptFunctionCall, options: CreateToolCallIntentOptions): ToolCallIntent {
   const baseIntent = {
@@ -78,6 +81,10 @@ function pickTeacherIntent(argumentsJson: Record<string, unknown>): ToolCallTeac
 }
 
 function sanitizeTeacherSemanticText(value: string): string {
+  if (internalControlFieldNameDetectionPattern.test(value)) {
+    return degradedTeacherSemanticText;
+  }
+
   return value
     .replace(/(["'])(?:file:\/\/\/?)?(?:[A-Za-z]:[\\/]|\/(?:Users|home|tmp|var|private|mnt)\/)[^"']+\1/g, "$1[已隐藏]$1")
     .replace(/file:\/\/\/?[^\s,;，。)）]+/gi, "[已隐藏]")
