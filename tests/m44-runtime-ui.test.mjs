@@ -21,5 +21,5 @@ test("workbench topbar uses the active project instead of prototype literals", (
   assert.equal(topbarSource.includes("表内乘法（一）"), false);
   assert.equal(topbarSource.includes("已保存 10:24"), false);
   assert.equal(transcriptSource.includes(">10:24<"), false);
-  assert.equal(conversationSource.includes("<WorkbenchTopbar project={project}"), true);
+  assert.match(conversationSource, /<WorkbenchTopbar[\s\S]*?project=\{project\}/);
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import Database from "better-sqlite3";
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -31,13 +32,20 @@ test("production preflight fails safely when required env is missing", async () 
 test("production preflight passes with complete local production env without leaking values", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
-  const storageRoot = path.join(cwd, "deploy-storage");
+  const storageRoot = makeExternalStorageRoot();
+  const databasePath = makeAuthDatabase({ admin: true });
   mkdirSync(storageRoot, { recursive: true });
   const result = await runProductionPreflight({
     cwd,
     env: {
       SHANHAI_PRODUCTION_PREFLIGHT_SKIP_DOTENV: "1",
-      DATABASE_URL: "file:./data/shanhai-production.db",
+      SHANHAI_AUTH_MODE: "password",
+      SHANHAI_TRUST_PROXY: "1",
+      NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
+      SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+      NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+      SHANHAI_ADMIN_BOOTSTRAP_CONFIRMED: "1",
+      DATABASE_URL: `file:${databasePath}`,
       ARTIFACT_STORAGE_ROOT: storageRoot,
       AGENT_BRAIN_CHANNEL: "fallback",
       AGENT_BRAIN_FALLBACK_API_KEY: "test-fallback-key-do-not-print",
@@ -73,12 +81,108 @@ test("production preflight detects missing standalone output and package script"
   const cwd = makeRepoFixture({ standalone: false, omitStart: true });
   const result = await runProductionPreflight({
     cwd,
-    env: completeEnv(path.join(cwd, "deploy-storage")),
+    env: completeEnv(makeExternalStorageRoot()),
   });
 
   const failedIds = result.checks.filter((check) => !check.ok).map((check) => check.id);
   assert.equal(result.ok, false);
   assert.deepEqual(failedIds.sort(), ["next-standalone-output", "package-production-scripts"].sort());
+});
+
+test("production preflight rejects a client build that exposes public registration", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const result = await runProductionPreflight({
+    cwd,
+    env: {
+      ...completeEnv(makeExternalStorageRoot()),
+      NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "1",
+    },
+  });
+
+  assert.equal(result.checks.find((check) => check.id === "public-registration")?.ok, false);
+});
+
+test("production preflight requires explicit trusted proxy mode", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  for (const value of [undefined, "0"]) {
+    const env = completeEnv(makeExternalStorageRoot());
+    if (value === undefined) delete env.SHANHAI_TRUST_PROXY;
+    else env.SHANHAI_TRUST_PROXY = value;
+    const result = await runProductionPreflight({ cwd, env });
+    assert.equal(result.checks.find((check) => check.id === "trusted-proxy")?.ok, false);
+  }
+});
+
+test("production preflight requires a real active password administrator in SQLite", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const storageRoot = makeExternalStorageRoot();
+  const cases = [
+    path.join(mkdtempSync(path.join(os.tmpdir(), "shanhai-missing-admin-db-")), "missing.db"),
+    makeAuthDatabase({ admin: false }),
+    makeAuthDatabase({ admin: true, authMode: "pending" }),
+    makeAuthDatabase({ admin: true, passwordHash: null }),
+  ];
+
+  for (const databasePath of cases) {
+    const result = await runProductionPreflight({
+      cwd,
+      env: completeEnv(storageRoot, { databasePath }),
+    });
+    assert.equal(result.checks.find((check) => check.id === "admin-readiness")?.ok, false, databasePath);
+  }
+
+  const passing = await runProductionPreflight({
+    cwd,
+    env: completeEnv(storageRoot, { databasePath: makeAuthDatabase({ admin: true }) }),
+  });
+  assert.equal(passing.checks.find((check) => check.id === "admin-readiness")?.ok, true);
+});
+
+test("production preflight rejects artifact storage inside release directories and symlink targets", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const forbiddenRoots = ["public", ".next", ".tmp"].map((name) => path.join(cwd, name));
+  for (const storageRoot of forbiddenRoots) {
+    mkdirSync(storageRoot, { recursive: true });
+    const result = await runProductionPreflight({ cwd, env: completeEnv(storageRoot) });
+    assert.equal(result.checks.find((check) => check.id === "artifact-storage-root")?.ok, false, storageRoot);
+  }
+
+  const linkParent = mkdtempSync(path.join(os.tmpdir(), "shanhai-storage-link-"));
+  const storageLink = path.join(linkParent, "linked-storage");
+  symlinkSync(path.join(cwd, "public"), storageLink, "junction");
+  const linkedResult = await runProductionPreflight({ cwd, env: completeEnv(storageLink) });
+  assert.equal(linkedResult.checks.find((check) => check.id === "artifact-storage-root")?.ok, false);
+});
+
+test("production preflight rejects a database junction that resolves back into the release", async (t) => {
+  const source = readFileSync(path.join(process.cwd(), "scripts", "production-preflight.mjs"), "utf8");
+  assert.match(source, /databaseRealpath/);
+  assert.match(source, /databaseParentRealpath/);
+
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const releaseData = path.join(cwd, "data");
+  mkdirSync(releaseData, { recursive: true });
+  const insideDatabase = path.join(releaseData, "production.db");
+  writeAuthDatabase(insideDatabase, { admin: true });
+  const externalParent = mkdtempSync(path.join(os.tmpdir(), "shanhai-db-link-"));
+  const linkedDirectory = path.join(externalParent, "linked-data");
+  try {
+    symlinkSync(releaseData, linkedDirectory, "junction");
+  } catch (error) {
+    t.diagnostic(`junction unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  const result = await runProductionPreflight({
+    cwd,
+    env: completeEnv(makeExternalStorageRoot(), { databasePath: path.join(linkedDirectory, "production.db") }),
+  });
+  assert.equal(result.checks.find((check) => check.id === "database-url")?.ok, false);
 });
 
 test("package exposes the production preflight command", () => {
@@ -103,11 +207,17 @@ function makeRepoFixture({ standalone, omitStart = false }) {
   return cwd;
 }
 
-function completeEnv(storageRoot) {
+function completeEnv(storageRoot, { databasePath = makeAuthDatabase({ admin: true }) } = {}) {
   mkdirSync(storageRoot, { recursive: true });
   return {
     SHANHAI_PRODUCTION_PREFLIGHT_SKIP_DOTENV: "1",
-    DATABASE_URL: "file:./data/shanhai-production.db",
+    SHANHAI_AUTH_MODE: "password",
+    SHANHAI_TRUST_PROXY: "1",
+    NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
+    SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+    NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+    SHANHAI_ADMIN_BOOTSTRAP_CONFIRMED: "1",
+    DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: storageRoot,
     OPENAI_API_KEY: "test-openai-key-do-not-print",
     OPENAI_BASE_URL: "https://openai-private.invalid/v1",
@@ -122,4 +232,35 @@ function completeEnv(storageRoot) {
     OCTO_BASE_URL: "https://video-private.invalid/v1",
     VIDEO_MODEL: "test-video-model",
   };
+}
+
+function makeExternalStorageRoot() {
+  return mkdtempSync(path.join(os.tmpdir(), "shanhai-production-storage-"));
+}
+
+function makeAuthDatabase({ admin, authMode = "password", passwordHash = "test-password-hash" }) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "shanhai-auth-db-"));
+  const databasePath = path.join(directory, "production.db");
+  writeAuthDatabase(databasePath, { admin, authMode, passwordHash });
+  return databasePath;
+}
+
+function writeAuthDatabase(databasePath, { admin, authMode = "password", passwordHash = "test-password-hash" }) {
+  const db = new Database(databasePath);
+  db.exec(`
+    CREATE TABLE "LocalUser" (
+      "id" TEXT PRIMARY KEY,
+      "displayName" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "authMode" TEXT NOT NULL,
+      "email" TEXT UNIQUE,
+      "passwordHash" TEXT
+    );
+  `);
+  if (admin) {
+    db.prepare(
+      'INSERT INTO "LocalUser" ("id", "displayName", "role", "authMode", "email", "passwordHash") VALUES (?, ?, ?, ?, ?, ?)',
+    ).run("admin-fixture", "管理员", "admin", authMode, "admin@example.test", passwordHash);
+  }
+  db.close();
 }

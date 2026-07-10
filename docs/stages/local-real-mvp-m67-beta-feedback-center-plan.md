@@ -2,7 +2,7 @@
 
 日期：2026-07-10
 
-状态：上线前阶段规划；尚未实现。
+状态：工程实现与本地集中验收已完成；真实服务器重启、回滚和备份恢复门禁待部署阶段关闭。收尾证据见 `docs\stages\local-real-mvp-m67-beta-feedback-center-closeout.md`。
 
 测试定义：`docs\stages\local-real-mvp-m67-beta-feedback-center-test-plan.md`。
 

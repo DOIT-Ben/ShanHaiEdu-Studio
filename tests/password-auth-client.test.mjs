@@ -92,6 +92,12 @@ test("workbench api sends csrf header for password-mode write requests", async (
   }
 });
 
+test("password auth gate shows account creation only when public registration is explicitly enabled", () => {
+  assert.equal(renderPasswordAuthGate(undefined).includes("创建账号"), false);
+  assert.equal(renderPasswordAuthGate("0").includes("创建账号"), false);
+  assert.equal(renderPasswordAuthGate("1").includes("创建账号"), true);
+});
+
 function responseFor(url, init) {
   if (url.endsWith("/api/auth/me")) return { authenticated: false, user: null };
   if (url.endsWith("/api/auth/logout")) return { authenticated: false, user: null, revoked: true };
@@ -154,6 +160,52 @@ function loadWorkbenchApiModule(csrfStore) {
   });
 }
 
+function renderPasswordAuthGate(registrationEnabled) {
+  const previous = process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED;
+  if (registrationEnabled === undefined) delete process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED;
+  else process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED = registrationEnabled;
+  try {
+    const module = loadTsModule(path.join(root, "src", "components", "auth", "PasswordAuthGate.tsx"), {
+      react: {
+        useState(initialValue) {
+          return [initialValue, () => {}];
+        },
+      },
+      "react/jsx-runtime": {
+        Fragment: "fragment",
+        jsx: createJsxNode,
+        jsxs: createJsxNode,
+      },
+      "lucide-react": {
+        LogIn: "log-in-icon",
+        UserPlus: "user-plus-icon",
+      },
+      "@/components/ui/button": { Button: "button-component" },
+    });
+    return collectText(
+      module.PasswordAuthGate({
+        errorMessage: null,
+        submitting: false,
+        async onLogin() {},
+        async onRegister() {},
+      }),
+    );
+  } finally {
+    restoreEnv("NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED", previous);
+  }
+}
+
+function createJsxNode(type, props) {
+  return { type, props: props ?? {} };
+}
+
+function collectText(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(collectText).join(" ");
+  if (!value || typeof value !== "object") return "";
+  return collectText(value.props?.children);
+}
+
 function restoreEnv(name, value) {
   if (value === undefined) {
     delete process.env[name];
@@ -168,6 +220,7 @@ function loadTsModule(sourcePath, imports = {}) {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
     },
   });
 

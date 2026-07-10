@@ -1,6 +1,8 @@
-import { accessSync, constants, readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync, realpathSync } from "node:fs";
+import Database from "better-sqlite3";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
 
 const openAiLedgerChannels = {
   primary: {
@@ -50,7 +52,12 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
   const checks = [
     checkPackageScripts(cwd),
     checkNextStandalone(cwd),
-    checkDatabaseUrl(env),
+    checkServerAuthMode(env),
+    checkClientAuthMode(env),
+    checkTrustedProxy(env),
+    checkPublicRegistration(env),
+    checkDatabaseUrl(cwd, env),
+    checkAdminReadiness(cwd, env),
     checkArtifactStorageRoot(cwd, env),
     checkOpenAiProvider(env),
     checkCozePptProvider(env),
@@ -96,24 +103,109 @@ function checkNextStandalone(cwd) {
   }
 }
 
-function checkDatabaseUrl(env) {
-  const databaseUrl = env.DATABASE_URL?.trim();
-  const ok = Boolean(databaseUrl && databaseUrl.startsWith("file:") && databaseUrl !== "file:./dev.db");
-  return buildCheck("database-url", ok, {
-    message: ok ? "SQLite DATABASE_URL is explicitly configured for local production readiness." : "Set DATABASE_URL to an explicit file: SQLite path that is not file:./dev.db.",
-    missing: databaseUrl ? [] : ["DATABASE_URL"],
-    source: databaseUrl ? "sqlite_file" : "missing",
+function checkServerAuthMode(env) {
+  const ok = env.SHANHAI_AUTH_MODE?.trim().toLowerCase() === "password";
+  return buildCheck("auth-server-mode", ok, {
+    message: ok ? "Server authentication mode is password." : "Set SHANHAI_AUTH_MODE=password for production.",
+    missing: env.SHANHAI_AUTH_MODE?.trim() ? [] : ["SHANHAI_AUTH_MODE"],
+    source: ok ? "password" : "invalid",
   });
+}
+
+function checkClientAuthMode(env) {
+  const ok = env.NEXT_PUBLIC_SHANHAI_AUTH_MODE?.trim().toLowerCase() === "password";
+  return buildCheck("auth-client-mode", ok, {
+    message: ok ? "Client authentication mode is password." : "Set NEXT_PUBLIC_SHANHAI_AUTH_MODE=password at build time.",
+    missing: env.NEXT_PUBLIC_SHANHAI_AUTH_MODE?.trim() ? [] : ["NEXT_PUBLIC_SHANHAI_AUTH_MODE"],
+    source: ok ? "password" : "invalid",
+  });
+}
+
+function checkTrustedProxy(env) {
+  const ok = env.SHANHAI_TRUST_PROXY?.trim() === "1";
+  return buildCheck("trusted-proxy", ok, {
+    message: ok ? "Trusted reverse proxy mode is enabled." : "Set SHANHAI_TRUST_PROXY=1 behind a proxy that overwrites forwarding headers.",
+    missing: env.SHANHAI_TRUST_PROXY?.trim() ? [] : ["SHANHAI_TRUST_PROXY"],
+    source: ok ? "trusted_proxy" : "invalid",
+  });
+}
+
+function checkPublicRegistration(env) {
+  const serverConfigured = env.SHANHAI_PUBLIC_REGISTRATION_ENABLED?.trim();
+  const clientConfigured = env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED?.trim();
+  const ok = serverConfigured === "0" && clientConfigured === "0";
+  return buildCheck("public-registration", ok, {
+    message: ok ? "Public registration is disabled on server and client." : "Set both public registration flags to 0 for production.",
+    missing: [
+      ...(serverConfigured ? [] : ["SHANHAI_PUBLIC_REGISTRATION_ENABLED"]),
+      ...(clientConfigured ? [] : ["NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED"]),
+    ],
+    source: ok ? "disabled" : "invalid",
+  });
+}
+
+function checkDatabaseUrl(cwd, env) {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  const databasePath = tryResolveDatabasePath(databaseUrl, cwd);
+  const absolute = Boolean(databasePath && path.isAbsolute(databasePath));
+  const releaseRealpath = tryRealpath(cwd);
+  const configuredOutsideRelease = Boolean(databasePath && absolute && releaseRealpath && !isPathInside(releaseRealpath, databasePath));
+  const databaseRealpath = databasePath ? tryRealpath(databasePath) : null;
+  const databaseParentRealpath = databasePath ? tryRealpath(path.dirname(databasePath)) : null;
+  const realpathOutsideRelease = Boolean(
+    databaseRealpath && databaseParentRealpath && releaseRealpath &&
+      !isPathInside(releaseRealpath, databaseRealpath) &&
+      !isPathInside(releaseRealpath, databaseParentRealpath),
+  );
+  const nonDefault = Boolean(databasePath && path.basename(databasePath).toLowerCase() !== "dev.db");
+  const ok = Boolean(databasePath && absolute && configuredOutsideRelease && realpathOutsideRelease && nonDefault);
+  return buildCheck("database-url", ok, {
+    message: ok ? "SQLite DATABASE_URL uses an external absolute production path." : "Set DATABASE_URL to a non-default absolute SQLite file path outside the release directory.",
+    missing: databaseUrl ? [] : ["DATABASE_URL"],
+    source: ok ? "external_sqlite_file" : databaseUrl ? "invalid" : "missing",
+    absolute,
+  });
+}
+
+function checkAdminReadiness(cwd, env) {
+  const databasePath = tryResolveDatabasePath(env.DATABASE_URL?.trim(), cwd);
+  const ok = databasePath ? hasActivePasswordAdmin(databasePath) : false;
+  return buildCheck("admin-readiness", ok, {
+    message: ok ? "An active password administrator exists in SQLite." : "Initialize and verify a password administrator in the configured SQLite database.",
+    missing: databasePath ? [] : ["DATABASE_URL"],
+    source: ok ? "sqlite_password_admin" : "missing_or_invalid_admin",
+  });
+}
+
+function hasActivePasswordAdmin(databasePath) {
+  let db;
+  try {
+    db = new Database(databasePath, { readonly: true, fileMustExist: true });
+    const admin = db
+      .prepare(
+        'SELECT "id" FROM "LocalUser" WHERE "role" = ? AND "authMode" = ? AND "passwordHash" IS NOT NULL AND length(trim("passwordHash")) > 0 LIMIT 1',
+      )
+      .get("admin", "password");
+    return Boolean(admin?.id);
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
 }
 
 function checkArtifactStorageRoot(cwd, env) {
   const storageRoot = env.ARTIFACT_STORAGE_ROOT?.trim();
   const absolute = Boolean(storageRoot && path.isAbsolute(storageRoot));
-  const projectTmp = storageRoot ? path.resolve(storageRoot) === path.join(path.resolve(cwd), ".tmp") : false;
-  const writable = storageRoot ? canAccessDirectory(storageRoot) : false;
-  const ok = Boolean(storageRoot && absolute && !projectTmp && writable);
+  const configuredPath = storageRoot && absolute ? path.resolve(storageRoot) : null;
+  const releasePath = tryRealpath(cwd);
+  const storageRealpath = storageRoot ? tryRealpath(storageRoot) : null;
+  const configuredOutsideRelease = Boolean(configuredPath && releasePath && !isPathInside(releasePath, configuredPath));
+  const realpathOutsideRelease = Boolean(storageRealpath && releasePath && !isPathInside(releasePath, storageRealpath));
+  const writable = storageRealpath ? canAccessDirectory(storageRealpath) : false;
+  const ok = Boolean(storageRoot && absolute && configuredOutsideRelease && realpathOutsideRelease && writable);
   return buildCheck("artifact-storage-root", ok, {
-    message: ok ? "Artifact storage root is absolute and accessible." : "Set ARTIFACT_STORAGE_ROOT to an absolute writable directory outside project .tmp.",
+    message: ok ? "Artifact storage root resolves outside the release and is accessible." : "Set ARTIFACT_STORAGE_ROOT to a real, absolute, writable directory outside the release tree.",
     missing: storageRoot ? [] : ["ARTIFACT_STORAGE_ROOT"],
     source: storageRoot ? "configured" : "missing",
     absolute,
@@ -197,6 +289,27 @@ function canAccessDirectory(directory) {
   } catch {
     return false;
   }
+}
+
+function tryResolveDatabasePath(databaseUrl, cwd) {
+  try {
+    return resolveSqliteFileUrl(databaseUrl, { baseDir: cwd, requireAbsolute: true });
+  } catch {
+    return null;
+  }
+}
+
+function tryRealpath(directory) {
+  try {
+    return realpathSync(directory);
+  } catch {
+    return null;
+  }
+}
+
+function isPathInside(parent, candidate) {
+  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function isMainModule() {

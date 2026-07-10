@@ -60,8 +60,9 @@ git diff --check
 
 ```bash
 npm ci
-npm run preflight:production
 npm run db:init
+SHANHAI_BOOTSTRAP_ADMIN_CONFIRM=CREATE_ADMIN node scripts/bootstrap-admin.mjs
+npm run preflight:production
 npm run build
 ```
 
@@ -85,6 +86,7 @@ ShanHaiEdu 内测反馈中心上线时，固定使用 release 外共享目录：
 - feedback 图片写入 `feedback` 子目录。
 - `SHANHAI_AUTH_MODE=password`。
 - `NEXT_PUBLIC_SHANHAI_AUTH_MODE=password`，并在构建阶段注入，保证前端显示密码登录门禁。
+- `SHANHAI_TRUST_PROXY=1`；仅在受控反向代理覆盖 forwarding headers 时启用。
 - 公开自助注册开关保持关闭；内测账号通过受控 invite/bootstrap 流程创建。
 
 发布、回滚和替换 release 时不得覆盖 shared 目录。首个管理员通过一次性、服务器本地执行的 bootstrap 命令创建或提升为 `role=admin`；命令必须要求显式确认，只输出用户 ID/角色而不回显密码或 hash。完成后登录验证 `actor.isAdmin=true`，并删除一次性 bootstrap 输入。凭据不写入仓库。
@@ -104,7 +106,7 @@ curl -fsS http://127.0.0.1:<APP_PORT>/
 curl -i http://127.0.0.1:<APP_PORT>/api/workbench/projects
 ```
 
-未认证的 `/api/workbench/projects` 预期返回 HTTP 401；不能把 200 当作 password 模式健康标准。登录后的业务检查通过受控测试账号或浏览器会话完成。
+未认证的 `/api/workbench/projects` 在 `password` 模式预期返回 HTTP 401；只有 `local` 模式预期返回 HTTP 200。不能把 200 当作 password 模式健康标准。登录后的业务检查通过受控测试账号或浏览器会话完成。
 
 公网检查：
 
@@ -147,6 +149,7 @@ nginx / reverse proxy 必须确认：
 
 - `/` 转发到应用端口。
 - `/api/*` 转发到同一个应用。
+- 覆盖客户端传入的 `X-Forwarded-For` / `X-Real-IP`，不能追加、透传或保留客户端伪造值。
 - WebSocket 或长连接策略按后续真实任务再补。
 - 上传/下载大小限制满足 PPTX、图片、视频材料包。
 - 缓存策略不返回旧 demo 页面。

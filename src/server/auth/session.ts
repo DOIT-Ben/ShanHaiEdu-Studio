@@ -146,7 +146,21 @@ export function readPublicSessionToken(request: Request) {
 export function resolveAuthMode(): AuthMode {
   const raw = process.env.SHANHAI_AUTH_MODE?.trim().toLowerCase();
   if (raw === "password" || raw === "oauth" || raw === "sso") return raw;
-  return "local";
+  if (raw === "local") {
+    if (process.env.NODE_ENV === "production") {
+      throw new AuthConfigurationError("SHANHAI_AUTH_MODE must use a public authentication mode in production.");
+    }
+    return "local";
+  }
+  if (!raw && process.env.NODE_ENV !== "production") return "local";
+  throw new AuthConfigurationError("SHANHAI_AUTH_MODE is missing or invalid.");
+}
+
+export class AuthConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthConfigurationError";
+  }
 }
 
 function readCookie(cookieHeader: string, name: string) {

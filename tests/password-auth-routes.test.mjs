@@ -5,6 +5,7 @@ import { test } from "node:test";
 import ts from "typescript";
 
 const root = process.cwd();
+process.env.SHANHAI_PUBLIC_REGISTRATION_ENABLED = "1";
 
 test("password auth API routes register, login, read current user, and logout", async () => {
   const calls = [];
@@ -168,6 +169,15 @@ async function assertSanitizedAuthBody(response, expected) {
 function loadRoute(sourcePath, auth) {
   return loadTsModule(path.join(root, sourcePath), {
     "@/server/auth/password-auth": auth,
+    "@/server/auth/rate-limit": {
+      checkRateLimit() {
+        return { allowed: true, remaining: 1, retryAfterSeconds: 0 };
+      },
+      rateLimitKeyFromRequest() {
+        return "password-auth-route-test";
+      },
+      resetRateLimit() {},
+    },
     "next/server": {
       NextResponse: {
         json(body, init = {}) {

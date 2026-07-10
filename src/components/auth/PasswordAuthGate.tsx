@@ -12,6 +12,7 @@ type PasswordAuthGateProps = {
 };
 
 export function PasswordAuthGate({ errorMessage, submitting, onLogin, onRegister }: PasswordAuthGateProps) {
+  const publicRegistrationEnabled = process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED === "1";
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -19,7 +20,7 @@ export function PasswordAuthGate({ errorMessage, submitting, onLogin, onRegister
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (mode === "register") {
+    if (publicRegistrationEnabled && mode === "register") {
       await onRegister({ email, displayName, password });
       return;
     }
@@ -35,22 +36,24 @@ export function PasswordAuthGate({ errorMessage, submitting, onLogin, onRegister
           <p className="text-sm leading-6 text-muted-foreground">进入你的公开课材料工作台。</p>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 rounded-md border bg-muted p-1">
-          <button
-            type="button"
-            className={`h-8 rounded text-sm ${mode === "login" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
-            onClick={() => setMode("login")}
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            className={`h-8 rounded text-sm ${mode === "register" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
-            onClick={() => setMode("register")}
-          >
-            创建账号
-          </button>
-        </div>
+        {publicRegistrationEnabled && (
+          <div className="mb-5 grid grid-cols-2 rounded-md border bg-muted p-1">
+            <button
+              type="button"
+              className={`h-8 rounded text-sm ${mode === "login" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => setMode("login")}
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              className={`h-8 rounded text-sm ${mode === "register" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => setMode("register")}
+            >
+              创建账号
+            </button>
+          </div>
+        )}
 
         <form className="space-y-4" onSubmit={submit}>
           <label className="block space-y-1.5">
@@ -64,7 +67,7 @@ export function PasswordAuthGate({ errorMessage, submitting, onLogin, onRegister
             />
           </label>
 
-          {mode === "register" && (
+          {publicRegistrationEnabled && mode === "register" && (
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-foreground">显示名</span>
               <input

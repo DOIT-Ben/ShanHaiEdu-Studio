@@ -7,11 +7,13 @@ import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet"
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
 import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
 import { ConversationWorkbench } from "@/components/conversation/ConversationWorkbench";
+import { FeedbackDialog } from "@/components/feedback/FeedbackDialog";
 import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import { useFeedbackController } from "@/hooks/useFeedbackController";
 import { usePasswordAuth } from "@/hooks/usePasswordAuth";
 import { useWorkbenchController } from "@/hooks/useWorkbenchController";
 
@@ -40,6 +42,7 @@ export function MediaWorkbench() {
 
 function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: PasswordAuthUser | null; onLogout?: () => Promise<void> }) {
   const controller = useWorkbenchController();
+  const feedbackController = useFeedbackController();
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
 
   function selectProjectFromSheet(projectId: string) {
@@ -69,6 +72,9 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onToggle={() => controller.setSidebarCollapsed((value) => !value)}
               onSelect={controller.selectProject}
               onCreateProject={controller.createProject}
+              currentUser={currentUser}
+              onOpenFeedback={feedbackController.openFeedback}
+              onLogout={onLogout}
             />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
@@ -115,6 +121,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onQuickReplySelect={controller.selectQuickReply}
               onRetry={controller.retryActiveProject}
               onOpenArtifacts={() => controller.setRailOpen(true)}
+              onOpenFeedback={feedbackController.openFeedback}
               onLogout={onLogout}
             />
           </div>
@@ -168,6 +175,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         onGenerateRealAsset={controller.generateRealAsset}
         realAssetGenerationKey={controller.realAssetGenerationKey}
       />
+      <FeedbackDialog controller={feedbackController} />
     </TooltipProvider>
   );
 }

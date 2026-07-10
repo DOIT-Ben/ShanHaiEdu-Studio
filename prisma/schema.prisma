@@ -33,6 +33,7 @@ model Project {
   turnJobs        ConversationTurnJob[]
   memberships     ProjectMembership[]
   auditLogs       AuditLog[]
+  feedbackRecords FeedbackRecord[]
 
   @@index([ownerUserId, updatedAt])
 }
@@ -51,6 +52,7 @@ model LocalUser {
   memberships    ProjectMembership[]
   auditLogs      AuditLog[]
   csrfTokens     CsrfToken[]
+  feedbackRecords FeedbackRecord[]
 }
 
 model AuthSession {
@@ -123,6 +125,7 @@ model ConversationMessage {
   metadataJson     String   @default("{}")
   createdAt        DateTime @default(now())
   project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  feedbackRecords  FeedbackRecord[]
 
   @@index([projectId, createdAt])
 }
@@ -197,6 +200,59 @@ model GenerationJob {
 
   @@index([projectId, status, createdAt])
   @@index([sourceArtifactId])
+}
+
+model FeedbackRecord {
+  id                       String               @id
+  receipt                  String               @unique
+  category                 String
+  description              String
+  severity                 String?
+  status                   String               @default("processing")
+  idempotencyKey           String
+  requestFingerprint       String
+  origin                   String               @default("global")
+  projectId                String?
+  messageId                String?
+  pageRoute                String
+  appVersion               String
+  clientContextJson        String               @default("{}")
+  stagingKey               String               @unique
+  failureCode              String?
+  reconciliationOwner      String?
+  reconciliationLeaseUntil DateTime?
+  createdByUserId          String
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  submittedAt              DateTime?
+  createdBy                LocalUser            @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  project                  Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  message                  ConversationMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  attachments              FeedbackAttachment[]
+
+  @@unique([createdByUserId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([category, createdAt])
+  @@index([severity, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model FeedbackAttachment {
+  id           String         @id
+  feedbackId   String
+  originalName String
+  mimeType     String
+  extension    String
+  byteSize     Int
+  width        Int
+  height       Int
+  sha256       String
+  storageKey   String         @unique
+  createdAt    DateTime       @default(now())
+  feedback     FeedbackRecord @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
 }
 
 model ConversationTurnJob {

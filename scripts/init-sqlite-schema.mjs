@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
 
 if (process.env.SHANHAI_DB_INIT_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -9,7 +10,7 @@ if (process.env.SHANHAI_DB_INIT_SKIP_DOTENV !== "1") {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-const dbPath = resolveSqlitePath(databaseUrl);
+const dbPath = resolveSqliteFileUrl(databaseUrl, { baseDir: root });
 
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
@@ -182,12 +183,57 @@ CREATE TABLE IF NOT EXISTS "CsrfToken" (
   CONSTRAINT "CsrfToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "LocalUser" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS "FeedbackRecord" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "receipt" TEXT NOT NULL,
+  "category" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "severity" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'processing',
+  "idempotencyKey" TEXT NOT NULL,
+  "requestFingerprint" TEXT NOT NULL,
+  "origin" TEXT NOT NULL DEFAULT 'global',
+  "projectId" TEXT,
+  "messageId" TEXT,
+  "pageRoute" TEXT NOT NULL,
+  "appVersion" TEXT NOT NULL,
+  "clientContextJson" TEXT NOT NULL DEFAULT '{}',
+  "stagingKey" TEXT NOT NULL,
+  "failureCode" TEXT,
+  "reconciliationOwner" TEXT,
+  "reconciliationLeaseUntil" DATETIME,
+  "createdByUserId" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  "submittedAt" DATETIME,
+  CONSTRAINT "FeedbackRecord_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "LocalUser" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT "FeedbackRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "FeedbackRecord_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "ConversationMessage" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "FeedbackAttachment" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "feedbackId" TEXT NOT NULL,
+  "originalName" TEXT NOT NULL,
+  "mimeType" TEXT NOT NULL,
+  "extension" TEXT NOT NULL,
+  "byteSize" INTEGER NOT NULL,
+  "width" INTEGER NOT NULL,
+  "height" INTEGER NOT NULL,
+  "sha256" TEXT NOT NULL,
+  "storageKey" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "FeedbackAttachment_feedbackId_fkey" FOREIGN KEY ("feedbackId") REFERENCES "FeedbackRecord" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 `);
 ensureColumn(db, "Project", "ownerUserId", 'ALTER TABLE "Project" ADD COLUMN "ownerUserId" TEXT');
 ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
 ensureColumn(db, "LocalUser", "passwordHash", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordHash" TEXT');
+ensureColumn(db, "FeedbackRecord", "origin", 'ALTER TABLE "FeedbackRecord" ADD COLUMN "origin" TEXT NOT NULL DEFAULT \'global\'');
+assertNoFeedbackIdempotencyConflicts(db);
 db.exec(`
 CREATE INDEX IF NOT EXISTS "ConversationMessage_projectId_createdAt_idx" ON "ConversationMessage"("projectId", "createdAt");
 CREATE INDEX IF NOT EXISTS "Project_ownerUserId_updatedAt_idx" ON "Project"("ownerUserId", "updatedAt");
@@ -211,24 +257,37 @@ CREATE INDEX IF NOT EXISTS "AuditLog_action_createdAt_idx" ON "AuditLog"("action
 CREATE UNIQUE INDEX IF NOT EXISTS "CsrfToken_tokenHash_key" ON "CsrfToken"("tokenHash");
 CREATE INDEX IF NOT EXISTS "CsrfToken_sessionId_expiresAt_idx" ON "CsrfToken"("sessionId", "expiresAt");
 CREATE INDEX IF NOT EXISTS "CsrfToken_userId_expiresAt_idx" ON "CsrfToken"("userId", "expiresAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "FeedbackRecord_receipt_key" ON "FeedbackRecord"("receipt");
+CREATE UNIQUE INDEX IF NOT EXISTS "FeedbackRecord_stagingKey_key" ON "FeedbackRecord"("stagingKey");
+CREATE UNIQUE INDEX IF NOT EXISTS "FeedbackRecord_createdByUserId_idempotencyKey_key" ON "FeedbackRecord"("createdByUserId", "idempotencyKey");
+CREATE INDEX IF NOT EXISTS "FeedbackRecord_status_createdAt_idx" ON "FeedbackRecord"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "FeedbackRecord_category_createdAt_idx" ON "FeedbackRecord"("category", "createdAt");
+CREATE INDEX IF NOT EXISTS "FeedbackRecord_severity_createdAt_idx" ON "FeedbackRecord"("severity", "createdAt");
+CREATE INDEX IF NOT EXISTS "FeedbackRecord_createdByUserId_createdAt_idx" ON "FeedbackRecord"("createdByUserId", "createdAt");
+CREATE INDEX IF NOT EXISTS "FeedbackRecord_projectId_createdAt_idx" ON "FeedbackRecord"("projectId", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "FeedbackAttachment_storageKey_key" ON "FeedbackAttachment"("storageKey");
+CREATE INDEX IF NOT EXISTS "FeedbackAttachment_feedbackId_createdAt_idx" ON "FeedbackAttachment"("feedbackId", "createdAt");
 `);
 db.close();
 
 console.log(JSON.stringify({ ok: true, database: path.relative(root, dbPath).replaceAll(path.sep, "/") }));
 
-function resolveSqlitePath(url) {
-  if (!url.startsWith("file:")) {
-    throw new Error("Only file: SQLite DATABASE_URL values are supported for local E2E initialization.");
-  }
-
-  const raw = url.slice("file:".length);
-  if (path.isAbsolute(raw)) return raw;
-  return path.resolve(root, raw);
-}
-
 function ensureColumn(db, table, column, alterSql) {
   const columns = db.prepare(`PRAGMA table_info("${table}")`).all();
   if (!columns.some((entry) => entry.name === column)) {
     db.exec(alterSql);
+  }
+}
+
+function assertNoFeedbackIdempotencyConflicts(db) {
+  const conflict = db.prepare(`
+    SELECT COUNT(*) AS duplicateCount
+    FROM "FeedbackRecord"
+    GROUP BY "createdByUserId", "idempotencyKey"
+    HAVING COUNT(*) > 1
+    LIMIT 1
+  `).get();
+  if (conflict) {
+    throw new Error("Feedback idempotency conflict detected; resolve duplicate rows before retrying schema initialization.");
   }
 }

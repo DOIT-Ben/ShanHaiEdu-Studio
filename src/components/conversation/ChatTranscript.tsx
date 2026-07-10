@@ -9,6 +9,7 @@ import { MessageActions } from "@/components/conversation/messages/MessageAction
 import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
 import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
+import type { OpenFeedback } from "@/lib/feedback-contracts";
 
 type ChatTranscriptProps = {
   messages: ChatMessage[];
@@ -18,9 +19,10 @@ type ChatTranscriptProps = {
   executionFeedback?: WorkbenchExecutionFeedback | null;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string, actionId?: string) => void;
+  onOpenFeedback?: OpenFeedback;
 };
 
-export function ChatTranscript({ messages, artifacts = [], projectId, projectBusy = false, executionFeedback = null, registerMessage, onQuickReplySelect }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], projectId, projectBusy = false, executionFeedback = null, registerMessage, onQuickReplySelect, onOpenFeedback }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
@@ -34,6 +36,7 @@ export function ChatTranscript({ messages, artifacts = [], projectId, projectBus
             projectId={projectId}
             registerMessage={registerMessage}
             onQuickReplySelect={onQuickReplySelect}
+            onOpenFeedback={onOpenFeedback}
           />
         ) : (
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
@@ -54,6 +57,7 @@ function TeacherMessage({
   return (
     <article
       ref={(node) => registerMessage?.(message.id, node)}
+      data-message-id={message.id}
       data-message-role={message.speaker}
       className="scroll-mt-24 flex justify-end"
     >
@@ -81,18 +85,21 @@ function AssistantMessage({
   projectId,
   registerMessage,
   onQuickReplySelect,
+  onOpenFeedback,
 }: {
   message: ChatMessage;
   artifact: ArtifactItem | null;
   projectId: string;
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string, actionId?: string) => void;
+  onOpenFeedback?: OpenFeedback;
 }) {
   const quickReplies = getQuickReplyChoices(message, artifact);
 
   return (
     <article
       ref={(node) => registerMessage?.(message.id, node)}
+      data-message-id={message.id}
       data-message-role={message.speaker}
       className="group scroll-mt-24 flex justify-start"
     >
@@ -118,7 +125,12 @@ function AssistantMessage({
           {quickReplies.length > 0 && (
             <QuickReplyChoices choices={quickReplies} onSelect={onQuickReplySelect} />
           )}
-          <MessageActions text={[message.title, message.body].filter(Boolean).join("\n")} />
+          <MessageActions
+            text={[message.title, message.body].filter(Boolean).join("\n")}
+            projectId={projectId}
+            messageId={message.id}
+            onOpenFeedback={onOpenFeedback}
+          />
         </div>
       </div>
     </article>

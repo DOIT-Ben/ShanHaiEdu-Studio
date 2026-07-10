@@ -1,9 +1,11 @@
 "use client";
 
-import { CheckCircle2, ListTree, LogOut, MoreHorizontal, Users } from "lucide-react";
+import { CheckCircle2, ListTree, MessageSquareText, MoreHorizontal, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { cn } from "@/lib/utils";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import type { OpenFeedback } from "@/lib/feedback-contracts";
 import type { ProjectItem } from "@/lib/types";
 
 type WorkbenchTopbarProps = {
@@ -11,10 +13,11 @@ type WorkbenchTopbarProps = {
   currentUser?: PasswordAuthUser | null;
   compact?: boolean;
   onOpenArtifacts?: () => void;
+  onOpenFeedback?: OpenFeedback;
   onLogout?: () => Promise<void>;
 };
 
-export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onLogout }: WorkbenchTopbarProps) {
+export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onOpenFeedback, onLogout }: WorkbenchTopbarProps) {
   const projectTitle = project?.title ?? "未选择项目";
   const savedLabel = project?.updatedAt ? `已保存 ${project.updatedAt}` : "未保存";
 
@@ -51,11 +54,28 @@ export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenA
             <span className={cn(compact && "sr-only")}>产物</span>
           </Button>
         )}
-        {onLogout && (
-          <Button variant="secondary" size="sm" onClick={() => void onLogout()}>
-            <LogOut className="h-4 w-4" />
-            退出登录
+        {onOpenFeedback && (
+          <Button
+            variant="secondary"
+            size="sm"
+            data-feedback-origin="global"
+            onClick={() => onOpenFeedback({ origin: "global", projectId: project?.id })}
+            aria-label="提交反馈"
+          >
+            <MessageSquareText className="h-4 w-4" />
+            <span className="hidden sm:inline">反馈</span>
           </Button>
+        )}
+        {onOpenFeedback && (
+          <ProfileMenu
+            currentUser={currentUser}
+            projectId={project?.id}
+            onOpenFeedback={onOpenFeedback}
+            onLogout={onLogout}
+            compact
+            align="end"
+            className="h-9 w-9 lg:hidden"
+          />
         )}
         <Button variant="secondary" size="icon" aria-label="更多产物操作" onClick={onOpenArtifacts} disabled={!onOpenArtifacts}>
           <MoreHorizontal className="h-4 w-4" />

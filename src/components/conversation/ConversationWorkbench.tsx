@@ -8,6 +8,7 @@ import { StageProgress } from "@/components/conversation/StageProgress";
 import { ChatTranscript } from "@/components/conversation/ChatTranscript";
 import { PromptComposer } from "@/components/conversation/PromptComposer";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { deriveWorkbenchStageIndex, type WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 type ConversationWorkbenchProps = {
@@ -33,6 +34,7 @@ type ConversationWorkbenchProps = {
   onQuickReplySelect?: (value: string, actionId?: string) => void;
   onRetry: () => void;
   onOpenArtifacts: () => void;
+  onOpenFeedback: OpenFeedback;
   onLogout?: () => Promise<void>;
 };
 
@@ -59,6 +61,7 @@ export function ConversationWorkbench({
   onQuickReplySelect,
   onRetry,
   onOpenArtifacts,
+  onOpenFeedback,
   onLogout,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -74,7 +77,14 @@ export function ConversationWorkbench({
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-card">
-      <WorkbenchTopbar project={project} currentUser={currentUser} compact={compact} onOpenArtifacts={onOpenArtifacts} onLogout={onLogout} />
+      <WorkbenchTopbar
+        project={project}
+        currentUser={currentUser}
+        compact={compact}
+        onOpenArtifacts={onOpenArtifacts}
+        onOpenFeedback={onOpenFeedback}
+        onLogout={onLogout}
+      />
       <StageProgress activeIndex={deriveWorkbenchStageIndex({ project, artifacts, executionFeedback })} compact={compact} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-[1040px] px-4 pb-36 pt-4 sm:px-6 lg:pb-10">
@@ -106,6 +116,7 @@ export function ConversationWorkbench({
                 executionFeedback={executionFeedback}
                 registerMessage={registerMessage}
                 onQuickReplySelect={onQuickReplySelect}
+                onOpenFeedback={onOpenFeedback}
               />
             ) : (
               loadState !== "loading" && (

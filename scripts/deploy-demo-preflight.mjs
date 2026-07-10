@@ -3,6 +3,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
 
 if (process.env.SHANHAI_DEPLOY_DEMO_PREFLIGHT_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -23,8 +24,9 @@ fs.rmSync(reportJsonPath, { force: true });
 fs.rmSync(reportMarkdownPath, { force: true });
 fs.mkdirSync(path.dirname(reportJsonPath), { recursive: true });
 
-await run("npm", ["run", "preflight:production"]);
 await run("npm", ["run", "db:init"]);
+await run(process.execPath, ["scripts/bootstrap-admin.mjs"], { SHANHAI_BOOTSTRAP_ADMIN_CONFIRM: "CREATE_ADMIN" });
+await run("npm", ["run", "preflight:production"]);
 await run("npm", ["run", "build"]);
 
 if (!fs.existsSync(serverEntry)) {
@@ -41,8 +43,9 @@ try {
     baseUrl,
     server: ".next/standalone/server.js",
     checks: [
-      check("production-preflight", true, "Production preflight command completed."),
       check("database-init", true, "SQLite schema initialization completed."),
+      check("admin-bootstrap", true, "Password administrator bootstrap completed."),
+      check("production-preflight", true, "Production preflight command completed."),
       check("production-build", true, "Production build completed and standalone server exists."),
       ...httpChecks,
     ],
@@ -71,11 +74,11 @@ try {
   await stopServer(server);
 }
 
-function run(command, args) {
+function run(command, args, envOverrides = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: root,
-      env: commandEnv,
+      env: { ...commandEnv, ...envOverrides },
       stdio: "inherit",
       shell: process.platform === "win32",
     });
@@ -92,10 +95,8 @@ function run(command, args) {
 }
 
 function normalizeDatabaseUrlForStandalone(databaseUrl) {
-  if (!databaseUrl?.startsWith("file:")) return databaseUrl;
-  const rawPath = databaseUrl.slice("file:".length);
-  if (!rawPath || path.isAbsolute(rawPath)) return databaseUrl;
-  return `file:${path.resolve(root, rawPath)}`;
+  if (!databaseUrl) return databaseUrl;
+  return `file:${resolveSqliteFileUrl(databaseUrl, { baseDir: root })}`;
 }
 
 function startStandaloneServer() {
@@ -114,9 +115,15 @@ function startStandaloneServer() {
 
 async function waitForHttpSmoke() {
   await waitForServerReady();
+  const expectedProjectStatus = commandEnv.SHANHAI_AUTH_MODE?.trim().toLowerCase() === "local" ? 200 : 401;
   return [
-    await requestCheck("http-root", "/", "Root page responds with HTTP 200."),
-    await requestCheck("http-project-list", "/api/workbench/projects", "Workbench project list API responds with HTTP 200."),
+    await requestCheck("http-root", "/", 200, "Root page responds with HTTP 200."),
+    await requestCheck(
+      "http-project-list",
+      "/api/workbench/projects",
+      expectedProjectStatus,
+      `Unauthenticated project API matches ${commandEnv.SHANHAI_AUTH_MODE ?? "password"} auth mode.`,
+    ),
   ];
 }
 
@@ -136,10 +143,10 @@ async function waitForServerReady() {
   throw new Error(`deploy_demo_server_not_ready: ${lastError}`);
 }
 
-async function requestCheck(id, pathname, detail) {
+async function requestCheck(id, pathname, expectedStatus, detail) {
   try {
     const response = await fetch(`${baseUrl}${pathname}`);
-    return check(id, response.status === 200, `${detail} status=${response.status}`);
+    return check(id, response.status === expectedStatus, `${detail} expectedStatus=${expectedStatus} status=${response.status}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return check(id, false, `${detail} error=${message}`);

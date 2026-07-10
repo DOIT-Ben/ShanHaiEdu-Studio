@@ -2,7 +2,7 @@
 
 日期：2026-07-10
 
-状态：正式测试定义；开发前先落红灯测试。
+状态：自动化与本地浏览器验收已完成；真实服务器重启、release 回滚和备份恢复仍是邀请内测前的发布门禁。结果见 `docs\stages\local-real-mvp-m67-beta-feedback-center-closeout.md`。
 
 ## 1. 目标
 

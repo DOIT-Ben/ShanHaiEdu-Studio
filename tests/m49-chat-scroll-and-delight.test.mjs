@@ -43,7 +43,7 @@ test("assistant message actions are a quiet teacher-facing component", () => {
   const actionsSource = readOptionalSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(transcriptSource, /import \{ MessageActions \}/);
-  assert.match(transcriptSource, /<MessageActions text=\{\[message\.title, message\.body\]/);
+  assert.match(transcriptSource, /<MessageActions[\s\S]*?text=\{\[message\.title, message\.body\]/);
   assert.doesNotMatch(transcriptSource, /function AssistantMessageActions/);
 
   assert.match(actionsSource, /aria-label="复制回复"/);

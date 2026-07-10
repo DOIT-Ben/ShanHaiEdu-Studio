@@ -35,9 +35,11 @@ cd E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\local-real-mvp-mainline
 
 ## 3. 上线前检查命令
 
-生产预检：
+先初始化 schema 和首个密码管理员，再执行生产预检：
 
 ```powershell
+npm run db:init
+$env:SHANHAI_BOOTSTRAP_ADMIN_CONFIRM='CREATE_ADMIN'; node scripts\bootstrap-admin.mjs
 npm run preflight:production
 ```
 
@@ -47,6 +49,8 @@ npm run preflight:production
 - JSON 输出 `ok=true`。
 - 每个检查项 `ok=true`。
 - 输出不包含密钥、token、私有端点或 `.env` 内容。
+- 生产固定设置 `SHANHAI_TRUST_PROXY=1`；反向代理必须覆盖客户端传入的 forwarding headers，不能追加或透传伪造值。
+- 非生产 direct 模式不信任 forwarding headers，只使用 1000 次/分钟的高阈值短窗保护，不启用低阈值全局账号桶。
 
 部署演示前一键门禁：
 
@@ -58,9 +62,9 @@ npm run preflight:deploy-demo
 
 - exit 0。
 - JSON 输出 `ok=true`。
-- 顺序完成生产预检、SQLite schema 初始化、生产构建、standalone 服务启动和 HTTP smoke。
+- 顺序完成 SQLite schema 初始化、管理员 bootstrap、生产预检、生产构建、standalone 服务启动和 HTTP smoke。
 - `test-results\deploy-demo-preflight-report.json` 与 `test-results\deploy-demo-preflight-report.md` 生成。
-- `/` 与 `/api/workbench/projects` 均返回 HTTP 200。
+- `/` 返回 HTTP 200；未认证 `/api/workbench/projects` 在 `password` 模式返回 HTTP 401，仅在 `local` 模式返回 HTTP 200。
 - 该命令只代表真实环境部署演示准备通过，不代表公网 live、域名、HTTPS 或真实用户访问已经完成。
 
 初始化本地 SQLite schema：
@@ -134,9 +138,9 @@ Remove-Item Env:\SHANHAI_RUN_INSTALLER_SMOKE
 当前推荐流程：
 
 ```powershell
-npm run preflight:deploy-demo
-npm run preflight:production
 npm run db:init
+$env:SHANHAI_BOOTSTRAP_ADMIN_CONFIRM='CREATE_ADMIN'; node scripts\bootstrap-admin.mjs
+npm run preflight:production
 npm run build
 npm run start
 ```

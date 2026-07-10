@@ -21,7 +21,7 @@ test("ChatTranscript renders recommended quick reply choices for semi-auto clari
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
   const quickReplySource = readSource("src/components/conversation/messages/QuickReplySuggestions.tsx");
 
-  assert.match(source, /onQuickReplySelect\?: \(value: string\) => void/);
+  assert.match(source, /onQuickReplySelect\?: \(value: string, actionId\?: string\) => void/);
   assert.match(quickReplySource, /data-quick-reply-choice/);
   assert.match(quickReplySource, /data-recommended-choice/);
   assert.match(quickReplySource, /推荐/);

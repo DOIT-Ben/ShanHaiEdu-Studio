@@ -3,8 +3,11 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, Circle, FileText, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { ProjectItem } from "@/lib/types";
+import type { PasswordAuthUser } from "@/lib/auth-api";
+import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 
 const showDisabledUtilities = false;
 
@@ -22,9 +25,22 @@ type ProjectSidebarProps = {
   onToggle?: () => void;
   onSelect: (id: string) => void;
   onCreateProject?: () => void;
+  currentUser?: PasswordAuthUser | null;
+  onOpenFeedback?: OpenFeedback;
+  onLogout?: () => Promise<void>;
 };
 
-export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle, onSelect, onCreateProject }: ProjectSidebarProps) {
+export function ProjectSidebar({
+  projects,
+  activeProjectId,
+  collapsed,
+  onToggle,
+  onSelect,
+  onCreateProject,
+  currentUser,
+  onOpenFeedback,
+  onLogout,
+}: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [courseSectionOpen, setCourseSectionOpen] = useState(true);
   const filteredProjects = useMemo(() => {
@@ -135,6 +151,17 @@ export function ProjectSidebar({ projects, activeProjectId, collapsed, onToggle,
             <Trash2 className="h-4 w-4" />
             回收站
           </Button>
+        </div>
+      )}
+      {onOpenFeedback && (
+        <div className="mt-auto border-t px-2 py-2">
+          <ProfileMenu
+            currentUser={currentUser}
+            projectId={activeProjectId || undefined}
+            compact={collapsed}
+            onOpenFeedback={onOpenFeedback}
+            onLogout={onLogout}
+          />
         </div>
       )}
     </aside>
