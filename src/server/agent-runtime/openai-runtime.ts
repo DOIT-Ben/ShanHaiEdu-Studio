@@ -7,8 +7,13 @@ import type {
 } from "./types";
 import { taskGuidance } from "./task-guidance";
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
+import { runOpenAIToolCallLoop } from "@/server/gpt-protocol/openai-tool-loop-runner";
+import type { ToolCallIntent } from "@/server/gpt-protocol/tool-call-intent";
+import type { GptProtocolRequest } from "@/server/gpt-protocol/types";
+import type { ToolRouterInput } from "@/server/tools/tool-router";
+import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
-type OpenAIResponsePayload = {
+type OpenAIResponsePayload = GptProtocolRequest & {
   instructions: string;
   input: string;
   text: {
@@ -27,13 +32,22 @@ type OpenAIResponse = {
 
 export type OpenAIResponsesClient = {
   responses: {
-    create(payload: OpenAIResponsePayload): Promise<OpenAIResponse>;
+    create(payload: Record<string, unknown>): Promise<OpenAIResponse>;
   };
 };
 
-type OpenAIRuntimeOptions = {
+export type OpenAIRuntimeNativeToolLoopOptions = {
+  tools: unknown;
+  allowedToolNames: readonly string[];
+  toolRouter: (input: ToolRouterInput) => Promise<ToolExecutionResult>;
+  buildToolRouterInput: (intent: ToolCallIntent, runtimeInput: AgentRuntimeInput) => ToolRouterInput;
+  maxToolRounds?: number;
+};
+
+export type OpenAIRuntimeOptions = {
   client: OpenAIResponsesClient;
   model: string;
+  nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions;
 };
 
 type StructuredRuntimeOutput = {
@@ -54,63 +68,53 @@ type StructuredRuntimeOutput = {
 export class OpenAIRuntime implements AgentRuntime {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
+  private readonly nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions;
 
   constructor(options: OpenAIRuntimeOptions) {
     this.client = options.client;
     this.model = options.model;
+    this.nativeToolLoop = options.nativeToolLoop;
   }
 
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     try {
-      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildOpenAIResponseRequest(input));
-      const parsed = parseStructuredOutput(response.assistantText, input.task);
-      const artifactDraft: AgentArtifactDraft = {
-        nodeKey: input.task,
-        kind: input.task,
-        title: parsed.artifactDraft.title,
-        summary: parsed.artifactDraft.summary,
-        markdown: parsed.artifactDraft.markdown,
-        contentType: "text/markdown",
-        generationMode: "model_generated",
-        isReadyForTeacherReview: true,
-      };
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
+      const request = buildOpenAIResponseRequest(input);
+      const assistantText = await this.createAssistantText(adapter, request, input);
+      const parsed = parseStructuredOutput(assistantText, input.task);
 
-      return {
-        status: "succeeded",
-        run: {
-          runId: input.runId,
-          projectId: input.projectId,
-          task: input.task,
-          runtimeKind: "openai",
-          status: "succeeded",
-        },
-        assistantMessage: parsed.assistantMessage,
-        artifactDraft,
-        nextSuggestedAction: {
-          type: "review_artifact",
-          label: parsed.nextSuggestedAction.label,
-        },
-      };
+      return buildSucceededResult(input, parsed);
     } catch {
-      return {
-        status: "failed",
-        run: {
-          runId: input.runId,
-          projectId: input.projectId,
-          task: input.task,
-          runtimeKind: "openai",
-          status: "failed",
-        },
-        assistantMessage: {
-          title: "本次生成没有完成",
-          body: "已保留你当前输入和已确认内容。建议稍后重试；如果连续失败，可以先缩短需求描述或补充教材内容后再生成。",
-        },
-        nextSuggestedAction: {
-          type: "retry",
-          label: "重试本次生成",
-        },
-      };
+      return buildFailedResult(input);
     }
+  }
+
+  private async createAssistantText(
+    adapter: ReturnType<typeof createOpenAIResponsesGptAdapter>,
+    request: OpenAIResponsePayload,
+    input: AgentRuntimeInput,
+  ): Promise<string> {
+    if (!isNativeToolLoopEnabled(this.nativeToolLoop)) {
+      const response = await adapter.createResponse(request);
+      return response.assistantText;
+    }
+
+    const loopResult = await runOpenAIToolCallLoop({
+      adapter,
+      request,
+      tools: this.nativeToolLoop.tools,
+      allowedToolNames: this.nativeToolLoop.allowedToolNames,
+      context: input,
+      buildToolRouterInput: this.nativeToolLoop.buildToolRouterInput,
+      toolRouter: this.nativeToolLoop.toolRouter,
+      maxToolRounds: this.nativeToolLoop.maxToolRounds,
+    });
+
+    if (loopResult.status !== "completed") {
+      throw new Error("OpenAI native tool loop did not complete");
+    }
+
+    return loopResult.assistantText;
   }
 }
 
@@ -184,6 +188,68 @@ function assertMarkdownMeetsTaskGuidance(markdown: string, task: AgentRuntimeTas
   if (missingField || !markdown.includes("## 自检清单")) {
     throw new Error("Model output missed required teacher review sections");
   }
+}
+
+function isNativeToolLoopEnabled(options: OpenAIRuntimeNativeToolLoopOptions | undefined): options is OpenAIRuntimeNativeToolLoopOptions {
+  return (
+    options !== undefined &&
+    options.tools !== undefined &&
+    Array.isArray(options.allowedToolNames) &&
+    options.allowedToolNames.length > 0 &&
+    typeof options.toolRouter === "function" &&
+    typeof options.buildToolRouterInput === "function"
+  );
+}
+
+function buildSucceededResult(input: AgentRuntimeInput, parsed: StructuredRuntimeOutput): AgentRuntimeResult {
+  const artifactDraft: AgentArtifactDraft = {
+    nodeKey: input.task,
+    kind: input.task,
+    title: parsed.artifactDraft.title,
+    summary: parsed.artifactDraft.summary,
+    markdown: parsed.artifactDraft.markdown,
+    contentType: "text/markdown",
+    generationMode: "model_generated",
+    isReadyForTeacherReview: true,
+  };
+
+  return {
+    status: "succeeded",
+    run: {
+      runId: input.runId,
+      projectId: input.projectId,
+      task: input.task,
+      runtimeKind: "openai",
+      status: "succeeded",
+    },
+    assistantMessage: parsed.assistantMessage,
+    artifactDraft,
+    nextSuggestedAction: {
+      type: "review_artifact",
+      label: parsed.nextSuggestedAction.label,
+    },
+  };
+}
+
+function buildFailedResult(input: AgentRuntimeInput): AgentRuntimeResult {
+  return {
+    status: "failed",
+    run: {
+      runId: input.runId,
+      projectId: input.projectId,
+      task: input.task,
+      runtimeKind: "openai",
+      status: "failed",
+    },
+    assistantMessage: {
+      title: "本次生成没有完成",
+      body: "已保留你当前输入和已确认内容。建议稍后重试；如果连续失败，可以先缩短需求描述或补充教材内容后再生成。",
+    },
+    nextSuggestedAction: {
+      type: "retry",
+      label: "重试本次生成",
+    },
+  };
 }
 
 function createMarkdownExcerpt(markdown: string): string {
