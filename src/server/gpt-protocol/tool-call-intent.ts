@@ -24,6 +24,10 @@ export type CreateToolCallIntentOptions = {
 };
 
 const teacherSafeArgumentKeys = ["userInstruction", "teacherIntent", "notes"] as const;
+const internalControlFieldAssignmentPattern =
+  /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|api[_-]?key|apikey|token|secret)\b\s*[:=]\s*[^\s,;，。)）]+/gi;
+const internalControlFieldNamePattern =
+  /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|api[_-]?key|apikey|token|secret)\b/gi;
 
 export function createToolCallIntent(call: GptFunctionCall, options: CreateToolCallIntentOptions): ToolCallIntent {
   const baseIntent = {
@@ -80,9 +84,11 @@ function sanitizeTeacherSemanticText(value: string): string {
     .replace(/\b[A-Za-z]:[\\/][^\s,;，。)）]+/g, "[已隐藏]")
     .replace(/(?<!:)\/(?:Users|home|tmp|var|private|mnt)\/[^\s,;，。)）]+/g, "[已隐藏]")
     .replace(/Bearer\s+[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(internalControlFieldAssignmentPattern, "[已隐藏]")
     .replace(/\b(?:api[_-]?key|apikey|credential|token|secret|baseURL)\s*[:=]\s*[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(/https?:\/\/[^\s,;，。)）]+/gi, "[已隐藏]")
-    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[已隐藏]");
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[已隐藏]")
+    .replace(internalControlFieldNamePattern, "[已隐藏]");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

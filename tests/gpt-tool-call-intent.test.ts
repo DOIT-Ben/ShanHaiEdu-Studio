@@ -3,6 +3,9 @@ import type { GptFunctionCall } from "@/server/gpt-protocol/types";
 import { createToolCallIntent } from "@/server/gpt-protocol/tool-call-intent";
 
 describe("ToolCallIntent", () => {
+  const forbiddenTeacherIntentControlPattern =
+    /\b(?:projectId|artifactRefs|sourceMessageId|provider|capabilityId|toolId|nodeKey|schema|baseURL|apiKey|token|secret)\b/i;
+
   it("maps an allowlisted function_call to a ready teacher-safe intent", () => {
     const call: GptFunctionCall = {
       callId: "call_create_slides_1",
@@ -144,5 +147,41 @@ describe("ToolCallIntent", () => {
     expect(intentText).not.toContain("C:\\Users\\HB");
     expect(intentText).not.toContain("secret-token");
     expect(intentText).not.toContain("sk-secret");
+  });
+
+  it("redacts forged internal control field names embedded in allowed teacher semantic fields", () => {
+    const intent = createToolCallIntent(
+      {
+        callId: "call_forged_semantic_fields",
+        name: "createSlides",
+        argumentsText: JSON.stringify({
+          userInstruction: "请生成课件 projectId=forged-project provider=external-provider schema={debug:true} sourceMessageId=message-a",
+          teacherIntent: "artifactRefs=[artifact-a] capabilityId=coze_ppt toolId=internal-tool nodeKey=slide_deck",
+          notes: "baseURL=https://secret.example/v1 apiKey=sk-secret token=abc123 secret=hidden",
+        }),
+        argumentsJsonParseStatus: "parsed",
+        argumentsJson: {
+          userInstruction: "请生成课件 projectId=forged-project provider=external-provider schema={debug:true} sourceMessageId=message-a",
+          teacherIntent: "artifactRefs=[artifact-a] capabilityId=coze_ppt toolId=internal-tool nodeKey=slide_deck",
+          notes: "baseURL=https://secret.example/v1 apiKey=sk-secret token=abc123 secret=hidden",
+        },
+      },
+      { allowedToolNames: ["createSlides"] },
+    );
+    const intentText = JSON.stringify(intent);
+
+    expect(intent.status).toBe("ready");
+    expect(intentText).not.toMatch(forbiddenTeacherIntentControlPattern);
+    expect(intentText).not.toContain("forged-project");
+    expect(intentText).not.toContain("external-provider");
+    expect(intentText).not.toContain("message-a");
+    expect(intentText).not.toContain("artifact-a");
+    expect(intentText).not.toContain("coze_ppt");
+    expect(intentText).not.toContain("internal-tool");
+    expect(intentText).not.toContain("slide_deck");
+    expect(intentText).not.toContain("secret.example");
+    expect(intentText).not.toContain("sk-secret");
+    expect(intentText).not.toContain("abc123");
+    expect(intentText).not.toContain("hidden");
   });
 });

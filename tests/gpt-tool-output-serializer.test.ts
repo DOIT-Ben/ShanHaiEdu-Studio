@@ -6,6 +6,7 @@ import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
 const forbiddenOutputPattern =
   /capabilityId|toolId|artifactKind|nodeKey|provider|providerPayload|schema|debug|local path|\bAPI\b|baseURL|token|api[_-]?key|secret|credential|Bearer\s+\S+|localOutput|sha256|https?:\/\/|file:\/\/|[A-Z]:\\|\/Users\/|sk-secret|abc123|secret-token/i;
+const bareUrlPattern = /\burl\b/i;
 
 describe("Tool output serializer", () => {
   it("serializes succeeded results into teacher semantic function_call_output JSON only", () => {
@@ -155,5 +156,57 @@ describe("Tool output serializer", () => {
       artifactReadyForReview: false,
     });
     expect(output).not.toMatch(forbiddenOutputPattern);
+  });
+
+  it("redacts bare url labels from assistant summary, artifact title, and observation summaries", () => {
+    const succeededResult: ToolExecutionResult = {
+      status: "succeeded",
+      toolId: "tool-create-slides",
+      capabilityId: "coze_ppt",
+      provider: "external-provider",
+      artifactDraft: {
+        nodeKey: "slide_deck",
+        kind: "pptx",
+        title: "url",
+        summary: "done",
+        structuredContent: {},
+      },
+      artifactTruth: {
+        created: true,
+        persisted: true,
+        persistenceScope: "provider_local_file",
+        providerPersisted: true,
+        placeholder: false,
+        producedArtifactKind: "pptx",
+      },
+      providerPayload: {},
+      assistantSummary: "课件已生成 url=https://secret.example/v1 URL: https://secret.example/teacher 还有裸 url 标签。",
+      budgetEvent: buildAgentHarnessBudgetEvent({ capabilityId: "coze_ppt", status: "succeeded", kind: "tool_succeeded" }),
+    };
+    const failedResult: ToolExecutionResult = {
+      status: "failed",
+      toolId: "tool-create-slides",
+      capabilityId: "coze_ppt",
+      provider: "external-provider",
+      observation: createToolObservation({
+        projectId: "project-a",
+        capabilityId: "coze_ppt",
+        expectedArtifactKind: "pptx",
+        kind: "tool_failed",
+        teacherSafeSummary: "观察到 URL: https://secret.example/fail 和 url 标签，需要重试。",
+        internalReasonSanitized: "hidden",
+      }),
+      artifactCreated: false,
+      errorCategory: "provider",
+      budgetEvent: buildAgentHarnessBudgetEvent({ capabilityId: "coze_ppt", status: "failed", kind: "tool_failed" }),
+    };
+
+    const succeededOutput = serializeToolExecutionResultForFunctionCallOutput(succeededResult, { artifactTitle: "复习资料 url=https://secret.example/title" });
+    const failedOutput = serializeToolExecutionResultForFunctionCallOutput(failedResult);
+
+    expect(succeededOutput).not.toMatch(bareUrlPattern);
+    expect(failedOutput).not.toMatch(bareUrlPattern);
+    expect(succeededOutput).not.toMatch(/https?:\/\//i);
+    expect(failedOutput).not.toMatch(/https?:\/\//i);
   });
 });

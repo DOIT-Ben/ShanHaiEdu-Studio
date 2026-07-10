@@ -19,6 +19,9 @@ export function serializeToolExecutionResultForFunctionCallOutput(
   return JSON.stringify(createTeacherFacingToolOutput(result, metadata));
 }
 
+const bareUrlAssignmentPattern = /\burl\b\s*[:=]\s*[^\s,;，。)）]+/gi;
+const bareUrlLabelPattern = /\burl\b\s*[:=]?/gi;
+
 function createTeacherFacingToolOutput(
   result: ToolExecutionResult,
   metadata: ToolOutputSerializerMetadata,
@@ -78,8 +81,10 @@ function sanitizeTeacherFacingText(value: string): string {
     .replace(/\b[A-Za-z]:[\\/][^\s,;，。)）]+/g, "[已隐藏]")
     .replace(/(?<!:)\/(?:Users|home|tmp|var|private|mnt|Volumes)\/[^\s,;，。)）]+/g, "[已隐藏]")
     .replace(/Bearer\s+[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(bareUrlAssignmentPattern, "[已隐藏]")
     .replace(/\b(?:api[_-]?key|apikey|credential|token|secret|baseURL|localOutput|sha256)\s*[:=]\s*[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(/https?:\/\/[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[已隐藏]")
+    .replace(bareUrlLabelPattern, "[已隐藏]")
     .replace(/\b(?:providerPayload|provider|schema|debug|local\s+path|API|artifactKind|nodeKey|capabilityId|toolId)\b/gi, "[已隐藏]");
 }
