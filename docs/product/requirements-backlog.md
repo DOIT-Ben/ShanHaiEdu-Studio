@@ -38,8 +38,8 @@
   - 提交成功返回反馈编号；失败保留描述和图片，可重试。
   - 公网内测使用密码认证和邀请制账号；普通教师不能读取他人反馈，管理员可受控查看和导出。
 - 需求文档：`docs\product\beta-feedback-requirements.md`。
-- 阶段与测试：`docs\stages\local-real-mvp-beta-feedback-center-plan.md`、`docs\stages\local-real-mvp-beta-feedback-center-test-plan.md`。
-- 建议阶段：下一开发阶段，先于邀请内测用户。
+- 阶段与测试：`docs\stages\local-real-mvp-m67-beta-feedback-center-plan.md`、`docs\stages\local-real-mvp-m67-beta-feedback-center-test-plan.md`。
+- 建议阶段：M67，先于邀请内测用户。
 
 ## 3. 第一档需求
 
@@ -53,8 +53,6 @@
 - 需求文档：`docs\product\frontend-workbench-priority-requirements.md`。
 - UI 状态：`docs\ui\frontend-workbench\local-real-mvp-m54a-open-items.md`。
 
-## 4. 核心产品与交互需求
-
 ### RQ-001 自然语言确认与改道执行
 
 - 状态：`accepted`
@@ -64,8 +62,26 @@
 - 验收：
   - 用户输入“直接开始做视频”时，不再回复“我还没有拿到这一步的有效确认”。
   - 如果视频前置材料不足，系统明确说明缺哪些材料，并给出下一步建议。
-  - 如果请求涉及真实 provider 或高风险动作，仍需 HumanGate。
-- 建议阶段：反馈中心后优先实施。
+  - 如果请求涉及真实 provider 或高风险动作，模糊继续不能授权执行，仍需已披露动作后的显式 HumanGate。
+- 建议阶段：M68，与 RQ-011 合并实施。
+
+### RQ-011 对话承诺与执行一致性
+
+- 状态：`accepted`
+- 来源：2026-07-10 对话截图；助手承诺回复“继续做视频/改做 PPT”即可执行，教师回复“我让你接着做啊”后仍被“没有有效确认”阻断。
+- 问题：助手话术、上下文语义、quick reply 隐藏 actionId、pending plan 生命周期、PlanGuard 和失败状态作用域不一致。
+- 目标：按钮和自由输入都能安全控制当前计划；多分支时具体消歧；改道会 supersede 旧计划；历史失败保留审计但不污染新分支。
+- 验收：
+  - 唯一低副作用 active 计划下，“我让你接着做啊”能继续正确计划；真实 provider 动作仍要求已披露动作后的显式 HumanGate。
+  - 多分支不明确时只追问“视频还是 PPT”，不显示“没有有效确认”。
+  - 用户实质修改 quick reply 文本后，旧 actionId 不再授权原动作。
+  - 助手只对真实 ActionOffer 承诺“回复一句即可执行”。
+  - superseded 旧分支失败不阻断新分支，历史审计仍保留。
+- 需求文档：`docs\product\conversation-commitment-execution-consistency-requirements.md`。
+- 阶段与测试：`docs\stages\local-real-mvp-m68-conversation-control-plan.md`、`docs\stages\local-real-mvp-m68-conversation-control-test-plan.md`。
+- 优先级：第一档；M67 反馈中心后与 RQ-001 合并实施。
+
+## 4. 核心产品与交互需求
 
 ### RQ-002 视频结构化前置链路补齐
 
@@ -76,7 +92,7 @@
 - 验收：
   - 能按顺序生成并确认知识锚点、创意主题、视频脚本、分镜、资产 brief、资产图、片段计划。
   - 缺前置材料时不调用真实视频 provider。
-- 建议阶段：`M67-M69`。
+- 建议阶段：`M69-M71`。
 
 ### RQ-003 PPTX 真实交付与 slideCount 门禁持续验收
 
@@ -104,7 +120,7 @@
 ### RQ-005 OpenAIRuntime native tool loop 主线接入
 
 - 状态：`deferred`
-- 来源：M65/M66 runtime tool loop 规划。
+- 来源：M65/M66-R runtime tool loop 规划。
 - 问题：M65 已完成协议层和 `OpenAIRuntime` 可选接线，但尚未进入主链路。
 - 目标：通过显式环境开关、单工具 allowlist、server-authoritative mapper 和无递归 `toolExecutionRuntime` 安全接入。
 - 当前决策：先处理 RQ-001 的自然语言确认与改道，再继续主线接入。
@@ -112,7 +128,7 @@
 
 ### RQ-006 文档结构治理
 
-- 状态：`accepted`
+- 状态：`done`
 - 来源：2026-07-10 用户要求“需求、架构、主线、阶段开发分开”。
 - 问题：历史阶段文档数量多，需求、架构、主线和阶段验收口径混杂。
 - 目标：建立文档入口、需求总账、交互需求、架构 README、主线状态，不急于批量移动旧文件。
@@ -120,7 +136,7 @@
   - `docs\README.md` 清楚说明目录职责和权威级别。
   - `AGENTS.md` 写明项目文档结构规则。
   - 新增需求先进入需求总账，再进入阶段计划。
-- 完成条件：补齐 `docs\stages\local-real-mvp-m66-doc-governance-and-interaction-closeout.md` 并完成文档一致性复审后再改为 `done`。
+- 收尾证据：`docs\stages\local-real-mvp-doc-governance-closeout.md`。
 
 ## 6. 第二档需求
 

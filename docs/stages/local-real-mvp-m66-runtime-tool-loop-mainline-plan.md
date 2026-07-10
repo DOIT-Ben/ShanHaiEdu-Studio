@@ -1,4 +1,4 @@
-# M66 Runtime Native Tool Loop 主线接入实施计划
+# M66-R Runtime Native Tool Loop 主线接入实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or an equivalent reviewer-gated workflow to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -107,7 +107,7 @@ SHANHAI_OPENAI_NATIVE_TOOL_LOOP=1
 1. 未设置或不等于 `1`：不启用 native tool loop。
 2. 设置为 `1` 但 OpenAI-compatible config 不存在：继续返回 `DeterministicRuntime` fallback。
 3. 设置为 `1` 且配置存在：`createAgentRuntimeFromEnv(...)` 创建带 `nativeToolLoop` 的 `OpenAIRuntime`，外层仍包 `FallbackAgentRuntime`。
-4. 后续如需灰度到 provider 工具，另起 M67，不在 M66 混入。
+4. 后续如需灰度到 provider 工具，另起 M69 或更后阶段，不占用已确定的 M67 反馈中心和 M68 对话控制。
 
 ## 5.1 递归防护设计
 
@@ -543,7 +543,7 @@ Expected: 所有命令 exit 0；Vitest 失败数 0；build 成功；graphify 成
 
 - [ ] **Step 2: 写 M66 closeout**
 
-文档必须包含：目标、范围、开关状态、完成提交、验证命令与结果、未纳入范围、风险、回退方式、M67 建议。
+文档必须包含：目标、范围、开关状态、完成提交、验证命令与结果、未纳入范围、风险、回退方式、后续 provider 灰度建议。
 
 - [ ] **Step 3: 文档核验**
 
@@ -583,12 +583,12 @@ git status --short
 | 模型伪造项目、产物或消息字段 | mapper 只使用 `AgentRuntimeInput`，测试必须覆盖伪造字段不进入 `ToolRouterInput`。 |
 | internal capability 递归进入 native loop | mapper 注入无 native loop 的 `toolExecutionRuntime`，测试必须覆盖 `ToolRouterInput.runtime` 非 primary runtime。 |
 | 教师可见文案泄露工程词 | failure 文案继续走 `OpenAIRuntime` / fallback 安全文案；测试扫描工程词。 |
-| provider side effect 被模型误触发 | M66 不开放 provider 工具，`generate_pptx_from_design` 等留到 M67。 |
+| provider side effect 被模型误触发 | M66-R 不开放 provider 工具，`generate_pptx_from_design` 等留到 M69 或更后独立阶段。 |
 | 主线不稳定 | 删除或关闭 `SHANHAI_OPENAI_NATIVE_TOOL_LOOP=1` 即回退到 M65 默认 structured output 路径。 |
 
-## 10. M67 建议
+## 10. 后续 provider 灰度建议
 
-M67 再评估 provider 工具灰度，重点包括：
+M69 或更后独立阶段再评估 provider 工具灰度，重点包括：
 
 1. `coze_ppt` 是否可在 HumanGate 确认后进入 native tool loop。
 2. GenerationJob 生命周期如何在 native loop 中保留 start / finish / fail。
@@ -597,7 +597,7 @@ M67 再评估 provider 工具灰度，重点包括：
 
 ## 11. 自检
 
-- 规划已区分 M66 与 M67，避免一次性开放 provider side effect。
+- 规划已将 M66-R runtime 与 M67 反馈中心、M68 对话控制、后续 provider 灰度分开，避免一次性开放 provider side effect。
 - 规划没有要求接真实 MCP，也没有宣称生产可用。
 - 所有新增能力都在显式环境开关下启用，默认行为保持不变。
 - 每个任务都包含目标文件、测试命令、提交边界与预期结果。

@@ -54,6 +54,7 @@ AGENTS.md / 平台安全规则
 ```text
 docs\product\requirements-backlog.md
 docs\product\conversation-interaction-requirements.md
+docs\product\conversation-commitment-execution-consistency-requirements.md
 docs\product\beta-feedback-requirements.md
 docs\product\frontend-workbench-priority-requirements.md
 docs\product\competitor-derived-second-tier-requirements.md

@@ -123,11 +123,11 @@ Feedback images   -> ARTIFACT_STORAGE_ROOT\feedback\<feedbackId>\<attachmentId>.
 - 客户端传入的 `projectId`、`messageId` 必须在服务端验证当前 actor 有权访问，不能直接采信。
 - 图片白名单只允许服务端真实解码通过的 PNG、JPEG、WebP；拒绝 SVG、HTML、脚本和仅伪造扩展名的文件。
 - 硬限制：最多 5 张；单张不超过 10 MiB；全部图片二进制合计不超过 25 MiB；单张宽高均不超过 8192 px；单张解码像素不超过 40,000,000。
-- 提交接口需要 `idempotencyKey`；唯一约束作用域为 `createdBy + idempotencyKey`，并保存规范化请求指纹。同一用户同键同内容返回原反馈；同键不同内容返回 409，不得覆盖原反馈。
+- 提交接口需要 `idempotencyKey`；`createdBy` 必须来自认证 actor 且不可为空，唯一约束作用域为 `createdBy + idempotencyKey`，并保存规范化请求指纹。同一用户同键同内容返回原反馈；同键不同内容返回 409，不得覆盖原反馈。
 - 如果同时传入 `projectId` 和 `messageId`，服务端必须验证 message 属于该 project，且 actor 有权访问该 project；不能只分别检查两个 ID 是否存在。
 - 文件与 SQLite 无法组成单一事务，采用 staged submission：先将附件写入同一存储根下的 staging 目录并完成真实解码，再创建 `processing` 反馈记录，原子重命名为最终目录后将记录改为 `submitted`。
 - 应用启动或维护任务必须对账长期停留的 `processing` 记录、staging 目录和无数据库引用的最终目录；能恢复则恢复，不能恢复则标记失败并清理。只有 `submitted` 能向用户返回成功。
-- 只有 `actor.isAdmin === true` 的密码认证管理员可以查看列表、详情、下载附件和导出脱敏 CSV/JSON；普通教师只能提交，不能读取他人反馈。
+- 只有 `actor.isAdmin === true` 的密码认证管理员可以查看列表、详情、下载附件和导出脱敏 CSV/JSON；普通教师只能提交，不能读取他人反馈。CSV 必须使用结构化 writer 做转义，并中和 `= + - @`、制表符和回车开头的用户单元格，防止表格公式注入。
 - local 模式不提供反馈总览；维护者通过密码认证管理员账号进入受控查看入口。
 - 管理员账号创建和凭据配置属于部署步骤，凭据不得进入代码、文档或提交。
 - 公网内测固定使用密码认证和邀请制账号：生产同时设置服务端/客户端密码认证开关，并关闭公开自助注册。内测账号由维护者通过受控 bootstrap/invite 流程创建。
