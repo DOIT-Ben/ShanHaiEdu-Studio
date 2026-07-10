@@ -49,7 +49,7 @@ describe("ToolObservation", () => {
       capabilityId: "image_asset",
       kind: "tool_failed",
       teacherSafeSummary:
-        "provider debug schema storage local path C:\\Users\\HB\\secret\\file.png file:///tmp/a.png /Users/hb/.config/app token=abc API_KEY=sk-secret SECRET=raw credential=pass Bearer abc.def https://example.test/callback?token=abc&api_key=def&secret=ghi",
+        "provider debug schema storage local path C:\\Users\\TestUser\\secret\\file.png file:///tmp/a.png /Users/test-user/.config/app token=abc API_KEY=sk-secret SECRET=raw credential=pass Bearer abc.def https://example.test/callback?token=abc&api_key=def&secret=ghi",
       internalReasonSanitized:
         "debug provider schema storage local path D:\\work\\data.json file:///var/tmp/x /var/log/app.log token xyz API_KEY abc SECRET def credential ghi Bearer secret-token https://service.test/run?key=value&secret=abc",
     });
