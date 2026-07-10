@@ -24,6 +24,115 @@ describe("GptProtocolAdapter", () => {
     expect(response.diagnostics.status).toBe("succeeded");
   });
 
+  it("maps tool request fields to OpenAI Responses payload names and prefers inputItems", async () => {
+    const client = fakeResponsesClient({ output_text: "已收到工具配置。" });
+    const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
+    const tools = [
+      {
+        type: "function",
+        name: "createSlides",
+        description: "生成课堂 PPT。",
+        parameters: {
+          type: "object",
+          properties: { topic: { type: "string" } },
+          required: ["topic"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ];
+    const inputItems = [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "生成水循环课件。" }] },
+    ];
+
+    await adapter.createResponse({
+      instructions: "只输出教师可读内容。",
+      input: "不应被 adapter 作为 Responses input。",
+      inputItems,
+      tools,
+      toolChoice: "auto",
+      parallelToolCalls: false,
+      text: { format: { type: "text" } },
+    });
+
+    expect(client.lastPayload).toEqual({
+      model: "test-model",
+      instructions: "只输出教师可读内容。",
+      input: inputItems,
+      text: { format: { type: "text" } },
+      tools,
+      tool_choice: "auto",
+      parallel_tool_calls: false,
+    });
+  });
+
+  it("parses function_call output items into protocol functionCalls", async () => {
+    const argumentsText = JSON.stringify({ topic: "水循环", slideCount: 6 });
+    const client = fakeResponsesClient({
+      output_text: "",
+      output: [
+        {
+          id: "fc_1",
+          type: "function_call",
+          status: "completed",
+          call_id: "call_create_slides_1",
+          name: "createSlides",
+          arguments: argumentsText,
+        },
+      ],
+    });
+    const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
+
+    const response = await adapter.createResponse({ instructions: "i", input: "x" });
+
+    expect(response.functionCalls).toEqual([
+      {
+        id: "fc_1",
+        callId: "call_create_slides_1",
+        name: "createSlides",
+        argumentsText,
+        argumentsJsonParseStatus: "parsed",
+        argumentsJson: { topic: "水循环", slideCount: 6 },
+      },
+    ]);
+  });
+
+  it("classifies invalid and missing function_call arguments safely", async () => {
+    const client = fakeResponsesClient({
+      output_text: "",
+      output: [
+        {
+          type: "function_call",
+          call_id: "call_missing",
+          name: "createSlides",
+          arguments: "   ",
+        },
+        {
+          type: "function_call",
+          call_id: "call_invalid_json",
+          name: "createSlides",
+          arguments: "{not-json",
+        },
+        {
+          type: "function_call",
+          call_id: "call_non_object",
+          name: "createSlides",
+          arguments: JSON.stringify(["topic"]),
+        },
+      ],
+    });
+    const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
+
+    const response = await adapter.createResponse({ instructions: "i", input: "x" });
+
+    expect(response.functionCalls.map((call) => [call.callId, call.argumentsJsonParseStatus])).toEqual([
+      ["call_missing", "missing"],
+      ["call_invalid_json", "invalid_json"],
+      ["call_non_object", "invalid_json"],
+    ]);
+    expect(response.functionCalls).not.toEqual(expect.arrayContaining([expect.objectContaining({ argumentsJson: expect.anything() })]));
+  });
+
   it("summarizes output items without preserving full text or arguments", async () => {
     const client = fakeResponsesClient({
       output_text: "摘要文本",
@@ -54,6 +163,7 @@ describe("GptProtocolAdapter", () => {
     expect(JSON.stringify(response.outputItemsSummary)).not.toContain("模型全文");
     expect(JSON.stringify(response.outputItemsSummary)).not.toContain("sk-secret");
     expect(JSON.stringify(response.outputItemsSummary)).not.toContain("fullPrompt");
+    expect(JSON.stringify(response.outputItemsSummary)).not.toContain("不要保存完整参数");
   });
 
   it("sanitizes diagnostics when provider errors include secrets", async () => {

@@ -1,4 +1,10 @@
-import type { GptOutputItemSummary, GptProtocolDiagnostics, GptProtocolRequest, GptProtocolResponse } from "./types";
+import type {
+  GptFunctionCall,
+  GptOutputItemSummary,
+  GptProtocolDiagnostics,
+  GptProtocolRequest,
+  GptProtocolResponse,
+} from "./types";
 
 type OpenAIResponsesAdapterClient = {
   responses: {
@@ -19,17 +25,13 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
   return {
     async createResponse(request) {
       try {
-        const rawResponse = await options.client.responses.create({
-          model: options.model,
-          instructions: request.instructions,
-          input: request.input,
-          text: request.text,
-        });
+        const rawResponse = await options.client.responses.create(createResponsesPayload(options.model, request));
         const rawText = extractRawText(rawResponse);
 
         return {
           assistantText: rawText,
           rawText,
+          functionCalls: extractFunctionCalls(rawResponse),
           outputItemsSummary: summarizeOutputItems(rawResponse),
           diagnostics: createDiagnostics("succeeded", options.model),
         };
@@ -37,12 +39,39 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
         return {
           assistantText: "",
           rawText: "",
+          functionCalls: [],
           outputItemsSummary: [],
           diagnostics: createDiagnostics("failed", options.model, sanitizeDiagnosticText(extractErrorMessage(error))),
         };
       }
     },
   };
+}
+
+function createResponsesPayload(model: string, request: GptProtocolRequest): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    model,
+    instructions: request.instructions,
+    input: request.inputItems ?? request.input,
+  };
+
+  if (request.text !== undefined) {
+    payload.text = request.text;
+  }
+
+  if (request.tools !== undefined) {
+    payload.tools = request.tools;
+  }
+
+  if (request.toolChoice !== undefined) {
+    payload.tool_choice = request.toolChoice;
+  }
+
+  if (request.parallelToolCalls !== undefined) {
+    payload.parallel_tool_calls = request.parallelToolCalls;
+  }
+
+  return payload;
 }
 
 function extractRawText(rawResponse: unknown): string {
@@ -63,6 +92,50 @@ function summarizeOutputItems(rawResponse: unknown): GptOutputItemSummary[] {
   }
 
   return rawResponse.output.filter(isRecord).map((item) => pickOutputItemSummary(item));
+}
+
+function extractFunctionCalls(rawResponse: unknown): GptFunctionCall[] {
+  if (!isRecord(rawResponse) || !Array.isArray(rawResponse.output)) {
+    return [];
+  }
+
+  return rawResponse.output.filter(isRecord).filter(isFunctionCallItem).map(parseFunctionCallItem);
+}
+
+function isFunctionCallItem(item: Record<string, unknown>): boolean {
+  return item.type === "function_call";
+}
+
+function parseFunctionCallItem(item: Record<string, unknown>): GptFunctionCall {
+  const argumentsText = typeof item.arguments === "string" ? item.arguments : "";
+  const parsedArguments = parseFunctionCallArguments(argumentsText);
+  return {
+    ...(typeof item.id === "string" && item.id.trim().length > 0 ? { id: item.id } : {}),
+    callId: typeof item.call_id === "string" ? item.call_id : "",
+    name: typeof item.name === "string" ? item.name : "",
+    argumentsText,
+    argumentsJsonParseStatus: parsedArguments.status,
+    ...(parsedArguments.argumentsJson ? { argumentsJson: parsedArguments.argumentsJson } : {}),
+  };
+}
+
+function parseFunctionCallArguments(argumentsText: string): {
+  status: GptFunctionCall["argumentsJsonParseStatus"];
+  argumentsJson?: Record<string, unknown>;
+} {
+  if (argumentsText.trim().length === 0) {
+    return { status: "missing" };
+  }
+
+  try {
+    const parsed = JSON.parse(argumentsText) as unknown;
+    if (isPlainRecord(parsed)) {
+      return { status: "parsed", argumentsJson: parsed };
+    }
+    return { status: "invalid_json" };
+  } catch {
+    return { status: "invalid_json" };
+  }
 }
 
 function pickOutputItemSummary(item: Record<string, unknown>): GptOutputItemSummary {
@@ -124,4 +197,8 @@ function sanitizeDiagnosticText(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && !Array.isArray(value);
 }

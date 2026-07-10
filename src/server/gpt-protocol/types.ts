@@ -7,7 +7,20 @@ export type GptProviderCapabilityStatus =
 export type GptProtocolRequest = {
   instructions: string;
   input: string;
+  inputItems?: unknown[];
   text?: unknown;
+  tools?: unknown;
+  toolChoice?: unknown;
+  parallelToolCalls?: boolean;
+};
+
+export type GptFunctionCall = {
+  id?: string;
+  callId: string;
+  name: string;
+  argumentsText: string;
+  argumentsJsonParseStatus: "parsed" | "invalid_json" | "missing";
+  argumentsJson?: Record<string, unknown>;
 };
 
 export type GptOutputItemSummary = {
@@ -28,6 +41,7 @@ export type GptProtocolDiagnostics = {
 export type GptProtocolResponse = {
   assistantText: string;
   rawText: string;
+  functionCalls: GptFunctionCall[];
   outputItemsSummary: GptOutputItemSummary[];
   diagnostics: GptProtocolDiagnostics;
 };
