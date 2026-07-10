@@ -86,8 +86,12 @@ export async function runOpenAIToolCallLoop<TContext>(
       return safeResult("failed", "tool_execution_failed", toolRoundsUsed);
     }
 
+    if (toolExecutionResult.status !== "succeeded") {
+      return safeResult("failed", "tool_execution_failed", toolRoundsUsed);
+    }
+
     const output = serializeToolExecutionResultForFunctionCallOutput(toolExecutionResult);
-    const inputItems = [...getContinuationOutputItems(currentResponse), createFunctionCallOutputItem(functionCall, output)];
+    const inputItems = [createOriginalUserInputItem(options.request), ...getContinuationOutputItems(currentResponse), createFunctionCallOutputItem(functionCall, output)];
     toolRoundsUsed += 1;
     currentResponse = await options.adapter.createResponse(createModelRequest(options.request, options.tools, inputItems));
   }
@@ -115,6 +119,13 @@ function getContinuationOutputItems(response: GptProtocolResponse): unknown[] {
     name: call.name,
     arguments: call.argumentsText,
   }));
+}
+
+function createOriginalUserInputItem(request: GptProtocolRequest): Record<string, string> {
+  return {
+    role: "user",
+    content: request.input,
+  };
 }
 
 function createFunctionCallOutputItem(functionCall: GptFunctionCall, output: string): Record<string, string> {

@@ -72,6 +72,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       userMessage: "帮我整理一份百分数公开课需求",
       projectContext,
       approvedArtifacts: [],
+      sourceMessageId: "message-a",
     });
     expect(runtimeCalledWith).toMatchObject({
       runId: expect.any(String),

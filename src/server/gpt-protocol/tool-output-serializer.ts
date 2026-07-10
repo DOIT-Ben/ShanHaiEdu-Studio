@@ -9,6 +9,7 @@ type TeacherFacingToolOutput = {
   teacherSafeSummary: string;
   nextActionLabel: "review_artifact" | "ask_teacher_for_input" | "adjust_or_retry" | "retry_later";
   artifactTitle?: string;
+  artifactMarkdown?: string;
   artifactReadyForReview: boolean;
 };
 
@@ -32,6 +33,7 @@ function createTeacherFacingToolOutput(
       teacherSafeSummary: sanitizeTeacherFacingText(result.assistantSummary || "材料已生成，可以检查。"),
       nextActionLabel: "review_artifact",
       artifactTitle: sanitizeOptionalTeacherFacingText(metadata.artifactTitle ?? result.artifactDraft.title),
+      artifactMarkdown: sanitizeOptionalTeacherFacingText(result.artifactDraft.markdownContent),
       artifactReadyForReview: true,
     });
   }
@@ -78,13 +80,14 @@ function sanitizeTeacherFacingText(value: string): string {
   return value
     .replace(/(["'])(?:file:\/\/\/?)?(?:[A-Za-z]:[\\/]|\/(?:Users|home|tmp|var|private|mnt|Volumes)\/)[^"']+\1/g, "$1[已隐藏]$1")
     .replace(/file:\/\/\/?[^\s,;，。)）]+/gi, "[已隐藏]")
-    .replace(/\b[A-Za-z]:[\\/][^\s,;，。)）]+/g, "[已隐藏]")
+    .replace(/\b[A-Za-z]:[\\/][^\r\n,;，。)）]+?\.(?:json|log|txt|pptx|md|png|jpe?g|mp4|db)\b/gi, "[已隐藏]")
+    .replace(/\b[A-Za-z]:[\\/][^\r\n,;，。)）]+/g, "[已隐藏]")
     .replace(/(?<!:)\/(?:Users|home|tmp|var|private|mnt|Volumes)\/[^\s,;，。)）]+/g, "[已隐藏]")
     .replace(/Bearer\s+[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(bareUrlAssignmentPattern, "[已隐藏]")
-    .replace(/\b(?:api[_-]?key|apikey|credential|token|secret|baseURL|localOutput|sha256)\s*[:=]\s*[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(/\b(?:projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|OPENAI_API_KEY|api\s+key|api[_-]?key|apikey|credential|token|secret|baseURL|localOutput|sha256)\s*[:=]\s*[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(/https?:\/\/[^\s,;，。)）]+/gi, "[已隐藏]")
     .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[已隐藏]")
     .replace(bareUrlLabelPattern, "[已隐藏]")
-    .replace(/\b(?:providerPayload|provider|schema|debug|local\s+path|API|artifactKind|nodeKey|capabilityId|toolId)\b/gi, "[已隐藏]");
+    .replace(/\b(?:providerPayload|provider|schema|debug|local\s+path|API|artifactKind|nodeKey|capabilityId|toolId|projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|function_call|create_[a-z_]+|generate_[a-z_]+|extract_[a-z_]+|plan_[a-z_]+)\b/gi, "[已隐藏]");
 }

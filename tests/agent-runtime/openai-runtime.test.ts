@@ -202,6 +202,7 @@ describe("OpenAIRuntime", () => {
     expect(JSON.stringify(toolRouter.mock.calls[0][0])).not.toContain("forged-artifact");
     expect(JSON.stringify(toolRouter.mock.calls[0][0])).not.toContain("forged-message");
     expect(calls[1].input).toEqual([
+      { role: "user", content: expect.stringContaining("百分数") },
       { id: "rs_1", type: "reasoning", summary: [] },
       functionCallItem,
       expect.objectContaining({
@@ -291,6 +292,64 @@ describe("OpenAIRuntime", () => {
 
     expect(result.status).toBe("failed");
     expect(result.assistantMessage.body).toContain("重试");
+  });
+
+  it("sanitizes engineering words from successful model output before returning teacher-facing content", async () => {
+    const client = {
+      responses: {
+        create: async () => ({
+          output_text: JSON.stringify({
+            assistantMessage: {
+              title: "provider schema 已生成 projectId=abc",
+              body: "debug function_call runtimeKind=openai artifactRefs=[] placeholder=false",
+            },
+            artifactDraft: {
+              title: "公开课教案 providerStatus=real",
+              summary: "sourceMessageId=message-a local path C:\\Users\\HB\\secret.txt",
+              markdown: [
+                "## 教材依据",
+                "- 基于已确认需求规格。projectId=abc",
+                "## 教学目标",
+                "- 理解百分数意义。",
+                "## 重点难点",
+                "- 教学重点：理解百分数意义。",
+                "- 教学难点：把生活情境转化为百分数表达。",
+                "## 教学流程",
+                "- 情境导入。",
+                "## 导入设计",
+                "- 从生活比例问题开始。",
+                "## 学生活动",
+                "- 观察、表达、归纳。",
+                "## 板书设计",
+                "- 百分数。",
+                "## 课堂总结",
+                "- 回到百分数意义。",
+                "## 教师讲稿要点",
+                "- 保留追问句。function_call create_lesson_plan API key: sk-secret-value OPENAI_API_KEY=sk-another-secret C:\\Users\\HB\\Secret Folder\\secret file.pdf",
+                "## 自检清单",
+                "- 教学重点和教学难点是否区分清楚。",
+              ].join("\n"),
+            },
+            nextSuggestedAction: {
+              label: "review_artifact provider debug",
+            },
+          }),
+        }),
+      },
+    };
+
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    const result = expectSucceeded(await runtime.run(input()));
+    const visibleText = [
+      result.assistantMessage.title,
+      result.assistantMessage.body,
+      result.artifactDraft.title,
+      result.artifactDraft.summary,
+      result.artifactDraft.markdown,
+      result.nextSuggestedAction.label,
+    ].join("\n");
+
+    expect(visibleText).not.toMatch(/projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|function_call|provider|schema|debug|local path|create_lesson_plan|OPENAI_API_KEY|API key|sk-secret|Secret Folder|secret file|C:\\Users\\HB/i);
   });
 
   it("returns teacher-facing recovery when the model call fails", async () => {

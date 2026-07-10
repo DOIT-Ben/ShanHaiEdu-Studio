@@ -38,6 +38,7 @@ export type ApprovedArtifactInput = {
 export type AgentRuntimeInput = {
   projectId: string;
   runId: string;
+  sourceMessageId?: string;
   task: AgentRuntimeTask;
   userMessage: string;
   projectContext: AgentProjectContext;

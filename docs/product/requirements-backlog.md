@@ -136,12 +136,27 @@
 
 ### RQ-005 OpenAIRuntime native tool loop 主线接入
 
-- 状态：`deferred`
+- 状态：`done`（首批 internal tools；provider 工具进入 native loop 另拆后续阶段）
 - 来源：M65/M66-R runtime tool loop 规划。
 - 问题：M65 已完成协议层和 `OpenAIRuntime` 可选接线，但尚未进入主链路。
 - 目标：通过显式环境开关、单工具 allowlist、server-authoritative mapper 和无递归 `toolExecutionRuntime` 安全接入。
-- 当前决策：先处理 RQ-001 的自然语言确认与改道，再继续主线接入。
+- 当前决策：M66-R 已通过显式开关接入生产 Runtime Factory，默认关闭；首批只暴露 internal capability tools，provider、阻断工具和真实最终包继续由后续真实工具金路径阶段处理。
 - 关联文档：`docs\stages\local-real-mvp-m66-runtime-tool-loop-mainline-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m66-runtime-tool-loop-mainline-closeout.md`。
+
+### RQ-013 真实工具金路径闭环
+
+- 状态：`accepted`
+- 来源：M64-R / M66-R 收尾后剩余主线缺口。
+- 问题：ToolRegistry 和 Runtime native loop 已接通，但 `asset_image_generate`、`concat_only_assemble` 和工具层真实最终包仍未实现；provider 工具也不能从 native loop 直接使用裸 artifact refs。
+- 目标：用服务端 resolved Artifact、真实 Provider 和质量门禁跑通一个教师任务从输入到最终下载包的完整链路。
+- 验收：
+  - `asset_image_generate` 生成真实、可校验、可保存的视频资产图产物。
+  - `concat_only_assemble` 只按分镜顺序拼接已通过校验的视频片段，不重排、不加转场、不重写内容。
+  - `final_package` 产出真实 ZIP/材料包，包含 PPTX、图片、视频、清单和校验 metadata，不再只是交付检查清单。
+  - provider 工具只接受同项目、已批准、ID/kind/nodeKey 匹配的服务端 resolved Artifact。
+  - 使用一个真实小学数学公开课任务完成需求、教案、PPT 设计、PPTX、图片、视频和最终材料包下载验收。
+- 优先级：下一阶段，先于公开注册和完整多用户管理。
 
 ### RQ-006 文档结构治理
 

@@ -5,7 +5,7 @@ import { serializeToolExecutionResultForFunctionCallOutput } from "@/server/gpt-
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
 const forbiddenOutputPattern =
-  /capabilityId|toolId|artifactKind|nodeKey|provider|providerPayload|schema|debug|local path|\bAPI\b|baseURL|token|api[_-]?key|secret|credential|Bearer\s+\S+|localOutput|sha256|https?:\/\/|file:\/\/|[A-Z]:\\|\/Users\/|sk-secret|abc123|secret-token/i;
+  /projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|function_call|capabilityId|toolId|artifactKind|nodeKey|provider|providerPayload|schema|debug|local path|\bAPI\b|baseURL|token|api[_-]?key|OPENAI_API_KEY|secret|credential|Bearer\s+\S+|localOutput|sha256|https?:\/\/|file:\/\/|[A-Z]:\\|Secret Folder|secret file|\/Users\/|sk-secret|abc123|secret-token|create_lesson_plan|generate_video_segment/i;
 const bareUrlPattern = /\burl\b/i;
 
 describe("Tool output serializer", () => {
@@ -20,6 +20,7 @@ describe("Tool output serializer", () => {
         kind: "pptx",
         title: "水循环课件",
         summary: "provider schema debug local path C:\\Users\\HB\\secret.pptx",
+        markdownContent: "# 水循环课件\nprojectId=project-a sourceMessageId=message-a artifactRefs=[] runtimeKind=openai providerStatus=real placeholder=false function_call create_lesson_plan generate_video_segment",
         structuredContent: {
           localOutput: "C:\\Users\\HB\\secret.pptx",
           sha256: "abc123",
@@ -51,6 +52,7 @@ describe("Tool output serializer", () => {
       teacherSafeSummary: expect.stringContaining("课件已生成"),
       nextActionLabel: "review_artifact",
       artifactTitle: "水循环课件",
+      artifactMarkdown: expect.stringContaining("水循环课件"),
       artifactReadyForReview: true,
     });
     expect(output).not.toMatch(forbiddenOutputPattern);
@@ -208,5 +210,26 @@ describe("Tool output serializer", () => {
     expect(failedOutput).not.toMatch(bareUrlPattern);
     expect(succeededOutput).not.toMatch(/https?:\/\//i);
     expect(failedOutput).not.toMatch(/https?:\/\//i);
+  });
+
+  it("redacts spaced API key labels and unquoted local paths with spaces from artifact markdown", () => {
+    const result: ToolExecutionResult = {
+      status: "succeeded",
+      toolId: "tool-create-slides",
+      capabilityId: "coze_ppt",
+      artifactDraft: {
+        nodeKey: "slide_deck",
+        kind: "pptx",
+        title: "水循环课件",
+        summary: "done",
+        markdownContent: "API key: sk-secret-value OPENAI_API_KEY=sk-another-secret C:\\Users\\HB\\Secret Folder\\secret file.pdf",
+      },
+      assistantSummary: "课件已生成。",
+      budgetEvent: buildAgentHarnessBudgetEvent({ capabilityId: "coze_ppt", status: "succeeded", kind: "tool_succeeded" }),
+    };
+
+    const output = serializeToolExecutionResultForFunctionCallOutput(result);
+
+    expect(output).not.toMatch(forbiddenOutputPattern);
   });
 });

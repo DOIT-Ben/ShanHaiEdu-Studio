@@ -11,6 +11,7 @@ export type AgentRuntimeCapabilityInput = {
   userMessage: string;
   projectContext: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
+  sourceMessageId?: string;
 };
 
 const capabilityRuntimeTaskMap: Partial<Record<CapabilityId, AgentRuntimeTask>> = {
@@ -61,6 +62,7 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
   const result = await input.runtime.run({
     projectId: input.projectId,
     runId: randomUUID(),
+    sourceMessageId: input.sourceMessageId,
     task,
     userMessage: input.userMessage,
     projectContext: input.projectContext,

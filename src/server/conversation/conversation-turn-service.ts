@@ -394,6 +394,7 @@ async function runPlannedArtifact(input: {
     capabilityId: plannedTurn.toolPlan.capabilityId,
     userMessage: input.reference ? `${generationUserMessage}\n\n引用：${input.reference}` : generationUserMessage,
     projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
+    sourceMessageId: input.triggerMessage.id,
   });
 
   if (result.status !== "succeeded") {

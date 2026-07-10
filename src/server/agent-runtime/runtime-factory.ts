@@ -2,9 +2,14 @@ import OpenAI from "openai";
 import { DeterministicRuntime } from "./deterministic-runtime";
 import { OpenAIRuntime, type OpenAIResponsesClient } from "./openai-runtime";
 import type { AgentRuntime, AgentRuntimeInput, AgentRuntimeResult } from "./types";
+import { createOpenAIRuntimeNativeToolLoopOptions } from "./native-tool-loop-config";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 
-export function createAgentRuntimeFromEnv(env: OpenAICompatibleEnv = process.env): AgentRuntime {
+type RuntimeFactoryEnv = OpenAICompatibleEnv & {
+  SHANHAI_OPENAI_NATIVE_TOOL_LOOP?: string;
+};
+
+export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env): AgentRuntime {
   const fallback = new DeterministicRuntime();
   const config = pickOpenAICompatibleConfig(env);
   if (!config) {
@@ -18,10 +23,23 @@ export function createAgentRuntimeFromEnv(env: OpenAICompatibleEnv = process.env
     maxRetries: 0,
   }) as OpenAIResponsesClient;
 
+  const toolExecutionRuntime = new FallbackAgentRuntime(
+    new OpenAIRuntime({
+      client,
+      model: config.model,
+    }),
+    fallback,
+  );
+
+  const nativeToolLoop = env.SHANHAI_OPENAI_NATIVE_TOOL_LOOP === "1"
+    ? (input: AgentRuntimeInput) => createOpenAIRuntimeNativeToolLoopOptions(input, { toolExecutionRuntime })
+    : undefined;
+
   return new FallbackAgentRuntime(
     new OpenAIRuntime({
       client,
       model: config.model,
+      nativeToolLoop,
     }),
     fallback,
   );

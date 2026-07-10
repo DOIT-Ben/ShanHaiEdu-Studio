@@ -52,6 +52,7 @@ export async function executeInternalCapabilityTool(
       userMessage: input.userMessage,
       projectContext: input.projectContext,
       approvedArtifacts: input.approvedArtifacts ?? [],
+      sourceMessageId: input.sourceMessageId,
     });
 
     if (result.status === "succeeded") {

@@ -79,6 +79,7 @@ describe("OpenAI tool-call loop runner", () => {
     expect(toolRouter).toHaveBeenCalledTimes(1);
     expect(adapter.calls).toHaveLength(2);
     expect(adapter.calls[1].inputItems).toEqual([
+      { role: "user", content: request.input },
       { id: "rs_1", type: "reasoning", summary: [] },
       functionCallItem,
       expect.objectContaining({
@@ -87,6 +88,64 @@ describe("OpenAI tool-call loop runner", () => {
         output: expect.stringContaining("课件已生成"),
       }),
     ]);
+  });
+
+  it("keeps the original user input in the continuation request", async () => {
+    const functionCallItem = {
+      id: "fc_keep_context",
+      type: "function_call",
+      status: "completed",
+      call_id: "call_keep_context",
+      name: "createSlides",
+      arguments: JSON.stringify({ userInstruction: "生成水循环课件。" }),
+    };
+    const adapter = fakeAdapter([
+      response({
+        functionCalls: [parsedCall(functionCallItem)],
+        outputItems: [{ id: "rs_keep", type: "reasoning", summary: [] }, functionCallItem],
+      }),
+      response({ assistantText: "课件已经生成，请检查。", rawText: "课件已经生成，请检查。" }),
+    ]);
+    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+
+    await runOpenAIToolCallLoop({
+      adapter,
+      request,
+      tools,
+      allowedToolNames: ["createSlides"],
+      context: serverContext,
+      buildToolRouterInput: buildInputFromServerContext,
+      toolRouter,
+    });
+
+    expect(adapter.calls[1].inputItems?.[0]).toEqual({ role: "user", content: request.input });
+  });
+
+  it.each(["failed", "retryable_failed", "needs_input"] as const)("stops safely when ToolRouter reports %s instead of letting the model upgrade it to success", async (toolStatus) => {
+    const adapter = fakeAdapter([
+      response({
+        functionCalls: [
+          { callId: "call_failed_tool", name: "createSlides", argumentsText: "{}", argumentsJsonParseStatus: "parsed", argumentsJson: {} },
+        ],
+        outputItems: [{ type: "function_call", call_id: "call_failed_tool", name: "createSlides", arguments: "{}" }],
+      }),
+      response({ assistantText: "我已生成课件。", rawText: "我已生成课件。" }),
+    ]);
+    const toolRouter = vi.fn(async (_input: ToolRouterInput) => nonSucceededToolResult(toolStatus));
+
+    const result = await runOpenAIToolCallLoop({
+      adapter,
+      request,
+      tools,
+      allowedToolNames: ["createSlides"],
+      context: serverContext,
+      buildToolRouterInput: buildInputFromServerContext,
+      toolRouter,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.reason).toBe("tool_execution_failed");
+    expect(adapter.calls).toHaveLength(1);
   });
 
   it("uses server-authoritative mapper values instead of forged model projectId, artifactRefs, and sourceMessageId", async () => {
@@ -332,5 +391,57 @@ function succeededToolResult(overrides: Partial<Extract<ToolExecutionResult, { s
       createdAt: "2026-07-10T00:00:00.000Z",
     },
     ...overrides,
+  };
+}
+
+function nonSucceededToolResult(status: "failed" | "retryable_failed" | "needs_input"): ToolExecutionResult {
+  if (status === "needs_input") {
+    return {
+      status: "needs_input",
+      toolId: "createSlides",
+      capabilityId: "coze_ppt",
+      missingInputs: ["ppt_design_draft"],
+      assistantPrompt: "请先确认课件设计稿。",
+      observation: observation(status),
+      artifactCreated: false,
+      budgetEvent: budgetEvent("blocked", "blocked_by_policy"),
+    };
+  }
+
+  return {
+    status,
+    toolId: "createSlides",
+    capabilityId: "coze_ppt",
+    observation: observation(status),
+    artifactCreated: false,
+    errorCategory: "provider",
+    budgetEvent: budgetEvent(status === "failed" ? "failed" : "retryable_failed", "tool_failed"),
+  };
+}
+
+function observation(status: "failed" | "retryable_failed" | "needs_input"): Extract<ToolExecutionResult, { status: "failed" | "retryable_failed" }>["observation"] {
+  return {
+      observationId: "obs_failed_tool",
+      projectId: "server-project",
+      capabilityId: "coze_ppt",
+      expectedArtifactKind: "pptx",
+      kind: status === "needs_input" ? "blocked_by_policy" : "tool_failed",
+      status: "active",
+      teacherSafeSummary: "这一步暂时没有完成，可以稍后重试。",
+      internalReasonSanitized: "tool_failed",
+      retryPolicy: { retryable: true, nextAction: "retry_later" },
+      artifactCreated: false,
+      dedupeKey: "server-project:coze_ppt:tool_failed:pptx",
+      createdAt: "2026-07-10T00:00:00.000Z",
+  };
+}
+
+function budgetEvent(status: "blocked" | "failed" | "retryable_failed", kind: "blocked_by_policy" | "tool_failed") {
+  return {
+    capabilityId: "coze_ppt",
+    actionKey: "createSlides:pptx",
+    status,
+    kind,
+    createdAt: "2026-07-10T00:00:00.000Z",
   };
 }

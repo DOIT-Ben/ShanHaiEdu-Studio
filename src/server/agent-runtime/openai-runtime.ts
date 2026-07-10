@@ -44,10 +44,14 @@ export type OpenAIRuntimeNativeToolLoopOptions = {
   maxToolRounds?: number;
 };
 
+export type OpenAIRuntimeNativeToolLoopResolver = (
+  input: AgentRuntimeInput,
+) => OpenAIRuntimeNativeToolLoopOptions | undefined;
+
 export type OpenAIRuntimeOptions = {
   client: OpenAIResponsesClient;
   model: string;
-  nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions;
+  nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 };
 
 type StructuredRuntimeOutput = {
@@ -68,7 +72,7 @@ type StructuredRuntimeOutput = {
 export class OpenAIRuntime implements AgentRuntime {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
-  private readonly nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions;
+  private readonly nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 
   constructor(options: OpenAIRuntimeOptions) {
     this.client = options.client;
@@ -94,7 +98,8 @@ export class OpenAIRuntime implements AgentRuntime {
     request: OpenAIResponsePayload,
     input: AgentRuntimeInput,
   ): Promise<string> {
-    if (!isNativeToolLoopEnabled(this.nativeToolLoop)) {
+    const nativeToolLoop = resolveNativeToolLoop(this.nativeToolLoop, input);
+    if (!isNativeToolLoopEnabled(nativeToolLoop)) {
       const response = await adapter.createResponse(request);
       return response.assistantText;
     }
@@ -102,12 +107,12 @@ export class OpenAIRuntime implements AgentRuntime {
     const loopResult = await runOpenAIToolCallLoop({
       adapter,
       request,
-      tools: this.nativeToolLoop.tools,
-      allowedToolNames: this.nativeToolLoop.allowedToolNames,
+      tools: nativeToolLoop.tools,
+      allowedToolNames: nativeToolLoop.allowedToolNames,
       context: input,
-      buildToolRouterInput: this.nativeToolLoop.buildToolRouterInput,
-      toolRouter: this.nativeToolLoop.toolRouter,
-      maxToolRounds: this.nativeToolLoop.maxToolRounds,
+      buildToolRouterInput: nativeToolLoop.buildToolRouterInput,
+      toolRouter: nativeToolLoop.toolRouter,
+      maxToolRounds: nativeToolLoop.maxToolRounds,
     });
 
     if (loopResult.status !== "completed") {
@@ -116,6 +121,17 @@ export class OpenAIRuntime implements AgentRuntime {
 
     return loopResult.assistantText;
   }
+}
+
+function resolveNativeToolLoop(
+  nativeToolLoop: OpenAIRuntimeOptions["nativeToolLoop"],
+  input: AgentRuntimeInput,
+): OpenAIRuntimeNativeToolLoopOptions | undefined {
+  if (typeof nativeToolLoop === "function") {
+    return nativeToolLoop(input);
+  }
+
+  return nativeToolLoop;
 }
 
 export function buildOpenAIResponseRequest(input: AgentRuntimeInput, _model?: string): OpenAIResponsePayload {
@@ -205,9 +221,9 @@ function buildSucceededResult(input: AgentRuntimeInput, parsed: StructuredRuntim
   const artifactDraft: AgentArtifactDraft = {
     nodeKey: input.task,
     kind: input.task,
-    title: parsed.artifactDraft.title,
-    summary: parsed.artifactDraft.summary,
-    markdown: parsed.artifactDraft.markdown,
+    title: sanitizeRuntimeTeacherText(parsed.artifactDraft.title),
+    summary: sanitizeRuntimeTeacherText(parsed.artifactDraft.summary),
+    markdown: sanitizeRuntimeTeacherText(parsed.artifactDraft.markdown),
     contentType: "text/markdown",
     generationMode: "model_generated",
     isReadyForTeacherReview: true,
@@ -222,13 +238,30 @@ function buildSucceededResult(input: AgentRuntimeInput, parsed: StructuredRuntim
       runtimeKind: "openai",
       status: "succeeded",
     },
-    assistantMessage: parsed.assistantMessage,
+    assistantMessage: {
+      title: sanitizeRuntimeTeacherText(parsed.assistantMessage.title),
+      body: sanitizeRuntimeTeacherText(parsed.assistantMessage.body),
+    },
     artifactDraft,
     nextSuggestedAction: {
       type: "review_artifact",
-      label: parsed.nextSuggestedAction.label,
+      label: sanitizeRuntimeTeacherText(parsed.nextSuggestedAction.label),
     },
   };
+}
+
+function sanitizeRuntimeTeacherText(value: string): string {
+  return value
+    .replace(/(["'])(?:file:\/\/\/?)?(?:[A-Za-z]:[\\/]|\/(?:Users|home|tmp|var|private|mnt|Volumes)\/)[^"']+\1/g, "$1[已隐藏]$1")
+    .replace(/file:\/\/\/?[^^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(/\b[A-Za-z]:[\\/][^\r\n,;，。)）]+?\.(?:json|log|txt|pptx|md|png|jpe?g|mp4|db)\b/gi, "[已隐藏]")
+    .replace(/\b[A-Za-z]:[\\/][^\r\n,;，。)）]+/g, "[已隐藏]")
+    .replace(/(?<!:)\/(?:Users|home|tmp|var|private|mnt|Volumes)\/[^\s,;，。)）]+/g, "[已隐藏]")
+    .replace(/Bearer\s+[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(/\b(?:projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|OPENAI_API_KEY|api\s+key|api[_-]?key|apikey|credential|token|secret|baseURL|localOutput|sha256)\s*[:=]\s*[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(/https?:\/\/[^\s,;，。)）]+/gi, "[已隐藏]")
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[已隐藏]")
+    .replace(/\b(?:providerPayload|provider|schema|debug|local\s+path|API|artifactKind|nodeKey|capabilityId|toolId|projectId|sourceMessageId|artifactRefs|runtimeKind|providerStatus|placeholder|function_call|review_artifact|create_[a-z_]+|generate_[a-z_]+|extract_[a-z_]+|plan_[a-z_]+)\b/gi, "[已隐藏]");
 }
 
 function buildFailedResult(input: AgentRuntimeInput): AgentRuntimeResult {
