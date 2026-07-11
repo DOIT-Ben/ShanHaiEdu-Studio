@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent, ClipboardEvent } from "react";
-import { CheckCircle2, ImagePlus, Loader2, Send, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, ImagePlus, Loader2, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { FeedbackController } from "@/hooks/useFeedbackController";
@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 export function FeedbackDialog({ controller }: { controller: FeedbackController }) {
   const submitting = controller.status === "submitting";
   const selectedCategory = feedbackCategoryOptions.find((option) => option.id === controller.category);
+  const selectedChoiceClass = "border-2 border-[#367d6d] bg-[#eef7f3] font-medium text-[#123f33] shadow-[0_0_0_2px_rgba(54,125,109,0.12)]";
+  const idleChoiceClass = "border border-input bg-background text-muted-foreground hover:border-[#8fcbbb] hover:bg-[#f7fbf9] hover:text-foreground";
 
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
     if (submitting) return;
@@ -64,24 +66,28 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
               <fieldset>
                 <legend className="text-sm font-medium text-foreground">反馈类型</legend>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {feedbackCategoryOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      data-feedback-category={option.id}
-                      disabled={submitting}
-                      aria-pressed={controller.category === option.id}
-                      onClick={() => controller.setCategory(option.id)}
-                      className={cn(
-                        "min-h-10 rounded-md border px-3 py-2 text-left text-sm leading-5 transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
-                        controller.category === option.id
-                          ? "border-[#8fcbbb] bg-[#f2f8f6] text-foreground"
-                          : "border-input bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                  {feedbackCategoryOptions.map((option) => {
+                    const selected = controller.category === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        data-feedback-category={option.id}
+                        disabled={submitting}
+                        aria-pressed={controller.category === option.id}
+                        onClick={() => controller.setCategory(option.id)}
+                        className={cn(
+                          "min-h-10 rounded-md px-3 py-2 text-left text-sm leading-5 transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                          selected ? selectedChoiceClass : idleChoiceClass,
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center justify-between gap-2">
+                          <span>{option.label}</span>
+                          {selected && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </fieldset>
 
@@ -89,18 +95,28 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                 <div>
                   <p className="text-sm font-medium text-foreground">快速补充</p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedCategory.chips.map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        data-feedback-chip
-                        disabled={submitting}
-                        onClick={() => controller.appendDescriptionChip(chip)}
-                        className="rounded-md border bg-background px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45"
-                      >
-                        {chip}
-                      </button>
-                    ))}
+                    {selectedCategory.chips.map((chip) => {
+                      const selected = controller.description.includes(chip);
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          data-feedback-chip
+                          disabled={submitting}
+                          aria-pressed={controller.description.includes(chip)}
+                          onClick={() => controller.appendDescriptionChip(chip)}
+                          className={cn(
+                            "rounded-md px-2.5 py-1.5 text-xs transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                            selected ? selectedChoiceClass : idleChoiceClass,
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span>{chip}</span>
+                            {selected && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -121,24 +137,28 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
               <fieldset>
                 <legend className="text-sm font-medium text-foreground">影响程度（选填）</legend>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {feedbackSeverityOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      data-feedback-severity={option.id}
-                      disabled={submitting}
-                      aria-pressed={controller.severity === option.id}
-                      onClick={() => controller.setSeverity(controller.severity === option.id ? "" : option.id)}
-                      className={cn(
-                        "rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
-                        controller.severity === option.id
-                          ? "border-[#8fcbbb] bg-[#f2f8f6] text-foreground"
-                          : "border-input bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                  {feedbackSeverityOptions.map((option) => {
+                    const selected = controller.severity === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        data-feedback-severity={option.id}
+                        disabled={submitting}
+                        aria-pressed={controller.severity === option.id}
+                        onClick={() => controller.setSeverity(selected ? "" : option.id)}
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                          selected ? selectedChoiceClass : idleChoiceClass,
+                        )}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{option.label}</span>
+                          {selected && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </fieldset>
 
@@ -201,7 +221,12 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
 
             <footer className="flex items-center justify-end gap-2 border-t px-5 py-4 sm:px-6">
               <Button variant="ghost" onClick={controller.closeFeedback} disabled={controller.status === "submitting"}>取消</Button>
-              <Button onClick={() => void controller.submit()} disabled={controller.status === "submitting"} data-feedback-submit>
+              <Button
+                onClick={() => void controller.submit()}
+                disabled={controller.status === "submitting"}
+                data-feedback-submit
+                className="border-[#367d6d] bg-[#367d6d] text-white hover:bg-[#286657] active:bg-[#1e5145]"
+              >
                 {controller.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {controller.status === "failed" ? "重新提交" : controller.status === "submitting" ? "正在提交" : "提交反馈"}
               </Button>

@@ -77,6 +77,20 @@ test("M67 feedback dialog provides guided categories, chips, image paste, previe
   assert.match(dialogSource, /重新提交/);
 });
 
+test("M71A feedback choices expose selected states and a primary submit action", () => {
+  const dialogSource = readSource("src/components/feedback/FeedbackDialog.tsx");
+
+  assert.match(dialogSource, /data-feedback-category=\{option\.id\}[\s\S]*aria-pressed=\{controller\.category === option\.id\}/);
+  assert.match(dialogSource, /data-feedback-severity=\{option\.id\}[\s\S]*aria-pressed=\{controller\.severity === option\.id\}/);
+  assert.match(dialogSource, /data-feedback-chip[\s\S]*aria-pressed=\{controller\.description\.includes\(chip\)\}/);
+  assert.match(dialogSource, /border-2 border-\[#367d6d\] bg-\[#eef7f3\] font-medium text-\[#123f33\] shadow-\[0_0_0_2px_rgba\(54,125,109,0\.12\)\]/);
+  assert.match(dialogSource, /hover:border-\[#8fcbbb\] hover:bg-\[#f7fbf9\]/);
+  assert.match(dialogSource, /focus:ring-2 focus:ring-\[#8fcbbb\]\/45/);
+  assert.match(dialogSource, /<Check className="h-3\.5 w-3\.5/);
+  assert.match(dialogSource, /description\.includes\(chip\)/);
+  assert.match(dialogSource, /bg-\[#367d6d\].*text-white/);
+});
+
 test("M67 freezes every payload control while a submission is in flight", () => {
   const dialogSource = readSource("src/components/feedback/FeedbackDialog.tsx");
 
