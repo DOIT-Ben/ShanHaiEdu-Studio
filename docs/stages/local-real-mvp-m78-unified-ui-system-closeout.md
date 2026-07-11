@@ -13,6 +13,14 @@
 - 390px 验证工作台、顶部项目/产物入口、消息、输入区和反馈弹窗；提交反馈返回 201。
 - `graphify update .` 完成，图谱为 3111 nodes / 7772 edges；`npm run build` 与 `git diff --check` 通过。
 
+浏览器证据路径：
+
+- `.playwright-cli\page-2026-07-11T15-26-56-221Z.png`：1366×768 认证页与品牌入口。
+- `.playwright-cli\page-2026-07-11T15-23-07-872Z.png`：390px 工作台。
+- `.playwright-cli\page-2026-07-11T15-22-41-188Z.yml`：备课成果抽屉。
+- `.playwright-cli\page-2026-07-11T15-24-05-858Z.yml`：反馈提交成功。
+- `.playwright-cli\page-2026-07-11T15-26-16-941Z.png`：账号乙隔离后的欢迎空态。
+
 ## 未关闭门禁
 
 - M77 owner 写路径浏览器验收未完成。
