@@ -154,6 +154,7 @@ function messagePostBody(body: string, reference: string | null, options?: Workb
     reference,
     artifactRefs: reference ? [reference] : [],
     ...(confirmedActionId ? { confirmedActionId } : {}),
+    ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
   };
 }
 

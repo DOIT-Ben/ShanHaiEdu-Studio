@@ -5,7 +5,7 @@ import type { ComposerAttachmentCard } from "./composer-contracts";
 
 type AttachmentStatusCardProps = {
   attachment: ComposerAttachmentCard;
-  onRemove: () => void;
+  onRemove?: () => void;
 };
 
 export function AttachmentStatusCard({ attachment, onRemove }: AttachmentStatusCardProps) {
@@ -21,7 +21,8 @@ export function AttachmentStatusCard({ attachment, onRemove }: AttachmentStatusC
       <button
         type="button"
         onClick={onRemove}
-        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        disabled={!onRemove}
+        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         aria-label="移除附件"
       >
         <X className="h-3.5 w-3.5" />

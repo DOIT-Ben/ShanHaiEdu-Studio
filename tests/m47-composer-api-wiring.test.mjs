@@ -24,7 +24,10 @@ test("Workbench controller creates a project before sending the first prompt whe
   assert.doesNotMatch(sendPromptSource, /if \(!activeProjectId\) \{\s*flashComposerNotice\("请先选择或新建一个项目。"\);\s*return;\s*\}/);
   assert.match(sendPromptSource, /let targetProjectId = activeProjectId;/);
   assert.match(sendPromptSource, /dataSource\.createProject\(\)/);
-  assert.match(sendPromptSource, /const sendOptions: WorkbenchSendMessageOptions \| undefined = confirmationActionId \? \{ confirmedActionId: confirmationActionId \} : undefined;/);
+  assert.match(sendPromptSource, /const sendOptions: WorkbenchSendMessageOptions = \{/);
+  assert.match(sendPromptSource, /const messageSignature = buildClientMessageSignature\(targetProjectId, body, reference, confirmationActionId\)/);
+  assert.match(sendPromptSource, /idempotencyKey: getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
+  assert.match(sendPromptSource, /confirmedActionId: confirmationActionId/);
   assert.match(sendPromptSource, /dataSource\.sendMessage\(targetProjectId, body, reference, sendOptions\)/);
 });
 

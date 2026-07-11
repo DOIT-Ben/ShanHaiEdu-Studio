@@ -121,6 +121,7 @@ export type ChatDeliveryPlan = {
 export type WorkbenchSendMessageOptions = {
   confirmedActionId?: string;
   actionId?: string;
+  idempotencyKey?: string;
 };
 
 export type WorkbenchSnapshot = {

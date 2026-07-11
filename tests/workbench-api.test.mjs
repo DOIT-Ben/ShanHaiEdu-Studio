@@ -580,6 +580,25 @@ test("API client posts confirmed action ids only for HumanGate confirmation mess
   assert.equal(Object.hasOwn(postBodies[2], "actionId"), false);
 });
 
+test("API client can send an idempotency key for retry-safe message posts", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const client = createWorkbenchApiClient({
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => (String(url).endsWith("/messages") ? { assistantMessage: { id: "assistant-turn-1" } } : backendSnapshot),
+      };
+    },
+  });
+
+  await client.sendMessage("backend-project-a", "继续生成教案", null, { idempotencyKey: "message:backend-project-a:test-key" });
+
+  const postBody = JSON.parse(calls.find((call) => call.url.endsWith("/messages")).init.body);
+  assert.equal(postBody.idempotencyKey, "message:backend-project-a:test-key");
+});
+
 test("API client does not expose backend-only structured labels in visible artifact fields", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const snapshotWithBackendOnlyFields = {

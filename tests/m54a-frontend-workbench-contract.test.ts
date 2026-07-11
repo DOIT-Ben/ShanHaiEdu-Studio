@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   applyQuickReplyToDraft,
+  buildWelcomePromptSuggestions,
   buildComposerAttachmentCard,
   getGeneratingLabel,
   getComposerAttachmentKind,
+  getComposerToolMenuItems,
   getTextareaHeightPlan,
   normalizeAttachmentStatus,
   normalizeQuickReplies,
 } from "@/components/conversation/composer/composer-contracts";
+import { buildClientMessageSignature, getRetrySafeMessageIdempotencyKey } from "@/hooks/useWorkbenchController";
 
 describe("M54-A frontend workbench contracts", () => {
   it("plans textarea height with a stable max threshold", () => {
@@ -46,7 +49,7 @@ describe("M54-A frontend workbench contracts", () => {
 
   it("builds teacher-facing attachment cards with file name, type, status, and no engineering words", () => {
     expect(getComposerAttachmentKind({ name: "lesson-plan.md", type: "text/markdown" })).toBe("markdown");
-    expect(getComposerAttachmentKind({ name: "scan.pdf", type: "application/pdf" })).toBe("unsupported");
+    expect(getComposerAttachmentKind({ name: "archive.zip", type: "application/zip" })).toBe("unsupported");
 
     const card = buildComposerAttachmentCard({
       fileName: "lesson-plan.md",
@@ -63,9 +66,73 @@ describe("M54-A frontend workbench contracts", () => {
     expect(`${card.fileTypeLabel} ${card.teacherLabel}`).not.toMatch(/schema|manifest|provider|node_id|storage|API|debug|local path|已解析/i);
   });
 
+  it("labels pasted images and rich documents without pretending they are parsed", () => {
+    expect(getComposerAttachmentKind({ name: "blackboard.png", type: "image/png" })).toBe("image_reference");
+    expect(getComposerAttachmentKind({ name: "teaching-plan.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })).toBe("rich_document");
+    expect(getComposerAttachmentKind({ name: "scan.pdf", type: "application/pdf" })).toBe("rich_document");
+    expect(getComposerAttachmentKind({ name: "blackboard.png", type: "text/plain" })).toBe("image_reference");
+    expect(getComposerAttachmentKind({ name: "teaching-plan.docx", type: "text/plain" })).toBe("rich_document");
+    expect(getComposerAttachmentKind({ name: "scan.pdf", type: "text/plain" })).toBe("rich_document");
+
+    const imageCard = buildComposerAttachmentCard({
+      fileName: "blackboard.png",
+      mimeType: "image/png",
+      status: "visual_reference",
+    });
+    const docCard = buildComposerAttachmentCard({
+      fileName: "teaching-plan.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      status: "needs_manual_summary",
+    });
+
+    expect(imageCard).toMatchObject({
+      fileTypeLabel: "图片参考",
+      teacherLabel: "截图已记录，请在输入框补充可见文字或画面要点",
+      canUseAsReference: false,
+    });
+    expect(docCard).toMatchObject({
+      fileTypeLabel: "文档资料",
+      teacherLabel: "请摘取关键内容或另存为文本后使用",
+      canUseAsReference: false,
+    });
+    expect(`${imageCard.teacherLabel} ${docCard.teacherLabel}`).not.toMatch(/OCR|已解析|作为材料参考|schema|manifest|provider|node_id|storage|API|debug|local path/i);
+  });
+
+  it("offers welcome prompts that fill the composer but never auto-send", () => {
+    const suggestions = buildWelcomePromptSuggestions();
+
+    expect(suggestions).toHaveLength(4);
+    expect(suggestions.every((suggestion) => suggestion.label.trim().length > 0)).toBe(true);
+    expect(suggestions.every((suggestion) => suggestion.prompt.includes("请"))).toBe(true);
+    expect(suggestions.every((suggestion) => applyQuickReplyToDraft(suggestion.prompt).shouldSend === false)).toBe(true);
+    expect(suggestions.map((suggestion) => suggestion.label)).toEqual(["公开课目标", "教案和课件", "导入视频", "检查优化"]);
+  });
+
+  it("separates available composer tools from disabled future capabilities", () => {
+    const items = getComposerToolMenuItems();
+
+    expect(items.filter((item) => item.enabled).map((item) => item.label)).toEqual(["添加文本资料"]);
+    expect(items.filter((item) => item.enabled).every((item) => Boolean(item.action))).toBe(true);
+    expect(items.filter((item) => !item.enabled).map((item) => item.label)).toEqual(["粘贴截图参考", "继续排队生成", "自动读取 PDF/DOCX", "实时逐字输出"]);
+    expect(items.map((item) => `${item.label} ${item.description}`).join(" ")).not.toMatch(/schema|manifest|provider|node_id|storage|API|debug|local path/i);
+  });
+
   it("labels generating states without faking token streaming", () => {
     expect(getGeneratingLabel("generating")).toBe("正在生成回复");
     expect(getGeneratingLabel("streaming")).toBe("正在继续写出回复");
     expect(getGeneratingLabel("saving_artifact")).toBe("正在保存成果");
+  });
+
+  it("reuses message idempotency keys for the same failed send retry only", () => {
+    const ref: { current: { signature: string; key: string } | null } = { current: null };
+    const firstSignature = buildClientMessageSignature("project-a", "继续生成教案", "资料《lesson.md》", null);
+    const secondSignature = buildClientMessageSignature("project-a", "继续生成教案，补充活动", "资料《lesson.md》", null);
+
+    const firstKey = getRetrySafeMessageIdempotencyKey(ref, firstSignature);
+    const retryKey = getRetrySafeMessageIdempotencyKey(ref, firstSignature);
+    const changedKey = getRetrySafeMessageIdempotencyKey(ref, secondSignature);
+
+    expect(retryKey).toBe(firstKey);
+    expect(changedKey).not.toBe(firstKey);
   });
 });

@@ -81,3 +81,45 @@ test("Unavailable sidebar buttons stay disabled while collaboration is wired to 
   assert.doesNotMatch(detailSource, /完整缩略图预览稍后开放|缩略预览/);
   assert.doesNotMatch(detailSource, /<button[\s\S]*来源对话[\s\S]*<\/button>/);
 });
+
+test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfaces", () => {
+  const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
+  const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
+  const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
+
+  assert.match(conversationSource, /WelcomeEmptyState/);
+  assert.match(conversationSource, /buildWelcomePromptSuggestions/);
+  assert.match(conversationSource, /onInputChange\(suggestion\.prompt\)/);
+  assert.doesNotMatch(conversationSource, /直接告诉我你要准备哪节公开课/);
+
+  assert.match(composerSource, /handleDrop/);
+  assert.match(composerSource, /onDrop=\{handleDrop\}/);
+  assert.match(composerSource, /handlePaste/);
+  assert.match(composerSource, /onPaste=\{handlePaste\}/);
+  assert.match(composerSource, /useEffect/);
+  assert.match(composerSource, /previousComposerSubmittingRef/);
+  assert.match(composerSource, /function handleSubmit/);
+  assert.match(composerSource, /attachment\?\.status === "pending_parse"/);
+  assert.match(composerSource, /这份资料还在读取/);
+  assert.match(composerSource, /if \(composerSubmitting\) return;/);
+  assert.match(composerSource, /正在发送中，请等本轮发送完成后再添加资料/);
+  assert.match(composerSource, /cancelPendingAttachmentRead/);
+  assert.match(composerSource, /onRemove=\{composerSubmitting \? undefined : clearAttachment\}/);
+  assert.match(composerSource, /reference\.startsWith\(`资料《\$\{attachment\.fileName\}》`\)/);
+  assert.match(composerSource, /getComposerToolMenuItems/);
+  assert.doesNotMatch(composerSource, /item\.action === "focus_input"|onFocusInput/);
+  assert.match(composerSource, /工具和资料/);
+  assert.doesNotMatch(composerSource, /更多操作暂未开放|稍后开放/);
+  assert.doesNotMatch(actionsSource, /更多操作暂未开放|aria-label="更多操作"|MoreHorizontal/);
+});
+
+test("M70 workbench send requests include a client idempotency key", () => {
+  const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
+  const apiSource = readSource("src/lib/workbench-api.ts");
+
+  assert.match(controllerSource, /messageIdempotencyRef/);
+  assert.match(controllerSource, /getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
+  assert.match(controllerSource, /messageIdempotencyRef\.current = null/);
+  assert.match(controllerSource, /crypto\.randomUUID/);
+  assert.match(apiSource, /idempotencyKey: options\.idempotencyKey/);
+});

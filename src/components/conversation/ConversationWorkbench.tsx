@@ -7,6 +7,7 @@ import { WorkbenchTopbar } from "@/components/conversation/WorkbenchTopbar";
 import { StageProgress } from "@/components/conversation/StageProgress";
 import { ChatTranscript } from "@/components/conversation/ChatTranscript";
 import { PromptComposer } from "@/components/conversation/PromptComposer";
+import { buildWelcomePromptSuggestions } from "@/components/conversation/composer/composer-contracts";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { deriveWorkbenchStageIndex, type WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
@@ -126,9 +127,7 @@ export function ConversationWorkbench({
               />
             ) : (
               loadState !== "loading" && (
-                <div className="max-w-[640px] rounded-2xl border bg-card px-5 py-4 text-sm leading-7 text-muted-foreground shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
-                  直接告诉我你要准备哪节公开课，比如“五年级数学百分数，生成教案、PPT 大纲和导入视频方案”。
-                </div>
+                <WelcomeEmptyState onSelect={(suggestion) => onInputChange(suggestion.prompt)} />
               )
             )}
             <div ref={scrollAnchorRef} data-chat-scroll-anchor className="h-1" />
@@ -148,5 +147,36 @@ export function ConversationWorkbench({
         onSend={onSend}
       />
     </main>
+  );
+}
+
+type WelcomeSuggestion = ReturnType<typeof buildWelcomePromptSuggestions>[number];
+
+function WelcomeEmptyState({ onSelect }: { onSelect: (suggestion: WelcomeSuggestion) => void }) {
+  const suggestions = buildWelcomePromptSuggestions();
+
+  return (
+    <section className="max-w-[720px] pt-3 text-foreground" aria-label="开始备课">
+      <div className="mb-5 flex items-center gap-3">
+        <img src="/brand/shanhai-ai-logo-256.png" alt="ShanHaiEdu" className="h-10 w-10 rounded-lg" />
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold tracking-normal text-foreground">开始准备这节课</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">说清年级、主题和想要的产物，我会按教案、课件、素材和检查链路继续。</p>
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {suggestions.map((suggestion) => (
+          <button
+            key={suggestion.label}
+            type="button"
+            className="min-h-[86px] rounded-lg border bg-card px-3 py-2 text-left transition hover:border-input hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onSelect(suggestion)}
+          >
+            <span className="block text-sm font-medium text-foreground">{suggestion.label}</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">{suggestion.prompt}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }

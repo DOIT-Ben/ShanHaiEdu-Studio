@@ -49,7 +49,7 @@ test("assistant message actions are a quiet teacher-facing component", () => {
   assert.match(actionsSource, /aria-label="复制回复"/);
   assert.match(actionsSource, /aria-label="这条有帮助"/);
   assert.match(actionsSource, /aria-label="这条没帮上"/);
-  assert.match(actionsSource, /aria-label="更多操作"/);
+  assert.doesNotMatch(actionsSource, /aria-label="更多操作"|更多操作暂未开放|MoreHorizontal/);
   assert.match(actionsSource, /opacity-0/);
   assert.match(actionsSource, /group-hover:opacity-100/);
   assert.match(actionsSource, /group-focus-within:opacity-100/);

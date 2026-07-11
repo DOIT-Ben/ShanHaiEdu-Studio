@@ -56,6 +56,7 @@ export function useWorkbenchController() {
     [messages, turnJobs],
   );
   const composerSubmittingRef = useRef(false);
+  const messageIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
   const composerNoticeTimer = useRef<number | null>(null);
 
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
@@ -323,10 +324,15 @@ export function useWorkbenchController() {
       }
 
       setExecutionFeedback({ label: "正在组织教案、课件和素材任务", stageIndex: 2 });
-      const sendOptions: WorkbenchSendMessageOptions | undefined = confirmationActionId ? { confirmedActionId: confirmationActionId } : undefined;
+      const messageSignature = buildClientMessageSignature(targetProjectId, body, reference, confirmationActionId);
+      const sendOptions: WorkbenchSendMessageOptions = {
+        idempotencyKey: getRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature),
+        ...(confirmationActionId ? { confirmedActionId: confirmationActionId } : {}),
+      };
       const snapshot = await dataSource.sendMessage(targetProjectId, body, reference, sendOptions);
       setExecutionFeedback({ label: "正在保存本轮成果", stageIndex: 3 });
       applySnapshot(snapshot);
+      messageIdempotencyRef.current = null;
       flashComposerNotice("已发送");
     } catch {
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
@@ -399,4 +405,20 @@ export function useWorkbenchController() {
     selectQuickReply,
     showRecovery,
   };
+}
+
+export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null) {
+  return JSON.stringify({ projectId, body, reference: reference ?? "", confirmationActionId: confirmationActionId ?? "" });
+}
+
+export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: string; key: string } | null }, signature: string) {
+  if (ref.current?.signature === signature) return ref.current.key;
+  const key = buildClientMessageIdempotencyKey(signature);
+  ref.current = { signature, key };
+  return key;
+}
+
+function buildClientMessageIdempotencyKey(signature: string) {
+  const randomPart = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `message:${randomPart}:${signature.length}`;
 }

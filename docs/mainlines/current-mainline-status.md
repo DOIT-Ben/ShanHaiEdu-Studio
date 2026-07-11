@@ -25,34 +25,34 @@ Local Real MVP
 | M67 feedback center | implementation done / rollout pending | 工程实现与本地 E2E 已完成；真实服务器重启、回滚和备份恢复门禁待关闭 |
 | Agent workflow closure | implementation done / smoke pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与 package resolved Artifact 门禁已完成；真实外部 provider smoke 待执行 |
 | M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放仍等待生产门禁和真实 provider smoke |
-| M68 conversation control | planned | 第一档：对话承诺、自然语言控制与执行一致性 |
+| M70 frontend workbench polish | done | 首次欢迎态、附件拖放/截图粘贴、文件状态、工具菜单、假入口清理和桌面/390px 响应式验收已完成 |
 
 ## 3. 当前优先级
 
 当前优先级从高到低：
 
-1. 下一阶段：进入 M70 前端功能需求收口，补齐按钮、输出提示、附件/菜单/欢迎态等第一档工作台体验。
-2. 多用户管理已具备工程闭环；真实用户开放仍需关闭生产门禁和真实 provider smoke。
-3. 真实外部 provider smoke 和一条真实教师任务端到端验收仍是邀请真实用户前门禁。
-4. 邀请真实用户前，在目标服务器关闭 M67 共享卷重启、release 回滚和备份恢复门禁。
+1. 多用户管理和 M70 前端第一档收口已具备工程闭环；真实用户开放仍需关闭生产门禁和真实 provider smoke。
+2. 真实外部 provider smoke 和一条真实教师任务端到端验收仍是邀请真实用户前门禁。
+3. 邀请真实用户前，在目标服务器关闭 M67 共享卷重启、release 回滚和备份恢复门禁。
+4. 后续产品主线：补齐视频结构化前置链路，确保真实视频 provider 调用前有可校验脚本、分镜、资产图和片段计划。
 5. 架构后续：MCP Client Adapter 与 provider/package 工具进入 native loop 的安全输入扩展。
-6. 竞品衍生能力后置，不阻塞真实链路、多用户和前端第一档收口。
+6. 竞品衍生能力后置，不阻塞真实链路、多用户、前端第一档和生产门禁收口。
 
 ## 4. 下一阶段建议
 
 建议立即进入：
 
 ```text
-M70 前端功能需求收口阶段
+上线前生产门禁与真实 provider smoke 收口
 ```
 
 推荐拆分：
 
-1. 对齐 `docs\product\frontend-workbench-priority-requirements.md` 和 `docs\ui\frontend-workbench\local-real-mvp-m54a-open-items.md`。
-2. 优先收口首次欢迎态、附件拖放/截图粘贴、文件状态、模型/工具菜单、输出提示和窄屏交互。
-3. 保持 Codex 风格工作台，不做营销页、大 hero 或无关视觉重做。
-4. 完成后提交不推送。
-5. 真实用户开放仍必须等待 M67 生产门禁和真实 provider smoke 关闭。
+1. 在目标服务器关闭 M67 共享卷重启、release 回滚和备份恢复门禁。
+2. 执行真实外部 PPTX、图片、视频/OpenAI-compatible provider smoke，不用 mock 或文件名冒充真实交付。
+3. 用一条真实教师任务做端到端验收，覆盖需求、教案、PPT 设计、PPTX、图片、视频和最终材料包。
+4. 通过后再评估是否进入小范围真实用户邀请。
+5. 若继续产品能力开发，下一阶段建议进入 M71 视频结构化前置链路补齐。
 
 ## 5. 不做事项
 

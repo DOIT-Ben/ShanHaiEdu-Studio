@@ -65,11 +65,14 @@
 
 - 状态：`split`
 - 来源：用户页面参考图及 M54-A 正式规格、路线和测试计划。
-- 已有基础：自动滚动、输入框自适应、生成提示、快捷回复、消息操作、Logo、糖葫芦交付链、Markdown 阅读、头像菜单和 M67 真实反馈弹窗。
-- 未完成重点：首次欢迎态、工作台附件拖放与截图粘贴、PDF/DOCX/图片真实状态、模型/工具菜单、真实流式回复、响应式收口。
-- 当前决策：作为第一档规划；反馈中心先做，其他项按切片逐步收口。
+- 已有基础：自动滚动、输入框自适应、生成提示、快捷回复、消息操作、Logo、糖葫芦交付链、Markdown 阅读、头像菜单、M67 真实反馈弹窗和 M70 首次欢迎态/附件/工具菜单收口。
+- M70 已完成：首次欢迎态、附件拖放、截图粘贴、PDF/DOCX/图片真实状态、工具菜单、假入口清理和桌面/390px 响应式验收。
+- 未完成重点：真实 token streaming、PDF/DOCX 自动解析、OCR/图片文字识别；这些能力不能在界面中伪装为已接通。
+- 当前决策：第一档 UI 收口已完成；真实流式和文档解析能力后置到独立阶段。
 - 需求文档：`docs\product\frontend-workbench-priority-requirements.md`。
 - UI 状态：`docs\ui\frontend-workbench\local-real-mvp-m54a-open-items.md`。
+- 阶段与测试：`docs\stages\local-real-mvp-m70-frontend-workbench-polish-plan.md`、`docs\stages\local-real-mvp-m70-frontend-workbench-polish-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m70-frontend-workbench-polish-closeout.md`。
 
 ### RQ-001 自然语言确认与改道执行
 

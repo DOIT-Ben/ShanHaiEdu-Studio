@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, MoreHorizontal, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, Copy, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 
@@ -14,7 +14,6 @@ type MessageActionsProps = {
 
 export function MessageActions({ text, projectId, messageId, onOpenFeedback }: MessageActionsProps) {
   const [copied, setCopied] = useState(false);
-  const [actionNote, setActionNote] = useState<string | null>(null);
 
   async function copyText() {
     try {
@@ -24,10 +23,6 @@ export function MessageActions({ text, projectId, messageId, onOpenFeedback }: M
     } catch {
       setCopied(false);
     }
-  }
-
-  function showMoreNotice() {
-    setActionNote("更多操作暂未开放。");
   }
 
   return (
@@ -59,14 +54,6 @@ export function MessageActions({ text, projectId, messageId, onOpenFeedback }: M
       >
         <ThumbsDown className="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={showMoreNotice} aria-label="更多操作">
-        <MoreHorizontal className="h-3.5 w-3.5" />
-      </Button>
-      {actionNote && (
-        <span role="status" className="ml-1 text-xs text-muted-foreground" data-message-action-note>
-          {actionNote}
-        </span>
-      )}
     </div>
   );
 }
