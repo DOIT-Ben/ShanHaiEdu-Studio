@@ -2,6 +2,7 @@ import { createAuditLogEntry } from "@/server/auth/audit-log";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { canManageProjectMembers, canReadProject } from "@/server/auth/authorization";
 import { prisma } from "@/server/db/client";
+import { assertActiveProjectForWrite } from "@/server/workbench/project-lifecycle-service";
 
 export type ProjectMemberRole = "owner" | "editor" | "viewer";
 
@@ -71,6 +72,7 @@ export async function addProjectMember(
   const now = options.now?.() ?? new Date();
 
   return db.$transaction(async (transaction) => {
+    await assertActiveProjectForWrite(transaction, projectId);
     const project = await getManageableProject(transaction, projectId, input.actor ?? null);
     const user = await resolveTargetUser(transaction, input);
     assertNotProjectOwner(project, user.id);
@@ -102,6 +104,7 @@ export async function updateProjectMemberRole(
   const now = options.now?.() ?? new Date();
 
   return db.$transaction(async (transaction) => {
+    await assertActiveProjectForWrite(transaction, projectId);
     const project = await getManageableProject(transaction, projectId, input.actor ?? null);
     assertNotProjectOwner(project, userId);
     const user = await getUserById(transaction, userId);
@@ -131,6 +134,7 @@ export async function removeProjectMember(
   const userId = normalizeId(input.userId, "用户不存在。");
 
   return db.$transaction(async (transaction) => {
+    await assertActiveProjectForWrite(transaction, projectId);
     const project = await getManageableProject(transaction, projectId, input.actor ?? null);
     assertNotProjectOwner(project, userId);
     await transaction.projectMembership.deleteMany({ where: { projectId: project.id, userId } });

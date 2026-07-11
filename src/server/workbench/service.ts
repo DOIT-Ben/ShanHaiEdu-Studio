@@ -1,4 +1,5 @@
 import { createPrismaWorkbenchRepository, type WorkbenchRepository } from "./repository";
+import { getProjectLifecycleState, mutateProjectLifecycle } from "./project-lifecycle-service";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { canReadProject, canTriggerGeneration, canWriteProjectContent } from "@/server/auth/authorization";
 import type {
@@ -18,6 +19,8 @@ import type {
   FinishGenerationJobInput,
   GenerationJobRecord,
   ProjectRecord,
+  ProjectLifecycleMutation,
+  ProjectLifecycleState,
   ProjectSnapshot,
   RegenerateArtifactInput,
   SaveArtifactInput,
@@ -36,8 +39,8 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
   }
 
   return {
-    async listProjects(): Promise<ProjectRecord[]> {
-      const projects = await repository.listProjects({ actor });
+    async listProjects(view: ProjectLifecycleState = "active"): Promise<ProjectRecord[]> {
+      const projects = await repository.listProjects({ actor, view });
       return projects.map(mapProject);
     },
 
@@ -58,6 +61,11 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       await ensureProjectAccess(projectId, "write");
       const message = await repository.addMessage(projectId, input);
       return mapMessage(message);
+    },
+
+    async mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
+      const result = await mutateProjectLifecycle({ projectId, actor, mutation });
+      return { changed: result.changed, project: mapProject(result.project) };
     },
 
     async updateMessageMetadata(
@@ -257,6 +265,10 @@ function mapProject(project: Project): ProjectRecord {
     subject: project.subject,
     textbookVersion: project.textbookVersion,
     lessonTopic: project.lessonTopic,
+    lifecycleState: getProjectLifecycleState(project),
+    lifecycleVersion: project.lifecycleVersion,
+    archivedAt: project.archivedAt?.toISOString() ?? null,
+    deletedAt: project.deletedAt?.toISOString() ?? null,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
   };

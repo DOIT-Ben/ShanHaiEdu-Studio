@@ -22,6 +22,9 @@ model Project {
   subject         String?
   textbookVersion String?
   lessonTopic     String?
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  lifecycleVersion Int                 @default(0)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   owner           LocalUser?            @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
@@ -36,6 +39,7 @@ model Project {
   feedbackRecords FeedbackRecord[]
 
   @@index([ownerUserId, updatedAt])
+  @@index([archivedAt, deletedAt, updatedAt])
 }
 
 model LocalUser {

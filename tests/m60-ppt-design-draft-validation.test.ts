@@ -77,6 +77,10 @@ describe("M60 PPT 设计稿逐页门禁", () => {
       subject: "数学",
       textbookVersion: null,
       lessonTopic: "百分数",
+      lifecycleState: "active",
+      lifecycleVersion: 0,
+      archivedAt: null,
+      deletedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     } as const;

@@ -547,6 +547,10 @@ function buildProjectRecord(projectId: string): ProjectRecord {
     subject: null,
     textbookVersion: null,
     lessonTopic: null,
+    lifecycleState: "active",
+    lifecycleVersion: 0,
+    archivedAt: null,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };

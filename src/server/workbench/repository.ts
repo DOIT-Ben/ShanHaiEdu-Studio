@@ -3,6 +3,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
+import { assertActiveProjectForWrite } from "./project-lifecycle-service";
 import type {
   AddMessageInput,
   CreateProjectInput,
@@ -17,23 +18,30 @@ import type {
   RegenerateArtifactInput,
   SaveArtifactInput,
   StartAgentRunInput,
+  ProjectLifecycleState,
 } from "./types";
 
 export type WorkbenchRepository = ReturnType<typeof createPrismaWorkbenchRepository>;
 
 export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
   return {
-    async listProjects(input: { actor?: WorkbenchActor } = {}) {
+    async listProjects(input: { actor?: WorkbenchActor; view?: ProjectLifecycleState } = {}) {
+      const lifecycleWhere = input.view === "archived"
+        ? { archivedAt: { not: null }, deletedAt: null }
+        : input.view === "trash"
+          ? { deletedAt: { not: null } }
+          : { archivedAt: null, deletedAt: null };
       return client.project.findMany({
         where: input.actor
           ? {
+              ...lifecycleWhere,
               OR: [
                 { ownerUserId: input.actor.userId },
                 ...((input.actor.authMode ?? "local") === "local" ? [{ ownerUserId: null }] : []),
                 { memberships: { some: { userId: input.actor.userId } } },
               ],
             }
-          : undefined,
+          : lifecycleWhere,
         orderBy: { updatedAt: "desc" },
       });
     },
@@ -91,19 +99,23 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
     },
 
     async addMessage(projectId: string, input: AddMessageInput) {
-      return client.conversationMessage.create({
-        data: {
-          projectId,
-          role: input.role,
-          content: input.content,
-          artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
-          metadataJson: JSON.stringify(input.metadata ?? {}),
-        },
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        return tx.conversationMessage.create({
+          data: {
+            projectId,
+            role: input.role,
+            content: input.content,
+            artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+            metadataJson: JSON.stringify(input.metadata ?? {}),
+          },
+        });
       });
     },
 
     async updateMessageMetadata(projectId: string, messageId: string, metadata: Record<string, unknown>) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const result = await tx.conversationMessage.updateMany({
           where: { id: messageId, projectId },
           data: { metadataJson: JSON.stringify(metadata) },
@@ -126,6 +138,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async saveArtifact(projectId: string, input: SaveArtifactInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const latest = await tx.artifact.findFirst({
           where: { projectId, nodeKey: input.nodeKey },
           orderBy: { version: "desc" },
@@ -155,6 +168,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async approveArtifact(projectId: string, artifactId: string) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.artifact.findFirst({
           where: { id: artifactId, projectId },
         });
@@ -232,6 +246,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.artifact.findFirst({
           where: { id: artifactId, projectId },
         });
@@ -294,6 +309,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async startAgentRun(projectId: string, input: StartAgentRunInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const run = await tx.agentRun.create({
           data: {
             projectId,
@@ -314,6 +330,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.agentRun.findFirst({
           where: { id: runId, projectId },
         });
@@ -353,20 +370,24 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
     },
 
     async createGenerationJob(projectId: string, input: CreateGenerationJobInput) {
-      return client.generationJob.create({
-        data: {
-          projectId,
-          kind: input.kind,
-          sourceArtifactId: input.sourceArtifactId,
-          status: "queued",
-          attempts: 0,
-          maxAttempts: input.maxAttempts ?? 2,
-        },
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        return tx.generationJob.create({
+          data: {
+            projectId,
+            kind: input.kind,
+            sourceArtifactId: input.sourceArtifactId,
+            status: "queued",
+            attempts: 0,
+            maxAttempts: input.maxAttempts ?? 2,
+          },
+        });
       });
     },
 
     async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const teacherMessage = await tx.conversationMessage.findFirst({
           where: { id: input.teacherMessageId, projectId, role: "teacher" },
         });
@@ -418,6 +439,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
       try {
         return await client.$transaction(async (tx) => {
+          await assertActiveProjectForWrite(tx, projectId);
           const message = await tx.conversationMessage.create({
             data: {
               projectId,
@@ -452,6 +474,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async startNextConversationTurnJob(projectId: string, input: { lockedBy?: string; lockMs?: number } = {}) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const now = new Date();
         const running = await tx.conversationTurnJob.findFirst({
           where: {
@@ -538,6 +561,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async finishConversationTurnJob(projectId: string, jobId: string, input: FinishConversationTurnInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
         if (!existing) {
           throw new Error(`ConversationTurnJob not found: ${jobId}`);
@@ -562,6 +586,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async failConversationTurnJob(projectId: string, jobId: string, input: FailConversationTurnInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
         if (!existing) {
           throw new Error(`ConversationTurnJob not found: ${jobId}`);
@@ -586,6 +611,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async startGenerationJob(projectId: string, jobId: string) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
         if (!existing) {
           throw new Error(`GenerationJob not found: ${jobId}`);
@@ -611,6 +637,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async finishGenerationJob(projectId: string, jobId: string, input: FinishGenerationJobInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
         if (!existing) {
           throw new Error(`GenerationJob not found: ${jobId}`);
@@ -632,6 +659,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput) {
       return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.generationJob.findFirst({ where: { id: jobId, projectId } });
         if (!existing) {
           throw new Error(`GenerationJob not found: ${jobId}`);

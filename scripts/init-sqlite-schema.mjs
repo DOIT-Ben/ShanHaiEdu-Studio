@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS "Project" (
   "subject" TEXT,
   "textbookVersion" TEXT,
   "lessonTopic" TEXT,
+  "archivedAt" DATETIME,
+  "deletedAt" DATETIME,
+  "lifecycleVersion" INTEGER NOT NULL DEFAULT 0,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "Project_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "LocalUser" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -232,6 +235,9 @@ CREATE TABLE IF NOT EXISTS "FeedbackAttachment" (
 
 `);
 ensureColumn(db, "Project", "ownerUserId", 'ALTER TABLE "Project" ADD COLUMN "ownerUserId" TEXT');
+ensureColumn(db, "Project", "archivedAt", 'ALTER TABLE "Project" ADD COLUMN "archivedAt" DATETIME');
+ensureColumn(db, "Project", "deletedAt", 'ALTER TABLE "Project" ADD COLUMN "deletedAt" DATETIME');
+ensureColumn(db, "Project", "lifecycleVersion", 'ALTER TABLE "Project" ADD COLUMN "lifecycleVersion" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
@@ -245,6 +251,7 @@ assertNoFeedbackIdempotencyConflicts(db);
 db.exec(`
 CREATE INDEX IF NOT EXISTS "ConversationMessage_projectId_createdAt_idx" ON "ConversationMessage"("projectId", "createdAt");
 CREATE INDEX IF NOT EXISTS "Project_ownerUserId_updatedAt_idx" ON "Project"("ownerUserId", "updatedAt");
+CREATE INDEX IF NOT EXISTS "Project_archivedAt_deletedAt_updatedAt_idx" ON "Project"("archivedAt", "deletedAt", "updatedAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "LocalUser_email_key" ON "LocalUser"("email");
 CREATE INDEX IF NOT EXISTS "WorkflowNode_projectId_order_idx" ON "WorkflowNode"("projectId", "order");
 CREATE UNIQUE INDEX IF NOT EXISTS "WorkflowNode_projectId_key_key" ON "WorkflowNode"("projectId", "key");

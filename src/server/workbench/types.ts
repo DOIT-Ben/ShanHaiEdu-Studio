@@ -1,5 +1,15 @@
 export type ProjectStatus = "active" | "review" | "blocked" | "done";
 
+export type ProjectLifecycleState = "active" | "archived" | "trash";
+
+export type ProjectLifecycleAction = "rename" | "archive" | "trash" | "restore";
+
+export type ProjectLifecycleMutation = {
+  action: ProjectLifecycleAction;
+  expectedLifecycleVersion: number;
+  title?: string;
+};
+
 export type MessageRole = "teacher" | "assistant" | "system";
 
 export type WorkflowNodeKey =
@@ -38,6 +48,10 @@ export type ProjectRecord = {
   subject: string | null;
   textbookVersion: string | null;
   lessonTopic: string | null;
+  lifecycleState: ProjectLifecycleState;
+  lifecycleVersion: number;
+  archivedAt: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

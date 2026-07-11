@@ -92,6 +92,10 @@ function projectRecord(): ProjectRecord {
     subject: "数学",
     textbookVersion: null,
     lessonTopic: "百分数",
+    lifecycleState: "active",
+    lifecycleVersion: 0,
+    archivedAt: null,
+    deletedAt: null,
     createdAt: "2026-07-09T00:00:00.000Z",
     updatedAt: "2026-07-09T00:00:00.000Z",
   };
