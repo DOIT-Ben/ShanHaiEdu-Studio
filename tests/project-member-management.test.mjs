@@ -142,6 +142,7 @@ function loadProjectMemberManagementModule(db) {
     "@/server/auth/authorization": authorization,
     "@/server/auth/audit-log": auditLog,
     "@/server/db/client": { prisma: db },
+    "@/server/workbench/project-lifecycle-service": { assertActiveProjectForWrite: async () => undefined },
   });
 }
 

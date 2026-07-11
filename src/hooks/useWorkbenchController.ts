@@ -209,6 +209,7 @@ export function useWorkbenchController() {
       const snapshot = await dataSource.createProject();
       const nextProjects = await dataSource.listProjects();
       setProjects(nextProjects);
+      setProjectView("active");
       applySnapshot(snapshot);
       setNotice("已新建公开课项目，可以开始描述备课目标。");
     } catch (error) {
@@ -405,6 +406,7 @@ export function useWorkbenchController() {
         targetProjectId = createdSnapshot.project.id;
         const nextProjects = await dataSource.listProjects();
         setProjects(nextProjects);
+        setProjectView("active");
         applySnapshot(createdSnapshot);
         setMessages((current) => [...current, optimisticMessage]);
       }

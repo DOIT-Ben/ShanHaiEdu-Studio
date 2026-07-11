@@ -41,14 +41,15 @@ test("ConversationWorkbench routes quick reply choices into the composer without
   assert.doesNotMatch(controllerSource, /selectQuickReply[\s\S]*sendPrompt\(/);
 });
 
-test("ProjectSidebar can collapse the public course section and keeps disabled features out of the main visual path", () => {
+test("ProjectSidebar can collapse the public course section and keeps lifecycle utilities available", () => {
   const source = readSource("src/components/layout/ProjectSidebar.tsx");
 
   assert.match(source, /courseSectionOpen, setCourseSectionOpen/);
   assert.match(source, /aria-expanded=\{courseSectionOpen\}/);
   assert.match(source, /filteredProjects\.map/);
-  assert.match(source, /showDisabledUtilities/);
-  assert.doesNotMatch(source, /回收站[\s\S]*w-full justify-start/);
+  assert.match(source, /onViewChange\?\.\("archived"\)/);
+  assert.match(source, /onViewChange\?\.\("trash"\)/);
+  assert.doesNotMatch(source, /showDisabledUtilities|回收站稍后开放/);
 });
 
 test("Message route uses model-first main conversation agent instead of deterministic pre-gates", () => {

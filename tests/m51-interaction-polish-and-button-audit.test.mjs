@@ -64,14 +64,16 @@ test("Conversation layout compresses when the artifact side panel is open", () =
   assert.match(stageSource, /data-stage-progress-compact/);
 });
 
-test("Unavailable sidebar buttons stay disabled while collaboration is wired to real member management", () => {
+test("Project sidebar exposes real archive and recycle-bin actions while collaboration stays wired to member management", () => {
   const sidebarSource = readSource("src/components/layout/ProjectSidebar.tsx");
   const topbarSource = readSource("src/components/conversation/WorkbenchTopbar.tsx");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
   const detailSource = readSource("src/components/artifacts/ArtifactDetailSheet.tsx");
 
-  assert.match(sidebarSource, /disabled[\s\S]*回收站/);
-  assert.match(sidebarSource, /title="回收站稍后开放"/);
+  assert.match(sidebarSource, /onViewChange\?\.\("archived"\)/);
+  assert.match(sidebarSource, /onViewChange\?\.\("trash"\)/);
+  assert.match(sidebarSource, /ProjectLifecycleConfirmDialog/);
+  assert.doesNotMatch(sidebarSource, /回收站稍后开放|showDisabledUtilities/);
   assert.match(topbarSource, /onOpenMembers/);
   assert.match(topbarSource, /title=\{project \? "管理协作成员" : "先选择项目"\}/);
   assert.doesNotMatch(topbarSource, /title="协作稍后开放"/);

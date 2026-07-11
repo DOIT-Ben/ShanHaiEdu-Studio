@@ -93,7 +93,19 @@ export function ProjectSidebar({
               <Search className="h-4 w-4" />
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索课题" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
             </label>
-            <button type="button" aria-expanded={courseSectionOpen} onClick={() => setCourseSectionOpen((value) => !value)} className="mt-6 flex h-9 w-full items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef] focus:outline-none focus:ring-2 focus:ring-[#367d6d]/45">
+            <button
+              type="button"
+              aria-expanded={courseSectionOpen}
+              aria-label={view === "active" ? "折叠项目列表" : "返回进行中的项目"}
+              onClick={() => {
+                if (view !== "active") {
+                  onViewChange?.("active");
+                  return;
+                }
+                setCourseSectionOpen((value) => !value);
+              }}
+              className="mt-6 flex h-9 w-full items-center justify-between rounded-md px-3 text-sm text-foreground transition hover:bg-[#eeeeef] focus:outline-none focus:ring-2 focus:ring-[#367d6d]/45"
+            >
               <span className="flex items-center gap-2"><FolderOpen className="h-4 w-4 text-muted-foreground" />{sectionTitle}</span>
               <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", !courseSectionOpen && "-rotate-90")} />
             </button>
