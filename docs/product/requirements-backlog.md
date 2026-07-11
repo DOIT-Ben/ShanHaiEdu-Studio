@@ -1,6 +1,6 @@
 # ShanHaiEdu 需求总账
 
-更新时间：2026-07-11
+更新时间：2026-07-11（v1 封板复核）
 
 > 本文件记录未完成需求、新增需求、延期需求和优先级。当前产品质量门禁仍以 `docs\product\current-requirements-baseline.md` 为最高产品口径；本文件负责把“还没做完、刚发现、需要拆分”的需求集中管理。
 
@@ -46,7 +46,7 @@
 
 ### RQ-021 统一基础交互设计系统
 
-- 状态：`accepted`
+- 状态：`accepted`（工程与常用浏览器路径已验证；M77 owner 写路径浏览器门禁未关闭）
 - 来源：2026-07-11 基础列表、下拉框、表单和浮层一致性审查。
 - 目标：用小型、可组合的 UI primitives 统一高频交互，同时保持业务语义、权限枚举、回调和后端合同不变。
 - 统一约束：对象选择列表 hover 只改变背景、边框、文字和图标颜色，禁止位移、缩放、扩张、左侧竖线和 hover 阴影；Select 使用大圆角触发器、青色 open 状态、Popper 下方弹层、整行选中与右侧勾选；Input、Textarea、MenuItem、Popover、Tooltip、Dialog、Sheet 共享语义化边框、焦点和 elevation tokens。
@@ -56,7 +56,7 @@
 
 ### RQ-020 表单下拉框视觉与交互统一
 
-- 状态：`accepted`
+- 状态：`accepted`（自动化通过；真实 owner 的 Select 展开、键盘选择与保存仍待验收）
 - 来源：2026-07-11 协作成员权限下拉框体验反馈。
 - 问题：成员权限和账号角色仍使用浏览器原生 `select`，展开样式与山海课伴品牌、焦点反馈和弹层语言不一致。
 - 目标：统一使用项目 Select 组件，提供品牌化悬浮、选中、展开和键盘焦点状态，同时保持权限值与真实回调不变。
@@ -65,7 +65,7 @@
 
 ### RQ-019 面向教师的交互列表行统一
 
-- 状态：`accepted`
+- 状态：`done`
 - 来源：2026-07-11 欢迎页最近项目行交互确认。
 - 问题：欢迎页、项目侧栏和成果抽屉的主列表行各自维护 hover、selected、focus 和按下状态，张力粒度与窄屏约束不一致。
 - 目标：封装低耦合的交互列表行，仅统一“进入详情/选择对象”的主列表行；保留破坏性确认、表单选项、tabs、chip、纯菜单项、消息气泡和按钮组的既有交互。
@@ -74,10 +74,11 @@
 - 边界：不修改后端、真实回调、认证、对话生成或反馈服务；项目窄侧栏不得因整体横移产生横向滚动，菜单按钮不得触发项目选择。
 - 验收：M76 定向合同覆盖组件 API、视觉状态、selected/disabled/focus/reduced motion、三个接入点、菜单阻止冒泡及不适当批量迁移；TypeScript、全量测试、构建和 diff check 通过；浏览器由主代理验收。
 - 阶段与测试：`docs\stages\local-real-mvp-m76-interactive-list-row-plan.md`、`docs\stages\local-real-mvp-m76-interactive-list-row-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m76-interactive-list-row-closeout.md`。
 
 ### RQ-018 登录后欢迎首页与主动项目进入
 
-- 状态：`accepted`
+- 状态：`done`
 - 来源：2026-07-11 登录后工作台进入方式确认。
 - 问题：认证成功或刷新后，工作台会读取浏览器保存的项目并自动恢复旧对话，教师没有机会先判断本次要准备哪节课。
 - 目标：登录或刷新后先显示安静的品牌欢迎首页；只有教师主动新建或选择最近项目后，才加载并进入项目对话。
@@ -95,10 +96,11 @@
   - 无 active 项目时中间仅显示欢迎首页，右侧产物阅读区与 rail 不显示且不占位；项目进入后恢复对话与产物区域。
   - 最近项目最多 4 项，展示标题、meta/currentStep 和更新时间；无项目空态、移动端与 reduced motion 有自动化合同覆盖。
 - 阶段与测试：`docs\stages\local-real-mvp-m75-authenticated-welcome-plan.md`、`docs\stages\local-real-mvp-m75-authenticated-welcome-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m75-authenticated-welcome-closeout.md`。
 
 ### RQ-017 品牌化认证入口
 
-- 状态：`accepted`
+- 状态：`done`
 - 来源：2026-07-11 登录/注册入口品牌体验确认。
 - 问题：现有密码认证页只有基础表单，缺少山海教育品牌识别、具体产品定位和适合教师使用情境的响应式入口体验。
 - 目标：面向小学教师提供简约高级、温柔专业的品牌化登录/创建账号页面，让教师明确登录后会回到自己的备课项目，同时不改变认证合同与生产注册门禁。
@@ -115,10 +117,11 @@
   - 不修改 `onLogin` / `onRegister` 合同、认证服务或 API，不增加依赖。
   - 定向测试、认证测试、TypeScript、全量测试、生产构建和 `git diff --check` 通过；浏览器验收由主代理另行执行。
 - 阶段与测试：`docs\stages\local-real-mvp-m74-branded-auth-page-plan.md`、`docs\stages\local-real-mvp-m74-branded-auth-page-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m74-branded-auth-page-closeout.md`。
 
 ### RQ-016 产物能力导航与安静抽屉
 
-- 状态：`accepted`
+- 状态：`done`
 - 来源：2026-07-11 产物导航与抽屉体验确认方案。
 - 问题：桌面窄 rail 按产物数量逐个绘制圆形节点，项目产物增多后形成“糖葫芦串”并可能溢出；移动抽屉仍使用线性节点语言、大下拉和时间线式列表，预览卡与阅读区动作密集、视觉层级突兀。
 - 目标：把产物入口稳定收敛为教案与教材、PPT、图片、视频、最终交付五类能力及“全部产物”，按组聚合需处理状态；单产物直接阅读，多产物进入安静的分组抽屉。
@@ -136,10 +139,11 @@
   - 从任一分组进入详情后无需关闭重开即可返回刚才的成果分组；直接从侧边阅读进入详情时不显示误导性的返回入口。
   - 定向测试、TypeScript、全量测试、生产构建和 `git diff --check` 通过；桌面与窄屏浏览器需实际验收，登录阻塞时明确记录。
 - 阶段与测试：`docs\stages\local-real-mvp-m73-artifact-capability-navigation-plan.md`、`docs\stages\local-real-mvp-m73-artifact-capability-navigation-test-plan.md`。
+- 收尾证据：`docs\stages\local-real-mvp-m73-artifact-capability-navigation-closeout.md`。
 
 ### RQ-015 非线性按需生产、多用户内测与反馈体验收口
 
-- 状态：`accepted`
+- 状态：`accepted`（实现与安全隔离已验证；按需视频脚本真实浏览器路径仍有前置确认差距）
 - 来源：2026-07-11 用户真实使用反馈。
 - 问题：反馈类型切换会动态插入“快速补充”并改变弹窗高度和滚动位置；消息赞踩缺少明确结果提示；自然语言确认与直接工具意图仍可能被 HumanGate 错误阻断；已有多用户能力缺少真实双账号和历史数据归属验收。
 - 目标：允许教师从任意可用能力切入，模型负责理解目标、选择工具和解释缺失输入，不强迫从固定线性节点开始；同时保持真实外部生成、不可逆写入和高成本调用的必要安全确认。
@@ -158,6 +162,7 @@
   - 两个密码账号之间无法读取对方未共享的项目、消息、产物、下载和反馈。
   - 指定账号可登录并看到迁移后的历史项目；密码不写入源码、文档、日志或响应。
 - 阶段：M72，拆为反馈体验、对话控制、账号归属与真实内测审查四个实施切片。
+- 收尾证据：`docs\stages\local-real-mvp-m72-nonlinear-beta-readiness-closeout.md`。
 
 ### RQ-012 多用户与用户管理
 
