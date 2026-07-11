@@ -88,7 +88,9 @@ test("M71A feedback choices expose selected states and a primary submit action",
   assert.match(dialogSource, /focus:ring-2 focus:ring-\[#8fcbbb\]\/45/);
   assert.match(dialogSource, /<Check className="h-3\.5 w-3\.5/);
   assert.match(dialogSource, /description\.includes\(chip\)/);
-  assert.match(dialogSource, /bg-\[#367d6d\].*text-white/);
+  assert.match(dialogSource, /const canSubmit = Boolean\(controller\.category && controller\.description\.trim\(\)\);/);
+  assert.match(dialogSource, /disabled=\{submitting \|\| !canSubmit\}/);
+  assert.match(dialogSource, /canSubmit && !submitting && "border-\[#367d6d\] bg-\[#367d6d\] text-white/);
 });
 
 test("M67 freezes every payload control while a submission is in flight", () => {

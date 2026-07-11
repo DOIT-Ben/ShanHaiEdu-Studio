@@ -45,10 +45,8 @@ test.describe("M67 beta feedback center", () => {
     await assertDialogResponsive(page, dialog);
 
     const submit = dialog.locator(feedbackSelectors.submit);
-    await expect(submit).toHaveCSS("background-color", "rgb(54, 125, 109)");
-    await expect(submit).toHaveCSS("color", "rgb(255, 255, 255)");
-    await submit.click();
-    await expect(dialog.locator(feedbackSelectors.error)).toContainText("选择反馈类型");
+    await expect(submit).toBeDisabled();
+    await expect(submit).toHaveCSS("background-color", "rgb(240, 240, 241)");
     await selectCategory(dialog, "bug");
     const category = dialog.locator("[data-feedback-category='bug']");
     await expect(category).toHaveAttribute("aria-pressed", "true");
@@ -66,10 +64,16 @@ test.describe("M67 beta feedback center", () => {
     await expect(affectedSeverity.locator("svg")).toHaveCount(1);
     const description = dialog.locator(feedbackSelectors.description);
     await expect(description).toHaveAttribute("placeholder", /按钮|步骤|预期/);
+    await description.fill("   ");
+    await expect(submit).toBeDisabled();
+    await description.fill("M71A feedback submit-state coverage");
+    await expect(submit).toBeEnabled();
+    await expect(submit).toHaveCSS("background-color", "rgb(54, 125, 109)");
+    await expect(submit).toHaveCSS("color", "rgb(255, 255, 255)");
 
     const chip = dialog.locator("[data-feedback-chip]").filter({ hasText: "按钮没有反应" });
     await chip.click();
-    await expect(description).toHaveValue(/按钮没有反应/);
+    await expect(description).toHaveValue(/M71A feedback submit-state coverage[\s\S]*按钮没有反应/);
     await expect(chip).toHaveAttribute("aria-pressed", "true");
     await expect(chip).toHaveCSS("border-top-width", "2px");
     await expect(chip).toHaveCSS("background-color", "rgb(238, 247, 243)");
@@ -135,6 +139,9 @@ test.describe("M67 beta feedback center", () => {
     await expect(dialog.locator(feedbackSelectors.error)).toContainText("保留");
     await expect(dialog.locator(feedbackSelectors.description)).toHaveValue(formulaProbe);
     await expect(dialog.locator(feedbackSelectors.image)).toHaveCount(1);
+    await expect(submit).toBeEnabled();
+    await expect(submit).toHaveClass(/bg-\[#367d6d\]/);
+    await expect(submit).toHaveText("重新提交");
 
     await submit.click();
     await expect(submit).toBeDisabled();

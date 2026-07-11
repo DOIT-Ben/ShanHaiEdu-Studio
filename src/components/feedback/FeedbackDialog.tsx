@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 export function FeedbackDialog({ controller }: { controller: FeedbackController }) {
   const submitting = controller.status === "submitting";
+  const canSubmit = Boolean(controller.category && controller.description.trim());
   const selectedCategory = feedbackCategoryOptions.find((option) => option.id === controller.category);
   const selectedChoiceClass = "border-2 border-[#367d6d] bg-[#eef7f3] font-medium text-[#123f33] shadow-[0_0_0_2px_rgba(54,125,109,0.12)]";
   const idleChoiceClass = "border border-input bg-background text-muted-foreground hover:border-[#8fcbbb] hover:bg-[#f7fbf9] hover:text-foreground";
@@ -223,9 +224,11 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
               <Button variant="ghost" onClick={controller.closeFeedback} disabled={controller.status === "submitting"}>取消</Button>
               <Button
                 onClick={() => void controller.submit()}
-                disabled={controller.status === "submitting"}
+                disabled={submitting || !canSubmit}
                 data-feedback-submit
-                className="border-[#367d6d] bg-[#367d6d] text-white hover:bg-[#286657] active:bg-[#1e5145]"
+                className={cn(
+                  canSubmit && !submitting && "border-[#367d6d] bg-[#367d6d] text-white hover:bg-[#286657] active:bg-[#1e5145]",
+                )}
               >
                 {controller.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {controller.status === "failed" ? "重新提交" : controller.status === "submitting" ? "正在提交" : "提交反馈"}
