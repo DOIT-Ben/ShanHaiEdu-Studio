@@ -333,6 +333,39 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
+test("API client requests lifecycle views and PATCH mutations with the current version", async () => {
+  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
+  const calls = [];
+  const lifecycleProject = {
+    ...backendProject,
+    lifecycleState: "trash",
+    lifecycleVersion: 3,
+    archivedAt: "2026-07-11T00:00:00.000Z",
+    deletedAt: "2026-07-11T01:00:00.000Z",
+  };
+  const client = createWorkbenchApiClient({
+    baseUrl: "https://example.test",
+    fetcher: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        json: async () => (String(url).includes("?view=trash") ? { projects: [lifecycleProject] } : { changed: true, project: lifecycleProject }),
+      };
+    },
+  });
+
+  const projects = await client.listProjects("trash");
+  const result = await client.mutateProjectLifecycle("backend-project-a", { action: "restore", expectedLifecycleVersion: 3 });
+
+  assert.equal(calls[0].url, "https://example.test/api/workbench/projects?view=trash");
+  assert.equal(calls[1].url, "https://example.test/api/workbench/projects/backend-project-a");
+  assert.equal(calls[1].init.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { action: "restore", expectedLifecycleVersion: 3 });
+  assert.equal(projects[0].lifecycleState, "trash");
+  assert.equal(result.changed, true);
+  assert.equal(result.project.lifecycleVersion, 3);
+});
+
 test("API client keeps artifact refs for inline cards without exposing raw ids in assistant text", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const assistantMessageWithArtifact = {

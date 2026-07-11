@@ -2,7 +2,7 @@ import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as s
 import { getWorkbenchCsrfToken, isWorkbenchCsrfRequired } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -99,8 +99,9 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
   }
 
   return {
-    listProjects() {
-      return request<unknown>("/api/workbench/projects").then(normalizeProjects);
+    listProjects(view = "active") {
+      const query = view === "active" ? "" : `?view=${encodeURIComponent(view)}`;
+      return request<unknown>(`/api/workbench/projects${query}`).then(normalizeProjects);
     },
     createProject() {
       return request<unknown>("/api/workbench/projects", { method: "POST" }).then((value) => {
@@ -142,6 +143,18 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         method: "POST",
         body: JSON.stringify(confirmedActionId ? { confirmedActionId } : {}),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+    },
+    mutateProjectLifecycle(projectId, mutation) {
+      return request<unknown>(`/api/workbench/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(mutation),
+      }).then((value) => {
+        const result = value as { changed?: unknown; project?: BackendProjectRecord };
+        if (!result.project?.id) throw new WorkbenchApiError("Lifecycle response did not include a project.");
+        const project = normalizeProjects({ projects: [result.project] })[0];
+        if (!project) throw new WorkbenchApiError("Lifecycle response project could not be normalized.");
+        return { changed: result.changed === true, project };
+      });
     },
   };
 }
@@ -240,7 +253,13 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
     messages: seedMessages,
     artifacts: seedArtifacts,
   };
-  const projects = clone(source.projects);
+  const projects = clone(source.projects).map((project) => ({
+    ...project,
+    lifecycleState: project.lifecycleState ?? "active",
+    lifecycleVersion: project.lifecycleVersion ?? 0,
+    archivedAt: project.archivedAt ?? null,
+    deletedAt: project.deletedAt ?? null,
+  }));
   const snapshots = new Map<string, Omit<WorkbenchSnapshot, "project">>();
 
   function ensureSnapshot(projectId: string) {
@@ -277,8 +296,8 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
   }
 
   return {
-    async listProjects() {
-      return clone(projects);
+    async listProjects(view: ProjectLifecycleState = "active") {
+      return clone(projects.filter((project) => project.lifecycleState === view));
     },
     async createProject() {
       const project: ProjectItem = {
@@ -288,6 +307,10 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
         status: "active",
         currentStep: "需求澄清",
         updatedAt: "刚刚",
+        lifecycleState: "active",
+        lifecycleVersion: 0,
+        archivedAt: null,
+        deletedAt: null,
       };
       projects.unshift(project);
       snapshots.set(project.id, {
@@ -307,6 +330,40 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
     },
     async getProjectSnapshot(projectId) {
       return snapshot(projectId);
+    },
+    async mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
+      const project = projectById(projectId);
+      if (project.lifecycleVersion !== mutation.expectedLifecycleVersion) {
+        throw new WorkbenchApiError("Project lifecycle version conflict.", "项目状态已变化，请刷新后再操作。", 409);
+      }
+
+      const active = project.lifecycleState === "active";
+      if (mutation.action === "rename") {
+        const title = mutation.title?.trim() ?? "";
+        if (!active || !title || title.length > 80) {
+          throw new WorkbenchApiError("Project lifecycle mutation rejected.", "该项目当前不能执行这个操作。", 409);
+        }
+        if (title === project.title) return { changed: false, project: clone(project) };
+        project.title = title;
+      } else if (mutation.action === "archive") {
+        if (project.lifecycleState === "archived") return { changed: false, project: clone(project) };
+        if (!active) throw new WorkbenchApiError("Project lifecycle mutation rejected.", "该项目当前不能执行这个操作。", 409);
+        project.lifecycleState = "archived";
+        project.archivedAt = new Date().toISOString();
+      } else if (mutation.action === "trash") {
+        if (project.lifecycleState === "trash") return { changed: false, project: clone(project) };
+        project.lifecycleState = "trash";
+        project.deletedAt = new Date().toISOString();
+      } else {
+        if (active) return { changed: false, project: clone(project) };
+        project.lifecycleState = "active";
+        project.archivedAt = null;
+        project.deletedAt = null;
+      }
+      project.lifecycleVersion += 1;
+      project.updatedAt = "刚刚";
+      project.meta = "刚刚";
+      return { changed: true, project: clone(project) };
     },
     async sendMessage(projectId, body, reference) {
       const current = ensureSnapshot(projectId);

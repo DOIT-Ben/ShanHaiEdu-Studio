@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
+import type { ProjectLifecycleState } from "@/server/workbench/types";
 
 export async function GET(request: Request) {
   return withLocalWorkbenchActor(request, async ({ service }) => {
-    const projects = await service.listProjects();
+    const view = parseProjectView(new URL(request.url).searchParams.get("view"));
+    if (!view) {
+      return NextResponse.json({ error: "项目列表暂时没有取回，请刷新后重试。" }, { status: 400 });
+    }
+    const projects = await service.listProjects(view);
     return NextResponse.json({ projects });
   });
 }
@@ -32,4 +37,10 @@ async function parseOptionalProjectBody(request: Request): Promise<Record<string
 
 function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function parseProjectView(value: string | null): ProjectLifecycleState | null {
+  if (!value || value === "active") return "active";
+  if (value === "archived" || value === "trash") return value;
+  return null;
 }

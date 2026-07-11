@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
-import type { ArtifactItem, ChatMessage, ConversationTurnJob, ProjectItem, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, ConversationTurnJob, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
@@ -21,6 +21,7 @@ function snapshotHasPendingTurn(snapshot: WorkbenchSnapshot) {
 export function useWorkbenchController() {
   const dataSource = useMemo(() => createDefaultWorkbenchDataSource(), []);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [projectView, setProjectView] = useState<ProjectLifecycleState>("active");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [loadState, setLoadState] = useState<WorkbenchLoadState>("idle");
@@ -59,6 +60,19 @@ export function useWorkbenchController() {
   const messageIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
   const composerNoticeTimer = useRef<number | null>(null);
 
+  const clearActiveProject = useCallback(() => {
+    setActiveProjectId("");
+    window.localStorage.removeItem(activeProjectStorageKey);
+    setMessages([]);
+    setArtifacts([]);
+    setTurnJobs([]);
+    setActiveArtifactKey("");
+    setDetailItem(null);
+    setSidePanelItem(null);
+    setSidePanelOpen(false);
+    setDetailOpen(false);
+  }, []);
+
   const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
     setActiveProjectId(snapshot.project.id);
     window.localStorage.setItem(activeProjectStorageKey, snapshot.project.id);
@@ -78,13 +92,22 @@ export function useWorkbenchController() {
       setLoadState("loading");
       try {
         const snapshot = await dataSource.getProjectSnapshot(projectId);
+        if (snapshot.project.lifecycleState !== "active") {
+          const activeProjects = await dataSource.listProjects("active");
+          setProjects(activeProjects);
+          setProjectView("active");
+          clearActiveProject();
+          setNotice("项目状态已变化，已返回进行中的项目列表。");
+          setLoadState("ready");
+          return;
+        }
         applySnapshot(snapshot);
       } catch (error) {
         setLoadState("error");
         setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "项目内容暂时没有取回，请稍后再试。");
       }
     },
-    [applySnapshot, dataSource],
+    [applySnapshot, clearActiveProject, dataSource],
   );
 
   useEffect(() => {
@@ -98,6 +121,16 @@ export function useWorkbenchController() {
         try {
           const snapshot = await dataSource.getProjectSnapshot(activeProjectId);
           if (!active) return;
+          if (snapshot.project.lifecycleState !== "active") {
+            const activeProjects = await dataSource.listProjects("active");
+            if (!active) return;
+            setProjects(activeProjects);
+            setProjectView("active");
+            clearActiveProject();
+            setNotice("项目状态已变化，已返回进行中的项目列表。");
+            setLoadState("ready");
+            return;
+          }
           applySnapshot(snapshot);
           if (snapshotHasPendingTurn(snapshot)) scheduleNextSnapshotRefresh();
         } catch {
@@ -113,7 +146,7 @@ export function useWorkbenchController() {
       active = false;
       if (snapshotPollingTimer) window.clearTimeout(snapshotPollingTimer);
     };
-  }, [activeProjectId, applySnapshot, composerSubmitting, dataSource, loadState, projectBusy]);
+  }, [activeProjectId, applySnapshot, clearActiveProject, composerSubmitting, dataSource, loadState, projectBusy]);
 
   useEffect(() => {
     let active = true;
@@ -221,6 +254,59 @@ export function useWorkbenchController() {
     setPendingConfirmationActionId(null);
     setReference(`资料《${fileName}》：\n${text}`);
     flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
+  }
+
+  async function openProjectView(view: ProjectLifecycleState) {
+    setLoadState("loading");
+    try {
+      const nextProjects = await dataSource.listProjects(view);
+      setProjects(nextProjects);
+      setProjectView(view);
+      if (view !== "active") {
+        clearActiveProject();
+        setLoadState("ready");
+        return;
+      }
+      const storedProjectId = window.localStorage.getItem(activeProjectStorageKey);
+      const nextProjectId = nextProjects.some((project) => project.id === storedProjectId) ? storedProjectId : nextProjects[0]?.id;
+      if (nextProjectId) {
+        await loadProject(nextProjectId);
+      } else {
+        clearActiveProject();
+        setLoadState("ready");
+      }
+    } catch {
+      setLoadState("error");
+      setErrorMessage("项目列表暂时没有取回，请稍后再试。");
+    }
+  }
+
+  async function mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
+    try {
+      const result = await dataSource.mutateProjectLifecycle(projectId, mutation);
+      if (result.project.lifecycleState === "active" && projectView !== "active") {
+        const activeProjects = await dataSource.listProjects("active");
+        setProjects(activeProjects);
+        setProjectView("active");
+        await loadProject(projectId);
+        setNotice(result.changed ? "项目已恢复到进行中的项目列表。" : "项目状态没有变化。");
+        return result;
+      }
+      const targetView = result.project.lifecycleState === "active" && projectView === "active" ? "active" : projectView;
+      const nextProjects = await dataSource.listProjects(targetView);
+      setProjects(nextProjects);
+      if (result.project.lifecycleState !== "active" && projectId === activeProjectId) {
+        clearActiveProject();
+        setProjectView("active");
+        setProjects(await dataSource.listProjects("active"));
+      }
+      setNotice(result.changed ? "项目状态已更新。" : "项目状态没有变化。");
+      return result;
+    } catch (error) {
+      const status = error instanceof Error && "status" in error ? Number(error.status) : undefined;
+      setNotice(status === 409 ? "项目状态已变化，请刷新后再操作。" : "项目操作暂时没有完成，请稍后重试。");
+      throw error;
+    }
   }
 
   function updateInput(value: string) {
@@ -363,10 +449,13 @@ export function useWorkbenchController() {
     activeProjectId,
     activeProject,
     projects,
+    projectView,
     messages,
     loadState,
     errorMessage,
     selectProject,
+    openProjectView,
+    mutateProjectLifecycle,
     createProject,
     retryActiveProject: () => (activeProjectId ? loadProject(activeProjectId) : undefined),
     sidebarCollapsed,

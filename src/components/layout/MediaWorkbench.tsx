@@ -70,11 +70,14 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         <div className="flex h-full">
           <div className="hidden lg:block">
             <ProjectSidebar
-              projects={controller.projects}
-              activeProjectId={controller.activeProjectId}
-              collapsed={controller.sidebarCollapsed}
-              onToggle={() => controller.setSidebarCollapsed((value) => !value)}
-              onSelect={controller.selectProject}
+               projects={controller.projects}
+               activeProjectId={controller.activeProjectId}
+               view={controller.projectView}
+               collapsed={controller.sidebarCollapsed}
+               onToggle={() => controller.setSidebarCollapsed((value) => !value)}
+               onSelect={controller.selectProject}
+               onViewChange={controller.openProjectView}
+               onMutateProject={controller.mutateProjectLifecycle}
               onCreateProject={controller.createProject}
               currentUser={currentUser}
               onOpenFeedback={feedbackController.openFeedback}
@@ -93,7 +96,10 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
                   <ProjectSidebar
                     projects={controller.projects}
                     activeProjectId={controller.activeProjectId}
+                    view={controller.projectView}
                     onSelect={selectProjectFromSheet}
+                    onViewChange={controller.openProjectView}
+                    onMutateProject={controller.mutateProjectLifecycle}
                     onCreateProject={createProjectFromSheet}
                   />
                 </SheetContent>

@@ -21,6 +21,10 @@ export type BackendProjectRecord = {
   subject: string | null;
   textbookVersion: string | null;
   lessonTopic: string | null;
+  lifecycleState?: ProjectItem["lifecycleState"];
+  lifecycleVersion?: number;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -161,6 +165,10 @@ function mapBackendProject(project: BackendProjectRecord): ProjectItem {
     status: project.status,
     currentStep: nodeTitleByKey[project.currentNodeKey] ?? "需求澄清",
     updatedAt: formatDateLabel(project.updatedAt),
+    lifecycleState: project.lifecycleState ?? (project.deletedAt ? "trash" : project.archivedAt ? "archived" : "active"),
+    lifecycleVersion: typeof project.lifecycleVersion === "number" && Number.isInteger(project.lifecycleVersion) ? project.lifecycleVersion : 0,
+    archivedAt: project.archivedAt ?? null,
+    deletedAt: project.deletedAt ?? null,
   };
 }
 

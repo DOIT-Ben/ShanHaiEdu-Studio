@@ -8,6 +8,10 @@ export const projects: ProjectItem[] = [
     status: "active",
     currentStep: "资源生成",
     updatedAt: "今天 10:24",
+    lifecycleState: "active",
+    lifecycleVersion: 0,
+    archivedAt: null,
+    deletedAt: null,
   },
   {
     id: "p-002",
@@ -16,6 +20,10 @@ export const projects: ProjectItem[] = [
     status: "review",
     currentStep: "PPT 草稿重审",
     updatedAt: "昨天 16:35",
+    lifecycleState: "active",
+    lifecycleVersion: 0,
+    archivedAt: null,
+    deletedAt: null,
   },
   {
     id: "p-003",
@@ -24,6 +32,10 @@ export const projects: ProjectItem[] = [
     status: "done",
     currentStep: "最终交付完成",
     updatedAt: "05-06 14:20",
+    lifecycleState: "active",
+    lifecycleVersion: 0,
+    archivedAt: null,
+    deletedAt: null,
   },
 ];
 

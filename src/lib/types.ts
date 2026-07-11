@@ -28,6 +28,16 @@ export type ArtifactKind =
 
 export type ProjectStatus = "active" | "review" | "blocked" | "done";
 
+export type ProjectLifecycleState = "active" | "archived" | "trash";
+
+export type ProjectLifecycleAction = "rename" | "archive" | "trash" | "restore";
+
+export type ProjectLifecycleMutation = {
+  action: ProjectLifecycleAction;
+  expectedLifecycleVersion: number;
+  title?: string;
+};
+
 export type ProjectItem = {
   id: string;
   title: string;
@@ -35,6 +45,10 @@ export type ProjectItem = {
   status: ProjectStatus;
   currentStep: string;
   updatedAt: string;
+  lifecycleState: ProjectLifecycleState;
+  lifecycleVersion: number;
+  archivedAt: string | null;
+  deletedAt: string | null;
 };
 
 export type ArtifactActionState = {
@@ -133,8 +147,9 @@ export type WorkbenchSnapshot = {
 };
 
 export type WorkbenchDataSource = {
-  listProjects: () => Promise<ProjectItem[]>;
+  listProjects: (view?: ProjectLifecycleState) => Promise<ProjectItem[]>;
   createProject: () => Promise<WorkbenchSnapshot>;
+  mutateProjectLifecycle: (projectId: string, mutation: ProjectLifecycleMutation) => Promise<{ changed: boolean; project: ProjectItem }>;
   getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
   sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
