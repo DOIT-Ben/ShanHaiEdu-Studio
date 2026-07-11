@@ -54,13 +54,10 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       if (isCasualChat(text)) {
         return {
           assistantMessage: {
-            body: "我在。你可以先随便聊，也可以告诉我年级、学科、课题和想做的材料。",
+            body: "你好，我在。你今天想准备哪一节课？告诉我年级和课题就可以开始。",
           },
           state: "chatting",
-          quickReplies: [
-            { label: "做公开课课件", prompt: "我想做一节小学数学公开课课件。", recommended: true },
-            { label: "先聊课程创意", prompt: "我想先聊聊一节课的导入创意。" },
-          ],
+          quickReplies: [],
           recommendedOptions: [],
           shouldRunToolNow: false,
           runtimeKind: "deterministic",

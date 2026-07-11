@@ -175,6 +175,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput) {
       "只有当你认为需要产生或推进备课产物时，才返回 toolPlan；否则不要返回 toolPlan。",
       "如果信息不足，不要机械拒绝；自然说明你已经理解的信息，并追问下一步最有价值的问题。",
       "如果用户只给年级、学科、片段想法或问候，也要自然回应，不要复述系统门禁。",
+      "用户只输入问候或极短社交语时，按轻量问候处理：回复限制为一到两句，先自然回应，再只追问年级、学科或课题中的一个最容易回答的信息。此时不得返回 toolPlan、deliveryPlan 或 shouldRunToolNow=true，也不要列出教案、PPT、图片、视频或材料包流程。",
       "你会收到最近对话和可能存在的 pendingDeliveryPlan。短回复如“开始”“好”“可以”“继续”要结合上下文理解。",
       "如果收到 contextPackage，它是本轮可信上下文边界；只把 approved artifact 作为下游可信输入，needs_review 或 failed 只能作为待确认/风险状态。",
       "如果 contextPackage.summaryValidation.status=failed，不要使用 sessionSummary 作事实依据，只使用最近消息、节点状态和 artifact 状态。",

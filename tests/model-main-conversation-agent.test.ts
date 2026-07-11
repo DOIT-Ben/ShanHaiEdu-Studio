@@ -1,8 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { createMainConversationAgentFromEnv, OpenAIMainConversationAgent, resolveMainAgentTimeoutMs } from "@/server/conversation/model-main-conversation-agent";
+import { createDeterministicMainConversationAgent } from "@/server/conversation/main-conversation-agent";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 
 describe("M55-C model-first main conversation agent", () => {
+  it("keeps a greeting short and does not start a delivery plan", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: {
+        body: "你好，我在。你今天想准备哪一节课？",
+      },
+      state: "chatting",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({ userMessage: "你好", availableArtifactKinds: [] });
+
+    expect(client.lastPayload?.instructions).toContain("轻量问候");
+    expect(turn.assistantMessage.body).toBe("你好，我在。你今天想准备哪一节课？");
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.deliveryPlan).toBeUndefined();
+    expect(turn.shouldRunToolNow).toBe(false);
+  });
+
+  it("uses the same short greeting in deterministic fallback mode", async () => {
+    const turn = await createDeterministicMainConversationAgent().respond({ userMessage: "你好", availableArtifactKinds: [] });
+
+    expect(turn.assistantMessage.body).toBe("你好，我在。你今天想准备哪一节课？告诉我年级和课题就可以开始。");
+    expect(turn.quickReplies).toEqual([]);
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.deliveryPlan).toBeUndefined();
+    expect(turn.shouldRunToolNow).toBe(false);
+  });
+
   it("passes arbitrary short teacher input to the model instead of blocking it with deterministic gates", async () => {
     const client = fakeResponsesClient({
       assistantMessage: {
