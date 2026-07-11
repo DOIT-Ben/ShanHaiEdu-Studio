@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 export function FeedbackDialog({ controller }: { controller: FeedbackController }) {
   const submitting = controller.status === "submitting";
   const canSubmit = Boolean(controller.category && controller.description.trim());
+  const requiredHintId = "feedback-required-hint";
   const selectedCategory = feedbackCategoryOptions.find((option) => option.id === controller.category);
   const selectedChoiceClass = "border-2 border-[#367d6d] bg-[#eef7f3] font-medium text-[#123f33] shadow-[0_0_0_2px_rgba(54,125,109,0.12)]";
   const idleChoiceClass = "border border-input bg-background text-muted-foreground hover:border-[#8fcbbb] hover:bg-[#f7fbf9] hover:text-foreground";
@@ -64,8 +65,11 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
         ) : (
           <>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
-              <fieldset>
-                <legend className="text-sm font-medium text-foreground">反馈类型</legend>
+              <p id={requiredHintId} className="text-xs leading-5 text-muted-foreground">
+                请选择反馈类型并填写具体情况后提交。
+              </p>
+              <fieldset aria-required="true" aria-describedby={requiredHintId}>
+                <legend className="text-sm font-medium text-foreground">反馈类型（必填）</legend>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {feedbackCategoryOptions.map((option) => {
                     const selected = controller.category === option.id;
@@ -78,7 +82,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                         aria-pressed={controller.category === option.id}
                         onClick={() => controller.setCategory(option.id)}
                         className={cn(
-                          "min-h-10 rounded-md px-3 py-2 text-left text-sm leading-5 transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                          "min-h-10 rounded-md px-3 py-2 text-left text-sm leading-5 transition focus:outline-none focus:ring-2 focus:ring-[#367d6d]",
                           selected ? selectedChoiceClass : idleChoiceClass,
                         )}
                       >
@@ -107,7 +111,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                           aria-pressed={controller.description.includes(chip)}
                           onClick={() => controller.appendDescriptionChip(chip)}
                           className={cn(
-                            "rounded-md px-2.5 py-1.5 text-xs transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                            "rounded-md px-2.5 py-1.5 text-xs transition focus:outline-none focus:ring-2 focus:ring-[#367d6d]",
                             selected ? selectedChoiceClass : idleChoiceClass,
                           )}
                         >
@@ -123,15 +127,18 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
               )}
 
               <label className="block">
-                <span className="text-sm font-medium text-foreground">具体情况</span>
+                <span className="text-sm font-medium text-foreground">具体情况（必填）</span>
                 <textarea
                   data-feedback-description
                   disabled={submitting}
+                  required
+                  aria-required="true"
+                  aria-describedby={requiredHintId}
                   value={controller.description}
                   onChange={(event) => controller.setDescription(event.target.value)}
                   placeholder={selectedCategory?.placeholder ?? "先选择反馈类型，再写下你遇到的情况。"}
                   rows={4}
-                  className="mt-2 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-[#8fcbbb]/45"
+                  className="mt-2 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-[#367d6d]"
                 />
               </label>
 
@@ -149,7 +156,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                         aria-pressed={controller.severity === option.id}
                         onClick={() => controller.setSeverity(selected ? "" : option.id)}
                         className={cn(
-                          "rounded-md px-3 py-1.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45",
+                          "rounded-md px-3 py-1.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#367d6d]",
                           selected ? selectedChoiceClass : idleChoiceClass,
                         )}
                       >
@@ -172,7 +179,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                   <label
                     aria-disabled={submitting}
                     className={cn(
-                      "inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-foreground transition focus-within:ring-2 focus-within:ring-[#8fcbbb]/45",
+                      "inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-foreground transition focus-within:ring-2 focus-within:ring-[#367d6d]",
                       submitting ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted",
                     )}
                   >
@@ -200,7 +207,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                           <button
                             type="button"
                             onClick={() => controller.removeImage(image.id)}
-                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/45"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-[#367d6d]"
                             aria-label={`删除图片 ${image.file.name || "截图"}`}
                             disabled={submitting}
                           >
@@ -226,6 +233,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                 onClick={() => void controller.submit()}
                 disabled={submitting || !canSubmit}
                 data-feedback-submit
+                aria-describedby={requiredHintId}
                 className={cn(
                   canSubmit && !submitting && "border-[#367d6d] bg-[#367d6d] text-white hover:bg-[#286657] active:bg-[#1e5145]",
                 )}

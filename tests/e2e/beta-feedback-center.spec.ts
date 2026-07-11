@@ -53,6 +53,14 @@ test.describe("M67 beta feedback center", () => {
     await expect(category).toHaveCSS("border-top-width", "2px");
     await expect(category).toHaveCSS("background-color", "rgb(238, 247, 243)");
     await expect(category.locator("svg")).toHaveCount(1);
+    const unselectedCategory = dialog.locator("[data-feedback-category='feature_request']");
+    await unselectedCategory.focus();
+    await expect(unselectedCategory).toBeFocused();
+    const hasVisibleFocusIndicator = await unselectedCategory.evaluate((element) => {
+      const styles = window.getComputedStyle(element);
+      return styles.boxShadow !== "none" || (styles.outlineStyle !== "none" && styles.outlineWidth !== "0px");
+    });
+    expect(hasVisibleFocusIndicator).toBe(true);
     for (const severity of ["normal", "affected", "blocked"] as const) {
       await expect(dialog.locator(`[data-feedback-severity='${severity}']`)).toBeVisible();
     }

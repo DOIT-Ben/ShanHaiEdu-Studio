@@ -85,12 +85,25 @@ test("M71A feedback choices expose selected states and a primary submit action",
   assert.match(dialogSource, /data-feedback-chip[\s\S]*aria-pressed=\{controller\.description\.includes\(chip\)\}/);
   assert.match(dialogSource, /border-2 border-\[#367d6d\] bg-\[#eef7f3\] font-medium text-\[#123f33\] shadow-\[0_0_0_2px_rgba\(54,125,109,0\.12\)\]/);
   assert.match(dialogSource, /hover:border-\[#8fcbbb\] hover:bg-\[#f7fbf9\]/);
-  assert.match(dialogSource, /focus:ring-2 focus:ring-\[#8fcbbb\]\/45/);
+  assert.match(dialogSource, /focus:ring-2 focus:ring-\[#367d6d\]/);
   assert.match(dialogSource, /<Check className="h-3\.5 w-3\.5/);
   assert.match(dialogSource, /description\.includes\(chip\)/);
   assert.match(dialogSource, /const canSubmit = Boolean\(controller\.category && controller\.description\.trim\(\)\);/);
   assert.match(dialogSource, /disabled=\{submitting \|\| !canSubmit\}/);
   assert.match(dialogSource, /canSubmit && !submitting && "border-\[#367d6d\] bg-\[#367d6d\] text-white/);
+});
+
+test("M71A feedback dialog exposes required fields and visible focus indicators", () => {
+  const dialogSource = readSource("src/components/feedback/FeedbackDialog.tsx");
+
+  assert.match(dialogSource, /const requiredHintId = "feedback-required-hint"/);
+  assert.match(dialogSource, /id=\{requiredHintId\}[\s\S]*请选择反馈类型并填写具体情况后提交。/);
+  assert.match(dialogSource, /<fieldset\s+aria-required="true"\s+aria-describedby=\{requiredHintId\}/);
+  assert.match(dialogSource, /data-feedback-description[\s\S]*required[\s\S]*aria-required="true"[\s\S]*aria-describedby=\{requiredHintId\}/);
+  assert.match(dialogSource, /data-feedback-submit[\s\S]*aria-describedby=\{requiredHintId\}/);
+  assert.equal((dialogSource.match(/focus:ring-2 focus:ring-\[#367d6d\]/g) ?? []).length, 5);
+  assert.match(dialogSource, /focus-within:ring-2 focus-within:ring-\[#367d6d\]/);
+  assert.doesNotMatch(dialogSource, /focus(?:-within)?:ring-\[#8fcbbb\]\/45/);
 });
 
 test("M67 freezes every payload control while a submission is in flight", () => {
