@@ -1,11 +1,13 @@
 import { getWorkbenchCsrfToken } from "@/lib/csrf-token";
-import type { FeedbackMetadata, FeedbackSubmissionResponse } from "@/lib/feedback-contracts";
+import type { FeedbackAttachmentKind, FeedbackMetadata, FeedbackSubmissionResponse } from "@/lib/feedback-contracts";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 type SubmitFeedbackInput = {
   metadata: FeedbackMetadata;
-  images: File[];
+  attachments?: Array<{ file: File; kind: FeedbackAttachmentKind }>;
+  /** Compatibility for callers that have not yet classified screenshots. */
+  images?: File[];
 };
 
 type FeedbackApiOptions = {
@@ -29,8 +31,11 @@ export class FeedbackApiError extends Error {
 export async function submitFeedback(input: SubmitFeedbackInput, options: FeedbackApiOptions = {}): Promise<FeedbackSubmissionResponse> {
   const fetcher = options.fetcher ?? fetch;
   const formData = new FormData();
-  const { metadata, images } = input;
+  const { metadata, attachments = [], images = [] } = input;
   formData.append("metadata", JSON.stringify(metadata));
+  for (const attachment of attachments) {
+    formData.append(attachment.kind === "expected" ? "expectedImages" : "issueImages", attachment.file);
+  }
   for (const file of images) formData.append("images", file);
 
   const csrfToken = getWorkbenchCsrfToken();

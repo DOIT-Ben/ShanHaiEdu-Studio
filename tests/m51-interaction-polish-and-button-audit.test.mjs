@@ -21,7 +21,7 @@ test("ProjectSidebar provides a real searchable project input", () => {
   assert.match(source, /没有找到匹配项目/);
 });
 
-test("ChatTranscript inline artifacts can expand and use the generated logo asset", () => {
+test("ChatTranscript inline artifacts can expand and use the XiaoKu avatar asset", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
 
   assert.match(source, /data-inline-artifact-toggle/);
@@ -29,8 +29,8 @@ test("ChatTranscript inline artifacts can expand and use the generated logo asse
   assert.match(source, /data-inline-artifact-expanded/);
   assert.match(source, /展开查看/);
   assert.match(source, /收起/);
-  assert.match(source, /\/brand\/shanhai-ai-logo-256\.png/);
-  assert.equal(existsSync(path.join(root, "public/brand/shanhai-ai-logo-256.png")), true);
+  assert.match(source, /\/brand\/xiaoku-avatar\.png/);
+  assert.equal(existsSync(path.join(root, "public/brand/xiaoku-avatar.png")), true);
 });
 
 test("Artifact side panel disables width animation while dragging", () => {
@@ -79,7 +79,11 @@ test("Project sidebar exposes real archive and recycle-bin actions while collabo
   assert.doesNotMatch(topbarSource, /title="协作稍后开放"/);
   assert.match(topbarSource, /aria-label=\{savedLabel\}/);
   assert.doesNotMatch(topbarSource, /<Button[\s\S]*\{savedLabel\}[\s\S]*<\/Button>/);
-  assert.match(composerSource, /aria-label="重新生成"[\s\S]*title="请在产物详情中调整后重做"[\s\S]*disabled/);
+  assert.match(composerSource, /data-composer-surface/);
+  assert.match(composerSource, /aria-label="添加选项"/);
+  assert.match(composerSource, /aria-label="选择模型"/);
+  assert.match(composerSource, /可选模型/);
+  assert.doesNotMatch(composerSource, /aria-label="工具和资料"|aria-label="重新生成"/);
   assert.doesNotMatch(detailSource, /完整缩略图预览稍后开放|缩略预览/);
   assert.doesNotMatch(detailSource, /<button[\s\S]*来源对话[\s\S]*<\/button>/);
 });
@@ -108,9 +112,9 @@ test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfa
   assert.match(composerSource, /cancelPendingAttachmentRead/);
   assert.match(composerSource, /onRemove=\{composerSubmitting \? undefined : clearAttachment\}/);
   assert.match(composerSource, /reference\.startsWith\(`资料《\$\{attachment\.fileName\}》`\)/);
-  assert.match(composerSource, /getComposerToolMenuItems/);
+  assert.match(composerSource, /ComposerMenuPlaceholder/);
   assert.doesNotMatch(composerSource, /item\.action === "focus_input"|onFocusInput/);
-  assert.match(composerSource, /工具和资料/);
+  assert.match(composerSource, /添加资料/);
   assert.doesNotMatch(composerSource, /更多操作暂未开放|稍后开放/);
   assert.doesNotMatch(actionsSource, /更多操作暂未开放|aria-label="更多操作"|MoreHorizontal/);
 });

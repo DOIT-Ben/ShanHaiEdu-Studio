@@ -33,7 +33,7 @@ export function ArtifactSidePanel({
 
   return (
     <aside
-      className="relative hidden h-full shrink-0 overflow-hidden border-l border-[#d7ebe5] bg-[#fbfefd] lg:block"
+      className="relative hidden h-full shrink-0 overflow-hidden border-l border-[#e3ece9] bg-[#fcfdfd] lg:block"
       style={{ width: open && item ? width : 0 }}
       aria-hidden={!open}
     >
@@ -76,7 +76,7 @@ function ArtifactSidePanelContent({
 
   return (
     <div className="relative flex h-full min-w-[300px] flex-col">
-      <div className="flex items-center justify-between border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
+      <div className="flex items-center justify-between border-b border-[#e3ece9] px-5 py-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{item.title}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">备课成果 · {item.updatedAt}</div>
@@ -97,16 +97,18 @@ function ArtifactSidePanelContent({
         </div>
       </ScrollArea>
 
-      <div className="flex flex-wrap gap-2 border-t border-[#d7ebe5] bg-[#fbfefd] px-5 py-3">
-        <Button variant="secondary" size="sm" disabled={!item.actions.canCopy} onClick={copyItem}>
-          <Clipboard className="h-3.5 w-3.5" />
-          {copyLabel}
-        </Button>
-        <Button variant="secondary" size="sm" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
-          <SendToBack className="h-3.5 w-3.5" />
-          作为输入
-        </Button>
-        <ArtifactDownloadActions projectId={projectId} item={item} variant="compact" />
+      <div className="border-t border-[#e3ece9] px-5 py-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button variant="ghost" size="sm" disabled={!item.actions.canCopy} onClick={copyItem}>
+            <Clipboard className="h-3.5 w-3.5" />
+            {copyLabel}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
+            <SendToBack className="h-3.5 w-3.5" />
+            作为输入
+          </Button>
+          <ArtifactDownloadActions projectId={projectId} item={item} variant="compact" />
+        </div>
       </div>
     </div>
   );

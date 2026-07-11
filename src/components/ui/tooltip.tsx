@@ -14,7 +14,7 @@ export function TooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         sideOffset={sideOffset}
-        className={cn("z-50 rounded-md border bg-card px-2 py-1 text-xs text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.08)]", className)}
+        className={cn("z-50 rounded-lg border border-[var(--surface-border)] bg-card px-2 py-1 text-xs text-foreground shadow-[var(--shadow-popover)]", className)}
         {...props}
       />
     </TooltipPrimitive.Portal>

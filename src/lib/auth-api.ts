@@ -13,6 +13,7 @@ export type PasswordAuthState = {
   authMode?: "local" | "password" | "oauth" | "sso";
   authenticated: boolean;
   user: PasswordAuthUser | null;
+  registrationEnabled?: boolean;
   csrfToken?: string;
 };
 

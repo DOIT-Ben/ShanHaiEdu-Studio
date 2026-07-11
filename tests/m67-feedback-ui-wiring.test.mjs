@@ -62,9 +62,8 @@ test("M67 feedback dialog provides guided categories, chips, image paste, previe
   assert.match(dialogSource, /max-w-\[390px\]|w-\[calc\(100%-\d+px\)\]/);
 
   assert.match(dialogSource, /feedbackCategoryOptions\.map/);
-  assert.match(dialogSource, /feedbackSeverityOptions\.map/);
+  assert.match(dialogSource, /FeedbackImageSection/);
   assert.doesNotMatch(dialogSource, /const categoryOptions/);
-  assert.doesNotMatch(dialogSource, /const severityOptions/);
   assert.match(dialogSource, /data-feedback-chip/);
   assert.match(dialogSource, /onPaste/);
   assert.match(dialogSource, /clipboardData\.items/);
@@ -73,7 +72,7 @@ test("M67 feedback dialog provides guided categories, chips, image paste, previe
   assert.match(dialogSource, /data-feedback-image-source/);
   assert.match(dialogSource, /data-feedback-status/);
   assert.match(dialogSource, /提交反馈/);
-  assert.match(dialogSource, /反馈已收到/);
+  assert.match(dialogSource, /反馈成功/);
   assert.match(dialogSource, /重新提交/);
 });
 
@@ -81,27 +80,31 @@ test("M71A feedback choices expose selected states and a primary submit action",
   const dialogSource = readSource("src/components/feedback/FeedbackDialog.tsx");
 
   assert.match(dialogSource, /data-feedback-category=\{option\.id\}[\s\S]*aria-pressed=\{controller\.category === option\.id\}/);
-  assert.match(dialogSource, /data-feedback-severity=\{option\.id\}[\s\S]*aria-pressed=\{controller\.severity === option\.id\}/);
   assert.match(dialogSource, /data-feedback-chip[\s\S]*aria-pressed=\{controller\.description\.includes\(chip\)\}/);
   assert.match(dialogSource, /border-2 border-\[#367d6d\] bg-\[#eef7f3\] font-medium text-\[#123f33\] shadow-\[0_0_0_2px_rgba\(54,125,109,0\.12\)\]/);
   assert.match(dialogSource, /hover:border-\[#8fcbbb\] hover:bg-\[#f7fbf9\]/);
   assert.match(dialogSource, /focus:ring-2 focus:ring-\[#367d6d\]/);
   assert.match(dialogSource, /<Check className="h-3\.5 w-3\.5/);
   assert.match(dialogSource, /description\.includes\(chip\)/);
-  assert.match(dialogSource, /const canSubmit = Boolean\(controller\.category && controller\.description\.trim\(\)\);/);
+  assert.match(dialogSource, /const canSubmit = Boolean\(controller\.category && controller\.title\.trim\(\) && controller\.description\.trim\(\)\);/);
   assert.match(dialogSource, /disabled=\{submitting \|\| !canSubmit\}/);
   assert.match(dialogSource, /canSubmit && !submitting && "border-\[#367d6d\] bg-\[#367d6d\] text-white/);
 });
 
 test("M71A feedback dialog exposes required fields and visible focus indicators", () => {
   const dialogSource = readSource("src/components/feedback/FeedbackDialog.tsx");
+  const inputSource = readSource("src/components/ui/input.tsx");
+  const textareaSource = readSource("src/components/ui/textarea.tsx");
 
-  assert.match(dialogSource, /const requiredHintId = "feedback-required-hint"/);
-  assert.match(dialogSource, /id=\{requiredHintId\}[\s\S]*请选择反馈类型并填写具体情况后提交。/);
-  assert.match(dialogSource, /<fieldset\s+aria-required="true"\s+aria-describedby=\{requiredHintId\}/);
-  assert.match(dialogSource, /data-feedback-description[\s\S]*required[\s\S]*aria-required="true"[\s\S]*aria-describedby=\{requiredHintId\}/);
-  assert.match(dialogSource, /data-feedback-submit[\s\S]*aria-describedby=\{requiredHintId\}/);
-  assert.equal((dialogSource.match(/focus:ring-2 focus:ring-\[#367d6d\]/g) ?? []).length, 5);
+  assert.match(dialogSource, /data-feedback-title/);
+  assert.match(dialogSource, /data-feedback-description[\s\S]*required[\s\S]*aria-required="true"/);
+  assert.match(dialogSource, /data-feedback-expected-effect/);
+  assert.match(dialogSource, /建议上传问题截图/);
+  assert.match(dialogSource, /期望参考图/);
+  assert.match(inputSource, /focus-visible:ring-2 focus-visible:ring-\[var\(--focus-ring\)\]/);
+  assert.match(textareaSource, /focus-visible:ring-2 focus-visible:ring-\[var\(--focus-ring\)\]/);
+  assert.match(dialogSource, /<Input[\s\S]*data-feedback-title/);
+  assert.ok((dialogSource.match(/<Textarea/g) ?? []).length >= 2);
   assert.match(dialogSource, /focus-within:ring-2 focus-within:ring-\[#367d6d\]/);
   assert.doesNotMatch(dialogSource, /focus(?:-within)?:ring-\[#8fcbbb\]\/45/);
 });
@@ -115,9 +118,8 @@ test("M67 freezes every payload control while a submission is in flight", () => 
   assert.match(dialogSource, /data-feedback-category=\{option\.id\}[\s\S]*disabled=\{submitting\}/);
   assert.match(dialogSource, /data-feedback-chip[\s\S]*disabled=\{submitting\}/);
   assert.match(dialogSource, /data-feedback-description[\s\S]*disabled=\{submitting\}/);
-  assert.match(dialogSource, /data-feedback-severity=\{option\.id\}[\s\S]*disabled=\{submitting\}/);
-  assert.match(dialogSource, /type="file"[\s\S]*disabled=\{submitting\}/);
-  assert.match(dialogSource, /aria-label=\{`删除图片[\s\S]*disabled=\{submitting\}/);
+  assert.match(dialogSource, /data-feedback-image-kind[\s\S]*disabled=\{disabled\}/);
+  assert.match(dialogSource, /aria-label=\{`删除图片[\s\S]*disabled=\{disabled\}/);
 });
 
 test("M67 feedback controller owns one retry-safe draft independently from workbench state", () => {
@@ -167,8 +169,9 @@ test("M67 routes global, profile, and assistant message feedback into the single
   assert.match(transcriptSource, /data-message-id=\{message\.id\}/);
   assert.match(transcriptSource, /projectId=\{projectId\}/);
   assert.match(transcriptSource, /messageId=\{message\.id\}/);
-  assert.match(actionsSource, /origin:\s*"message_helpful"/);
-  assert.match(actionsSource, /origin:\s*"message_unhelpful"/);
+  assert.match(actionsSource, /onSetReaction\(messageId, previousReaction === value \? null : value\)/);
+  assert.match(actionsSource, /reaction === "helpful"/);
+  assert.match(actionsSource, /reaction === "unhelpful"/);
   assert.match(actionsSource, /projectId/);
   assert.match(actionsSource, /messageId/);
   assert.doesNotMatch(actionsSource, /反馈入口暂未开放/);

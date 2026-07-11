@@ -31,7 +31,7 @@ test("ChatTranscript renders model-chat style message bubbles with preserved mul
 test("MediaWorkbench keeps the artifact drawer available for narrow screens", () => {
   const source = readSource("src/components/layout/MediaWorkbench.tsx");
 
-  assert.match(source, /onClick=\{\(\) => controller\.setRailOpen\(true\)\}/);
+  assert.match(source, /onClick=\{\(\) => openArtifactDrawer\("all"\)\}/);
   assert.match(source, />\s*产物\s*</);
   assert.match(source, /<Sheet open=\{controller\.railOpen\} onOpenChange=\{controller\.setRailOpen\}/);
   assert.match(source, /variant="drawer"/);

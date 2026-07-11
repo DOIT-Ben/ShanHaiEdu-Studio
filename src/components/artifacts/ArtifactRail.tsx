@@ -1,83 +1,87 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { BookOpen, Grid2X2, Image, PackageCheck, Presentation, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
+import {
+  artifactCapabilityGroups,
+  getArtifactGroupActivation,
+  groupArtifacts,
+  needsArtifactAttention,
+  type ArtifactCapabilityGroupId,
+} from "@/components/artifacts/artifact-capability-groups";
 import { ArtifactNodeCard } from "@/components/artifacts/ArtifactNodeCard";
-import { ArtifactPreviewCard } from "@/components/artifacts/ArtifactPreviewCard";
+import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+
+type DrawerFilter = "all" | ArtifactCapabilityGroupId;
 
 type ArtifactRailProps = {
-  projectId: string;
   items: ArtifactItem[];
   activeKey: string;
   variant?: "rail" | "drawer";
-  previewDisabled?: boolean;
+  initialGroup?: DrawerFilter;
   onCopy: (item: ArtifactItem) => void;
   onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
-  onRegenerate: (item: ArtifactItem) => void;
+  onOpenGroup?: (group: DrawerFilter) => void;
+};
+
+const iconByGroup = {
+  lesson: BookOpen,
+  ppt: Presentation,
+  image: Image,
+  video: Video,
+  delivery: PackageCheck,
 };
 
 export function ArtifactRail({
-  projectId,
   items,
   activeKey,
   variant = "rail",
-  previewDisabled = false,
+  initialGroup = "all",
   onCopy,
   onUseAsInput,
   onOpen,
+  onOpenGroup,
 }: ArtifactRailProps) {
-  const [filter, setFilter] = useState("all");
-  const [previewItem, setPreviewItem] = useState<ArtifactItem | null>(null);
-  const closeTimer = useRef<number | null>(null);
-  const visibleItems = items.filter((item) => {
-    if (filter === "reusable") return item.reusable;
-    if (filter === "review") return ["needs_review", "blocked", "stale"].includes(item.status);
-    return true;
-  });
+  const [filter, setFilter] = useState<DrawerFilter>(initialGroup);
+  const groups = useMemo(() => groupArtifacts(items), [items]);
+  const attentionCount = items.filter((item) => needsArtifactAttention(item.status)).length;
 
-  useEffect(() => {
-    if (previewDisabled) setPreviewItem(null);
-  }, [previewDisabled]);
+  useEffect(() => setFilter(initialGroup), [initialGroup]);
 
-  function openPreview(item: ArtifactItem) {
-    if (previewDisabled) return;
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    setPreviewItem((current) => (current?.key === item.key ? current : item));
-  }
-
-  function keepPreviewOpen() {
-    if (previewDisabled) return;
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-  }
-
-  function closePreviewSoon() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setPreviewItem(null), 620);
-  }
+  const visibleItems = filter === "all"
+    ? items
+    : groups.find((group) => group.id === filter)?.items ?? [];
 
   if (variant === "drawer") {
+    const filterLabel = artifactCapabilityGroups.find((group) => group.id === filter)?.label;
     return (
-      <aside className="flex h-full min-h-0 flex-col bg-[#fbfefd]">
-        <div className="border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-4">
-          <h2 className="title-md">线性产物</h2>
-          <p className="mt-1 text-xs text-muted-foreground">点击查看详情，确认后复用到下一步。</p>
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="mt-3 w-full">
-              <SelectValue placeholder="筛选节点" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部节点</SelectItem>
-              <SelectItem value="reusable">只看可复用</SelectItem>
-              <SelectItem value="review">待确认与需处理</SelectItem>
-            </SelectContent>
-          </Select>
+      <aside className="flex h-full min-h-0 flex-col bg-[#fcfdfd]">
+        <div className="border-b border-[#e3ece9] px-5 pb-3 pt-5 pr-12">
+          <h2 className="text-base font-semibold tracking-tight">备课成果</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            共 {items.length} 项{attentionCount > 0 ? ` · ${attentionCount} 项需处理` : " · 暂无待处理"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-1.5" aria-label="按能力筛选备课成果">
+            <FilterChip active={filter === "all"} onClick={() => setFilter("all")}>全部</FilterChip>
+            {artifactCapabilityGroups.map((group) => (
+              <FilterChip key={group.id} active={filter === group.id} onClick={() => setFilter(group.id)}>
+                {group.label}
+              </FilterChip>
+            ))}
+          </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-1 p-3">
-            {visibleItems.map((item) => (
+            {items.length === 0 ? (
+              <EmptyState title="还没有备课成果" description="完成教案、PPT、图片或视频后，成果会集中显示在这里。" />
+            ) : visibleItems.length === 0 ? (
+              <EmptyState title={`暂无${filterLabel ?? "此类"}成果`} description="可以切换到其他能力，或回到对话继续备课。" />
+            ) : visibleItems.map((item) => (
               <ArtifactNodeCard
                 key={item.key}
                 item={item}
@@ -94,33 +98,84 @@ export function ArtifactRail({
     );
   }
 
+  function activateGroup(groupId: ArtifactCapabilityGroupId, groupItems: ArtifactItem[]) {
+    const activation = getArtifactGroupActivation(groupItems);
+    if (activation.mode === "direct") onOpen(activation.item);
+    else onOpenGroup?.(groupId);
+  }
+
   return (
-    <aside className="relative flex h-full items-center justify-center border-l border-[#d7ebe5] bg-[#fbfefd]">
-      <div className="relative flex w-full flex-col items-center gap-2.5 px-2 py-4">
-        <span className="absolute bottom-8 left-1/2 top-8 w-px -translate-x-1/2 bg-[#d7ebe5]" />
-        {visibleItems.map((item, index) => (
-          <div key={item.key} className="relative z-10">
-            <ArtifactNodeCard
-              item={item}
-              active={item.key === activeKey}
-              onCopy={onCopy}
-              onUseAsInput={onUseAsInput}
-              onOpen={onOpen}
-              onPreviewStart={openPreview}
-              onPreviewEnd={closePreviewSoon}
-            />
-          </div>
-        ))}
-      </div>
-      {previewItem && (
-        <div
-          className="artifact-preview-popover absolute right-full top-1/2 z-40 mr-4 w-[340px] -translate-y-1/2 rounded-lg border bg-card p-3 text-card-foreground shadow-[0_14px_34px_rgba(0,0,0,0.075)] outline-none"
-          onMouseEnter={keepPreviewOpen}
-          onMouseLeave={closePreviewSoon}
-        >
-          <ArtifactPreviewCard projectId={projectId} item={previewItem} onCopy={onCopy} onUseAsInput={onUseAsInput} onOpen={onOpen} />
-        </div>
-      )}
+    <aside className="flex h-full items-center justify-center border-l border-[#e3ece9] bg-[#fcfdfd]">
+      <nav className="flex w-full flex-col items-center gap-1.5 px-2 py-4" aria-label="备课成果能力导航">
+        {groups.map((group) => {
+          const Icon = iconByGroup[group.id];
+          const meta = getArtifactStatusMeta(group.status);
+          const active = group.items.some((item) => item.key === activeKey);
+          const statusText = group.attentionCount > 0 ? `${group.attentionCount} 项需处理` : meta.label;
+          const label = `${group.label}，${group.items.length} 项，${statusText}`;
+          return (
+            <Tooltip key={group.id}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={label}
+                  onClick={() => activateGroup(group.id, group.items)}
+                  className={cn(
+                    "relative flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground outline-none transition-colors hover:bg-[#eef5f3] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#8fcbbb]/35",
+                    active && "bg-[#eaf3f0] text-foreground",
+                  )}
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                  <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[#e4eeeb] px-1 text-center text-[10px] font-semibold leading-4 text-[#315f55]">
+                    {group.items.length}
+                  </span>
+                  {group.attentionCount > 0 && <span className="absolute bottom-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-[#9b4a4a]" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left">{label}</TooltipContent>
+            </Tooltip>
+          );
+        })}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`全部产物，${items.length} 项${attentionCount > 0 ? `，${attentionCount} 项需处理` : ""}`}
+              onClick={() => onOpenGroup?.("all")}
+              className="relative flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground outline-none transition-colors hover:bg-[#eef5f3] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#8fcbbb]/35"
+            >
+              <Grid2X2 className="h-[18px] w-[18px]" />
+              <span className="sr-only">全部产物</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">全部产物 · {items.length} 项</TooltipContent>
+        </Tooltip>
+      </nav>
     </aside>
+  );
+}
+
+function FilterChip({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-full px-2.5 py-1.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-[#eef5f3] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#8fcbbb]/35",
+        active && "bg-[#e7f1ee] font-medium text-[#315f55]",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="px-5 py-12 text-center">
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      <p className="mx-auto mt-2 max-w-[260px] text-xs leading-5 text-muted-foreground">{description}</p>
+    </div>
   );
 }

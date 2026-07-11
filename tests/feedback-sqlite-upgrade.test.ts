@@ -20,6 +20,7 @@ describe("feedback Prisma schema", () => {
     expect(schema).toMatch(/origin\s+String(?:\s+@default\("global"\))?/);
     expect(schema).toMatch(/@@unique\(\[createdByUserId, idempotencyKey\]\)/);
     expect(schema).toMatch(/model FeedbackAttachment \{/);
+    expect(schema).toMatch(/kind\s+String\s+@default\("issue"\)/);
     expect(schema).toMatch(/storageKey\s+String\s+@unique/);
     expect(schema).toMatch(/@@index\(\[status, createdAt\]\)/);
   });
@@ -71,6 +72,7 @@ describe("feedback SQLite upgrades", () => {
     ]));
     expect(column(db, "FeedbackRecord", "createdByUserId")?.notnull).toBe(1);
     expect(column(db, "FeedbackRecord", "origin")?.notnull).toBe(1);
+    expect(column(db, "FeedbackAttachment", "kind")?.notnull).toBe(1);
     db.close();
   });
 
@@ -104,6 +106,26 @@ describe("feedback SQLite upgrades", () => {
     const reopened = new Database(dbPath);
     expect(reopened.prepare('SELECT COUNT(*) AS count FROM "FeedbackRecord"').get()).toEqual({ count: 1 });
     reopened.close();
+  });
+
+  it("upgrades legacy attachments idempotently and defaults existing rows to issue", async () => {
+    const dbPath = await createDatabasePath();
+    const db = new Database(dbPath);
+    createLegacyCoreTables(db);
+    createLegacyFeedbackTableWithoutUniqueIndex(db);
+    createLegacyFeedbackAttachmentTable(db);
+    db.prepare('INSERT INTO "LocalUser" (id, displayName, updatedAt) VALUES (?, ?, ?)')
+      .run("teacher-1", "Existing Teacher", "2026-07-10T00:00:00.000Z");
+    insertFeedbackFixture(db, { id: "feedback-1", receipt: "FB-20260710-LEGACY", idempotencyKey: "legacy-key" });
+    db.prepare(`INSERT INTO "FeedbackAttachment" (id, feedbackId, originalName, mimeType, extension, byteSize, width, height, sha256, storageKey)
+      VALUES ('attachment-1', 'feedback-1', 'legacy.png', 'image/png', 'png', 10, 2, 2, 'hash', 'storage-1')`).run();
+    db.close();
+
+    expect(runInit(dbPath).status).toBe(0);
+    expect(runInit(dbPath).status).toBe(0);
+    const upgraded = new Database(dbPath);
+    expect(upgraded.prepare('SELECT kind FROM "FeedbackAttachment" WHERE id = ?').get("attachment-1")).toEqual({ kind: "issue" });
+    upgraded.close();
   });
 
   it("stops on legacy idempotency conflicts without deleting or merging rows", async () => {
@@ -206,6 +228,24 @@ function createLegacyFeedbackTableWithoutUniqueIndex(db: Database.Database) {
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       "submittedAt" DATETIME
+    );
+  `);
+}
+
+function createLegacyFeedbackAttachmentTable(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE "FeedbackAttachment" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "feedbackId" TEXT NOT NULL,
+      "originalName" TEXT NOT NULL,
+      "mimeType" TEXT NOT NULL,
+      "extension" TEXT NOT NULL,
+      "byteSize" INTEGER NOT NULL,
+      "width" INTEGER NOT NULL,
+      "height" INTEGER NOT NULL,
+      "sha256" TEXT NOT NULL,
+      "storageKey" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 }

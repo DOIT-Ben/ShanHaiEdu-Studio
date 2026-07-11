@@ -1,0 +1,16 @@
+{
+  "contract_version": 1,
+  "provider_profile": "imagegen-myself-newapi",
+  "provider_label": "primary",
+  "provider_base_url": "https://img.688.qzz.io/v1",
+  "request_size": "1536x2048",
+  "provider_output_size": "1536x2048",
+  "delivery_size": "1536x2048",
+  "dimension_policy": "normalize",
+  "normalize_mode": "cover",
+  "normalized": false,
+  "provider_artifact": null,
+  "final_artifact": "E:\\desktop\\AI\\11_Products\\lab\\ShanHaiEdu-Studio\\main\\public\\brand\\auth-teacher-cover.png",
+  "status": "matched",
+  "final_sha256": "99ff918ae1f655b1350df8380a96c12a49ad012883ed58ff7d4942163efed70d"
+}

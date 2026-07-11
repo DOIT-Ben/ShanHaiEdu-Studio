@@ -127,7 +127,7 @@ test("runtime password auth state enables workbench csrf without a public build 
   }
 });
 
-test("password auth gate shows account creation only when public registration is explicitly enabled", () => {
+test("password auth gate shows account creation only from runtime registration state", () => {
   assert.equal(renderPasswordAuthGate(undefined).includes("创建账号"), false);
   assert.equal(renderPasswordAuthGate("0").includes("创建账号"), false);
   assert.equal(renderPasswordAuthGate("1").includes("创建账号"), true);
@@ -203,9 +203,6 @@ function loadWorkbenchApiModule(csrfStore) {
 }
 
 function renderPasswordAuthGate(registrationEnabled) {
-  const previous = process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED;
-  if (registrationEnabled === undefined) delete process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED;
-  else process.env.NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED = registrationEnabled;
   try {
     const module = loadTsModule(path.join(root, "src", "components", "auth", "PasswordAuthGate.tsx"), {
       react: {
@@ -218,22 +215,24 @@ function renderPasswordAuthGate(registrationEnabled) {
         jsx: createJsxNode,
         jsxs: createJsxNode,
       },
+      "next/image": { default: "next-image" },
       "lucide-react": {
         LogIn: "log-in-icon",
         UserPlus: "user-plus-icon",
       },
       "@/components/ui/button": { Button: "button-component" },
+      "@/components/ui/input": { Input: "input-component" },
     });
     return collectText(
       module.PasswordAuthGate({
         errorMessage: null,
         submitting: false,
+        registrationEnabled: registrationEnabled === "1",
         async onLogin() {},
         async onRegister() {},
       }),
     );
   } finally {
-    restoreEnv("NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED", previous);
   }
 }
 

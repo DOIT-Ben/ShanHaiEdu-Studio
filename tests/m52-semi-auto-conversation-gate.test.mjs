@@ -59,3 +59,13 @@ test("Message route uses model-first main conversation agent instead of determin
   assert.doesNotMatch(source, /createDeterministicMainConversationAgent/);
   assert.doesNotMatch(source, /planCapabilityForRequest/);
 });
+
+test("Conversation UI presents the assistant as 小酷", () => {
+  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
+  const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
+
+  assert.match(transcriptSource, />小酷</);
+  assert.match(generatingSource, />小酷</);
+  assert.doesNotMatch(transcriptSource, /ShanHaiEdu AI/);
+  assert.doesNotMatch(generatingSource, /ShanHaiEdu AI/);
+});

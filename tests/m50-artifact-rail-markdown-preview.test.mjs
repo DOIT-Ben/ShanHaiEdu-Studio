@@ -13,7 +13,7 @@ test("MediaWorkbench restores the compact desktop artifact rail while keeping th
   const source = readSource("src/components/layout/MediaWorkbench.tsx");
 
   assert.match(source, /hidden\s+w-16\s+shrink-0\s+lg:block/);
-  assert.match(source, /<ArtifactRail[\s\S]*previewDisabled=\{controller\.sidePanelOpen\}/);
+  assert.match(source, /<ArtifactRail[\s\S]*onOpenGroup=\{openArtifactDrawer\}/);
   assert.match(source, /<Sheet open=\{controller\.railOpen\} onOpenChange=\{controller\.setRailOpen\}/);
   assert.match(source, /variant="drawer"/);
 });
@@ -48,7 +48,7 @@ test("Artifact detail surfaces reuse MarkdownPreview and share the AI visual ton
   assert.match(detailSource, /import \{ MarkdownPreview \}/);
   assert.match(detailSource, /<MarkdownPreview item=\{item\}/);
   assert.doesNotMatch(detailSource, /Object\.entries\(item\.content\)\.map/);
-  assert.match(detailSource, /#d7ebe5|#fbfefd|#eef8f5/);
-  assert.match(sidePanelSource, /#d7ebe5|#fbfefd|#eef8f5/);
-  assert.match(railSource, /#d7ebe5|#fbfefd|#eef8f5/);
+  assert.match(detailSource, /#e3ece9|#fcfdfd|#eef5f3/);
+  assert.match(sidePanelSource, /#e3ece9|#fcfdfd|#eef5f3/);
+  assert.match(railSource, /#e3ece9|#fcfdfd|#eef5f3/);
 });

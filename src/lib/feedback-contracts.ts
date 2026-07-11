@@ -11,6 +11,8 @@ export type FeedbackSeverity = "normal" | "affected" | "blocked";
 
 export type FeedbackOrigin = "global" | "profile" | "message_helpful" | "message_unhelpful";
 
+export type FeedbackAttachmentKind = "issue" | "expected";
+
 export type FeedbackClientContext = {
   userAgent?: string;
   language?: string;

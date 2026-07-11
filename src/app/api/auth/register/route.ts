@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonObject(request);
     if (!hasValidEmailAndPassword(body)) {
-      return NextResponse.json({ error: "请输入有效的邮箱和密码。" }, { status: 400 });
+      return NextResponse.json({ error: "请输入有效的账号和密码。" }, { status: 400 });
     }
     const clientRateLimit = checkRateLimit({
       scope: "auth-register-client",
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (!clientRateLimit.allowed) return rateLimitedResponse(clientRateLimit.retryAfterSeconds);
     const accountRateLimit = checkRateLimit({
       scope: "auth-register-account",
-      key: body.email.trim().toLowerCase(),
+      key: String(body.account ?? body.email).trim().toLowerCase(),
       limit: 3,
       windowMs: 60 * 60 * 1000,
     });
@@ -58,10 +58,10 @@ function hasValidEmailAndPassword(
   body: Record<string, unknown>,
 ): body is Record<string, unknown> & { email: string; password: string } {
   return (
-    typeof body.email === "string" &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) &&
+    typeof (body.account ?? body.email) === "string" &&
+    (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.account ?? body.email).trim()) || /^[A-Za-z0-9_]{3,64}$/.test(String(body.account ?? body.email).trim())) &&
     typeof body.password === "string" &&
-    body.password.length >= 12 &&
+    body.password.length >= 8 &&
     body.password.length <= 256
   );
 }

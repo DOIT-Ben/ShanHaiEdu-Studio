@@ -156,7 +156,7 @@ describe("ToolRegistry", () => {
       adapterKind: "internal_capability",
       requiredArtifactKinds: ["requirement_spec"],
       producedArtifactKind: "lesson_plan",
-      requiresHumanGate: true,
+      requiresHumanGate: false,
     });
   });
 

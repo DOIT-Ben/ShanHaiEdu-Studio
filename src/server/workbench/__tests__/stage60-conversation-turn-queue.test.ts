@@ -184,7 +184,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
     expect(snapshot.artifacts).toHaveLength(0);
     expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "succeeded" });
-    expect(assistantMessages.at(-1)?.content).toContain("有效确认");
+    expect(assistantMessages.at(-1)?.content).toContain("不匹配");
   });
 
   it("POST /messages deduplicates teacher message and turn job by idempotency key", async () => {
@@ -347,7 +347,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const assistantMessages = snapshot.messages.filter((message) => message.role === "assistant");
     expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
     expect(snapshot.turnJobs[0]).toMatchObject({ status: "succeeded", assistantMessageId: assistantMessages[0].id });
-    expect(assistantMessages[0].content).toContain("我在");
+    expect(assistantMessages[0].content).toContain("小酷");
   });
 });
 

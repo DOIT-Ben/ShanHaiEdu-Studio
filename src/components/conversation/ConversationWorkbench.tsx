@@ -11,6 +11,7 @@ import { buildWelcomePromptSuggestions } from "@/components/conversation/compose
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { deriveWorkbenchStageIndex, type WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
+import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 type ConversationWorkbenchProps = {
   project: ProjectItem | null;
@@ -33,12 +34,15 @@ type ConversationWorkbenchProps = {
   onAttachFileError: (message: string) => void;
   onSend: () => void;
   onQuickReplySelect?: (value: string, actionId?: string) => void;
+  onSetMessageReaction?: (messageId: string, value: ChatMessage["reaction"] | null) => void | Promise<void>;
   onRetry: () => void;
   onOpenArtifacts: () => void;
   onOpenMembers?: () => void;
   onOpenFeedback: OpenFeedback;
   onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
+  xiaokuResponseStyle: XiaoKuResponseStyle;
+  onOpenXiaoKuSettings?: () => void;
 };
 
 export function ConversationWorkbench({
@@ -62,12 +66,15 @@ export function ConversationWorkbench({
   onAttachFileError,
   onSend,
   onQuickReplySelect,
+  onSetMessageReaction,
   onRetry,
   onOpenArtifacts,
   onOpenMembers,
   onOpenFeedback,
   onOpenUserManagement,
   onLogout,
+  xiaokuResponseStyle,
+  onOpenXiaoKuSettings,
 }: ConversationWorkbenchProps) {
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +98,7 @@ export function ConversationWorkbench({
         onOpenFeedback={onOpenFeedback}
         onOpenUserManagement={onOpenUserManagement}
         onLogout={onLogout}
+        onOpenXiaoKuSettings={onOpenXiaoKuSettings}
       />
       <StageProgress activeIndex={deriveWorkbenchStageIndex({ project, artifacts, executionFeedback })} compact={compact} />
       <ScrollArea className="min-h-0 flex-1">
@@ -124,6 +132,7 @@ export function ConversationWorkbench({
                 registerMessage={registerMessage}
                 onQuickReplySelect={onQuickReplySelect}
                 onOpenFeedback={onOpenFeedback}
+                onSetMessageReaction={onSetMessageReaction}
               />
             ) : (
               loadState !== "loading" && (
@@ -145,6 +154,7 @@ export function ConversationWorkbench({
         onAttachFile={onAttachFile}
         onAttachFileError={onAttachFileError}
         onSend={onSend}
+        responseStyle={xiaokuResponseStyle}
       />
     </main>
   );
@@ -158,10 +168,12 @@ function WelcomeEmptyState({ onSelect }: { onSelect: (suggestion: WelcomeSuggest
   return (
     <section className="max-w-[720px] pt-3 text-foreground" aria-label="开始备课">
       <div className="mb-5 flex items-center gap-3">
-        <img src="/brand/shanhai-ai-logo-256.png" alt="ShanHaiEdu" className="h-10 w-10 rounded-lg" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce2e0] bg-card">
+          <img src="/brand/xiaoku-avatar.png" alt="小酷" className="h-full w-full object-cover" />
+        </div>
         <div className="min-w-0">
-          <h2 className="text-xl font-semibold tracking-normal text-foreground">开始准备这节课</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">说清年级、主题和想要的产物，我会按教案、课件、素材和检查链路继续。</p>
+          <h2 className="text-xl font-semibold tracking-normal text-foreground">你好，我是小酷</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">说清年级、主题和想要的产物，我会陪你把这节课准备好。</p>
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">

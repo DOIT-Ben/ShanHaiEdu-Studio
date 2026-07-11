@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
+import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale";
 
@@ -97,6 +98,7 @@ export type ChatMessage = {
     recommended?: boolean;
   }[];
   deliveryPlan?: ChatDeliveryPlan;
+  reaction?: "helpful" | "unhelpful";
 };
 
 export type ConversationTurnJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled" | "blocked";
@@ -136,6 +138,7 @@ export type WorkbenchSendMessageOptions = {
   confirmedActionId?: string;
   actionId?: string;
   idempotencyKey?: string;
+  responseStyle?: XiaoKuResponseStyle;
 };
 
 export type WorkbenchSnapshot = {
@@ -152,6 +155,7 @@ export type WorkbenchDataSource = {
   mutateProjectLifecycle: (projectId: string, mutation: ProjectLifecycleMutation) => Promise<{ changed: boolean; project: ProjectItem }>;
   getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
   sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
+  setMessageReaction?: (projectId: string, messageId: string, value: ChatMessage["reaction"] | null) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;

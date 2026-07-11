@@ -74,7 +74,7 @@ async function openArtifactDetail(page: Page, name: RegExp) {
   }
 
   await page.getByRole("button", { name: "产物", exact: true }).click();
-  const drawer = page.getByRole("dialog", { name: "线性产物" });
+  const drawer = page.getByRole("dialog", { name: "备课成果" });
   await drawer.getByRole("button", { name }).click();
 }
 

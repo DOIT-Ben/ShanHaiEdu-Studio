@@ -96,7 +96,7 @@ function internalTool(definition: {
     capabilityId: definition.capabilityId,
     inputSchema: definition.requiredArtifactKinds.length > 0 ? artifactInputSchema(definition.requiredArtifactKinds) : emptyInputSchema,
     outputSchema: artifactOutputSchema(definition.producedArtifactKind),
-    requiresHumanGate: true,
+    requiresHumanGate: false,
     sideEffectLevel: definition.sideEffectLevel ?? "artifact_write",
     requiredArtifactKinds: definition.requiredArtifactKinds,
     producedArtifactKind: definition.producedArtifactKind,

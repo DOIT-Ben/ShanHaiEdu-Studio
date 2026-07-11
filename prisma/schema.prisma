@@ -36,7 +36,8 @@ model Project {
   turnJobs        ConversationTurnJob[]
   memberships     ProjectMembership[]
   auditLogs       AuditLog[]
-  feedbackRecords FeedbackRecord[]
+   feedbackRecords FeedbackRecord[]
+   messageReactions MessageReaction[]
 
   @@index([ownerUserId, updatedAt])
   @@index([archivedAt, deletedAt, updatedAt])
@@ -60,7 +61,8 @@ model LocalUser {
   memberships    ProjectMembership[]
   auditLogs      AuditLog[]
   csrfTokens     CsrfToken[]
-  feedbackRecords FeedbackRecord[]
+   feedbackRecords FeedbackRecord[]
+   messageReactions MessageReaction[]
 }
 
 model AuthSession {
@@ -133,7 +135,8 @@ model ConversationMessage {
   metadataJson     String   @default("{}")
   createdAt        DateTime @default(now())
   project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  feedbackRecords  FeedbackRecord[]
+   feedbackRecords  FeedbackRecord[]
+   reactions        MessageReaction[]
 
   @@index([projectId, createdAt])
 }
@@ -249,6 +252,7 @@ model FeedbackRecord {
 model FeedbackAttachment {
   id           String         @id
   feedbackId   String
+  kind         String         @default("issue")
   originalName String
   mimeType     String
   extension    String
@@ -261,6 +265,22 @@ model FeedbackAttachment {
   feedback     FeedbackRecord @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
 
   @@index([feedbackId, createdAt])
+}
+
+model MessageReaction {
+  id              String              @id @default(cuid())
+  projectId       String
+  messageId       String
+  createdByUserId String
+  value           String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  message         ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdBy       LocalUser           @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, createdByUserId])
+  @@index([projectId, createdByUserId, updatedAt])
 }
 
 model ConversationTurnJob {

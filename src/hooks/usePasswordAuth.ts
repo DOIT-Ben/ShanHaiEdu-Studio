@@ -6,19 +6,17 @@ import { createPasswordAuthClient, type PasswordAuthUser } from "@/lib/auth-api"
 export type PasswordAuthMode = "checking" | "authenticated" | "anonymous" | "disabled";
 
 export function usePasswordAuth() {
-  const staticAuthMode = process.env.NEXT_PUBLIC_SHANHAI_AUTH_MODE;
-  const hasStaticAuthMode = typeof staticAuthMode === "string" && staticAuthMode.length > 0;
-  const staticEnabled = staticAuthMode === "password";
   const client = useMemo(() => createPasswordAuthClient(), []);
-  const [enabled, setEnabled] = useState(hasStaticAuthMode ? staticEnabled : true);
-  const [mode, setMode] = useState<PasswordAuthMode>(hasStaticAuthMode && !staticEnabled ? "disabled" : "checking");
+  const [enabled, setEnabled] = useState(true);
+  const [mode, setMode] = useState<PasswordAuthMode>("checking");
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [user, setUser] = useState<PasswordAuthUser | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function applyAuthState(result: { enabled?: boolean; authMode?: string; authenticated: boolean; user: PasswordAuthUser | null }) {
-    const runtimeEnabled = result.enabled ?? (result.authMode ? result.authMode === "password" : result.authenticated || Boolean(result.user));
-    const nextEnabled = runtimeEnabled || (!result.authMode && staticEnabled);
+  function applyAuthState(result: { enabled?: boolean; authMode?: string; authenticated: boolean; user: PasswordAuthUser | null; registrationEnabled?: boolean }) {
+    const nextEnabled = result.enabled ?? (result.authMode === "password");
+    setRegistrationEnabled(result.registrationEnabled === true);
     setEnabled(nextEnabled);
     if (!nextEnabled) {
       setUser(null);
@@ -32,12 +30,6 @@ export function usePasswordAuth() {
   }
 
   const refresh = useCallback(async () => {
-    if (hasStaticAuthMode && !staticEnabled) {
-      setEnabled(false);
-      setMode("disabled");
-      setUser(null);
-      return;
-    }
     setMode("checking");
     try {
       const result = await client.me();
@@ -48,7 +40,7 @@ export function usePasswordAuth() {
       setMode("anonymous");
       setErrorMessage(null);
     }
-  }, [client, hasStaticAuthMode, staticEnabled]);
+  }, [client]);
 
   useEffect(() => {
     refresh();
@@ -92,6 +84,7 @@ export function usePasswordAuth() {
 
   return {
     enabled,
+    registrationEnabled,
     mode,
     user,
     errorMessage,

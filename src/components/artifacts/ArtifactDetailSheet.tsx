@@ -1,6 +1,6 @@
 "use client";
 
-import { Clipboard, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
+import { ArrowLeft, Clipboard, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
@@ -16,6 +16,7 @@ type ArtifactDetailSheetProps = {
   item: ArtifactItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onBack?: () => void;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
   onConfirm: (item: ArtifactItem) => void;
@@ -29,6 +30,7 @@ export function ArtifactDetailSheet({
   item,
   open,
   onOpenChange,
+  onBack,
   onCopy,
   onUseAsInput,
   onConfirm,
@@ -38,11 +40,12 @@ export function ArtifactDetailSheet({
 }: ArtifactDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="max-w-[540px] border-[#d7ebe5] bg-[#fbfefd]">
+      <SheetContent className="max-w-[540px] border-[#e3ece9] bg-[#fcfdfd]">
         {item && (
           <ArtifactDetailContent
             projectId={projectId}
-            item={item}
+             item={item}
+            onBack={onBack}
             onCopy={onCopy}
             onUseAsInput={onUseAsInput}
             onConfirm={onConfirm}
@@ -59,6 +62,7 @@ export function ArtifactDetailSheet({
 function ArtifactDetailContent({
   projectId,
   item,
+  onBack,
   onCopy,
   onUseAsInput,
   onConfirm,
@@ -68,6 +72,7 @@ function ArtifactDetailContent({
 }: {
   projectId: string;
   item: ArtifactItem;
+  onBack?: () => void;
   onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
   onUseAsInput: (item: ArtifactItem) => void;
   onConfirm: (item: ArtifactItem) => void;
@@ -80,7 +85,13 @@ function ArtifactDetailContent({
 
   return (
     <>
-      <div className="border-b border-[#d7ebe5] bg-[#fbfefd] px-5 py-5">
+       <div className="border-b border-[#e3ece9] px-5 py-4">
+        {onBack && (
+          <Button variant="ghost" size="sm" className="-ml-2 mb-3 text-muted-foreground" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            返回备课成果
+          </Button>
+        )}
         <div className="flex items-start justify-between gap-4 pr-8">
           <div>
             <SheetTitle className="title-md">{item.title}</SheetTitle>
@@ -91,18 +102,18 @@ function ArtifactDetailContent({
         <div className="mt-4 text-xs font-medium text-[#32685d]">成果阅读</div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-6 p-5">
-          <section className="rounded-lg border border-[#d7ebe5] bg-white p-4">
-            <MarkdownPreview item={item} showHeader={false} />
-          </section>
-        </div>
-      </ScrollArea>
-      <div className="flex flex-wrap gap-2 border-t border-[#d7ebe5] bg-[#fbfefd] p-4">
-        <Button variant="secondary" disabled={!item.actions.canCopy} onClick={copyItem}>
+         <div className="p-5">
+           <section>
+             <MarkdownPreview item={item} showHeader={false} />
+           </section>
+         </div>
+       </ScrollArea>
+       <div className="flex flex-wrap items-center gap-1.5 border-t border-[#e3ece9] p-4">
+         <Button variant="ghost" disabled={!item.actions.canCopy} onClick={copyItem}>
           <Clipboard className="h-4 w-4" />
           {copyLabel}
         </Button>
-        <Button variant="secondary" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
+         <Button variant="ghost" disabled={!item.actions.canUseAsInput} onClick={() => onUseAsInput(item)}>
           <SendToBack className="h-4 w-4" />
           作为输入
         </Button>

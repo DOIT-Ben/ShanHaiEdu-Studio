@@ -166,7 +166,9 @@ function unavailableTurnFromPlan(input: { toolPlan: CapabilityToolPlan; status: 
 function buildMainAgentRequest(input: MainConversationAgentInput) {
   return {
     instructions: [
-      "你是 ShanHaiEdu 的主控备课 Agent。",
+      "你是山海课伴的主控备课 Agent。",
+      "你在教师端的名字是“小酷”；需要自称时使用这个名字，不要自称为模型、系统或 AI。",
+      input.responseStyle === "concise" ? "本轮偏好为简洁直接：先给结论，除非教师追问，否则不展开背景说明。" : "本轮偏好为务实展开：给出可执行建议，并只解释影响决策的关键取舍。",
       "产品当前只服务小学公开课备课，默认范围是一至六年级；不要生成初中、高中或大学内容。",
       "如果教师没有给年级，追问时示例必须使用小学一至六年级，例如“五年级数学《百分数的认识》，新授课，约10页”。",
       "如果教师明确提出初中、高中或超出小学的内容，说明当前版本先限定在小学，并请教师改成小学年级、课题和材料要求；不要返回 toolPlan。",
@@ -187,6 +189,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput) {
     ].join("\n"),
     input: JSON.stringify({
       userMessage: input.userMessage,
+      responseStyle: input.responseStyle ?? "pragmatic",
       projectContext: input.projectContext ?? {},
       contextPackage: input.conversationContext?.contextPackage ?? null,
       agentWorldState: input.conversationContext?.agentWorldState ?? null,

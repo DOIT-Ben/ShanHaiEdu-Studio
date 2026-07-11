@@ -28,7 +28,7 @@ describe("M55-C model-first main conversation agent", () => {
   it("uses the same short greeting in deterministic fallback mode", async () => {
     const turn = await createDeterministicMainConversationAgent().respond({ userMessage: "你好", availableArtifactKinds: [] });
 
-    expect(turn.assistantMessage.body).toBe("你好，我在。你今天想准备哪一节课？告诉我年级和课题就可以开始。");
+    expect(turn.assistantMessage.body).toBe("你好，我是小酷。你今天想准备哪一节课？告诉我年级和课题就可以开始。");
     expect(turn.quickReplies).toEqual([]);
     expect(turn.toolPlan).toBeUndefined();
     expect(turn.deliveryPlan).toBeUndefined();

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ListTree, MessageSquareText, MoreHorizontal, Users } from "lucide-react";
+import { CheckCircle2, ListTree, MessageSquareText, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { cn } from "@/lib/utils";
@@ -17,16 +17,17 @@ type WorkbenchTopbarProps = {
   onOpenFeedback?: OpenFeedback;
   onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
+  onOpenXiaoKuSettings?: () => void;
 };
 
-export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onOpenMembers, onOpenFeedback, onOpenUserManagement, onLogout }: WorkbenchTopbarProps) {
+export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenArtifacts, onOpenMembers, onOpenFeedback, onOpenUserManagement, onLogout, onOpenXiaoKuSettings }: WorkbenchTopbarProps) {
   const projectTitle = project?.title ?? "未选择项目";
   const savedLabel = project?.updatedAt ? `已保存 ${project.updatedAt}` : "未保存";
 
   return (
     <div data-workbench-topbar-compact={compact ? "true" : "false"} className={cn("flex items-center justify-between px-6 py-6 lg:px-8", compact ? "gap-2" : "gap-4")}>
       <nav className={cn("flex min-w-0 flex-1 items-center overflow-hidden whitespace-nowrap text-sm text-muted-foreground", compact ? "gap-2" : "gap-4")} aria-label="当前位置">
-        <span className="shrink-0">ShanHaiEdu</span>
+        <span className="shrink-0">山海课伴</span>
         <span className="shrink-0">/</span>
         {!compact && (
           <>
@@ -78,14 +79,12 @@ export function WorkbenchTopbar({ project, currentUser, compact = false, onOpenA
             onOpenFeedback={onOpenFeedback}
             onOpenUserManagement={onOpenUserManagement}
             onLogout={onLogout}
+            onOpenXiaoKuSettings={onOpenXiaoKuSettings}
             compact
             align="end"
             className="h-9 w-9 lg:hidden"
           />
         )}
-        <Button variant="secondary" size="icon" aria-label="更多产物操作" onClick={onOpenArtifacts} disabled={!onOpenArtifacts}>
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
       </div>
     </div>
   );

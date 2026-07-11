@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import { createUserManagementClient, type ProjectMember } from "@/lib/user-management-api";
 
@@ -66,15 +68,17 @@ export function ProjectMembersDialog({ open, projectId, currentUser, onOpenChang
         </div>
         <div className="max-h-[76vh] space-y-4 overflow-y-auto p-5">
           {canManage ? (
-            <section className="rounded-md border p-3">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium"><UserPlus className="h-4 w-4" /> 添加成员</div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_132px_auto]">
-                <input className="h-9 min-w-0 rounded-md border px-3 text-sm" placeholder="教师邮箱" value={email} onChange={(event) => setEmail(event.target.value)} />
-                <select className="h-9 rounded-md border px-3 text-sm" value={role} onChange={(event) => setRole(event.target.value as "editor" | "viewer")}>
-                  <option value="viewer">可查看</option>
-                  <option value="editor">可编辑</option>
-                </select>
-                <Button size="sm" disabled={busy || !projectId || !email.trim()} onClick={() => runAction(() => client.addProjectMember(projectId!, { email, role }), "成员已添加。")}>添加</Button>
+            <section className="rounded-lg border p-4">
+              <div className="mb-4 flex items-center gap-2 text-sm font-medium"><UserPlus className="h-4 w-4" /> 添加成员</div>
+              <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_164px_76px]">
+                <Input className="min-w-0" type="email" placeholder="教师邮箱" value={email} onChange={(event) => setEmail(event.target.value)} />
+                <Select value={role} onValueChange={(value) => setRole(value as "editor" | "viewer")}>
+                  <SelectTrigger aria-label="成员权限"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="viewer">可查看</SelectItem><SelectItem value="editor">可编辑</SelectItem></SelectContent>
+                </Select>
+                <Button className="h-11 w-full px-4" disabled={busy || !projectId || !email.trim()} onClick={() => runAction(() => client.addProjectMember(projectId!, { email, role }), "成员已添加。")}>
+                  添加
+                </Button>
               </div>
             </section>
           ) : (
@@ -93,10 +97,10 @@ export function ProjectMembersDialog({ open, projectId, currentUser, onOpenChang
                     <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{memberRoleLabel(member.role)}</span>
                   ) : (
                     <>
-                      <select className="h-9 rounded-md border px-3 text-sm" value={member.role} disabled={busy} onChange={(event) => runAction(() => client.updateProjectMember(projectId!, member.userId, event.target.value as "editor" | "viewer"), "成员权限已更新。")}>
-                        <option value="viewer">可查看</option>
-                        <option value="editor">可编辑</option>
-                      </select>
+                      <Select value={member.role} disabled={busy} onValueChange={(value) => void runAction(() => client.updateProjectMember(projectId!, member.userId, value as "editor" | "viewer"), "成员权限已更新。")}>
+                        <SelectTrigger aria-label={`${member.displayName}的成员权限`}><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectItem value="viewer">可查看</SelectItem><SelectItem value="editor">可编辑</SelectItem></SelectContent>
+                      </Select>
                       <Button variant="secondary" size="sm" disabled={busy} onClick={() => runAction(() => client.removeProjectMember(projectId!, member.userId), "成员已移除。")}>移除</Button>
                     </>
                   )}

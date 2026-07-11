@@ -249,7 +249,7 @@ async function openArtifactDetail(page: Page, name: RegExp) {
   }
 
   await page.getByRole("button", { name: "产物" }).click();
-  const drawer = page.getByRole("dialog", { name: "线性产物" });
+  const drawer = page.getByRole("dialog", { name: "备课成果" });
   await drawer.getByRole("button", { name }).click();
 }
 
@@ -258,7 +258,7 @@ async function expectArtifactEntryAvailable(page: Page, name: RegExp) {
   if (await desktopEntry.isVisible()) return;
 
   await page.getByRole("button", { name: "产物" }).click();
-  const drawer = page.getByRole("dialog", { name: "线性产物" });
+  const drawer = page.getByRole("dialog", { name: "备课成果" });
   await expect(drawer.getByRole("button", { name })).toBeVisible();
   await page.keyboard.press("Escape");
 }

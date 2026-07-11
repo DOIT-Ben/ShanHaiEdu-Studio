@@ -247,8 +247,8 @@ function normalizeSystemRole(value: unknown) {
 }
 
 function normalizePassword(value: unknown) {
-  if (typeof value !== "string" || value.length < 12 || value.length > 256) {
-    throw new AdminUserManagementError("新密码长度必须为 12 到 256 个字符。", 400);
+  if (typeof value !== "string" || value.length < 8 || value.length > 256) {
+    throw new AdminUserManagementError("新密码长度必须为 8 到 256 个字符。", 400);
   }
   return value;
 }

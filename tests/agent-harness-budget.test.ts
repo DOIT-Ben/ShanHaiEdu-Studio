@@ -17,7 +17,7 @@ describe("AgentHarnessBudget", () => {
     expect(decision.reason).toBeUndefined();
   });
 
-  it("blocks repeated failed attempts for the same action", () => {
+  it("does not count policy blocks as failed tool attempts", () => {
     const events = [
       buildAgentHarnessBudgetEvent({ capabilityId: "lesson_plan", actionKey: "lesson_plan:draft", status: "failed", kind: "tool_failed" }),
       buildAgentHarnessBudgetEvent({ capabilityId: "lesson_plan", actionKey: "lesson_plan:draft", status: "blocked", kind: "blocked_by_policy" }),
@@ -29,15 +29,15 @@ describe("AgentHarnessBudget", () => {
       events,
     });
 
-    expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("same_action_repeat_exhausted");
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toBeUndefined();
   });
 
   it("blocks when recent failures are consecutive beyond the policy threshold", () => {
     const events = [
       buildAgentHarnessBudgetEvent({ capabilityId: "lesson_plan", actionKey: "lesson_plan:first", status: "succeeded", kind: "tool_failed", createdAt: "2026-07-09T00:00:00.000Z" }),
       buildAgentHarnessBudgetEvent({ capabilityId: "lesson_plan", actionKey: "lesson_plan:a", status: "failed", kind: "tool_failed", createdAt: "2026-07-09T00:01:00.000Z" }),
-      buildAgentHarnessBudgetEvent({ capabilityId: "coze_ppt", actionKey: "coze_ppt:b", status: "blocked", kind: "blocked_by_policy", createdAt: "2026-07-09T00:02:00.000Z" }),
+      buildAgentHarnessBudgetEvent({ capabilityId: "coze_ppt", actionKey: "coze_ppt:b", status: "failed", kind: "tool_failed", createdAt: "2026-07-09T00:02:00.000Z" }),
       buildAgentHarnessBudgetEvent({ capabilityId: "video", actionKey: "video:c", status: "retryable_failed", kind: "provider_unavailable", createdAt: "2026-07-09T00:03:00.000Z" }),
     ];
 

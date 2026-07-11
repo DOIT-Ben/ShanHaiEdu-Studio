@@ -7,6 +7,7 @@ import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } fr
 import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
+import { resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
 import { routeToolCall } from "@/server/tools/tool-router";
@@ -19,7 +20,7 @@ import { createDeterministicMainConversationAgent, type MainConversationAgent } 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
 type PendingDeliveryPlanMetadata = {
-  status: "pending" | "confirmed";
+  status: "pending" | "confirmed" | "superseded";
   teacherRequest: string;
   toolPlan: CapabilityToolPlan;
   deliveryPlan?: DeliveryPlan;
@@ -160,12 +161,27 @@ async function executeTeacherMessageTurn(input: {
     toolObservations,
   });
 
-  const agentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
+  const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
     userMessage: teacherContent,
+    responseStyle: input.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
     availableArtifactKinds,
     projectContext: toMainAgentProjectContext(project),
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
   }), capabilityAvailability);
+  const controlResolution = resolveConversationControl({
+    userMessage: teacherContent,
+    pendingPlan,
+    receivedConfirmedActionId: input.confirmedActionId,
+    agentTurn: rawAgentTurn,
+    capabilityAvailability,
+  });
+  const agentTurn = controlResolution.turn;
+  const effectiveConfirmedActionId = input.confirmedActionId
+    ?? (controlResolution.decision.usePendingActionId ? pendingPlan?.actionId : undefined);
+
+  if (controlResolution.decision.supersedePendingAction && pendingPlan) {
+    await updatePendingPlanStatus(input.service, input.projectId, pendingPlan, "superseded");
+  }
 
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
     return runPlannedArtifact({
@@ -184,7 +200,7 @@ async function executeTeacherMessageTurn(input: {
       budgetEvents,
       contextTokenEstimate: contextPackage.tokenEstimate,
       reference,
-      confirmedActionId: input.confirmedActionId,
+      confirmedActionId: effectiveConfirmedActionId,
       triggerMessage: input.triggerMessage,
       generationUserMessage: pendingPlan?.teacherRequest ?? teacherContent,
     });
@@ -192,6 +208,7 @@ async function executeTeacherMessageTurn(input: {
   const assistantMetadata = mergeMessageMetadata(
     createPendingDeliveryPlanMetadata(agentTurn, teacherContent),
     createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
+    { conversationControlDecision: controlResolution.decision },
   );
   const assistantMessage = await addAssistantMessageWithPendingActionId(input.service, input.projectId, {
     role: "assistant",
@@ -846,6 +863,23 @@ function createPendingDeliveryPlanMetadata(agentTurn: MainAgentTurn, teacherRequ
   };
 }
 
+async function updatePendingPlanStatus(
+  service: WorkbenchService,
+  projectId: string,
+  pendingPlan: PendingDeliveryPlanSnapshot,
+  status: PendingDeliveryPlanMetadata["status"],
+) {
+  await service.updateMessageMetadata(projectId, pendingPlan.messageId, {
+    ...pendingPlan.messageMetadata,
+    pendingDeliveryPlan: {
+      ...pendingPlan,
+      status,
+      messageId: undefined,
+      messageMetadata: undefined,
+    },
+  });
+}
+
 async function addAssistantMessageWithPendingActionId(
   service: WorkbenchService,
   projectId: string,
@@ -889,7 +923,7 @@ function findPendingDeliveryPlan(messages: ConversationMessageRecord[]): Pending
 function parsePendingDeliveryPlanMetadata(value: unknown, options: { allowMissingActionId?: boolean } = {}): PendingDeliveryPlanMetadata | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Partial<PendingDeliveryPlanMetadata>;
-  if (candidate.status !== "pending" && candidate.status !== "confirmed") return null;
+  if (candidate.status !== "pending" && candidate.status !== "confirmed" && candidate.status !== "superseded") return null;
   if (typeof candidate.teacherRequest !== "string" || !candidate.teacherRequest.trim()) return null;
   if (!candidate.toolPlan || typeof candidate.toolPlan !== "object") return null;
   if (candidate.deliveryPlan !== undefined && (typeof candidate.deliveryPlan !== "object" || Array.isArray(candidate.deliveryPlan))) return null;

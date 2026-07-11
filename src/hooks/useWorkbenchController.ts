@@ -6,8 +6,10 @@ import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ConversationTurnJob, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
+import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
+const xiaokuResponseStyleStorageKey = "shanhai.xiaoku.responseStyle";
 const snapshotPollingIntervalMs = 1200;
 
 function hasPendingTurnStatus(status?: ChatMessage["turnStatus"] | ConversationTurnJob["status"]) {
@@ -43,6 +45,7 @@ export function useWorkbenchController() {
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [activeArtifactKey, setActiveArtifactKey] = useState("");
   const [realAssetGenerationKey, setRealAssetGenerationKey] = useState<string | null>(null);
+  const [xiaokuResponseStyle, setXiaoKuResponseStyleState] = useState<XiaoKuResponseStyle>("pragmatic");
 
   const activeArtifact = useMemo(
     () => artifacts.find((item) => item.key === activeArtifactKey) ?? artifacts[0] ?? null,
@@ -154,22 +157,14 @@ export function useWorkbenchController() {
     async function loadInitialState() {
       setLoadState("loading");
       try {
-        const nextProjects = await dataSource.listProjects();
+        const nextProjects = await dataSource.listProjects("active");
         if (!active) return;
         setProjects(nextProjects);
-        const storedProjectId = window.localStorage.getItem(activeProjectStorageKey);
-        const nextProjectId = nextProjects.some((project) => project.id === storedProjectId) ? storedProjectId : nextProjects[0]?.id;
-        if (!nextProjectId) {
-          setMessages([]);
-          setArtifacts([]);
-          setTurnJobs([]);
-          setActiveProjectId("");
-          window.localStorage.removeItem(activeProjectStorageKey);
-          setLoadState("ready");
-          return;
-        }
-        const snapshot = await dataSource.getProjectSnapshot(nextProjectId);
-        if (active) applySnapshot(snapshot);
+        setActiveProjectId("");
+        setMessages([]);
+        setArtifacts([]);
+        setTurnJobs([]);
+        setLoadState("ready");
       } catch (error) {
         if (!active) return;
         setLoadState("error");
@@ -181,7 +176,17 @@ export function useWorkbenchController() {
     return () => {
       active = false;
     };
-  }, [applySnapshot, dataSource]);
+  }, [dataSource]);
+
+  useEffect(() => {
+    setXiaoKuResponseStyleState(normalizeXiaoKuResponseStyle(window.localStorage.getItem(xiaokuResponseStyleStorageKey)));
+  }, []);
+
+  function setXiaoKuResponseStyle(value: XiaoKuResponseStyle) {
+    const normalized = normalizeXiaoKuResponseStyle(value);
+    setXiaoKuResponseStyleState(normalized);
+    window.localStorage.setItem(xiaokuResponseStyleStorageKey, normalized);
+  }
 
   function flashComposerNotice(message: string) {
     setComposerNotice(message);
@@ -212,9 +217,11 @@ export function useWorkbenchController() {
       setProjectView("active");
       applySnapshot(snapshot);
       setNotice("已新建公开课项目，可以开始描述备课目标。");
+      return true;
     } catch (error) {
       setLoadState("error");
       setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "新项目暂时没有创建成功，请稍后再试。");
+      return false;
     }
   }
 
@@ -257,25 +264,24 @@ export function useWorkbenchController() {
     flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
   }
 
+  async function setMessageReaction(messageId: string, value: ChatMessage["reaction"] | null) {
+    if (!activeProjectId || !dataSource.setMessageReaction) return;
+    try {
+      const snapshot = await dataSource.setMessageReaction(activeProjectId, messageId, value);
+      applySnapshot(snapshot);
+    } catch {
+      setNotice("这条反馈标签暂时没有保存，请稍后重试。");
+    }
+  }
+
   async function openProjectView(view: ProjectLifecycleState) {
     setLoadState("loading");
     try {
       const nextProjects = await dataSource.listProjects(view);
       setProjects(nextProjects);
       setProjectView(view);
-      if (view !== "active") {
-        clearActiveProject();
-        setLoadState("ready");
-        return;
-      }
-      const storedProjectId = window.localStorage.getItem(activeProjectStorageKey);
-      const nextProjectId = nextProjects.some((project) => project.id === storedProjectId) ? storedProjectId : nextProjects[0]?.id;
-      if (nextProjectId) {
-        await loadProject(nextProjectId);
-      } else {
-        clearActiveProject();
-        setLoadState("ready");
-      }
+      clearActiveProject();
+      setLoadState("ready");
     } catch {
       setLoadState("error");
       setErrorMessage("项目列表暂时没有取回，请稍后再试。");
@@ -412,10 +418,11 @@ export function useWorkbenchController() {
       }
 
       setExecutionFeedback({ label: "正在组织教案、课件和素材任务", stageIndex: 2 });
-      const messageSignature = buildClientMessageSignature(targetProjectId, body, reference, confirmationActionId);
+      const messageSignature = buildClientMessageSignature(targetProjectId, body, reference, confirmationActionId, xiaokuResponseStyle);
       const sendOptions: WorkbenchSendMessageOptions = {
         idempotencyKey: getRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature),
         ...(confirmationActionId ? { confirmedActionId: confirmationActionId } : {}),
+        responseStyle: xiaokuResponseStyle,
       };
       const snapshot = await dataSource.sendMessage(targetProjectId, body, reference, sendOptions);
       setExecutionFeedback({ label: "正在保存本轮成果", stageIndex: 3 });
@@ -487,19 +494,22 @@ export function useWorkbenchController() {
     openSidePanel,
     copyArtifact,
     useAsInput,
+    setMessageReaction,
     attachComposerFile,
     confirmArtifact,
     regenerateArtifact,
     generateRealAsset,
     realAssetGenerationKey,
+    xiaokuResponseStyle,
+    setXiaoKuResponseStyle,
     sendPrompt,
     selectQuickReply,
     showRecovery,
   };
 }
 
-export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null) {
-  return JSON.stringify({ projectId, body, reference: reference ?? "", confirmationActionId: confirmationActionId ?? "" });
+export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null, responseStyle = "pragmatic") {
+  return JSON.stringify({ projectId, body, reference: reference ?? "", confirmationActionId: confirmationActionId ?? "", responseStyle });
 }
 
 export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: string; key: string } | null }, signature: string) {

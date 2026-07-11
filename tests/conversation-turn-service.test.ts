@@ -228,7 +228,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     ]);
   });
 
-  it("uses agent harness budget events to stop repeated failed actions before creating artifacts", async () => {
+  it("does not let policy blocks consume the tool retry budget", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M63 budget 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
     const firstFailure = buildAgentHarnessBudgetEvent({
@@ -312,19 +312,11 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const messages = await service.getMessages(project.id);
     const events = readAgentHarnessBudgetEventsFromMessages(messages);
 
-    expect(body.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false, artifactRefs: [] });
-    expect(body.assistantMessage?.content).toMatch(/多次|没有完成|核对/);
+    expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true });
     expect(body.assistantMessage?.content).not.toMatch(/schema|provider|node_id|storage|debug|local path|capabilityId|runtimeKind|token|C:\\/i);
-    expect(body.artifact).toBeUndefined();
-    expect(await service.getArtifacts(project.id)).toEqual([]);
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        capabilityId: "requirement_spec",
-        actionKey: "requirement_spec:requirement_spec",
-        status: "blocked",
-        kind: "retry_exhausted",
-      }),
-    ]));
+    expect(body.artifact).toMatchObject({ kind: "requirement_spec" });
+    expect(await service.getArtifacts(project.id)).toHaveLength(1);
+    expect(events.some((event) => event.kind === "retry_exhausted")).toBe(false);
   });
 
   it("runs confirmed requirement_spec through the injected ToolRouter and persists one succeeded budget event", async () => {
@@ -496,6 +488,47 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           kind: "quality_gate_failed",
         }),
       ]);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("COZE_API_TOKEN", previousToken);
+      restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
+
+  it("persists a real pending action when a model requests provider execution without one", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousToken = process.env.COZE_API_TOKEN;
+    const previousRunUrl = process.env.COZE_PPT_RUN_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.COZE_API_TOKEN = "test-token";
+    process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
+    try {
+      const service = createWorkbenchService();
+      const project = await service.createProject({ title: "M72 provider pending action", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+      const design = await service.saveArtifact(project.id, {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "已确认设计稿",
+        status: "needs_review",
+        summary: "逐页设计稿",
+        markdownContent: "# 设计稿",
+      });
+      await service.approveArtifact(project.id, design.id);
+      const toolRouter = vi.fn();
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        toolRouter,
+        agent: { async respond() { return buildAgentToolTurn("coze_ppt", "pptx_artifact"); } },
+      });
+
+      const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX" });
+      const pending = pendingDeliveryPlanOf(body.assistantMessage);
+
+      expect(body.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
+      expect(pending).toMatchObject({ status: "pending", toolPlan: { capabilityId: "coze_ppt" } });
+      expect(pending.actionId).toBe(`human:${project.id}:coze_ppt:${body.assistantMessage?.id}`);
+      expect(toolRouter).not.toHaveBeenCalled();
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
       restoreEnv("COZE_API_TOKEN", previousToken);
@@ -960,7 +993,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     ]));
   });
 
-  it("records PlanGuard blocks as policy observations for the next turn", async () => {
+  it("accepts explicit natural-language confirmation for the unique safe internal pending action", async () => {
     const { service, turnService, projectId } = await createServiceProject({
       title: "M63 plan guard observation 项目",
       grade: "五年级",
@@ -972,13 +1005,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const body = await turnService.createTurn(projectId, { role: "teacher", content: "确认开始" });
     const observations = readActiveToolObservationsFromMessages(await service.getMessages(projectId));
 
-    expect(body.agentTurn).toMatchObject({ state: "collecting_inputs", shouldRunToolNow: false, artifactRefs: [] });
-    expect(observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ capabilityId: "requirement_spec", kind: "blocked_by_policy", artifactCreated: false }),
-    ]));
-    expect(readAgentHarnessBudgetEventsFromMessages(await service.getMessages(projectId))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ capabilityId: "requirement_spec", status: "blocked", kind: "blocked_by_policy" }),
-    ]));
+    expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true });
+    expect(body.artifact).toMatchObject({ kind: "requirement_spec" });
+    expect(observations.some((observation) => observation.kind === "blocked_by_policy")).toBe(false);
   });
 
   it("records quality gate failures as quality_gate_failed observations and budget events", async () => {
@@ -1127,7 +1156,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
     expect(body).toMatchObject({
       message: { role: "teacher", content: "你好" },
-      assistantMessage: { role: "assistant", content: expect.stringContaining("我在") },
+      assistantMessage: { role: "assistant", content: expect.stringContaining("小酷") },
       agentTurn: {
         state: "chatting",
         shouldRunToolNow: false,
@@ -1238,6 +1267,22 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(pendingDeliveryPlanOf(assistantPlanMessage).status).toBe("confirmed");
   });
 
+  it("handles the screenshot wording '确认需求并生成大纲' as one unique internal confirmation", async () => {
+    const { service, turnService, projectId } = await createServiceProject({
+      title: "M72 截图确认需求并生成大纲",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+
+    await turnService.createTurn(projectId, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
+    const body = await turnService.createTurn(projectId, { role: "teacher", content: "确认需求并生成大纲" });
+
+    expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true });
+    expect(body.artifact).toMatchObject({ nodeKey: "requirement_spec", kind: "requirement_spec" });
+    expect((await service.getMessages(projectId)).at(-1)?.content).not.toContain("没有拿到");
+  });
+
   it("persists a HumanGate actionId on pending plans", async () => {
     const { service, turnService, projectId } = await createServiceProject({
       title: "MVP1 actionId 项目",
@@ -1281,7 +1326,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(confirmBody.artifact).toBeUndefined();
   });
 
-  it("does not execute a pending plan when the current teacher message has no confirmed actionId", async () => {
+  it("executes the unique safe internal pending plan from explicit natural-language confirmation", async () => {
     const { service, turnService, projectId } = await createServiceProject({
       title: "MVP1 当前确认缺失项目",
       grade: "五年级",
@@ -1292,11 +1337,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     await turnService.createTurn(projectId, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
     const confirmBody = await turnService.createTurn(projectId, { role: "teacher", content: "确认开始" });
 
-    expect(confirmBody.agentTurn).toMatchObject({
-      state: "collecting_inputs",
-      shouldRunToolNow: false,
-    });
-    expect(confirmBody.artifact).toBeUndefined();
+    expect(confirmBody.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true });
+    expect(confirmBody.artifact).toMatchObject({ kind: "requirement_spec" });
   });
 
   it("executeQueuedTurn reads confirmedActionId from teacher message metadata to confirm a pending plan", async () => {
@@ -1329,7 +1371,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(pendingDeliveryPlanOf(assistantPlanMessage)).toMatchObject({ status: "confirmed", actionId });
   });
 
-  it("executeQueuedTurn blocks a pending plan when the teacher message metadata has no confirmedActionId", async () => {
+  it("executeQueuedTurn accepts explicit natural confirmation for a safe internal pending plan", async () => {
     const { service, turnService, projectId } = await createServiceProject({
       title: "MVP1 队列确认缺失项目",
       grade: "五年级",
@@ -1342,11 +1384,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
     const confirmBody = await turnService.executeQueuedTurn(projectId, { teacherMessageId: queuedTeacherMessage.id });
 
-    expect(confirmBody.agentTurn).toMatchObject({
-      state: "collecting_inputs",
-      shouldRunToolNow: false,
-    });
-    expect(confirmBody.artifact).toBeUndefined();
+    expect(confirmBody.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: true });
+    expect(confirmBody.artifact).toMatchObject({ kind: "requirement_spec" });
   });
 
   it("executeQueuedTurn blocks a pending plan when the teacher message metadata has the wrong confirmedActionId", async () => {
@@ -1619,7 +1658,12 @@ async function seedPendingPlan(
 }
 
 function pendingDeliveryPlanOf(message?: { metadata: Record<string, unknown> }) {
-  return (message?.metadata.pendingDeliveryPlan ?? {}) as { status?: string; actionId?: string; teacherRequest?: string };
+  return (message?.metadata.pendingDeliveryPlan ?? {}) as {
+    status?: string;
+    actionId?: string;
+    teacherRequest?: string;
+    toolPlan?: { capabilityId?: string };
+  };
 }
 
 function buildAgentToolTurn(capabilityId: CapabilityId, expectedArtifactKind: string) {

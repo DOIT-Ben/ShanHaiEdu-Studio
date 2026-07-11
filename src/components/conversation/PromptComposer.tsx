@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
-import { CheckCircle2, CornerDownLeft, Image, Paperclip, RotateCcw, Wrench, X } from "lucide-react";
+import { ArrowUp, Bot, ChevronDown, FilePlus2, ListChecks, LoaderCircle, Paperclip, Plus, Sparkles, Target, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MenuItem } from "@/components/ui/menu-item";
 import { AttachmentStatusCard } from "@/components/conversation/composer/AttachmentStatusCard";
 import {
   buildComposerAttachmentCard,
-  getComposerToolMenuItems,
   getComposerAttachmentKind,
   type ComposerAttachmentCard,
 } from "@/components/conversation/composer/composer-contracts";
 import { useAutoResizeTextarea } from "@/components/conversation/composer/useAutoResizeTextarea";
+import { xiaokuResponseStyleLabel, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 type PromptComposerProps = {
   value: string;
@@ -25,6 +26,7 @@ type PromptComposerProps = {
   onAttachFile: (fileName: string, text: string) => void;
   onAttachFileError: (message: string) => void;
   onSend: () => void;
+  responseStyle: XiaoKuResponseStyle;
 };
 
 const maxAttachmentCharacters = 12000;
@@ -41,6 +43,7 @@ export function PromptComposer({
   onAttachFile,
   onAttachFileError,
   onSend,
+  responseStyle,
 }: PromptComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -220,7 +223,8 @@ export function PromptComposer({
           </div>
         )}
         <div
-          className="relative rounded-xl border bg-card p-3 shadow-[0_14px_38px_rgba(0,0,0,0.065)] transition duration-150 ease-out hover:border-input hover:shadow-[0_18px_46px_rgba(0,0,0,0.08)] focus-within:border-input focus-within:shadow-[0_18px_50px_rgba(0,0,0,0.09)]"
+          data-composer-surface
+          className="relative rounded-[22px] border border-[#dfe1e3] bg-card px-3 py-2 shadow-[0_14px_38px_rgba(0,0,0,0.06)] transition duration-150 ease-out hover:border-[#c9cccf] hover:shadow-[0_18px_46px_rgba(0,0,0,0.075)] focus-within:border-[#9ca3a8] focus-within:shadow-[0_18px_50px_rgba(0,0,0,0.085)]"
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -250,66 +254,71 @@ export function PromptComposer({
             onPaste={handlePaste}
             disabled={composerSubmitting}
             aria-label={projectBusy ? "正在生成中，也可以继续输入下一步要求" : "输入备课要求"}
-            className="min-h-20 border-0 bg-transparent px-2 py-1 text-sm leading-6 shadow-none focus:ring-0"
+            placeholder="输入备课要求，或和小酷聊聊这节课"
+            className="min-h-[96px] border-0 bg-transparent px-2 py-2 text-sm leading-6 shadow-none placeholder:text-muted-foreground/75 focus:ring-0"
           />
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-2">
+          <div className="flex items-center justify-between gap-2 px-1 pb-1 pt-1">
             <div className="flex min-w-0 items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                aria-label="添加资料"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={composerSubmitting}
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    aria-label="工具和资料"
-                    title="工具和资料"
+                    aria-label="添加选项"
+                    title="添加资料或工具"
+                    disabled={composerSubmitting}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-[#f0f1f2] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]/45 disabled:pointer-events-none disabled:opacity-45"
                   >
-                    <Wrench className="h-4 w-4" />
-                  </Button>
+                    <Plus className="h-5 w-5" />
+                  </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-[min(360px,calc(100vw-32px))] p-2">
-                  <div className="px-2 pb-2 pt-1 text-xs font-medium text-muted-foreground">工具和资料</div>
-                  <div className="space-y-1">
-                    {getComposerToolMenuItems().map((item) => (
-                      <ComposerToolMenuRow
-                        key={item.label}
-                        item={item}
-                        onAttachFile={() => fileInputRef.current?.click()}
-                      />
-                    ))}
+                <PopoverContent align="start" className="w-[min(336px,calc(100vw-32px))] rounded-xl p-2">
+                  <div className="px-2.5 pb-2 pt-1 text-xs font-medium text-muted-foreground">添加</div>
+                  <div className="space-y-0.5">
+                    <MenuItem icon={<Paperclip className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>添加资料</MenuItem>
+                    <ComposerMenuPlaceholder icon={<Target className="h-4 w-4" />} label="课堂目标" />
+                    <ComposerMenuPlaceholder icon={<ListChecks className="h-4 w-4" />} label="计划模式" />
+                  </div>
+                  <div className="my-2 border-t" />
+                  <div className="px-2.5 pb-2 text-xs font-medium text-muted-foreground">工具</div>
+                  <div className="space-y-0.5">
+                    <ComposerMenuPlaceholder icon={<FilePlus2 className="h-4 w-4" />} label="课堂资料整理" />
+                    <ComposerMenuPlaceholder icon={<Bot className="h-4 w-4" />} label="教学设计审阅" />
                   </div>
                 </PopoverContent>
               </Popover>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                aria-label="重新生成"
-                title="请在产物详情中调整后重做"
-                disabled
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-              <span className="min-w-0 truncate text-xs text-muted-foreground" aria-live="polite">
+              <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" aria-live="polite">
                 {notice ?? (projectBusy ? "正在生成中，你可以继续输入下一条要求。" : null)}
               </span>
             </div>
-            <Button type="button" variant="default" className="h-9 rounded-lg px-3.5" onClick={handleSubmit} disabled={composerSubmitting}>
-              <CornerDownLeft className="h-4 w-4" />
-              {composerSubmitting ? "发送中" : projectBusy ? "加入队列" : "发送"}
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" aria-label="选择模型" className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-foreground transition hover:bg-[#f0f1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]/45">
+                    <Sparkles className="h-3.5 w-3.5 text-[#367d6d]" />
+                    <span>小酷 · {xiaokuResponseStyleLabel(responseStyle)}</span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-60 rounded-xl p-2">
+                  <div className="px-2.5 pb-2 pt-1 text-xs font-medium text-muted-foreground">可选模型</div>
+                  <MenuItem disabled className="disabled:opacity-100" icon={<Sparkles className="h-4 w-4 text-[#367d6d]" />}>
+                        <span className="flex-1">小酷 · {xiaokuResponseStyleLabel(responseStyle)}</span>
+                    <span className="text-xs text-muted-foreground">当前</span>
+                  </MenuItem>
+                  <div className="mt-1 px-2.5 py-2 text-xs text-muted-foreground">更多模型即将提供</div>
+                </PopoverContent>
+              </Popover>
+              <button
+                type="button"
+                aria-label={composerSubmitting ? "正在发送" : projectBusy ? "加入队列" : "发送"}
+                title={composerSubmitting ? "正在发送" : projectBusy ? "加入队列" : "发送"}
+                onClick={handleSubmit}
+                disabled={composerSubmitting}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#191c20] text-white transition hover:bg-[#30343a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]/45 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {composerSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -317,39 +326,11 @@ export function PromptComposer({
   );
 }
 
-function ComposerToolMenuRow({
-  item,
-  onAttachFile,
-}: {
-  item: ReturnType<typeof getComposerToolMenuItems>[number];
-  onAttachFile: () => void;
-}) {
-  const icon = item.enabled ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Image className="mt-0.5 h-3.5 w-3.5 shrink-0" />;
-  const content = (
-    <>
-      {icon}
-      <div className="min-w-0">
-        <div className="font-medium">{item.label}</div>
-        <div className="text-muted-foreground">{item.description}</div>
-      </div>
-    </>
-  );
-
-  if (item.action === "attach_file") {
-    return (
-      <button
-        type="button"
-        className="flex w-full gap-2 rounded-md px-2 py-2 text-left text-xs leading-5 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={onAttachFile}
-      >
-        {content}
-      </button>
-    );
-  }
-
+function ComposerMenuPlaceholder({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className={`flex gap-2 rounded-md px-2 py-2 text-xs leading-5 ${item.enabled ? "text-foreground" : "text-muted-foreground opacity-70"}`} aria-disabled={!item.enabled}>
-      {content}
-    </div>
+    <MenuItem disabled icon={icon} className="text-muted-foreground disabled:opacity-60">
+      <span>{label}</span>
+      <span className="ml-auto text-xs">即将提供</span>
+    </MenuItem>
   );
 }

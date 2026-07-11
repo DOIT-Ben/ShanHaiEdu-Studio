@@ -11,6 +11,7 @@ export type ProjectLifecycleMutation = {
 };
 
 export type MessageRole = "teacher" | "assistant" | "system";
+export type MessageReactionValue = "helpful" | "unhelpful";
 
 export type WorkflowNodeKey =
   | "requirement_spec"
@@ -63,6 +64,7 @@ export type ConversationMessageRecord = {
   content: string;
   artifactRefs: string[];
   metadata: Record<string, unknown>;
+  reaction?: MessageReactionValue;
   createdAt: string;
 };
 
@@ -173,6 +175,11 @@ export type AddMessageInput = {
   content: string;
   artifactRefs?: string[];
   metadata?: Record<string, unknown>;
+};
+
+export type SetMessageReactionInput = {
+  messageId: string;
+  value: MessageReactionValue | null;
 };
 
 export type SaveArtifactInput = {

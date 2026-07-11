@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { createUserManagementClient, type ManagedUser } from "@/lib/user-management-api";
 
 type AdminUserManagementDialogProps = {
@@ -80,18 +82,18 @@ export function AdminUserManagementDialog({ open, currentUserId, onOpenChange }:
           <section className="space-y-3">
             <div className="rounded-md border p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium"><UserPlus className="h-4 w-4" /> 新账号</div>
-              <input className="mb-2 h-9 w-full rounded-md border px-3 text-sm" placeholder="邮箱" value={invite.email} onChange={(event) => setInvite({ ...invite, email: event.target.value })} />
-              <input className="mb-2 h-9 w-full rounded-md border px-3 text-sm" placeholder="姓名" value={invite.displayName} onChange={(event) => setInvite({ ...invite, displayName: event.target.value })} />
-              <input className="mb-2 h-9 w-full rounded-md border px-3 text-sm" placeholder="初始密码" type="password" value={invite.initialPassword} onChange={(event) => setInvite({ ...invite, initialPassword: event.target.value })} />
-              <select className="mb-3 h-9 w-full rounded-md border px-3 text-sm" value={invite.role} onChange={(event) => setInvite({ ...invite, role: event.target.value as "teacher" | "admin" })}>
-                <option value="teacher">教师</option>
-                <option value="admin">管理员</option>
-              </select>
+              <Input className="mb-2" inputSize="sm" type="email" placeholder="邮箱" value={invite.email} onChange={(event) => setInvite({ ...invite, email: event.target.value })} />
+              <Input className="mb-2" inputSize="sm" placeholder="姓名" value={invite.displayName} onChange={(event) => setInvite({ ...invite, displayName: event.target.value })} />
+              <Input className="mb-2" inputSize="sm" placeholder="初始密码" type="password" value={invite.initialPassword} onChange={(event) => setInvite({ ...invite, initialPassword: event.target.value })} />
+              <Select value={invite.role} onValueChange={(value) => setInvite({ ...invite, role: value as "teacher" | "admin" })}>
+                <SelectTrigger className="mb-3 w-full" aria-label="账号角色"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="teacher">教师</SelectItem><SelectItem value="admin">管理员</SelectItem></SelectContent>
+              </Select>
               <Button className="w-full" size="sm" disabled={busy} onClick={inviteUser}>创建账号</Button>
             </div>
-            <label className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+            <label className="flex h-11 items-center gap-2 rounded-lg border border-input bg-card px-3 text-sm focus-within:border-[#68a999] focus-within:ring-2 focus-within:ring-[var(--focus-ring)]">
               <Search className="h-4 w-4 text-muted-foreground" />
-              <input className="min-w-0 flex-1 outline-none" placeholder="搜索用户" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadUsers(event.currentTarget.value)} />
+              <Input className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 focus-visible:ring-0" placeholder="搜索用户" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadUsers(event.currentTarget.value)} />
             </label>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => loadUsers()}><RefreshCw className="h-4 w-4" />刷新</Button>
             {status && <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{status}</p>}
@@ -112,7 +114,7 @@ export function AdminUserManagementDialog({ open, currentUserId, onOpenChange }:
                   <Button variant="secondary" size="sm" disabled={busy} onClick={() => runAction(() => client.revokeSessions(user.id), "会话已撤销。")}>撤销会话</Button>
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <input className="h-9 min-w-0 flex-1 rounded-md border px-3 text-sm" type="password" placeholder="新初始密码" value={resetPasswords[user.id] ?? ""} onChange={(event) => setResetPasswords({ ...resetPasswords, [user.id]: event.target.value })} />
+                  <Input className="min-w-0 flex-1" inputSize="sm" type="password" placeholder="新初始密码" value={resetPasswords[user.id] ?? ""} onChange={(event) => setResetPasswords({ ...resetPasswords, [user.id]: event.target.value })} />
                   <Button size="sm" disabled={busy || !(resetPasswords[user.id] ?? "").trim()} onClick={() => resetPassword(user.id)}>重置</Button>
                 </div>
               </div>

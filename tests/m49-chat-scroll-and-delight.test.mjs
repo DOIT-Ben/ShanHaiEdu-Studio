@@ -25,17 +25,19 @@ test("ConversationWorkbench scrolls to the newest chat state", () => {
   assert.match(source, /<ChatTranscript[\s\S]*projectBusy=\{projectBusy\}/);
 });
 
-test("ChatTranscript renders AI identity and thinking feedback", () => {
+test("ChatTranscript renders 小酷 identity and thinking feedback", () => {
   const source = readSource("src/components/conversation/ChatTranscript.tsx");
   const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
   const contractsSource = readSource("src/components/conversation/composer/composer-contracts.ts");
 
-  assert.match(source, /function ShanHaiMark/);
+  assert.match(source, /function XiaoKuMark/);
   assert.match(source, /data-assistant-logo/);
+  assert.match(source, /\/brand\/xiaoku-avatar\.png/);
   assert.match(generatingSource, /data-ai-thinking/);
   assert.match(generatingSource, /getGeneratingLabel/);
   assert.match(contractsSource, /正在生成回复/);
   assert.match(generatingSource, /typing-dot/);
+  assert.match(generatingSource, />小酷</);
 });
 
 test("assistant message actions are a quiet teacher-facing component", () => {

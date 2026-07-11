@@ -137,7 +137,7 @@ function resolveNativeToolLoop(
 export function buildOpenAIResponseRequest(input: AgentRuntimeInput, _model?: string): OpenAIResponsePayload {
   return {
     instructions: [
-      "你是 ShanHaiEdu 小学数学公开课备课助手。",
+      "你是山海课伴的小学数学公开课备课助手。",
       "只生成面向教师可阅读的 Markdown 文本产物。",
       "不要输出工程实现细节、密钥、调试信息、本地路径或底层错误。",
       "如果是导入视频方案，必须保持独立创意，不提前讲知识点结论，并通过课程锚点回到课堂。",

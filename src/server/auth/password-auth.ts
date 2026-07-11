@@ -11,6 +11,9 @@ import {
 } from "@/server/auth/session";
 import { prisma } from "@/server/db/client";
 
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 256;
+
 export type PasswordUserSummary = {
   id: string;
   email: string | null;
@@ -50,7 +53,7 @@ const disabledLoginError = "账号已停用，请联系管理员。";
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 7;
 
 export async function registerPasswordUser(
-  input: { email?: unknown; password?: unknown; displayName?: unknown },
+  input: { email?: unknown; account?: unknown; password?: unknown; displayName?: unknown },
   options: PasswordAuthOptions = {},
 ): Promise<PasswordAuthResult> {
   const normalized = normalizeRegistrationInput(input);
@@ -91,7 +94,7 @@ export async function registerPasswordUser(
 }
 
 export async function loginPasswordUser(
-  input: { email?: unknown; password?: unknown },
+  input: { email?: unknown; account?: unknown; password?: unknown },
   options: PasswordAuthOptions = {},
 ): Promise<PasswordAuthResult> {
   const normalized = normalizeLoginInput(input);
@@ -207,11 +210,11 @@ export async function logoutPasswordSession(request: Request, options: PasswordA
   };
 }
 
-function normalizeRegistrationInput(input: { email?: unknown; password?: unknown; displayName?: unknown }) {
-  const email = normalizeEmail(input.email);
+function normalizeRegistrationInput(input: { email?: unknown; account?: unknown; password?: unknown; displayName?: unknown }) {
+  const email = normalizeAccount(input.account ?? input.email);
   const password = normalizePassword(input.password);
   if (!email || !password) {
-    throw new PasswordAuthError("请输入有效的邮箱和密码。", 400);
+    throw new PasswordAuthError("请输入有效的账号和密码。", 400);
   }
   return {
     email,
@@ -220,11 +223,11 @@ function normalizeRegistrationInput(input: { email?: unknown; password?: unknown
   };
 }
 
-function normalizeLoginInput(input: { email?: unknown; password?: unknown }) {
-  const email = normalizeEmail(input.email);
+function normalizeLoginInput(input: { email?: unknown; account?: unknown; password?: unknown }) {
+  const email = normalizeAccount(input.account ?? input.email);
   const password = normalizePassword(input.password);
   if (!email || !password) {
-    throw new PasswordAuthError("请输入有效的邮箱和密码。", 400);
+    throw new PasswordAuthError("请输入有效的账号和密码。", 400);
   }
   return { email, password };
 }
@@ -232,13 +235,15 @@ function normalizeLoginInput(input: { email?: unknown; password?: unknown }) {
 function normalizeEmail(value: unknown) {
   if (typeof value !== "string") return null;
   const email = value.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/^[A-Za-z0-9_]{3,64}$/.test(email)) return null;
   return email;
 }
 
+const normalizeAccount = normalizeEmail;
+
 function normalizePassword(value: unknown) {
   if (typeof value !== "string") return null;
-  if (value.length < 12 || value.length > 256) return null;
+  if (value.length < MIN_PASSWORD_LENGTH || value.length > MAX_PASSWORD_LENGTH) return null;
   return value;
 }
 

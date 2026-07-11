@@ -25,9 +25,10 @@ test("Workbench controller creates a project before sending the first prompt whe
   assert.match(sendPromptSource, /let targetProjectId = activeProjectId;/);
   assert.match(sendPromptSource, /dataSource\.createProject\(\)/);
   assert.match(sendPromptSource, /const sendOptions: WorkbenchSendMessageOptions = \{/);
-  assert.match(sendPromptSource, /const messageSignature = buildClientMessageSignature\(targetProjectId, body, reference, confirmationActionId\)/);
+  assert.match(sendPromptSource, /const messageSignature = buildClientMessageSignature\(targetProjectId, body, reference, confirmationActionId, xiaokuResponseStyle\)/);
   assert.match(sendPromptSource, /idempotencyKey: getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
   assert.match(sendPromptSource, /confirmedActionId: confirmationActionId/);
+  assert.match(sendPromptSource, /responseStyle: xiaokuResponseStyle/);
   assert.match(sendPromptSource, /dataSource\.sendMessage\(targetProjectId, body, reference, sendOptions\)/);
 });
 

@@ -123,6 +123,12 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
           .then((snapshot) => mergeTurnAssistantMetadata(snapshot, turn as MessageTurnResponse)),
       );
     },
+    setMessageReaction(projectId, messageId, value) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/messages/${messageId}/reaction`, {
+        method: "POST",
+        body: JSON.stringify({ value }),
+      }).then((result) => normalizeSnapshot((result as { snapshot: unknown }).snapshot));
+    },
     approveArtifact(projectId, artifactKey) {
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/approve`, { method: "POST" }).then(() =>
         request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot),
@@ -168,6 +174,7 @@ function messagePostBody(body: string, reference: string | null, options?: Workb
     artifactRefs: reference ? [reference] : [],
     ...(confirmedActionId ? { confirmedActionId } : {}),
     ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+    ...(options?.responseStyle ? { responseStyle: options.responseStyle } : {}),
   };
 }
 
@@ -388,6 +395,12 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       );
       current.activeArtifactKey = preferredActiveArtifactKey(current.artifacts, current.activeArtifactKey);
       touchProject(projectId, "等待确认");
+      return snapshot(projectId);
+    },
+    async setMessageReaction(projectId, messageId, value) {
+      const current = ensureSnapshot(projectId);
+      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
+      current.messages = current.messages.map((message) => message.id === messageId ? { ...message, ...(value ? { reaction: value } : { reaction: undefined }) } : message);
       return snapshot(projectId);
     },
     async approveArtifact(projectId, artifactKey) {

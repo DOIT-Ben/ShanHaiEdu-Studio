@@ -73,7 +73,8 @@ export async function parseFeedbackMultipart(request: Request): Promise<{
   });
   parser.on("file", (name, stream, info) => {
     const index = fileIndex++;
-    if (name !== "images") {
+    const kind = name === "expectedImages" ? "expected" : "issue";
+    if (name !== "images" && name !== "issueImages" && name !== "expectedImages") {
       parseError ??= new FeedbackHttpError(400, "Unexpected feedback file field.");
       stream.resume();
       return;
@@ -98,6 +99,7 @@ export async function parseFeedbackMultipart(request: Request): Promise<{
           bytes: Buffer.concat(chunks, fileBytes),
           mimeType: info.mimeType,
           fileName: info.filename,
+          kind,
         };
       }
     });
@@ -267,6 +269,7 @@ function toSafeFeedbackRecord(record: FeedbackRecordEntity, includeDownloadUrls:
     submittedAt: record.submittedAt?.toISOString() ?? null,
     attachments: record.attachments.map((attachment) => ({
       id: attachment.id,
+      kind: attachment.kind,
       mimeType: attachment.mimeType,
       byteSize: attachment.byteSize,
       width: attachment.width,

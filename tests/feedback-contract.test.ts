@@ -179,6 +179,7 @@ describe("feedback image contract", () => {
     const attachment = { bytes: png, mimeType: "image/png", fileName: "screen.png" };
 
     await expect(validateFeedbackAttachments(Array.from({ length: 6 }, () => attachment))).rejects.toThrow(/5/);
+    await expect(validateFeedbackAttachments([{ ...attachment, kind: "other" as never }])).rejects.toThrow(/分类/);
     await expect(validateFeedbackAttachments([
       { ...attachment, bytes: Buffer.alloc(10 * 1024 * 1024 + 1) },
     ])).rejects.toThrow(/10 MiB/);

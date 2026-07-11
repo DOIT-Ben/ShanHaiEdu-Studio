@@ -156,6 +156,10 @@ export function resolveAuthMode(): AuthMode {
   throw new AuthConfigurationError("SHANHAI_AUTH_MODE is missing or invalid.");
 }
 
+export function isPublicRegistrationEnabled(): boolean {
+  return process.env.SHANHAI_PUBLIC_REGISTRATION_ENABLED === "1" && process.env.NODE_ENV !== "production";
+}
+
 export class AuthConfigurationError extends Error {
   constructor(message: string) {
     super(message);

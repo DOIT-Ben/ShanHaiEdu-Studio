@@ -3,8 +3,8 @@
 import { BookOpen, FileText, Image, PackageCheck, Presentation, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
+import { InteractiveListRow } from "@/components/ui/interactive-list-row";
 
 const iconByTitle = {
   教材证据包: BookOpen,
@@ -44,26 +44,17 @@ export function ArtifactNodeCard({
 
   if (variant === "drawer") {
     return (
-      <button
-        type="button"
+      <InteractiveListRow
         aria-label={`${item.title}，${meta.label}`}
         onClick={() => onOpen(item)}
-        className={cn(
-          "w-full rounded-md px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#eef8f5]",
-          active && "bg-[#eef8f5] shadow-[inset_0_0_0_1px_rgba(43,112,97,0.12)]",
-        )}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)} />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{item.title}</div>
-              <div className={cn("mt-0.5 line-clamp-1 text-xs text-muted-foreground", !active && "hidden")}>{item.summary}</div>
-            </div>
-          </div>
-          {active && <Badge tone={meta.tone}>{meta.label}</Badge>}
-        </div>
-      </button>
+        selected={active}
+        leading={<span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#d7ebe5] bg-white text-muted-foreground"><Icon className="h-4 w-4" /></span>}
+        title={item.title}
+        subtitle={item.summary}
+        meta={meta.label}
+        showArrow
+        compact
+      />
     );
   }
 

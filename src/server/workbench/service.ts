@@ -24,6 +24,7 @@ import type {
   ProjectSnapshot,
   RegenerateArtifactInput,
   SaveArtifactInput,
+  SetMessageReactionInput,
   StartAgentRunInput,
   WorkflowNodeRecord,
 } from "./types";
@@ -76,6 +77,18 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       await ensureProjectAccess(projectId, "write");
       const message = await repository.updateMessageMetadata(projectId, messageId, metadata);
       return mapMessage(message);
+    },
+
+    async setMessageReaction(projectId: string, input: SetMessageReactionInput) {
+      await ensureProjectAccess(projectId, "write");
+      if (!actor?.userId) throw new Error("A signed-in teacher is required.");
+      const reaction = await repository.setMessageReaction({
+        projectId,
+        messageId: input.messageId,
+        createdByUserId: actor.userId,
+        value: input.value,
+      });
+      return reaction ? { messageId: reaction.messageId, value: reaction.value as "helpful" | "unhelpful" } : { messageId: input.messageId, value: null };
     },
 
     async saveArtifact(projectId: string, input: SaveArtifactInput): Promise<ArtifactRecord> {
@@ -210,7 +223,7 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     async getMessages(projectId: string): Promise<ConversationMessageRecord[]> {
       await ensureProjectAccess(projectId);
       const messages = await repository.getMessages(projectId);
-      return messages.map(mapMessage);
+      return messages.map((message) => mapMessage(message));
     },
 
     async getArtifacts(projectId: string): Promise<ArtifactRecord[]> {
@@ -227,18 +240,22 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
 
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
       const project = await ensureProjectAccess(projectId);
-      const [messages, nodes, artifacts, agentRuns, generationJobs, turnJobs] = await Promise.all([
+      const [messages, nodes, artifacts, agentRuns, generationJobs, turnJobs, reactions] = await Promise.all([
         repository.getMessages(projectId),
         repository.getNodes(projectId),
         repository.getArtifacts(projectId),
         repository.getAgentRuns(projectId),
         repository.getGenerationJobs(projectId),
         repository.getConversationTurnJobs(projectId),
+        actor?.userId && typeof repository.getMessageReactions === "function"
+          ? repository.getMessageReactions(projectId, actor.userId)
+          : Promise.resolve([]),
       ]);
+      const reactionsByMessageId = new Map(reactions.map((reaction) => [reaction.messageId, reaction.value]));
 
       return {
         project: mapProject(project),
-        messages: messages.map(mapMessage),
+        messages: messages.map((message) => mapMessage(message, reactionsByMessageId.get(message.id))),
         nodes: nodes.map(mapNode),
         artifacts: artifacts.map(mapArtifact),
         agentRuns: agentRuns.map(mapAgentRun),
@@ -274,7 +291,7 @@ function mapProject(project: Project): ProjectRecord {
   };
 }
 
-function mapMessage(message: ConversationMessage): ConversationMessageRecord {
+function mapMessage(message: ConversationMessage, reaction?: string): ConversationMessageRecord {
   return {
     id: message.id,
     projectId: message.projectId,
@@ -282,6 +299,7 @@ function mapMessage(message: ConversationMessage): ConversationMessageRecord {
     content: message.content,
     artifactRefs: parseJsonArray(message.artifactRefsJson),
     metadata: parseJsonObject(message.metadataJson ?? "{}"),
+    ...(reaction === "helpful" || reaction === "unhelpful" ? { reaction } : {}),
     createdAt: message.createdAt.toISOString(),
   };
 }

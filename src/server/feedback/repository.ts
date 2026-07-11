@@ -2,12 +2,14 @@ import type { WorkbenchActor } from "@/server/auth/actor";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
 import type { FeedbackCategory, FeedbackOrigin, FeedbackSeverity } from "./contract";
+import type { FeedbackAttachmentKind } from "@/lib/feedback-contracts";
 
 export type FeedbackStatus = "processing" | "submitted" | "failed";
 
 export type FeedbackAttachmentEntity = {
   id: string;
   feedbackId: string;
+  kind: FeedbackAttachmentKind;
   originalName: string;
   mimeType: string;
   extension: string;
@@ -366,5 +368,5 @@ function toEntity(record: Record<string, any>): FeedbackRecordEntity {
 }
 
 function toAttachmentEntity(attachment: Record<string, any>): FeedbackAttachmentEntity {
-  return attachment as FeedbackAttachmentEntity;
+  return { ...attachment, kind: attachment.kind === "expected" ? "expected" : "issue" } as FeedbackAttachmentEntity;
 }

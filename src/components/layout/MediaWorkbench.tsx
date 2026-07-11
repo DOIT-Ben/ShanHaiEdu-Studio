@@ -6,11 +6,14 @@ import { PasswordAuthGate } from "@/components/auth/PasswordAuthGate";
 import { ArtifactDetailSheet } from "@/components/artifacts/ArtifactDetailSheet";
 import { ArtifactRail } from "@/components/artifacts/ArtifactRail";
 import { ArtifactSidePanel } from "@/components/artifacts/ArtifactSidePanel";
+import type { ArtifactCapabilityGroupId } from "@/components/artifacts/artifact-capability-groups";
 import { AdminUserManagementDialog } from "@/components/admin/AdminUserManagementDialog";
 import { ProjectMembersDialog } from "@/components/admin/ProjectMembersDialog";
 import { ConversationWorkbench } from "@/components/conversation/ConversationWorkbench";
+import { XiaoKuSettingsDialog } from "@/components/conversation/XiaoKuSettingsDialog";
 import { FeedbackDialog } from "@/components/feedback/FeedbackDialog";
 import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
+import { AuthenticatedWelcome } from "@/components/layout/AuthenticatedWelcome";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,6 +36,7 @@ export function MediaWorkbench() {
       <PasswordAuthGate
         errorMessage={auth.errorMessage}
         submitting={auth.submitting}
+        registrationEnabled={auth.registrationEnabled}
         onLogin={auth.login}
         onRegister={auth.register}
       />
@@ -48,20 +52,40 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [xiaokuSettingsOpen, setXiaoKuSettingsOpen] = useState(false);
+  const [artifactDrawerGroup, setArtifactDrawerGroup] = useState<"all" | ArtifactCapabilityGroupId>("all");
+  const [detailFromArtifactDrawer, setDetailFromArtifactDrawer] = useState(false);
 
   function selectProjectFromSheet(projectId: string) {
     controller.selectProject(projectId);
     setProjectSheetOpen(false);
   }
 
-  function createProjectFromSheet() {
-    controller.createProject();
-    setProjectSheetOpen(false);
+  async function createProjectFromSheet() {
+    const created = await controller.createProject();
+    if (created) setProjectSheetOpen(false);
   }
 
   function openDetailFromRail(item: Parameters<typeof controller.openDetail>[0]) {
+    setDetailFromArtifactDrawer(true);
     controller.openDetail(item);
     controller.setRailOpen(false);
+  }
+
+  function openDetailFromReading(item: Parameters<typeof controller.openDetail>[0]) {
+    setDetailFromArtifactDrawer(false);
+    controller.openDetail(item);
+  }
+
+  function returnToArtifactDrawer() {
+    controller.setDetailOpen(false);
+    controller.setRailOpen(true);
+  }
+
+  function openArtifactDrawer(group: "all" | ArtifactCapabilityGroupId = "all") {
+    setArtifactDrawerGroup(group);
+    controller.setSidePanelOpen(false);
+    controller.setRailOpen(true);
   }
 
   return (
@@ -81,8 +105,9 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onCreateProject={controller.createProject}
               currentUser={currentUser}
               onOpenFeedback={feedbackController.openFeedback}
-              onOpenUserManagement={() => setUserManagementOpen(true)}
-              onLogout={onLogout}
+               onOpenUserManagement={() => setUserManagementOpen(true)}
+                onLogout={onLogout}
+               onOpenXiaoKuSettings={() => setXiaoKuSettingsOpen(true)}
             />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
@@ -104,12 +129,14 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
                   />
                 </SheetContent>
               </Sheet>
-              <Button variant="secondary" size="sm" onClick={() => controller.setRailOpen(true)}>
-                <ListTree className="h-4 w-4" />
-                产物
-              </Button>
+              {controller.activeProject && (
+                <Button variant="secondary" size="sm" onClick={() => openArtifactDrawer("all")}>
+                  <ListTree className="h-4 w-4" />
+                  产物
+                </Button>
+              )}
             </div>
-            <ConversationWorkbench
+            {controller.activeProject ? <ConversationWorkbench
               project={controller.activeProject}
               currentUser={currentUser}
               messages={controller.messages}
@@ -129,50 +156,59 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               onAttachFile={controller.attachComposerFile}
               onAttachFileError={controller.flashComposerNotice}
               onSend={controller.sendPrompt}
-              onQuickReplySelect={controller.selectQuickReply}
+               onQuickReplySelect={controller.selectQuickReply}
+               onSetMessageReaction={controller.setMessageReaction}
               onRetry={controller.retryActiveProject}
-              onOpenArtifacts={() => controller.setRailOpen(true)}
+              onOpenArtifacts={() => openArtifactDrawer("all")}
               onOpenMembers={() => setMembersOpen(true)}
               onOpenFeedback={feedbackController.openFeedback}
               onOpenUserManagement={() => setUserManagementOpen(true)}
-              onLogout={onLogout}
-            />
+               onLogout={onLogout}
+               xiaokuResponseStyle={controller.xiaokuResponseStyle}
+               onOpenXiaoKuSettings={() => setXiaoKuSettingsOpen(true)}
+             /> : (
+              <AuthenticatedWelcome
+                currentUser={currentUser}
+                projects={controller.projectView === "active" ? controller.projects : []}
+                loadState={controller.loadState}
+                errorMessage={controller.errorMessage}
+                onCreateProject={controller.createProject}
+                onSelectProject={controller.selectProject}
+              />
+            )}
           </div>
-          <ArtifactSidePanel
+          {controller.activeProject && <ArtifactSidePanel
             projectId={controller.activeProjectId}
             item={controller.sidePanelItem}
             open={controller.sidePanelOpen}
             onClose={() => controller.setSidePanelOpen(false)}
             onCopy={controller.copyArtifact}
             onUseAsInput={controller.useAsInput}
-            onOpenDetail={controller.openDetail}
-          />
-          <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
+            onOpenDetail={openDetailFromReading}
+          />}
+          {controller.activeProject && <div className="hidden w-16 shrink-0 lg:block 2xl:w-20">
             <ArtifactRail
-              projectId={controller.activeProjectId}
               items={controller.artifacts}
               activeKey={controller.activeArtifact?.key ?? ""}
-              previewDisabled={controller.sidePanelOpen}
               onCopy={controller.copyArtifact}
               onUseAsInput={controller.useAsInput}
               onOpen={controller.openSidePanel}
-              onRegenerate={controller.regenerateArtifact}
+              onOpenGroup={openArtifactDrawer}
             />
-          </div>
+          </div>}
         </div>
       </div>
       <Sheet open={controller.railOpen} onOpenChange={controller.setRailOpen}>
         <SheetContent className="max-w-[390px]">
-          <SheetTitle className="sr-only">线性产物</SheetTitle>
+          <SheetTitle className="sr-only">备课成果</SheetTitle>
           <ArtifactRail
-            projectId={controller.activeProjectId}
             variant="drawer"
+            initialGroup={artifactDrawerGroup}
             items={controller.artifacts}
             activeKey={controller.activeArtifact?.key ?? ""}
             onCopy={controller.copyArtifact}
             onUseAsInput={controller.useAsInput}
             onOpen={openDetailFromRail}
-            onRegenerate={controller.regenerateArtifact}
           />
         </SheetContent>
       </Sheet>
@@ -180,7 +216,11 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         projectId={controller.activeProjectId}
         item={controller.detailItem}
         open={controller.detailOpen}
-        onOpenChange={controller.setDetailOpen}
+        onOpenChange={(open) => {
+          controller.setDetailOpen(open);
+          if (!open) setDetailFromArtifactDrawer(false);
+        }}
+        onBack={detailFromArtifactDrawer ? returnToArtifactDrawer : undefined}
         onCopy={controller.copyArtifact}
         onUseAsInput={controller.useAsInput}
         onConfirm={controller.confirmArtifact}
@@ -189,6 +229,12 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         realAssetGenerationKey={controller.realAssetGenerationKey}
       />
       <FeedbackDialog controller={feedbackController} />
+      <XiaoKuSettingsDialog
+        open={xiaokuSettingsOpen}
+        value={controller.xiaokuResponseStyle}
+        onOpenChange={setXiaoKuSettingsOpen}
+        onChange={controller.setXiaoKuResponseStyle}
+      />
       <AdminUserManagementDialog open={userManagementOpen} currentUserId={currentUser?.id} onOpenChange={setUserManagementOpen} />
       <ProjectMembersDialog open={membersOpen} projectId={controller.activeProjectId} currentUser={currentUser} onOpenChange={setMembersOpen} />
     </TooltipProvider>

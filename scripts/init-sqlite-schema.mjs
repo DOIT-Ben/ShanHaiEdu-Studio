@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS "FeedbackRecord" (
 CREATE TABLE IF NOT EXISTS "FeedbackAttachment" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "feedbackId" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'issue',
   "originalName" TEXT NOT NULL,
   "mimeType" TEXT NOT NULL,
   "extension" TEXT NOT NULL,
@@ -231,6 +232,19 @@ CREATE TABLE IF NOT EXISTS "FeedbackAttachment" (
   "storageKey" TEXT NOT NULL,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "FeedbackAttachment_feedbackId_fkey" FOREIGN KEY ("feedbackId") REFERENCES "FeedbackRecord" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "MessageReaction" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "messageId" TEXT NOT NULL,
+  "createdByUserId" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  CONSTRAINT "MessageReaction_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "MessageReaction_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "ConversationMessage" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "MessageReaction_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "LocalUser" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 `);
@@ -247,6 +261,7 @@ ensureColumn(db, "LocalUser", "disabledReason", 'ALTER TABLE "LocalUser" ADD COL
 ensureColumn(db, "LocalUser", "lastLoginAt", 'ALTER TABLE "LocalUser" ADD COLUMN "lastLoginAt" DATETIME');
 ensureColumn(db, "LocalUser", "passwordResetAt", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordResetAt" DATETIME');
 ensureColumn(db, "FeedbackRecord", "origin", 'ALTER TABLE "FeedbackRecord" ADD COLUMN "origin" TEXT NOT NULL DEFAULT \'global\'');
+ensureColumn(db, "FeedbackAttachment", "kind", 'ALTER TABLE "FeedbackAttachment" ADD COLUMN "kind" TEXT NOT NULL DEFAULT \'issue\'');
 assertNoFeedbackIdempotencyConflicts(db);
 db.exec(`
 CREATE INDEX IF NOT EXISTS "ConversationMessage_projectId_createdAt_idx" ON "ConversationMessage"("projectId", "createdAt");
@@ -282,6 +297,8 @@ CREATE INDEX IF NOT EXISTS "FeedbackRecord_createdByUserId_createdAt_idx" ON "Fe
 CREATE INDEX IF NOT EXISTS "FeedbackRecord_projectId_createdAt_idx" ON "FeedbackRecord"("projectId", "createdAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "FeedbackAttachment_storageKey_key" ON "FeedbackAttachment"("storageKey");
 CREATE INDEX IF NOT EXISTS "FeedbackAttachment_feedbackId_createdAt_idx" ON "FeedbackAttachment"("feedbackId", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "MessageReaction_messageId_createdByUserId_key" ON "MessageReaction"("messageId", "createdByUserId");
+CREATE INDEX IF NOT EXISTS "MessageReaction_projectId_createdByUserId_updatedAt_idx" ON "MessageReaction"("projectId", "createdByUserId", "updatedAt");
 `);
 db.close();
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, MessageSquareText, UserRound, Users } from "lucide-react";
+import { LogOut, MessageSquareText, SlidersHorizontal, UserRound, Users } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MenuItem } from "@/components/ui/menu-item";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { cn } from "@/lib/utils";
@@ -14,11 +15,12 @@ type ProfileMenuProps = {
   onOpenFeedback: OpenFeedback;
   onOpenUserManagement?: () => void;
   onLogout?: () => Promise<void>;
+  onOpenXiaoKuSettings?: () => void;
   className?: string;
   align?: "start" | "end";
 };
 
-export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFeedback, onOpenUserManagement, onLogout, className, align = "start" }: ProfileMenuProps) {
+export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFeedback, onOpenUserManagement, onLogout, onOpenXiaoKuSettings, className, align = "start" }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const displayName = currentUser?.displayName ?? "教师账户";
 
@@ -60,34 +62,40 @@ export function ProfileMenu({ currentUser, projectId, compact = false, onOpenFee
         <div className="border-b px-2 py-2">
           <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
         </div>
-        <button
-          type="button"
+        <MenuItem
           data-feedback-origin="profile"
           onClick={openProfileFeedback}
-          className="mt-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+          className="mt-1"
+          icon={<MessageSquareText className="h-4 w-4" />}
         >
-          <MessageSquareText className="h-4 w-4 text-muted-foreground" />
           反馈
-        </button>
-        {currentUser?.role === "admin" && onOpenUserManagement && (
-          <button
-            type="button"
-            onClick={openUserManagement}
-            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+        </MenuItem>
+        {onOpenXiaoKuSettings && (
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onOpenXiaoKuSettings();
+            }}
+            icon={<SlidersHorizontal className="h-4 w-4" />}
           >
-            <Users className="h-4 w-4 text-muted-foreground" />
+            小酷偏好
+          </MenuItem>
+        )}
+        {currentUser?.role === "admin" && onOpenUserManagement && (
+          <MenuItem
+            onClick={openUserManagement}
+            icon={<Users className="h-4 w-4" />}
+          >
             用户管理
-          </button>
+          </MenuItem>
         )}
         {onLogout && (
-          <button
-            type="button"
+          <MenuItem
             onClick={logout}
-            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-[#8fcbbb]/35"
+            icon={<LogOut className="h-4 w-4" />}
           >
-            <LogOut className="h-4 w-4 text-muted-foreground" />
             退出登录
-          </button>
+          </MenuItem>
         )}
       </PopoverContent>
     </Popover>

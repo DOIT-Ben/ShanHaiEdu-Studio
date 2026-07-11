@@ -40,10 +40,18 @@ export async function runBootstrapAdmin(options = {}) {
 
 export async function provisionSqlitePasswordUser(options) {
   const normalized = normalizeProvisioningInput(options);
-  const existing = options.db.prepare('SELECT "id", "authMode", "role" FROM "LocalUser" WHERE "email" = ?').get(normalized.email);
+    const existing = options.db.prepare('SELECT "id", "authMode", "role", "passwordHash" FROM "LocalUser" WHERE "email" = ?').get(normalized.email);
   if (existing) {
-    if (existing.authMode === "password" && existing.role === normalized.role) {
+    if (existing.authMode === "password" && existing.role === normalized.role && existing.passwordHash?.trim()) {
       return { userId: existing.id, status: "already_exists" };
+    }
+    if (existing.authMode === "password" && existing.role === normalized.role) {
+      const passwordHash = await (options.hashPassword ?? hashInitialPassword)(normalized.initialPassword);
+      const now = (options.now?.() ?? new Date()).toISOString();
+      options.db.transaction(() => {
+        options.db.prepare('UPDATE "LocalUser" SET "passwordHash" = ?, "updatedAt" = ? WHERE "id" = ?').run(passwordHash, now, existing.id);
+      })();
+      return { userId: existing.id, status: "activated" };
     }
     if (existing.authMode === "pending" && existing.role === "teacher" && normalized.role === "teacher") {
       return activatePendingSqliteUser({ ...options, normalized, existing });
@@ -109,9 +117,9 @@ function normalizeProvisioningInput(options) {
   const email = typeof options.email === "string" ? options.email.trim().toLowerCase() : "";
   const displayName = typeof options.displayName === "string" ? options.displayName.trim().slice(0, 80) : "";
   const initialPassword = typeof options.initialPassword === "string" ? options.initialPassword : "";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("请配置有效的账号邮箱。");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/^[a-z0-9_]{3,64}$/.test(email)) throw new Error("请配置有效的账号。");
   if (!displayName) throw new Error("请配置用户名称。");
-  if (initialPassword.length < 12 || initialPassword.length > 256) throw new Error("初始密码长度必须为 12 到 256 个字符。");
+  if (initialPassword.length < 8 || initialPassword.length > 256) throw new Error("初始密码长度必须为 8 到 256 个字符。");
   if (options.role !== "admin" && options.role !== "teacher") throw new Error("用户角色无效。");
   return { email, displayName, initialPassword, role: options.role };
 }

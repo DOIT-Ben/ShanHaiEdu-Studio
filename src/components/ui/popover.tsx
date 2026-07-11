@@ -15,7 +15,7 @@ export function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}
-        className={cn("z-50 w-80 rounded-lg border bg-card p-3 text-card-foreground shadow-[0_12px_32px_rgba(0,0,0,0.08)] outline-none", className)}
+        className={cn("z-50 w-80 rounded-[var(--surface-radius)] border border-[var(--surface-border)] bg-card p-3 text-card-foreground shadow-[var(--shadow-popover)] outline-none", className)}
         {...props}
       />
     </PopoverPrimitive.Portal>

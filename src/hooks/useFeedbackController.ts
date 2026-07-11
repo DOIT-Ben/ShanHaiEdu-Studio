@@ -19,6 +19,7 @@ export type FeedbackDraftImage = {
   file: File;
   previewUrl: string;
   source: "selected" | "pasted";
+  kind: "issue" | "expected";
 };
 
 export type FeedbackDraftStatus = "draft" | "submitting" | "submitted" | "failed";
@@ -32,7 +33,9 @@ export function useFeedbackController() {
   const [open, setOpen] = useState(false);
   const [context, setContext] = useState<FeedbackOpenInput>({ origin: "global" });
   const [category, setCategoryState] = useState<FeedbackCategory | "">("");
+  const [title, setTitleState] = useState("");
   const [description, setDescriptionState] = useState("");
+  const [expectedEffect, setExpectedEffectState] = useState("");
   const [severity, setSeverityState] = useState<FeedbackSeverity | "">("");
   const [images, setImages] = useState<FeedbackDraftImage[]>([]);
   const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey);
@@ -67,7 +70,9 @@ export function useFeedbackController() {
     setImages([]);
     setContext(input);
     setCategoryState("");
+    setTitleState("");
     setDescriptionState("");
+    setExpectedEffectState("");
     setSeverityState("");
     setIdempotencyKey(createIdempotencyKey());
     setStatus("draft");
@@ -99,6 +104,18 @@ export function useFeedbackController() {
     beginPayloadMutation();
   }
 
+  function setTitle(value: string) {
+    if (inFlightRef.current || value === title) return;
+    setTitleState(value);
+    beginPayloadMutation();
+  }
+
+  function setExpectedEffect(value: string) {
+    if (inFlightRef.current || value === expectedEffect) return;
+    setExpectedEffectState(value);
+    beginPayloadMutation();
+  }
+
   function appendDescriptionChip(value: string) {
     if (inFlightRef.current) return;
     if (description.includes(value)) return;
@@ -113,7 +130,7 @@ export function useFeedbackController() {
     beginPayloadMutation();
   }
 
-  function addImages(files: File[], source: FeedbackDraftImage["source"]) {
+  function addImages(files: File[], source: FeedbackDraftImage["source"], kind: FeedbackDraftImage["kind"] = "issue") {
     if (inFlightRef.current) return;
     if (files.length === 0) return;
     const currentImages = imagesRef.current;
@@ -143,6 +160,7 @@ export function useFeedbackController() {
       file,
       previewUrl: URL.createObjectURL(file),
       source,
+      kind,
     }));
     const updatedImages = [...currentImages, ...nextImages];
     imagesRef.current = updatedImages;
@@ -167,9 +185,11 @@ export function useFeedbackController() {
       setValidationError("请先选择反馈类型。");
       return;
     }
+    const normalizedTitle = title.trim();
     const normalizedDescription = description.trim();
-    if (!normalizedDescription) {
-      setValidationError("请写下你遇到的情况或期待的改进。");
+    const normalizedExpectedEffect = expectedEffect.trim();
+    if (!normalizedTitle || !normalizedDescription) {
+      setValidationError("请填写反馈标题和反馈内容。");
       return;
     }
 
@@ -182,7 +202,7 @@ export function useFeedbackController() {
       const response = await submitFeedback({
         metadata: {
           category,
-          description: normalizedDescription,
+          description: formatFeedbackTemplate(normalizedTitle, normalizedDescription, normalizedExpectedEffect),
           ...(severity ? { severity } : {}),
           idempotencyKey,
           origin: context.origin,
@@ -195,7 +215,7 @@ export function useFeedbackController() {
             viewport: { width: window.innerWidth, height: window.innerHeight },
           },
         },
-        images: imagesRef.current.map((image) => image.file),
+        attachments: imagesRef.current.map((image) => ({ file: image.file, kind: image.kind })),
       });
       if (requestGeneration !== requestGenerationRef.current) return;
       setReceipt(response);
@@ -222,7 +242,9 @@ export function useFeedbackController() {
     open,
     context,
     category,
+    title,
     description,
+    expectedEffect,
     severity,
     images,
     idempotencyKey,
@@ -233,13 +255,23 @@ export function useFeedbackController() {
     openFeedback,
     closeFeedback,
     setCategory,
+    setTitle,
     setDescription,
+    setExpectedEffect,
     appendDescriptionChip,
     setSeverity,
     addImages,
     removeImage,
     submit,
   };
+}
+
+function formatFeedbackTemplate(title: string, description: string, expectedEffect: string) {
+  return [
+    `反馈标题：${title}`,
+    `反馈内容：\n${description}`,
+    expectedEffect ? `期望效果：\n${expectedEffect}` : null,
+  ].filter(Boolean).join("\n\n");
 }
 
 function revokeImages(images: FeedbackDraftImage[]) {

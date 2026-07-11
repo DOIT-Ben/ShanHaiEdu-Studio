@@ -65,7 +65,7 @@ test("password auth API routes register, login, read current user, and logout", 
 
   const anonymous = await meRoute.GET(new Request("https://localhost/api/auth/me"));
   assert.equal(anonymous.status, 200);
-  assert.deepEqual(await anonymous.json(), { enabled: true, authMode: "password", authenticated: false, user: null });
+  assert.deepEqual(await anonymous.json(), { enabled: true, authMode: "password", registrationEnabled: true, authenticated: false, user: null });
 
   const current = await meRoute.GET(
     new Request("https://localhost/api/auth/me", {
@@ -76,6 +76,7 @@ test("password auth API routes register, login, read current user, and logout", 
   assert.deepEqual(await current.json(), {
     enabled: true,
     authMode: "password",
+    registrationEnabled: true,
     authenticated: true,
     user: userSummary("user_1", "teacher@example.test", "王老师"),
   });
@@ -118,7 +119,7 @@ test("password auth API routes return generic login failures and invalid input e
 
   const invalid = await registerRoute.POST(jsonRequest("/api/auth/register", { email: "", password: "" }));
   assert.equal(invalid.status, 400);
-  assert.deepEqual(await invalid.json(), { error: "请输入有效的邮箱和密码。" });
+  assert.deepEqual(await invalid.json(), { error: "请输入有效的账号和密码。" });
 
   const duplicate = await registerRoute.POST(jsonRequest("/api/auth/register", {
     email: "teacher@example.test",
@@ -174,6 +175,9 @@ function loadRoute(sourcePath, auth) {
     "@/server/auth/session": {
       resolveAuthMode() {
         return "password";
+      },
+      isPublicRegistrationEnabled() {
+        return true;
       },
     },
     "@/server/auth/rate-limit": {

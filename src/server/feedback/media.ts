@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
+import type { FeedbackAttachmentKind } from "@/lib/feedback-contracts";
 
 export const MAX_FEEDBACK_ATTACHMENTS = 5;
 export const MAX_FEEDBACK_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -12,9 +13,11 @@ export type FeedbackAttachmentInput = {
   bytes: Buffer;
   mimeType: string;
   fileName: string;
+  kind?: FeedbackAttachmentKind;
 };
 
-export type ValidatedFeedbackAttachment = FeedbackAttachmentInput & {
+export type ValidatedFeedbackAttachment = Omit<FeedbackAttachmentInput, "kind"> & {
+  kind: FeedbackAttachmentKind;
   format: "png" | "jpeg" | "webp";
   extension: "png" | "jpg" | "webp";
   width: number;
@@ -90,6 +93,9 @@ export async function validateFeedbackAttachments(inputs: FeedbackAttachmentInpu
     throw new Error("全部图片合计不能超过 25 MiB。");
   }
   for (const input of inputs) {
+    if (input.kind !== undefined && input.kind !== "issue" && input.kind !== "expected") {
+      throw new Error("反馈图片分类无效。");
+    }
     if (input.bytes.length === 0) throw new Error("图片内容不能为空。");
     if (input.bytes.length > MAX_FEEDBACK_ATTACHMENT_BYTES) {
       throw new Error("单张图片不能超过 10 MiB。");
@@ -160,6 +166,7 @@ async function validateFeedbackAttachment(input: FeedbackAttachmentInput): Promi
 
       return {
         ...input,
+        kind: input.kind ?? "issue",
         mimeType: expected.mimeType,
         format: metadata.format,
         extension: expected.extension,

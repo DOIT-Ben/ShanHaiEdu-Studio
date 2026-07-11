@@ -32,7 +32,7 @@ test("message route lets the model-first agent decide before generating artifact
   assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
   assert.match(serviceSource, /saveArtifact/);
 
-  const agentDecisionStart = serviceSource.indexOf("const agentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond");
+  const agentDecisionStart = serviceSource.indexOf("const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond");
   assert.notEqual(agentDecisionStart, -1);
   const agentDecisionBranch = serviceSource.slice(agentDecisionStart);
   assert.match(agentDecisionBranch, /if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/);
@@ -102,13 +102,14 @@ test("chat transcript wraps long continuous teacher-facing text on narrow screen
   assert.match(source, /break-words whitespace-pre-wrap text-xs/);
 });
 
-test("assistant feedback actions open the real feedback collection with message context", () => {
+test("assistant feedback actions persist a message-specific reaction", () => {
   const source = readOptionalSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(source, /onOpenFeedback/);
-  assert.match(source, /origin: "message_helpful"/);
-  assert.match(source, /origin: "message_unhelpful"/);
-  assert.match(source, /projectId, messageId/);
+  assert.match(source, /onSetReaction/);
+  assert.match(source, /reaction === "helpful"/);
+  assert.match(source, /reaction === "unhelpful"/);
+  assert.match(source, /onSetReaction\(messageId, previousReaction === value \? null : value\)/);
   assert.doesNotMatch(source, /反馈入口暂未开放/);
 
   for (const forbidden of ["backend", "API", "debug", "provider", "schema", "manifest", "node_id", "storage"]) {

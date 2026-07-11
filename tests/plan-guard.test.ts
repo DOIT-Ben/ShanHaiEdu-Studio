@@ -73,10 +73,10 @@ describe("PlanGuard", () => {
     expect(result.reason.length).toBeGreaterThan(0);
   });
 
-  it("requires confirmation for internal capabilities marked as confirmation-required", () => {
+  it("allows safe internal capabilities without HumanGate", () => {
     const result = evaluateToolPlan({ capabilityId: "requirement_spec" });
 
-    expect(result.status).toBe("needs_confirmation");
+    expect(result.status).toBe("allowed");
     expect(result.reason.length).toBeGreaterThan(0);
   });
 

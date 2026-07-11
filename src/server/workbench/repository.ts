@@ -685,6 +685,31 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async getMessageReactions(projectId: string, createdByUserId: string) {
+      return client.messageReaction.findMany({
+        where: { projectId, createdByUserId },
+        orderBy: { updatedAt: "asc" },
+      });
+    },
+
+    async setMessageReaction(input: { projectId: string; messageId: string; createdByUserId: string; value: "helpful" | "unhelpful" | null }) {
+      return client.$transaction(async (tx) => {
+        const message = await tx.conversationMessage.findFirst({
+          where: { id: input.messageId, projectId: input.projectId, role: "assistant" },
+        });
+        if (!message) throw new Error(`ConversationMessage not found: ${input.messageId}`);
+        if (!input.value) {
+          await tx.messageReaction.deleteMany({ where: { messageId: input.messageId, createdByUserId: input.createdByUserId } });
+          return null;
+        }
+        return tx.messageReaction.upsert({
+          where: { messageId_createdByUserId: { messageId: input.messageId, createdByUserId: input.createdByUserId } },
+          update: { value: input.value, projectId: input.projectId },
+          create: { projectId: input.projectId, messageId: input.messageId, createdByUserId: input.createdByUserId, value: input.value },
+        });
+      });
+    },
+
     async getNodes(projectId: string) {
       return client.workflowNode.findMany({
         where: { projectId },

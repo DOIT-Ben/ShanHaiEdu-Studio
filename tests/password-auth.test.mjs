@@ -96,6 +96,17 @@ test("current password user resolves only active non-expired sessions", async ()
   assert.deepEqual(expired, { authenticated: false, user: null });
 });
 
+test("password auth accepts a case-insensitive safe account name", async () => {
+  const db = createFakeAuthDb();
+  const auth = loadPasswordAuthModule(db);
+  const passphrase = "M72 account passphrase 2026!";
+  const registered = await auth.registerPasswordUser({ account: "Teacher_01", password: passphrase }, serviceOptions(db));
+  assert.equal(registered.user.email, "teacher_01");
+  const loggedIn = await auth.loginPasswordUser({ account: "TEACHER_01", password: passphrase }, serviceOptions(db));
+  assert.equal(loggedIn.user.id, registered.user.id);
+  await assert.rejects(() => auth.loginPasswordUser({ account: "bad-name!", password: passphrase }, serviceOptions(db)), /有效的账号/);
+});
+
 test("disabled password users cannot log in or keep current sessions", async () => {
   const db = createFakeAuthDb();
   const auth = loadPasswordAuthModule(db);

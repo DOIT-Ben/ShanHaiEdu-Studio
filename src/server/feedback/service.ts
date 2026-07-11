@@ -252,6 +252,7 @@ function fingerprintValidated(metadata: ParsedFeedbackMetadata, attachments: Val
     origin: metadata.origin,
     clientContext: metadata.clientContext,
     attachments: attachments.map((attachment) => ({
+      kind: attachment.kind,
       sha256: attachment.sha256,
       mimeType: attachment.mimeType,
       bytes: attachment.byteSize,
@@ -269,6 +270,7 @@ function createAttachmentEntities(
   return validated.map((attachment): FeedbackAttachmentEntity => ({
     id: generateId(),
     feedbackId,
+    kind: attachment.kind,
     originalName: path.basename(attachment.fileName).slice(0, 255),
     mimeType: attachment.mimeType,
     extension: attachment.extension,

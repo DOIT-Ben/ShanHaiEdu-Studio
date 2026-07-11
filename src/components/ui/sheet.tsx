@@ -14,17 +14,17 @@ export function SheetContent({
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: "right" | "bottom" }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/10" />
+      <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-40 bg-foreground/10" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed z-50 flex flex-col border bg-card shadow-[0_12px_42px_rgba(0,0,0,0.10)] outline-none",
-          side === "right" && "inset-y-0 right-0 w-full max-w-[560px]",
-          side === "bottom" && "inset-x-0 bottom-0 max-h-[84vh] rounded-t-lg",
+          "fixed z-50 flex flex-col border border-[var(--surface-border)] bg-card shadow-[var(--shadow-dialog)] outline-none",
+          side === "right" && "sheet-content-right inset-y-0 right-0 w-full max-w-[520px]",
+          side === "bottom" && "inset-x-0 bottom-0 max-h-[84vh] rounded-t-[var(--surface-radius)]",
           className,
         )}
         {...props}
       >
-        <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+        <DialogPrimitive.Close aria-label="关闭" className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
           <X className="h-4 w-4" />
         </DialogPrimitive.Close>
         {children}

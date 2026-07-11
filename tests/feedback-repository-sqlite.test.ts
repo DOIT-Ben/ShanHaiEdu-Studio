@@ -62,10 +62,25 @@ describe("Prisma feedback retry and reconciliation CAS", () => {
           createdByUserId: "teacher-sqlite",
           createdAt: old,
           updatedAt: old,
+          attachments: {
+            create: {
+              id: "attachment-sqlite",
+              kind: "expected",
+              originalName: "reference.png",
+              mimeType: "image/png",
+              extension: "png",
+              byteSize: 10,
+              width: 2,
+              height: 2,
+              sha256: "hash",
+              storageKey: "attachment-storage-sqlite",
+            },
+          },
         },
       });
 
       const repository = createPrismaFeedbackRepository(client);
+      expect((await repository.getById("feedback-sqlite"))?.attachments[0].kind).toBe("expected");
       expect(await repository.retryFailed("feedback-sqlite", "retry-stage", retryAt)).toBe(true);
       expect(await repository.claimStaleProcessing({
         owner: "worker-1",

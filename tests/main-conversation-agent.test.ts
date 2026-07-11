@@ -10,7 +10,7 @@ describe("M54-B MainConversationAgent", () => {
     expect(turn.state).toBe("chatting");
     expect(turn.toolPlan).toBeUndefined();
     expect(turn.shouldRunToolNow).toBe(false);
-    expect(turn.assistantMessage.body).toContain("我在");
+    expect(turn.assistantMessage.body).toContain("小酷");
   });
 
   it("explores lesson ideas without generating artifacts", async () => {

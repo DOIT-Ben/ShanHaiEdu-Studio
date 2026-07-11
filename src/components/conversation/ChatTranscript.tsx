@@ -20,9 +20,10 @@ type ChatTranscriptProps = {
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string, actionId?: string) => void;
   onOpenFeedback?: OpenFeedback;
+  onSetMessageReaction?: (messageId: string, value: ChatMessage["reaction"] | null) => void | Promise<void>;
 };
 
-export function ChatTranscript({ messages, artifacts = [], projectId, projectBusy = false, executionFeedback = null, registerMessage, onQuickReplySelect, onOpenFeedback }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, artifacts = [], projectId, projectBusy = false, executionFeedback = null, registerMessage, onQuickReplySelect, onOpenFeedback, onSetMessageReaction }: ChatTranscriptProps) {
   return (
     <div className="space-y-7">
       {messages.map((message) => {
@@ -37,6 +38,7 @@ export function ChatTranscript({ messages, artifacts = [], projectId, projectBus
             registerMessage={registerMessage}
             onQuickReplySelect={onQuickReplySelect}
             onOpenFeedback={onOpenFeedback}
+            onSetMessageReaction={onSetMessageReaction}
           />
         ) : (
           <TeacherMessage key={message.id} message={message} registerMessage={registerMessage} />
@@ -86,6 +88,7 @@ function AssistantMessage({
   registerMessage,
   onQuickReplySelect,
   onOpenFeedback,
+  onSetMessageReaction,
 }: {
   message: ChatMessage;
   artifact: ArtifactItem | null;
@@ -93,6 +96,7 @@ function AssistantMessage({
   registerMessage?: (id: string, node: HTMLElement | null) => void;
   onQuickReplySelect?: (value: string, actionId?: string) => void;
   onOpenFeedback?: OpenFeedback;
+  onSetMessageReaction?: (messageId: string, value: ChatMessage["reaction"] | null) => void | Promise<void>;
 }) {
   const quickReplies = getQuickReplyChoices(message, artifact);
 
@@ -104,10 +108,10 @@ function AssistantMessage({
       className="group scroll-mt-24 flex justify-start"
     >
       <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[790px]">
-        <ShanHaiMark />
+        <XiaoKuMark />
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">ShanHaiEdu AI</span>
+            <span className="font-medium text-foreground">小酷</span>
             {message.timeLabel && <span>{message.timeLabel}</span>}
           </div>
           <div
@@ -130,6 +134,8 @@ function AssistantMessage({
             projectId={projectId}
             messageId={message.id}
             onOpenFeedback={onOpenFeedback}
+            reaction={message.reaction}
+            onSetReaction={onSetMessageReaction}
           />
         </div>
       </div>
@@ -274,20 +280,17 @@ function TeacherArtifactCard({ projectId, item }: { projectId: string; item: Art
 }
 
 function AssistantThinking({ label }: { label?: string }) {
-  return <GeneratingIndicator mark={<ShanHaiMark active />} label={label} />;
+  return <GeneratingIndicator mark={<XiaoKuMark active />} label={label} />;
 }
 
-function ShanHaiMark({ active = false }: { active?: boolean }) {
+function XiaoKuMark({ active = false }: { active?: boolean }) {
   return (
     <div
       data-assistant-logo
-      className={cn(
-        "mt-5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#cae2db] bg-[#f8fffc] text-[#32685d] shadow-[0_10px_24px_rgba(29,74,66,0.1)]",
-        active && "border-[#8fcbbb] bg-[#f0fffa] shadow-[0_12px_28px_rgba(29,74,66,0.14)]",
-      )}
+      className={cn("mt-5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce2e0] bg-card", active && "shadow-[0_10px_24px_rgba(24,64,55,0.14)]")}
       aria-hidden="true"
     >
-      <img src="/brand/shanhai-ai-logo-256.png" alt="" className="h-full w-full rounded-xl object-cover" />
+      <img src="/brand/xiaoku-avatar.png" alt="" className="h-full w-full object-cover" />
     </div>
   );
 }

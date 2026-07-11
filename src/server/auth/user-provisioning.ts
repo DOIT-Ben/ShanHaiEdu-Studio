@@ -99,8 +99,8 @@ function normalizeInput(input: ProvisionPasswordUserInput) {
   if (!displayName) {
     throw new UserProvisioningError("请输入用户名称。", 400);
   }
-  if (initialPassword.length < 12 || initialPassword.length > 256) {
-    throw new UserProvisioningError("初始密码长度必须为 12 到 256 个字符。", 400);
+  if (initialPassword.length < 8 || initialPassword.length > 256) {
+    throw new UserProvisioningError("初始密码长度必须为 8 到 256 个字符。", 400);
   }
   return { email, displayName, initialPassword, role: input.role };
 }

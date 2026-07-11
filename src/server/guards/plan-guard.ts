@@ -1,6 +1,7 @@
 import { getCapabilityDefinition } from "@/server/capabilities/capability-registry";
 import type { CapabilityId } from "@/server/capabilities/types";
 import { isConfirmedHumanGateAction } from "@/server/guards/human-gate";
+import { getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
 
 export type PlanGuardStatus = "allowed" | "needs_confirmation" | "blocked";
 
@@ -22,7 +23,13 @@ export function evaluateToolPlan(input: {
     };
   }
 
-  const requiresHumanConfirmation = capability.requiresConfirmation || input.toolRequiresConfirmation === true;
+  const tool = getToolDefinitionByCapabilityId(capability.id);
+  const requiresHumanConfirmation =
+    tool.requiresHumanGate ||
+    tool.adapterKind === "provider" ||
+    tool.adapterKind === "package" ||
+    tool.sideEffectLevel === "external_call" ||
+    tool.sideEffectLevel === "package_write";
 
   if (requiresHumanConfirmation) {
     const hasConfirmedAction =

@@ -113,6 +113,7 @@ describe("FeedbackService submission", () => {
     expect(record.origin).toBe("global");
     expect(record.appVersion).toBe("9.9.9-test");
     expect(record.requestFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(record.attachments[0].kind).toBe("issue");
     expect(repository.auditLogs).toEqual([{
       action: "feedback.submitted",
       metadata: { category: "bug", severity: "affected", attachmentCount: 1, status: "submitted" },
@@ -144,6 +145,11 @@ describe("FeedbackService submission", () => {
 
     expect(normalized).toBe(first);
     expect(reordered).not.toBe(first);
+    const reclassified = await createFeedbackRequestFingerprint(metadata, [
+      { bytes: png, mimeType: "image/png", fileName: "a.png", kind: "expected" },
+      { bytes: webp, mimeType: "image/webp", fileName: "b.webp", kind: "issue" },
+    ]);
+    expect(reclassified).not.toBe(first);
   });
 
   it("reuses equal idempotent submissions, rejects changed content, and scopes keys by user", async () => {
@@ -397,14 +403,15 @@ describe("feedback HTTP handlers", () => {
     const png = await createFeedbackImage("png");
     const webp = await createFeedbackImage("webp");
     const request = multipartRequest(createFeedbackMetadata({ projectId: undefined, messageId: undefined }), [
-      { bytes: png, mimeType: "image/png", fileName: "one.png" },
-      { bytes: webp, mimeType: "image/webp", fileName: "two.webp" },
+      { bytes: png, mimeType: "image/png", fileName: "one.png", field: "issueImages" },
+      { bytes: webp, mimeType: "image/webp", fileName: "two.webp", field: "expectedImages" },
     ]);
 
     const parsed = await parseFeedbackMultipart(request);
     expect(parsed.metadata).toMatchObject({ category: "bug", idempotencyKey: "feedback-key-1" });
     expect(parsed.attachments.map((attachment) => attachment.fileName)).toEqual(["one.png", "two.webp"]);
     expect(parsed.attachments.map((attachment) => attachment.bytes)).toEqual([png, webp]);
+    expect(parsed.attachments.map((attachment) => attachment.kind)).toEqual(["issue", "expected"]);
   });
 
   it("rejects non-multipart and oversized requests before parsing the body", async () => {
@@ -422,6 +429,15 @@ describe("feedback HTTP handlers", () => {
       },
       body: "--x--\r\n",
     }))).rejects.toMatchObject({ status: 413 });
+  });
+
+  it("rejects multipart file fields outside the classified and legacy allowlist", async () => {
+    const png = await createFeedbackImage("png");
+    const form = new FormData();
+    form.append("metadata", JSON.stringify(createFeedbackMetadata({ projectId: undefined, messageId: undefined })));
+    form.append("otherImages", new Blob([Uint8Array.from(png)], { type: "image/png" }), "other.png");
+    await expect(parseFeedbackMultipart(new Request("http://localhost/api/feedback", { method: "POST", body: form })))
+      .rejects.toMatchObject({ status: 400 });
   });
 
   it("returns only receipt and safe status from POST and maps idempotency conflicts to 409", async () => {
@@ -511,7 +527,7 @@ describe("feedback HTTP handlers", () => {
         messageId: undefined,
         description: "=DANGEROUS(), ordinary detail",
       }),
-      attachments: [{ bytes: png, mimeType: "image/png", fileName: "private-name.png" }],
+      attachments: [{ bytes: png, mimeType: "image/png", fileName: "private-name.png", kind: "expected" }],
     });
     const record = [...repository.records.values()][0];
     const attachment = record.attachments[0];
@@ -535,11 +551,12 @@ describe("feedback HTTP handlers", () => {
     expect(JSON.stringify(listBody)).not.toContain("private-name");
 
     const detail = await handleFeedbackAdminDetail(passwordAdminActor, service, record.id);
-    const detailBody = await detail.json() as { feedback: { receiptCode: string; attachments: Array<{ downloadUrl: string }> } };
+    const detailBody = await detail.json() as { feedback: { receiptCode: string; attachments: Array<{ downloadUrl: string; kind: string }> } };
     expect(detailBody.feedback.receiptCode).toBe(record.receipt);
     expect(detailBody.feedback.attachments[0].downloadUrl).toBe(
       `/api/admin/feedback/${record.id}/attachments/${attachment.id}`,
     );
+    expect(detailBody.feedback.attachments[0].kind).toBe("expected");
 
     const missingDetail = await handleFeedbackAdminDetail(passwordAdminActor, service, "missing-feedback");
     expect(missingDetail.status).toBe(404);
@@ -691,12 +708,12 @@ function sequentialIds() {
 
 function multipartRequest(
   metadata: ReturnType<typeof createFeedbackMetadata>,
-  attachments: Array<{ bytes: Buffer; mimeType: string; fileName: string }>,
+  attachments: Array<{ bytes: Buffer; mimeType: string; fileName: string; field?: "images" | "issueImages" | "expectedImages" }>,
 ) {
   const form = new FormData();
   form.append("metadata", JSON.stringify(metadata));
   for (const attachment of attachments) {
-    form.append("images", new Blob([Uint8Array.from(attachment.bytes)], { type: attachment.mimeType }), attachment.fileName);
+    form.append(attachment.field ?? "images", new Blob([Uint8Array.from(attachment.bytes)], { type: attachment.mimeType }), attachment.fileName);
   }
   return new Request("http://localhost/api/feedback", { method: "POST", body: form });
 }

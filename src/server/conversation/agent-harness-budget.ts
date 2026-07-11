@@ -69,7 +69,11 @@ const retryStatuses = new Set<AgentHarnessBudgetEventStatus>(["failed", "retryab
 
 export function evaluateAgentHarnessBudget(input: EvaluateAgentHarnessBudgetInput): AgentHarnessBudgetDecision {
   const policy = resolvePolicy(input.policy);
-  const events = filterEventsAfterLatestRelevantSuccess(input.events.filter(isAgentHarnessBudgetEvent), input.capabilityId, input.actionKey);
+  const events = filterEventsAfterLatestRelevantSuccess(
+    input.events.filter(isAgentHarnessBudgetEvent).filter((event) => event.kind !== "blocked_by_policy"),
+    input.capabilityId,
+    input.actionKey,
+  );
   const reason = resolveBlockedReason(input, events, policy);
 
   if (reason) {

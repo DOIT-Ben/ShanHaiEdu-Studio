@@ -22,7 +22,7 @@ export function GeneratingIndicator({ state = "generating", label, mark }: Gener
         {mark}
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">ShanHaiEdu AI</span>
+            <span className="font-medium text-foreground">小酷</span>
           </div>
           <div className="inline-flex items-center gap-3 rounded-2xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm text-muted-foreground shadow-[0_12px_30px_rgba(29,74,66,0.05)]">
             <span>{label ?? getTeacherGeneratingLabel(state)}</span>

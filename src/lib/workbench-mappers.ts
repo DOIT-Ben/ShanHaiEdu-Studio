@@ -36,6 +36,7 @@ export type BackendMessageRecord = {
   content: string;
   artifactRefs: string[];
   metadata?: Record<string, unknown>;
+  reaction?: "helpful" | "unhelpful";
   createdAt: string;
 };
 
@@ -187,6 +188,7 @@ function mapBackendMessage(message: BackendMessageRecord, turnJobsByTeacherMessa
     artifactRefs: message.artifactRefs,
     ...(quickReplies.length ? { quickReplies } : {}),
     ...(deliveryPlan ? { deliveryPlan } : {}),
+    ...(message.reaction ? { reaction: message.reaction } : {}),
   };
 }
 

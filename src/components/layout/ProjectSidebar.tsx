@@ -7,6 +7,8 @@ import type { OpenFeedback } from "@/lib/feedback-contracts";
 import type { ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { ProjectLifecycleConfirmDialog } from "@/components/layout/ProjectLifecycleConfirmDialog";
 import { ProjectListItem } from "@/components/layout/ProjectListItem";
@@ -24,6 +26,7 @@ type ProjectSidebarProps = {
   currentUser?: PasswordAuthUser | null;
   onOpenFeedback?: OpenFeedback;
   onOpenUserManagement?: () => void;
+  onOpenXiaoKuSettings?: () => void;
   onLogout?: () => Promise<void>;
 };
 
@@ -40,6 +43,7 @@ export function ProjectSidebar({
   currentUser,
   onOpenFeedback,
   onOpenUserManagement,
+  onOpenXiaoKuSettings,
   onLogout,
 }: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,7 +72,7 @@ export function ProjectSidebar({
 
   return (
     <aside className={cn("relative flex h-full min-h-0 flex-col border-r bg-[#f8f8f9] transition-[width] duration-200 ease-out", collapsed ? "w-16" : "w-72")}>
-      <button type="button" onClick={onToggle} className="absolute -right-4 top-24 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card transition hover:bg-[#f1f1f2] lg:flex" aria-label="折叠项目栏">
+      <button type="button" onClick={onToggle} className="absolute -right-4 top-5 z-10 hidden h-9 w-9 items-center justify-center rounded-lg border bg-card transition hover:bg-[#f1f1f2] focus-visible:ring-2 focus-visible:ring-[#8fcbbb]/55 lg:flex" aria-label="折叠项目栏">
         <ChevronLeft className="h-4 w-4" />
       </button>
       <div className={cn("px-3 py-4", collapsed && "px-2")}>
@@ -77,9 +81,9 @@ export function ProjectSidebar({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md border bg-card text-muted-foreground">
-                  <img src="/brand/shanhai-ai-logo-256.png" alt="" className="h-full w-full object-cover" />
+                  <img src="/brand/shanhai-education-logo.png" alt="山海课伴" className="h-full w-full scale-[1.38] object-cover object-[center_33%]" />
                 </div>
-                <h2 className="truncate text-sm font-medium text-foreground">ShanHaiEdu 备课工作台</h2>
+                <h2 className="truncate text-sm font-medium text-foreground">山海课伴</h2>
               </div>
             </div>
           )}
@@ -89,9 +93,9 @@ export function ProjectSidebar({
             <Button className="mt-7 w-full justify-start border-transparent bg-transparent px-3 font-normal text-foreground hover:bg-[#eeeeef]" variant="ghost" onClick={onCreateProject}>
               <Plus className="h-4 w-4" />新建项目
             </Button>
-            <label className="mt-2 flex h-9 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition focus-within:bg-card focus-within:ring-2 focus-within:ring-[#367d6d]/45 hover:bg-[#eeeeef]">
+            <label className="mt-2 flex h-11 items-center gap-2 rounded-lg border border-transparent px-3 text-sm text-muted-foreground transition-colors hover:bg-[#eeeeef] focus-within:border-[#68a999] focus-within:bg-card focus-within:ring-2 focus-within:ring-[var(--focus-ring)]">
               <Search className="h-4 w-4" />
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索课题" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+              <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索课题" className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 focus-visible:ring-0" />
             </label>
             <button
               type="button"
@@ -112,25 +116,27 @@ export function ProjectSidebar({
           </>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar px-2">
-        {courseSectionOpen && filteredProjects.length === 0 && !collapsed && <div className="rounded-md px-3 py-3 text-xs leading-5 text-muted-foreground">没有找到匹配项目</div>}
-        {(collapsed || courseSectionOpen) && filteredProjects.map((project) => (
-          <ProjectListItem
-            key={project.id}
-            project={project}
-            active={project.id === activeProjectId}
-            collapsed={Boolean(collapsed)}
-            selectable={view === "active"}
-            onSelect={onSelect}
-            onMutate={onMutateProject ?? (async () => undefined)}
-            onRequestAction={(item, action) => {
-              setPendingProject(item);
-              setPendingAction(action);
-            }}
-          />
-        ))}
-      </div>
-      <div className="mt-auto border-t px-2 py-2">
+      <ScrollArea className="min-h-0 flex-1 border-b border-transparent">
+        <div className="px-2 pb-2 pr-3">
+          {courseSectionOpen && filteredProjects.length === 0 && !collapsed && <div className="rounded-md px-3 py-3 text-xs leading-5 text-muted-foreground">没有找到匹配项目</div>}
+          {(collapsed || courseSectionOpen) && filteredProjects.map((project) => (
+            <ProjectListItem
+              key={project.id}
+              project={project}
+              active={project.id === activeProjectId}
+              collapsed={Boolean(collapsed)}
+              selectable={view === "active"}
+              onSelect={onSelect}
+              onMutate={onMutateProject ?? (async () => undefined)}
+              onRequestAction={(item, action) => {
+                setPendingProject(item);
+                setPendingAction(action);
+              }}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+      <div className="mt-auto border-t bg-[#f8f8f9] px-2 py-2">
         <div className={cn("space-y-0.5", collapsed && "flex flex-col items-center")}>
           <Button variant="ghost" size={collapsed ? "icon" : "default"} title="已归档" onClick={() => onViewChange?.("archived")} className={cn("justify-start border-transparent bg-transparent font-normal hover:bg-[#eeeeef]", view === "archived" && "bg-[#ededee]", collapsed && "justify-center")}>
             <Archive className="h-4 w-4" />{!collapsed && "已归档"}
@@ -141,7 +147,7 @@ export function ProjectSidebar({
         </div>
         {onOpenFeedback && (
           <div className="mt-2 border-t pt-2">
-            <ProfileMenu currentUser={currentUser} projectId={activeProjectId || undefined} compact={collapsed} onOpenFeedback={onOpenFeedback} onOpenUserManagement={onOpenUserManagement} onLogout={onLogout} />
+            <ProfileMenu currentUser={currentUser} projectId={activeProjectId || undefined} compact={collapsed} onOpenFeedback={onOpenFeedback} onOpenUserManagement={onOpenUserManagement} onOpenXiaoKuSettings={onOpenXiaoKuSettings} onLogout={onLogout} />
           </div>
         )}
       </div>

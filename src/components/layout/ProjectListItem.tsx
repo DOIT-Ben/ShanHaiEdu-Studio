@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Archive, Circle, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { InteractiveListRow } from "@/components/ui/interactive-list-row";
+import { Input } from "@/components/ui/input";
+import { MenuItem } from "@/components/ui/menu-item";
 import type { ProjectItem, ProjectLifecycleAction, ProjectLifecycleMutation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -114,12 +116,12 @@ export function ProjectListItem({ project, active, collapsed, selectable, onSele
   return (
     <div className={cn("group relative mb-0.5 rounded-md", collapsed && "flex justify-center") } data-project-id={project.id}>
       {collapsed ? (
-        <button type="button" onClick={() => selectable && onSelect(project.id)} className="flex h-11 w-11 items-center justify-center rounded-md transition hover:bg-[#eeeeef]" aria-label={project.title}>
+        <button type="button" disabled={!selectable} onClick={() => onSelect(project.id)} className="flex h-11 w-11 items-center justify-center rounded-md transition-colors enabled:hover:bg-[#eeeeef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-default disabled:opacity-55" aria-label={project.title}>
           <Circle className={cn("h-3 w-3 fill-current", meta.dot)} />
         </button>
       ) : editing ? (
         <div className="rounded-md bg-[#edf5f2] p-2">
-          <input
+          <Input
             ref={inputRef}
             value={draftTitle}
             onChange={(event) => setDraftTitle(event.target.value)}
@@ -129,72 +131,71 @@ export function ProjectListItem({ project, active, collapsed, selectable, onSele
             }}
             maxLength={80}
             aria-label="项目名称"
-            className="h-8 w-full rounded-md border border-[#367d6d] bg-card px-2 text-sm text-foreground outline-none ring-2 ring-[#367d6d]/35"
+            inputSize="sm"
           />
           {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
         </div>
       ) : (
-        <>
-          <button
-            type="button"
-            onClick={() => selectable && onSelect(project.id)}
-            onDoubleClick={startRename}
-            disabled={!selectable}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "w-full rounded-md px-3 py-2 pr-16 text-left transition duration-150 ease-out hover:bg-[#eeeeef] focus:outline-none focus:ring-2 focus:ring-[#367d6d]/45 disabled:cursor-default disabled:hover:bg-transparent",
-              active ? "bg-[#ededee] text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.02)]" : "bg-transparent text-foreground",
-            )}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <Circle className={cn("h-3 w-3 shrink-0 fill-current", meta.dot)} />
-              <h3 className="truncate text-sm font-normal leading-5">{project.title}</h3>
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span className="truncate">{active ? project.currentStep : project.meta}</span>
-              <span className="shrink-0">{active ? project.updatedAt : meta.label}</span>
-            </div>
-          </button>
-          <div className="absolute right-1 top-1 flex opacity-100 transition lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+        <div className={cn(
+          "grid grid-cols-[minmax(0,1fr)_68px] items-stretch overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-[#b9d8cf] hover:bg-[#eaf5f1] focus-within:border-[#b9d8cf] focus-within:bg-[#eaf5f1]",
+          active && "border-[#b9d8cf] bg-[#eaf5f1]",
+        )}>
+          <InteractiveListRow
+              onClick={() => selectable && onSelect(project.id)}
+              onDoubleClick={startRename}
+              disabled={!selectable}
+              aria-current={active ? "page" : undefined}
+              active={active}
+              attention={project.status === "blocked"}
+              leading={<Circle className={cn("h-3 w-3 fill-current", meta.dot)} />}
+              title={project.title}
+              subtitle={<>{active ? project.currentStep : project.meta}<span className="mx-1 text-border">·</span>{active ? project.updatedAt : meta.label}</>}
+              compact
+              className="rounded-r-none border-0 bg-transparent enabled:hover:border-0 enabled:hover:bg-transparent"
+            />
+          <div className="flex items-center justify-end gap-1 px-1 opacity-100 transition-opacity duration-150 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
             {canRename && (
-              <Button type="button" variant="ghost" size="icon" aria-label="重命名项目" title="重命名项目" onClick={startRename} disabled={submitting}>
+              <button
+                type="button"
+                aria-label="重命名项目"
+                title="重命名项目"
+                onClick={startRename}
+                disabled={submitting}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,border-color,color] hover:border-[#b9d8cf] hover:bg-[#eaf5f1] hover:text-[#167467] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#68a999]/45 disabled:pointer-events-none disabled:opacity-45"
+              >
                 <Pencil className="h-3.5 w-3.5" />
-              </Button>
+              </button>
             )}
             <Popover open={menuOpen} onOpenChange={setMenuOpen}>
               <PopoverTrigger asChild>
-                <Button type="button" variant="ghost" size="icon" aria-label="项目操作" title="项目操作" disabled={submitting}>
+                <button
+                  type="button"
+                  aria-label="项目操作"
+                  title="项目操作"
+                  disabled={submitting}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,border-color,color] hover:border-[#d7e4e0] hover:bg-[#f2f4f3] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#68a999]/45 disabled:pointer-events-none disabled:opacity-45"
+                >
                   <MoreHorizontal className="h-4 w-4" />
-                </Button>
+                </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-40 rounded-md p-1.5">
                 {project.lifecycleState === "active" ? (
                   <>
-                    <button type="button" onClick={() => request("archive")} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted">
-                      <Archive className="h-4 w-4" />归档
-                    </button>
-                    <button type="button" onClick={() => request("trash")} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-destructive/5">
-                      <Trash2 className="h-4 w-4" />移入回收站
-                    </button>
+                    <MenuItem icon={<Archive className="h-4 w-4" />} onClick={() => request("archive")}>归档</MenuItem>
+                    <MenuItem danger icon={<Trash2 className="h-4 w-4" />} onClick={() => request("trash")}>移入回收站</MenuItem>
                   </>
                 ) : project.lifecycleState === "archived" ? (
                   <>
-                    <button type="button" onClick={() => void restore()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted">
-                      <RotateCcw className="h-4 w-4" />恢复项目
-                    </button>
-                    <button type="button" onClick={() => request("trash")} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-destructive/5">
-                      <Trash2 className="h-4 w-4" />移入回收站
-                    </button>
+                    <MenuItem icon={<RotateCcw className="h-4 w-4" />} onClick={() => void restore()}>恢复项目</MenuItem>
+                    <MenuItem danger icon={<Trash2 className="h-4 w-4" />} onClick={() => request("trash")}>移入回收站</MenuItem>
                   </>
                 ) : (
-                  <button type="button" onClick={() => void restore()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted">
-                    <RotateCcw className="h-4 w-4" />恢复项目
-                  </button>
+                  <MenuItem icon={<RotateCcw className="h-4 w-4" />} onClick={() => void restore()}>恢复项目</MenuItem>
                 )}
               </PopoverContent>
             </Popover>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

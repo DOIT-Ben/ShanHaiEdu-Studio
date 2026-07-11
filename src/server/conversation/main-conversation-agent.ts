@@ -3,9 +3,11 @@ import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn, QuickReply, Recom
 import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
 import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
+import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 export type MainConversationAgentInput = {
   userMessage: string;
+  responseStyle?: XiaoKuResponseStyle;
   availableArtifactKinds: string[];
   projectContext?: {
     grade?: string | null;
@@ -54,7 +56,9 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       if (isCasualChat(text)) {
         return {
           assistantMessage: {
-            body: "你好，我在。你今天想准备哪一节课？告诉我年级和课题就可以开始。",
+            body: input.responseStyle === "concise"
+              ? "你好，我是小酷。想先准备哪节课？"
+              : "你好，我是小酷。你今天想准备哪一节课？告诉我年级和课题就可以开始。",
           },
           state: "chatting",
           quickReplies: [],

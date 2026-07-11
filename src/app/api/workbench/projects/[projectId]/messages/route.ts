@@ -3,6 +3,7 @@ import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
 import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
+import { normalizeXiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 const runtime = createAgentRuntimeFromEnv();
 const mainAgent = createMainConversationAgentFromEnv();
@@ -35,12 +36,16 @@ export async function POST(request: Request, context: RouteContext) {
       const content = reference ? `${teacherContent}\n\n引用：${reference}` : teacherContent;
       const artifactRefs = Array.isArray(body.artifactRefs) ? body.artifactRefs.map(String) : [];
       const confirmedActionId = optionalString(body.confirmedActionId ?? body.actionId);
+      const responseStyle = body.responseStyle === undefined ? undefined : normalizeXiaoKuResponseStyle(body.responseStyle);
       const idempotencyKey = optionalString(body.idempotencyKey) ?? optionalString(request.headers.get("idempotency-key"));
       const { message, job } = await service.enqueueMessageAndConversationTurn(projectId, {
         role: "teacher",
         content,
         artifactRefs,
-        metadata: confirmedActionId ? { confirmedActionId } : undefined,
+        metadata: {
+          ...(confirmedActionId ? { confirmedActionId } : {}),
+          ...(responseStyle ? { responseStyle } : {}),
+        },
         idempotencyKey,
       });
 

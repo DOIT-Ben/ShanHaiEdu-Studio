@@ -27,7 +27,7 @@ test("M58 exposes one shared teacher-facing download action group across artifac
   assert.match(source, /downloadPackageLabel/);
 });
 
-test("M58 renders download actions in chat cards, side panel, preview card, and detail sheet", () => {
+test("M58 renders download actions in chat cards and full reading surfaces", () => {
   const chatSource = readSource("src/components/conversation/ChatTranscript.tsx");
   const sidePanelSource = readSource("src/components/artifacts/ArtifactSidePanel.tsx");
   const previewSource = readSource("src/components/artifacts/ArtifactPreviewCard.tsx");
@@ -39,11 +39,11 @@ test("M58 renders download actions in chat cards, side panel, preview card, and 
   assert.match(chatSource, /<ArtifactDownloadActions[\s\S]*variant="inline"/);
   assert.match(sidePanelSource, /projectId: string/);
   assert.match(sidePanelSource, /<ArtifactDownloadActions[\s\S]*variant="compact"/);
-  assert.match(previewSource, /projectId: string/);
-  assert.match(previewSource, /<ArtifactDownloadActions[\s\S]*variant="compact"/);
+  assert.match(previewSource, /打开阅读/);
+  assert.doesNotMatch(previewSource, /<ArtifactDownloadActions/);
   assert.match(detailSource, /<ArtifactDownloadActions[\s\S]*variant="default"/);
   assert.match(mediaSource, /projectId=\{controller\.activeProjectId\}/);
-  assert.match(railSource, /projectId=\{projectId\}/);
+  assert.doesNotMatch(railSource, /projectId=\{projectId\}/);
 });
 
 test("M58 derives top progress from artifacts and execution feedback", () => {

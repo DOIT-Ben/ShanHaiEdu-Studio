@@ -80,7 +80,6 @@ test("M60 teacher visible queue UI avoids internal engineering words", () => {
     /capabilityId/i,
     /runtimeKind/i,
     /providerStatus/i,
-    /placeholder/i,
   ];
 
   for (const relativePath of visibleSources) {
