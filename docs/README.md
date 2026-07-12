@@ -1,6 +1,6 @@
 # ShanHaiEdu 文档入口与分类规则
 
-更新时间：2026-07-10
+更新时间：2026-07-13
 
 本文是 `docs\` 的导航入口。后续任何需求增加、架构调整、阶段开发、测试验收和收尾记录，都必须先判断文档归属，再落到对应目录；不要把需求、架构、阶段计划和历史报告继续混在同一个文件里。
 
@@ -23,34 +23,20 @@ V1 Agent、PPT、视频和交付质量专题资料统一入口：
 docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 ```
 
-当前 V1 执行与验证入口：
+当前 V1 执行、验证与续接入口：
 
 ```text
-docs\stages\local-real-v1-quality-release-mainline-plan.md
-docs\stages\local-real-v1-quality-release-mainline-test-plan.md
-docs\stages\local-real-v1-stage0r-local-gates-closeout.md
-docs\stages\local-real-v1-stage0r-provider-capability-report.md
-docs\stages\local-real-v1-stage0r-old-flow-baseline-report.md
-docs\stages\local-real-v1-stage1a-execution-identity-lease-plan.md
-docs\stages\local-real-v1-stage1a-execution-identity-lease-test-plan.md
-docs\stages\local-real-v1-stage1a-execution-identity-lease-closeout.md
-docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-plan.md
-docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-test-plan.md
-docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-closeout.md
-docs\stages\local-real-v1-stage1c-atomic-promotion-plan.md
-docs\stages\local-real-v1-stage1c-atomic-promotion-test-plan.md
-docs\stages\local-real-v1-stage1c-atomic-promotion-closeout.md
-docs\stages\local-real-v1-stage2-contract-quality-react-plan.md
-docs\stages\local-real-v1-stage2-contract-quality-react-test-plan.md
-docs\stages\local-real-v1-stage2a-contract-validation-closeout.md
-docs\stages\local-real-v1-stage2b-quality-decision-closeout.md
-docs\stages\local-real-v1-stage2c-observation-replan-closeout.md
-docs\stages\local-real-v1-stage3a-ppt-design-contract-plan.md
-docs\stages\local-real-v1-stage3a-ppt-design-contract-test-plan.md
-docs\stages\local-real-v1-stage3a-ppt-design-contract-closeout.md
-docs\stages\local-real-v1-stage3b-ppt-samples-assets-plan.md
-docs\stages\local-real-v1-stage3b-ppt-samples-assets-test-plan.md
+docs\handoffs\2026-07-13-v1-main-agent-mainline-handoff.md
+docs\stages\local-real-v1-mainline-adjustment-plan.md
+docs\stages\local-real-v1-mainline-adjustment-test-plan.md
+docs\stages\local-real-v1-v1-1-orchestration-attribution-audit.md
+docs\stages\local-real-v1-v1-1-orchestration-attribution-closeout.md
+docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-plan.md
+docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-test-plan.md
+docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md
 ```
+
+`local-real-v1-quality-release-*`、Stage 0R 至 Stage 6 以及旧真实交付包文档只保留为历史实现和证据来源。它们不得覆盖当前主线，也不得触发新的真实图片、视频或整包生成；真实媒体整包验证统一延后到 V1-9。
 
 ## 2. 目录职责
 

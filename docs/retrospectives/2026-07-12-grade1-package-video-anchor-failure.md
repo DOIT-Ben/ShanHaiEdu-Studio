@@ -94,6 +94,8 @@ PPT路径成功
 3. 每案只允许一个课程锚点：触发事件、课堂第一问、禁止提前解释、交接瞬间。
 4. 用户批准Concept Selection Set后才能生成Beat Sheet、参考图和视频。
 5. Video Critic必须先回答三个阻塞问题：不懂教材是否看得懂、去掉课堂结尾是否仍值得看、是否只是PPT动态版。
+6. 上述锚点审查必须由产品内Video Critic Agent Tool执行，Main Agent根据结构化CriticReport自主换案、返修或请求HumanGate；外部Codex只实现和验收，不代替运行时决策。
+7. 编排验证阶段使用确定性夹具和失败注入；真实图片、视频和最终包只在产品内编排及双用户门通过后的收尾阶段集中验证。
 
 ## 调整方案
 
@@ -120,13 +122,15 @@ PPT路径成功
 
 | 预防动作 | 责任载体 | 验收条件 | 状态 |
 |---|---|---|---|
-| 独立短片三问门禁 | Video Creative Director / Concept Selection | 三问全部为“是”，否则阻塞 | Prompt已落实，运行时待接入验证 |
+| 独立短片三问门禁 | Video Creative Director / 独立Video Critic | 三问全部为“是”，否则阻塞 | Prompt与V1-2初版Director门已落实；独立Critic待封板 |
 | 三类候选探索 | `04-video-creative-director.md` | 每类至少2案且故事机制不同 | Prompt已落实；按当前决策暂停真实重跑 |
-| 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment | 待验证 |
+| 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment，并记录trigger、doNotExplain、version与digest | V1-2封板待实现 |
 | 创意维度硬门 | Video Critic | 独立创意与钩子低于3/4直接返工 | Prompt已落实，运行时待接入验证 |
 | 选案后再调用Provider | HumanGate / PlanGuard | 缺少用户选案actionId时零视频任务 | 待实现 |
 | 验收包整体状态 | FinalDeliveryGate | PPT、视频任一核心产物不合格则整包不可交付 | 待实现 |
+| 外部Codex降权 | V1主线测试计划/编排归因审计 | 真实E2E运行中外部选案、批准、返修决策次数为0 | 规则已落实，运行时待验证 |
+| 阶段末黑盒审核 | V1-9 E2E/交付Rubric | 产品智能体先独立成包，外部验收者后审并定位责任层 | 规则已落实，执行待验证 |
 
 - 文档验证：检查文件存在、索引链接、UTF-8开头和关键规则可检索。
 - 残余风险：当前60秒视频仍是不合格方向的技术产物，只能保留为反例和Provider证据，不得继续作为正式交付视频。
-- 下一步：停止本案例的真实资产生成。先把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan和持久化恢复合同，再用不产生真实媒体成本的确定性夹具验证编排行为。只有产品内部编排证据成立后，才另行申请真实Provider端到端验收。
+- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭独立Critic与结构化返修缺口，再把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan和持久化恢复合同。产品内部编排、课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核，按问题责任层推动下一轮优化。

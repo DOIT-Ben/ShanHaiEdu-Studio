@@ -1,6 +1,6 @@
 # Local Real MVP 当前主线状态
 
-更新时间：2026-07-12（V1 交付质量主线接管）
+更新时间：2026-07-13（V1 产品内编排主线封板）
 
 ## 1. 当前主线
 
@@ -10,7 +10,9 @@
 V1 交付质量与邀请制上线
 ```
 
-目标：在现有 Local Real MVP 代码基线上，让受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；通过真实 Provider、服务器恢复和教师签收后开放邀请制 V1。
+目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
+
+当前阶段：`V1-1编排归因审计已完成；V1-2已有实现检查点，先完成课程锚点独立Critic与授权边界封板，再进入V1-3`。
 
 ## 2. 最近已完成阶段
 
@@ -23,8 +25,8 @@ V1 交付质量与邀请制上线
 | M65 | done | OpenAI Responses native function_call 协议闭环与 OpenAIRuntime 可选接线 |
 | M66-R runtime loop | done | OpenAIRuntime native tool loop 已通过显式开关接入生产 Runtime Factory；首批只暴露 internal tools，provider 工具仍后置 |
 | M67 feedback center | implementation done / rollout pending | 工程实现与本地 E2E 已完成；真实服务器重启、回滚和备份恢复门禁待关闭 |
-| Agent workflow closure | implementation done / smoke pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与 package resolved Artifact 门禁已完成；真实外部 provider smoke 待执行 |
-| M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放仍等待生产门禁和真实 provider smoke |
+| Agent workflow closure | implementation done / V1-9 real E2E pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与package resolved Artifact门禁已完成；不在前段追加真实Provider smoke |
+| M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放统一等待V1-9产品内E2E和V1-10发布门 |
 | M70 frontend workbench polish | done | 首次欢迎态、附件拖放/截图粘贴、文件状态、工具菜单、假入口清理和桌面/390px 响应式验收已完成 |
 | M71A project lifecycle and feedback polish | done | 反馈选中态、轻量问候、项目重命名、归档、回收站、恢复、生命周期写入门禁与受控回退已完成；不含永久删除 |
 | M72 nonlinear beta readiness | done | 反馈、安全隔离和历史归属已验证；“只做视频脚本”会说明最小缺口，不再进入无解确认循环，桌面与 390px 已验收 |
@@ -41,19 +43,21 @@ V1 交付质量与邀请制上线
 | V1 Stage 2B | done | CriticReport、固定 Rubric、确定性 QualityDecision、当前 Artifact 绑定及原子持久化已完成 |
 | V1 Stage 2C | done | 统一 Observation 回流、精确重复失败阻断、checkpoint 恢复、自然语言改道失效及 finish 三证据门已完成 |
 | V1 Stage 3A | done | PPT 结构化设计包、逐页 PageSpec、无障碍语义、页级影响分析、OpenAI 运输及 PostValidator 门已完成 |
-| V1 Stage 3B/3C | two real courses done | 高年级《百分数的意义》与低年级《1～5 的认识》均完成真实样张/资产、12 页可编辑 PPTX/PDF、逐页渲染和页级返修；中年级待教材输入 |
+| V1 Stage 3B/3C | historical production evidence | 高年级与低年级真实PPT证明工艺可行；不再以前段追加中年级真实任务作为当前主线 |
 | V1 Stage 4 | one passed / one concept rework | 高年级视频已有真实链路证据；低年级18秒和60秒视频技术通过但独立创意锚点失败，退回Concept Selection |
 | V1 Stage 5 | one passed / one package invalidated | 低年级ZIP文件结构和哈希通过，但因核心视频不合格撤销完整交付资格；尚无真实教师签收 |
-| V1 Stage 6 local gates | done / external gates pending | M67 7 通过/1 设计跳过；Node 259/259、Vitest 658/658、构建、SQLite 双初始化通过；故障合同 90/90 通过 |
+| V1 Stage 6 local gates | done / external gates pending | M67 7 通过/1 设计跳过；接管基线Node 259/259、Vitest 659/659、构建、SQLite 双初始化通过；故障合同 90/90 通过 |
+| V1-1 orchestration attribution | done | 已证明当前为模型首步选择加固定DeliveryPlan续步，不是Main Agent同轮多Tool ReAct |
+| V1-2 Tool/Agent Tool registration | implementation checkpoint / closure pending | Registry、调用信封、Router、白名单和初版锚点门已形成；独立Critic、结构化返修、premise/正例与默认授权测试待封板 |
 
-## 2.1 v1 候选基线
+## 2.1 v1 与接管基线
 
 - 候选提交：`fffdfb3b050782208bb6e288d3e324ba44a4c659`。
 - annotated tag：`v1`，仍指向上述提交，未移动、未重写。
-- 交接文档提交：`7ad967c69fd7539e6ba64495384e4be322fbc175`、`a6c11b8e390ca19e327b652f24e6760a204334ce`；当前 `main` HEAD 为 `a6c11b8`，相对 `origin/main` ahead 2 / behind 0，两个提交均只修改文档。
-- 当前工作树包含尚未提交的 V1 Agent/交付质量资料迁入，以及 M72 最小缺口说明的代码和测试；仍需保留三层基线区分：`v1` 历史代码、交接文档 HEAD、当前 V1 实施工作树。
-- 2026-07-12 Stage 6 新鲜工程证据：Node 259/259；Vitest 658/658；M67 7 通过/1 按设计跳过；生产构建、SQLite 连续初始化和 `git diff --check` 通过。
-- 2026-07-12 低年级真实交付：人教版一年级上册《1～5 的认识》官方教材证据、12 页可编辑 PPTX/PDF、18.166 秒真实 Grok 三镜头 MP4、课时方案与 35,733,473 bytes 最终 ZIP 均通过集成审查和反向验包；`teacher_signoff=false`。
+- V1上线前接管提交：`c85c49f65d0fb6a438c06dba76e5e81ad271dbbc`；annotated tag：`v1.1.0-alpha`。该标识表示执行安全、合同质量、PPT链路和规划已形成，产品内Main Agent编排、视频创意门、双用户并发和发布门待完成。
+- V1-1/V1-2工作发生在接管标签之后；进入新会话必须重新核对`main`与`origin/main`及工作树，历史`v1`与`v1.1.0-alpha`均不移动、不重写。
+- 2026-07-13当前检查点工程证据：Node 259/259；Vitest 102个文件、692/692项；生产构建exit 0。Stage 6既有证据还包括SQLite连续初始化和故障合同90/90通过。
+- 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
 
 ## 2.2 浏览器证据索引
@@ -76,26 +80,29 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. 为中年级几何/测量补齐真实教材、版本、页码和例题/主题图证据，再生产最后一套 PPTX/MP4/ZIP。
-2. 执行真实断网、跨标签页、worker 强杀恢复和目标服务器共享卷/回滚/备份恢复演练。
-3. 邀请至少一名真实教师完成首次任务、局部返修、下载和可授课签收。
+1. V1-2正式封板：在合同、Router和注入Executor测试层让`delivery_critic.review`成为课程锚点独立权威审查，保留结构化返修依据，补齐premise扫描、正例与默认数据库授权测试，再形成closeout；本阶段仍不接生产Executor。
+2. V1-3完成Main Agent同轮Observe/Replan和固定DeliveryPlan降级；V1-2未封板前不得提前宣称Main Agent已能自主协调。
+3. 仅在V1-1至V1-8通过后执行一次产品内真实PPT/视频/最终包E2E；外部Codex在成包后黑盒审核并将问题归因到责任层。
+4. 完成目标服务器恢复、公开注册关闭复核和真实教师签收后开放邀请制V1。
 
 ## 4. 下一阶段建议
 
-用户已经批准继续推进 V1 交付质量主线。执行安全、受控 ReAct、首套高年级 PPT/视频/最终包、本机浏览器与全量质量门已经完成。当前进入：
+用户已经批准继续推进 V1 交付质量主线。PPT、图片、视频和最终包的底层生产链已经有真实证据，下一阶段不再由外部Codex重复制作交付包，而是验证产品内部Main Agent的协调能力。当前唯一恢复点：
 
 ```text
-V1 Stage 6：补齐两套教材输入与真实交付、外部故障/服务器恢复和教师签收
+V1-2：实现检查点后的正式封板
 ```
 
 推荐拆分：
 
-1. 中年级新课件必须获得真实教材输入；现有实验材料不能冒充教材页码证据。
-2. 复用已经验证的样张、全量生产、逐页返修、视频参考实传和版本化打包链路，不扩张无关架构。
-3. 邀请真实用户前关闭目标服务器共享卷重启、release 回滚、备份恢复、公开注册和真实教师签收门。
-4. 保持既有 `v1` 标签不动；最终邀请制发布使用新的不可变发布标识，不重写历史候选标签。
+1. 直接复用V1-1归因矩阵，不重新审计已经关闭的阶段。
+2. 修正V1-2的四个封板缺口：独立Critic硬门、结构化返修Observation、premise与正例覆盖、默认授权集成测试。
+3. 课程锚点由产品内`delivery_critic.review`独立审查；Director或Main Agent自评不得解锁真实媒体Tool。
+4. 前段使用确定性夹具、失败注入和状态证据验证编排，避免频繁调用真实图片/视频Provider。
+5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
+6. 保持既有`v1`和`v1.1.0-alpha`标签不动；最终邀请制发布使用新的不可变发布标识。
 
-当前明确未关闭的上线门：低年级视频独立创意重选、真实重制和整包复验，中年级教材证据及最后一套真实 PPTX/MP4/最终包，真实断网与 worker 强杀实操，目标服务器共享卷重启、release 回滚、备份恢复、公开注册关闭复核，以及至少一名真实教师签收。高年级交付与本机自动化质量门已关闭；低年级仅 PPT 门关闭，视频与整包门重新打开；集成批准不得冒充教师签收。
+当前明确未关闭的上线门：V1-2 Agent Tool正式封板、Main Agent同轮受控ReAct、HumanGate与自然语言打断、四档生成强度、PPT/视频产品内闭环、课程锚点独立Critic审查、双用户并发、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
 
 V1 Agent 与交付质量设计、Contracts、Prompts 和实验依据已经迁入项目，统一入口：
 
@@ -108,6 +115,8 @@ docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 ```text
 docs\stages\local-real-v1-mainline-adjustment-plan.md
 docs\stages\local-real-v1-mainline-adjustment-test-plan.md
+docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md
+docs\handoffs\2026-07-13-v1-main-agent-mainline-handoff.md
 ```
 
 ## 5. 不做事项

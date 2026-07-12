@@ -1,6 +1,6 @@
 # ShanHaiEdu 需求总账
 
-更新时间：2026-07-12（V1 Stage 0R 本地门禁收口）
+更新时间：2026-07-13（V1 产品内编排与课程锚点主线收口）
 
 > 本文件记录未完成需求、新增需求、延期需求和优先级。当前产品质量门禁仍以 `docs\product\current-requirements-baseline.md` 为最高产品口径；本文件负责把“还没做完、刚发现、需要拆分”的需求集中管理。
 
@@ -166,7 +166,7 @@
 
 ### RQ-012 多用户与用户管理
 
-- 状态：`done`（工程实现完成；真实用户开放仍等待生产门禁和真实 provider smoke）
+- 状态：`done`（工程实现完成；真实用户开放统一等待V1-9产品内E2E与V1-10发布门，不再单列前段Provider smoke）
 - 来源：2026-07-10 用户指定 M67 后的下一阶段需求。
 - 已有基础：M67 已具备 `LocalUser`、密码认证、管理员/教师角色、持久会话、项目成员关系、关闭公开注册、管理员 bootstrap、教师 invite API/CLI 和脱敏审计。
 - 问题：当前准入能力仍以脚本和单次邀请为主，缺少可供管理员日常使用的用户列表、状态管理、角色管理、会话撤销和项目归属检查；不能把“能创建两个测试账号”当作完整多用户产品能力。
@@ -254,11 +254,11 @@
 - 状态：`split`
 - 来源：`current-requirements-baseline.md` 视频交付门禁。
 - 问题：视频生成前必须有主题、脚本、资产图、分镜提示词、镜头时长、画面动作、旁白或字幕、课堂边界约束；当前链路仍未完全可真实执行。
-- 目标：形成可被真实视频 provider 使用的结构化前置产物。
+- 目标：先形成脱离教材和课堂角色仍成立的独立创意，再建立唯一最小课程锚点；根据当前WorldState补齐可被真实视频Provider使用的最小必要结构化前置，不把顶层交互固化成单向顺序。
 - 验收：
-  - 能按顺序生成并确认知识锚点、创意主题、视频脚本、分镜、资产 brief、资产图、片段计划。
+  - 产品Main Agent能从当前已有合格产物切入；先验证独立创意，再形成唯一最小课程锚点，并按缺口补齐视频脚本、分镜、资产brief、资产图和片段计划。
   - 缺前置材料时不调用真实视频 provider。
-- 建议阶段：`M69-M71`。
+- 建议阶段：V1-7视频内部编排闭环；真实媒体只在V1-9执行。
 
 ### RQ-003 PPTX 真实交付与 slideCount 门禁持续验收
 
@@ -295,17 +295,17 @@
 
 ### RQ-013 真实工具金路径闭环
 
-- 状态：`accepted`（工程实现已完成；真实外部 Provider 与教师全链路验收未完成，不能标记 done）
+- 状态：`technical tool golden path implemented / product-internal E2E deferred V1-9`
 - 来源：M64-R / M66-R 收尾后剩余主线缺口。
-- 问题：ToolRegistry 和 Runtime native loop 已接通，但 `asset_image_generate`、`concat_only_assemble` 和工具层真实最终包仍未实现；provider 工具也不能从 native loop 直接使用裸 artifact refs。
-- 目标：用服务端 resolved Artifact、真实 Provider 和质量门禁跑通一个教师任务从输入到最终下载包的完整链路。
+- 当前事实：`asset_image_generate`、`concat_only_assemble`、工具层真实最终包和服务端resolved Artifact门禁已经实现并有历史真实链证据；尚未证明的是产品Main Agent自主规划、调用、审查、返修和成包。
+- 目标：保留现有真实Tool金路径，在V1-9由产品Main Agent从教师UI独立完成一次真实任务；不在V1前段单独重复Provider smoke或外部编排整包。
 - 验收：
   - `asset_image_generate` 生成真实、可校验、可保存的视频资产图产物。
   - `concat_only_assemble` 只按分镜顺序拼接已通过校验的视频片段，不重排、不加转场、不重写内容。
   - `final_package` 产出真实 ZIP/材料包，包含 PPTX、图片、视频、清单和校验 metadata，不再只是交付检查清单。
   - provider 工具只接受同项目、已批准、ID/kind/nodeKey 匹配的服务端 resolved Artifact。
-  - 使用一个真实小学数学公开课任务完成需求、教案、PPT 设计、PPTX、图片、视频和最终材料包下载验收。
-- 优先级：下一阶段，先于公开注册和完整多用户管理。
+  - V1-9使用一个真实公开课任务完成需求、教案、PPT设计、PPTX、图片、视频和最终材料包下载验收，运行中外部Codex干预为0。
+- 优先级：历史工具底座已完成；产品内真实E2E统一延后到V1-9，当前下一阶段仍是V1-2封板。
 - 阶段与测试：`docs\stages\local-real-mvp-m68-real-tool-golden-path-plan.md`、`docs\stages\local-real-mvp-m68-real-tool-golden-path-test-plan.md`。
 - 收尾证据：`docs\stages\local-real-mvp-m68-real-tool-golden-path-closeout.md`。
 
@@ -339,7 +339,7 @@
 
 ### RQ-023 可执行合同、质量决策与受控 ReAct
 
-- 状态：`done`（Stage 2A 可执行合同/ValidationReport、Stage 2B Critic/QualityDecision、Stage 2C Observation/Replan 与 finish 证据门均已完成）
+- 状态：`split / in_progress`（Stage 2A合同与ValidationReport、Stage 2B Critic与QualityDecision、Stage 2C Observation/final证据底座已完成；产品Main Agent同轮多Tool Observe/Replan与固定DeliveryPlan降级待V1-3）
 - 收尾证据：`docs\stages\local-real-v1-stage2a-contract-validation-closeout.md`、`docs\stages\local-real-v1-stage2b-quality-decision-closeout.md`、`docs\stages\local-real-v1-stage2c-observation-replan-closeout.md`。
 - 来源：节点合同草案、RQ-015 非线性按需生产和当前 Agent Harness。
 - 目标：Main Agent 基于 WorldState 执行有界 Observe、Plan、Guard、Act、Observe、Replan；合同和确定性门禁约束提交，不把顶层 Agent 固化成线性 DAG。
@@ -351,7 +351,7 @@
 
 ### RQ-024 PPT Quality 纵向闭环
 
-- 状态：`first real course complete / two fixed tasks pending`
+- 状态：`production craft proven / product-internal orchestration pending V1-6`（既有真实PPT证明工艺和Provider可行，不再要求前段追加两套固定真实任务）
 - 来源：用户提供的 PPT V8 手册、PPT 生产工艺设计和现有 PPTX 真伪门禁。
 - 目标：从教材证据、叙事大纲、视觉系统、逐页 PageSpec、关键样张和正式资产，生成真实可编辑 PPTX，并支持页级返修。
 - 验收：
@@ -360,26 +360,27 @@
   - PPTX、PDF、逐页 PNG 和 contact sheet 页数一致；最终真实试点至少包含一套 12 页 PPTX。
   - 问题精确定位到 pageId/assetId；修一页不重跑整套。
 
-### RQ-025 视频 Full Intro 逐镜头闭环
+### RQ-025 视频 Full Intro、独立创意与课程锚点闭环
 
-- 状态：`first real course complete / two fixed tasks pending`
+- 状态：`technical pipeline proven / product-internal critic and orchestration pending V1-7`（既有视频只证明真实Provider、镜头生成与合成链；课程锚点失败包保留为负例，不再触发前段真实重做）
 - 来源：用户提供的《视频工作流制作手册V1.0》、视频工艺设计和现有视频门禁。
-- 目标：从课程锚点和独立创意形成 Beat、ShotSpec、视频专属参考资产、逐镜头任务、音字后期与真实合成，并支持镜头级恢复和返修。
+- 目标：先形成脱离教材、PPT和课堂角色仍成立的独立创意，再用唯一最小课程锚点回接学习任务，形成 Beat、ShotSpec、视频专属参考资产、逐镜头任务、音字后期与真实合成，并支持镜头级恢复和返修。课程锚点不得被扩大成小学课堂世界观，也不得因为受众是小学生就强制儿童主角、教室场景或课堂活动。
 - 验收：
+  - 产品内`delivery_critic.review(domain="video", stage="course_anchor")`执行六硬门审查；Main Agent依据CriticReport自主Replan或触发HumanGate，外部Codex不代做选案、批准和返修决策。
   - 每个镜头独立绑定 shotId、inputHash、providerTaskId、参考资产和验收条件。
   - 需要连续性的镜头能证明参考资产真实进入 Provider 请求；PPT 资产不得冒充视频参考资产。
   - 单镜头失败、重启或返修不重跑全片；FFmpeg 合成结果与 TimelineManifest、ffprobe 一致。
-  - QA 覆盖课程回接、答案泄露、儿童安全、连续性、字幕、音轨和技术参数。
+  - QA 覆盖独立创意、最小课程回接、教材/PPT动画化、课堂/儿童角色强绑定、答案泄露、儿童安全、连续性、字幕、音轨和技术参数。
 
 ### RQ-026 整堂课一致性、最终包与邀请制上线
 
 - 状态：`in_progress`
 - 来源：V1 快速上线目标和当前最终材料包真伪门禁。
-- 目标：教案、PPT、视觉图和视频形成可上课的同一版本，通过真实 Provider、服务器恢复和教师任务后开放邀请制 V1。
+- 目标：教案、PPT、视觉图和视频形成可上课的同一版本；前段以产品内编排证据为主，收尾时由产品Main Agent完成一次真实交付，再由外部验收者黑盒审核，通过服务器恢复和教师任务后开放邀请制 V1。
 - 验收：
   - `ClassroomRunSpec` 对齐视频结束点、PPT 页面、教师操作、答案揭示和课堂节奏。
   - 最终包只收录当前 `final_eligible` 版本；ZIP、manifest、hash、数据库记录和真实目录一致。
-  - 完成三个固定、递增难度的小学数学真实任务，至少一套 12 页 PPTX，三套真实 MP4/最终包，P0 为 0。
+  - V1不再以外部Codex制作更多整包作为前置；产品内Main Agent必须独立完成至少一次真实PPTX、MP4和最终包E2E，运行中外部干预为0，P0为0。
   - 记录首次可授课率、人工修改时间、返修次数、成本、耗时和 Provider 失败率，并取得至少一名真实教师签收。
   - 目标服务器共享卷重启、release 回滚、备份恢复和公开注册关闭复核通过后，才允许邀请真实用户。
 
