@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / A-01 complete / A-02 implementation checkpoint / V1-2 closure next`
+状态：`Accepted / A-01 complete / A-02 production candidate / 119 of 121 focused tests passing`
 
 关联计划：`docs\stages\local-real-v1-mainline-adjustment-plan.md`
 
@@ -32,7 +32,7 @@
 | A-11 | 视频创意门 | 产品内`delivery_critic.review`执行六硬门：独立可理解、独立观看价值、非教材/PPT复刻、唯一最小锚点、受众不限制故事世界、不泄露答案；任一失败或inconclusive即停止 |
 | A-11a | 课程锚点边界 | 锚点只有一个最小回接；不会因目标受众是小学生而强制儿童主角、教室场景或课堂活动；全程教材化/课堂化稳定阻塞并产生CriticReport |
 | A-11b | 锚点自主返修 | Main Agent读取锚点CriticReport后自主Replan、换创意机制或请求HumanGate；外部Codex介入次数为0 |
-| A-11c | 独立Critic与不过度约束 | `delivery_critic.review`而非Director自评解锁媒体Tool；儿童主角或教室场景有独立创意理由时可以通过，教室仅在最终回接是明确正例但非唯一许可；受众年龄强绑定或课堂教学活动复刻必须阻塞 |
+| A-11c | 独立Critic与不过度约束 | `delivery_critic.review`通过只形成后续Guard的必要语义前置；仍须可信生产Executor绑定、PlanGuard、HumanGate和QualityDecision才允许真实媒体调用。儿童主角或教室场景有独立创意理由时可以通过；受众年龄强绑定或依赖课堂教学任务才能成立的复刻必须阻塞 |
 | A-12 | 视频Provider前置 | Concept Selection和HumanGate未通过时，真实视频任务提交次数为0 |
 | A-13 | 两用户隔离 | 两账号同时操作不同项目，消息、强度、action、job、artifact和反馈不串线 |
 | A-14 | 双任务并发 | 不同项目可以并发；同项目只有一个有效写者；失败恢复不重复付费提交 |
@@ -53,4 +53,6 @@
 
 每个阶段closeout记录：提交SHA、测试命令和计数、真实请求/浏览器/状态证据、失败和回退点、仍由外部Codex介入的动作。只要仍有关键编排动作依赖外部Codex，V1-9不得开始。V1-9首次完整真实全链路验收集中执行；若失败，先完成责任归因和定点修复，再决定是否需要局部或整包复验，禁止无归因地反复烧真实Provider。
 
-V1-2当前通过的自动化只证明Registry、调用信封、Router和初版硬门存在，不证明独立Video Critic闭环。V1-2 closeout前必须新增并通过：`delivery_critic.review`课程锚点硬门、结构化返修结果保留、premise绕过反例、儿童主角独立创意正例、教室仅最终回接正例、教室服务独立叙事正例，以及默认数据库授权对actor/project/IntentEpoch/Artifact版本与digest的集成测试。
+V1-2已有未提交生产候选；2026-07-13 03:15最新专项测试为119/121，两个红灯均为默认数据库授权未拒绝审批状态自相矛盾的review target。证据充分性、blocking finding优先级、通用Critic领域隔离、签名review target与typed locator绑定、failed/inconclusive报告完整性、损坏JSON和不过度约束正例已经进入通过项；closeout前仍须复核最终diff，并继续证明actor/project/IntentEpoch/Artifact版本、digest与审批状态一致性边界。
+
+V1-2 closeout只允许声明“Agent Tool合同、Router硬门、默认授权边界和注入Executor测试就绪”。生产Critic Executor、Main Agent真实调用、CriticReport持久化及基于Observation的同轮Replan必须在V1-3/V1-7另行取证；这些证据成立前，不得将合同就绪升级为“产品智能体已经自主完成课程锚点审查”。

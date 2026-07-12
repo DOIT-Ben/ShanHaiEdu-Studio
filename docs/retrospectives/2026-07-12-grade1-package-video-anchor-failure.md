@@ -89,8 +89,8 @@ PPT路径成功
 
 ### 必须
 
-1. 先写一句完全不含学科名、教材名、课堂、教师和学生的独立故事梗概；如果故事不能成立，创意失败。
-2. 生成叙事情境、视觉奇观、真实生活挑战三类候选，至少各2案；方案必须改变故事机制，而非换角色和颜色。
+1. 临时移除教材知识任务、PPT结构和教师讲解后，故事目标、阻碍与变化仍须成立；儿童、教师或教室可以出现，但不能因小学受众而成为必需条件。
+2. 当教师没有提供可用创意或Main Agent判断需要发散时，进入探索模式：从叙事情境、视觉奇观、真实生活挑战等不同机制生成足够候选，数量由决策难度与预算决定；不得只换角色和颜色。
 3. 每案只允许一个课程锚点：触发事件、课堂第一问、禁止提前解释、交接瞬间。
 4. 用户批准Concept Selection Set后才能生成Beat Sheet、参考图和视频。
 5. Video Critic必须先回答三个阻塞问题：不懂教材是否看得懂、去掉课堂结尾是否仍值得看、是否只是PPT动态版。
@@ -116,16 +116,16 @@ PPT路径成功
 - 真实挑战类：舞台灯光控制台收到若干组未标记灯具，需要确认每组数量后才能启动演出。
 - 叙事类：小型博物馆夜间藏品标签混乱，自动管理员必须恢复陈列秩序。
 
-这些只是候选方向，不能由Agent自行选中并直接生产。
+这些只是候选方向。Main Agent可以排序、推荐或按已授权策略选择，但必须经过真实HumanGate才能进入Beat Sheet和媒体生产；外部Codex不得代替教师批准或在运行中指定方案。
 
 ## 落地与验证
 
 | 预防动作 | 责任载体 | 验收条件 | 状态 |
 |---|---|---|---|
-| 独立短片三问门禁 | Video Creative Director / 独立Video Critic | 三问全部为“是”，否则阻塞 | Prompt与V1-2初版Director门已落实；独立Critic待封板 |
-| 三类候选探索 | `04-video-creative-director.md` | 每类至少2案且故事机制不同 | Prompt已落实；按当前决策暂停真实重跑 |
-| 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment，并记录trigger、doNotExplain、version与digest | V1-2封板待实现 |
-| 创意维度硬门 | Video Critic | 独立创意与钩子低于3/4直接返工 | Prompt已落实，运行时待接入验证 |
+| 独立短片三问门禁 | Director候选预检；独立Video Critic权威裁决 | 六硬门全部通过才可进入后续Guard，否则返修或阻塞 | Prompt与V1-2合同候选及注入执行测试已落实；生产Executor和Main Agent接线待V1-3/V1-7 |
+| 多机制候选探索 | `04-video-creative-director.md` | 仅在无可用创意或需要发散时启用；候选跨不同故事机制，数量受决策难度和预算约束 | Prompt方法已落实；按当前决策暂停真实重跑 |
+| 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment，并记录trigger、doNotExplain、version与digest | V1-2合同候选及纵深测试已落实；生产持久化待V1-3/V1-7 |
+| 创意维度硬门 | Video Critic | 六硬门任一failed/inconclusive即返工并阻塞媒体Tool | Prompt与注入执行测试已落实；生产Critic运行时待V1-3/V1-7验证 |
 | 选案后再调用Provider | HumanGate / PlanGuard | 缺少用户选案actionId时零视频任务 | 待实现 |
 | 验收包整体状态 | FinalDeliveryGate | PPT、视频任一核心产物不合格则整包不可交付 | 待实现 |
 | 外部Codex降权 | V1主线测试计划/编排归因审计 | 真实E2E运行中外部选案、批准、返修决策次数为0 | 规则已落实，运行时待验证 |
@@ -133,4 +133,4 @@ PPT路径成功
 
 - 文档验证：检查文件存在、索引链接、UTF-8开头和关键规则可检索。
 - 残余风险：当前60秒视频仍是不合格方向的技术产物，只能保留为反例和Provider证据，不得继续作为正式交付视频。
-- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭独立Critic与结构化返修缺口，再把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan和持久化恢复合同。产品内部编排、课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核，按问题责任层推动下一轮优化。
+- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭两类审批状态一致性红灯，完成V1-2全量验证与正式closeout；随后在V1-3/V1-7把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan和持久化恢复合同。产品内部编排、课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核，按问题责任层推动下一轮优化。

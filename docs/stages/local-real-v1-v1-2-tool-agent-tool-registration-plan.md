@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`implementation checkpoint / closure gaps pending`
+状态：`production candidate under review / 119 of 121 focused tests passing`
 
 关联审计：`docs\stages\local-real-v1-v1-1-orchestration-attribution-audit.md`
 
@@ -67,7 +67,7 @@ Video Director可以携带候选自评用于规划，但不能授权下游；课
 
 1. 不知道学科、教材和教案的观众仍能理解短片发生了什么。
 2. 去掉最后课程回接后，短片仍有目标、阻碍、变化和观看价值。
-3. 短片明显不是教材情境复刻、课堂活动或PPT动态版。
+3. 短片明显不是教材情境复刻或PPT动态版，且不是脱离教师讲解或课堂教学任务便无法成立的活动脚本/录像。
 4. 全片只有一个最小课程回接。
 5. 目标受众年龄没有被扩张为人物和场景的必需条件。
 6. 视频没有提前泄露本课答案或替代教师讲解。
@@ -121,8 +121,8 @@ requestedAt
 
 ### V1-2D 课程锚点合同验证
 
-- 保留Video Director独立短片三问候选自评，并为`delivery_critic.review`增加六硬门校验器；只有Critic结果具有下游授权意义。
-- 加入儿童主角强绑定、全程教室、教材动画版、PPT动态版四类反例夹具。
+- 保留Video Director独立短片三问候选自评，并为`delivery_critic.review`增加六硬门校验器；Critic通过只是后续Guard的必要语义前置，不能独立授权媒体调用。
+- 加入“仅因小学受众或课程要求而强绑儿童、教师、教室，或全程依赖课堂教学活动才能成立”、教材动画版、PPT动态版等反例夹具；教室或儿童本身不是失败关键词，有独立叙事理由时必须允许通过。
 - 反例在任何真实Provider Tool意图产生前阻塞。
 
 ## 7. 文件边界
@@ -158,17 +158,17 @@ requestedAt
 - Main Agent白名单只包含批准的高层业务Tool和Agent Tool，不含敏感/底层能力。
 - 未知、未实现、非白名单、缺调用信封和越权请求稳定拒绝并产生类型化Observation。
 - Agent Tool成功不会创建产品Artifact、推进节点或产生HumanGate批准。
-- 四类课程锚点反例及六硬门失败在Provider前稳定阻塞；Director自评通过不能替代Critic授权。
+- 四类课程锚点反例及六硬门失败在Provider前稳定阻塞；Director自评不能替代独立Critic，Critic通过后仍须可信生产Executor绑定、PlanGuard、HumanGate和QualityDecision。
 - 相关测试、全量Node/Vitest、构建和`git diff --check`通过。
 
 ## 10. 2026-07-13实现检查点
 
-Registry、OpenAI Schema投影、统一调用信封、独立Router、Main Agent白名单、初版课程锚点门和对应测试已经形成，但V1-2尚未达到退出标准。正式closeout前必须关闭：
+Registry、OpenAI Schema投影、统一调用信封、独立Router、Main Agent白名单、课程锚点独立Critic候选、结构化返修和默认授权候选已经形成，但V1-2仍未达到退出标准。2026-07-13 03:15当前专项测试为119/121，正式closeout前必须关闭：
 
-1. 在合同、Router和注入Executor测试层让课程锚点硬门约束`delivery_critic.review(domain="video", stage="course_anchor")`，不能只约束Video Director自评；本阶段不接生产Critic Executor。
-2. 硬门失败保留`responsibleStage`、typed locator、minimal fix、禁止下游Tool等结构化返修结果，供Main Agent Replan使用。
-3. 反例扫描覆盖`storyWorld.premise`，并增加“儿童主角但创意独立”“教室仅在最终回接”“教室服务独立叙事而非教学活动”的正例，防止规则过度约束模型能力。
-4. 使用真实测试数据库覆盖默认授权路径，证明actor/project、IntentEpoch、已批准Artifact版本与digest复核，而不是只注入`authorize`替身。
-5. 完成专项测试、全量测试、生产构建、`git diff --check`和V1-2 closeout；closeout后仍保持`executorReady=false`、`mainAgentExecutable=false`，真实Executor与Main Agent接线进入V1-3/V1-7。
+1. 默认数据库授权必须拒绝`needs_review + isApproved=true`与`approved + isApproved=false`两类自相矛盾的审查目标状态，且Executor调用次数为0。
+2. 复核已经通过专项测试的合同边界：证据/理由充分性、blocking finding优先级、课程锚点领域隔离、签名review target、typed locator及failed/inconclusive完整性；不得通过放宽断言获得绿色。
+3. 保留“儿童主角但创意独立”“教室仅在最终回接”“教室服务独立叙事而非教学活动”正例及否定语义，防止规则过度约束模型能力。
+4. 注入Executor永远保持`unverified_injected`与`productionEligible=false`；六门通过只满足后续Guard前置，不代表媒体授权或产品运行时闭环。
+5. 完成专项测试、全量测试、生产构建、`git diff --check`和V1-2 closeout；closeout后仍保持`executorReady=false`、`mainAgentExecutable=false`，可信Executor、租约下二次复核、调用重放门和Main Agent接线进入V1-3/V1-7。
 
 详细事实与续接入口：`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`。

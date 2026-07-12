@@ -47,6 +47,10 @@ AGENTS.md
 - V1 优先闭环执行安全、PPT Quality、视频 Full Intro 和最终交付，不以框架迁移作为质量前置。
 - `ConversationControlResolver` 只处理确认、取消、修改和改道控制语义，不扩张成第二个 Planner。
 - Fast/Short 产物只能是 preview；真实最终包必须经过 Artifact Truth、QualityDecision 和 FinalDeliveryGate。
+- 真实媒体调用前，课程锚点必须由产品内独立`delivery_critic.review`审查；Critic通过只是后续Guard的必要语义前置，不独立授权Provider调用。
+- V1-1至V1-8优先使用夹具、失败注入和持久化状态验证产品内编排，不反复生成真实媒体整包；V1-9才从产品界面执行一次产品内真实E2E。
+- V1-9运行中外部Codex只观察，不选案、不批准锚点或样张、不决定返修；产品Main Agent独立成包后，外部验收者再做PPT、视频、课程锚点和版本一致性的黑盒审核。
+- “面向小学生”只约束可理解性、安全性和节奏。儿童、教师或教室可以服务独立叙事，但不得由受众身份强制推出；必须阻塞的是教材/PPT复刻、依赖课堂教学任务才能成立的活动脚本和答案泄露。
 
 ## 5. 实验与安全
 
