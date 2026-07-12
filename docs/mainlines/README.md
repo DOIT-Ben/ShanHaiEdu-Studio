@@ -93,7 +93,6 @@ mainline/local-real-mvp
 - `npm test`
 - `npm run build`
 - `npm run test:e2e:stage2:preflight`
-- `graphify update .`
 
 ## 关联文档
 

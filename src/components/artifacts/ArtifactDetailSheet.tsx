@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, Clipboard, FileDown, Image as ImageIcon, SendToBack, Video } from "lucide-react";
-import type { ArtifactItem } from "@/lib/types";
+import type { ArtifactItem, PptFullDeckReviewSubmission, PptSampleReviewSubmission } from "@/lib/types";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import { MarkdownPreview } from "@/components/artifacts/MarkdownPreview";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useArtifactCopyFeedback } from "@/hooks/useArtifactCopyFeedback";
+import { PptSampleReviewPanel } from "@/components/artifacts/PptSampleReviewPanel";
+import { PptFullDeckReviewPanel } from "@/components/artifacts/PptFullDeckReviewPanel";
 
 type ArtifactDetailSheetProps = {
   projectId: string;
@@ -23,6 +25,8 @@ type ArtifactDetailSheetProps = {
   onRegenerate: (item: ArtifactItem) => void;
   onGenerateRealAsset: (item: ArtifactItem, assetKind: RealAssetKind) => void;
   realAssetGenerationKey: string | null;
+  onPptSampleReview: (item: ArtifactItem, review: PptSampleReviewSubmission) => Promise<void>;
+  onPptFullDeckReview: (item: ArtifactItem, review: PptFullDeckReviewSubmission) => Promise<void>;
 };
 
 export function ArtifactDetailSheet({
@@ -37,6 +41,8 @@ export function ArtifactDetailSheet({
   onRegenerate,
   onGenerateRealAsset,
   realAssetGenerationKey,
+  onPptSampleReview,
+  onPptFullDeckReview,
 }: ArtifactDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -52,6 +58,8 @@ export function ArtifactDetailSheet({
             onRegenerate={onRegenerate}
             onGenerateRealAsset={onGenerateRealAsset}
             realAssetGenerationKey={realAssetGenerationKey}
+            onPptSampleReview={onPptSampleReview}
+            onPptFullDeckReview={onPptFullDeckReview}
           />
         )}
       </SheetContent>
@@ -69,6 +77,8 @@ function ArtifactDetailContent({
   onRegenerate,
   onGenerateRealAsset,
   realAssetGenerationKey,
+  onPptSampleReview,
+  onPptFullDeckReview,
 }: {
   projectId: string;
   item: ArtifactItem;
@@ -79,6 +89,8 @@ function ArtifactDetailContent({
   onRegenerate: (item: ArtifactItem) => void;
   onGenerateRealAsset: (item: ArtifactItem, assetKind: RealAssetKind) => void;
   realAssetGenerationKey: string | null;
+  onPptSampleReview: (item: ArtifactItem, review: PptSampleReviewSubmission) => Promise<void>;
+  onPptFullDeckReview: (item: ArtifactItem, review: PptFullDeckReviewSubmission) => Promise<void>;
 }) {
   const { copyItem, copyLabel } = useArtifactCopyFeedback(item, onCopy);
   const realAssetActions = getRealAssetGenerationActions(item);
@@ -103,6 +115,8 @@ function ArtifactDetailContent({
       </div>
       <ScrollArea className="min-h-0 flex-1">
          <div className="p-5">
+           <PptSampleReviewPanel projectId={projectId} item={item} onSubmit={onPptSampleReview} />
+           <PptFullDeckReviewPanel projectId={projectId} item={item} onSubmit={onPptFullDeckReview} />
            <section>
              <MarkdownPreview item={item} showHeader={false} />
            </section>

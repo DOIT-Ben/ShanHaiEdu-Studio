@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
-import type { ArtifactItem, ChatMessage, ConversationTurnJob, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, ConversationTurnJob, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
@@ -83,8 +83,16 @@ export function useWorkbenchController() {
     setArtifacts(snapshot.artifacts);
     setTurnJobs(snapshot.turnJobs ?? []);
     setActiveArtifactKey(snapshot.activeArtifactKey);
-    setDetailItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
-    setSidePanelItem((current) => (current ? snapshot.artifacts.find((item) => item.key === current.key) ?? current : current));
+    setDetailItem((current) => current
+      ? snapshot.artifacts.find((item) => item.key === current.key)
+        ?? snapshot.artifacts.find((item) => item.nodeKey === current.nodeKey)
+        ?? current
+      : current);
+    setSidePanelItem((current) => current
+      ? snapshot.artifacts.find((item) => item.key === current.key)
+        ?? snapshot.artifacts.find((item) => item.nodeKey === current.nodeKey)
+        ?? current
+      : current);
     setProjects((current) => current.map((project) => (project.id === snapshot.project.id ? snapshot.project : project)));
     setErrorMessage(null);
     setLoadState("ready");
@@ -442,6 +450,30 @@ export function useWorkbenchController() {
     }
   }
 
+  async function submitPptSampleReview(item: ArtifactItem, review: PptSampleReviewSubmission) {
+    if (!activeProjectId || !item.artifactId) return;
+    try {
+      const snapshot = await dataSource.submitPptSampleReview(activeProjectId, item.artifactId, review);
+      applySnapshot(snapshot);
+      const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0);
+      setNotice(passed ? "样张审查已通过，请确认是否用于后续批量制作。" : "样张问题已记录，可以按页调整后重新审查。");
+    } catch {
+      setNotice("样张审查暂时没有保存成功，请检查各页结论后重试。");
+    }
+  }
+
+  async function submitPptFullDeckReview(item: ArtifactItem, review: PptFullDeckReviewSubmission) {
+    if (!activeProjectId || !item.artifactId) return;
+    try {
+      const snapshot = await dataSource.submitPptFullDeckReview(activeProjectId, item.artifactId, review);
+      applySnapshot(snapshot);
+      const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0);
+      setNotice(passed ? "完整课件逐页审查已通过，请确认是否进入最终交付。" : "页面问题已记录，可以按页返修后重新审查。");
+    } catch {
+      setNotice("完整课件审查暂时没有保存成功，请检查逐页结论后重试。");
+    }
+  }
+
   function selectQuickReply(value: string, actionId?: string) {
     setPendingConfirmationActionId(actionId?.trim() || null);
     setInput(value);
@@ -497,6 +529,8 @@ export function useWorkbenchController() {
     setMessageReaction,
     attachComposerFile,
     confirmArtifact,
+    submitPptSampleReview,
+    submitPptFullDeckReview,
     regenerateArtifact,
     generateRealAsset,
     realAssetGenerationKey,

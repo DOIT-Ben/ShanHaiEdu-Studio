@@ -71,6 +71,7 @@ test.describe("M67 beta feedback center", () => {
     await expect(affectedSeverity).toHaveCSS("background-color", "rgb(238, 247, 243)");
     await expect(affectedSeverity.locator("svg")).toHaveCount(1);
     const description = dialog.locator(feedbackSelectors.description);
+    await dialog.locator(feedbackSelectors.title).fill("反馈提交状态验收");
     await expect(description).toHaveAttribute("placeholder", /按钮|步骤|预期/);
     await description.fill("   ");
     await expect(submit).toBeDisabled();
@@ -139,6 +140,7 @@ test.describe("M67 beta feedback center", () => {
     const dialog = await openGlobalFeedback(page);
     await selectCategory(dialog, "bug");
     const formulaProbe = `=1+1 M67 retry ${test.info().project.name}`;
+    await dialog.locator(feedbackSelectors.title).fill("反馈失败重试验收");
     await dialog.locator(feedbackSelectors.description).fill(formulaProbe);
     await selectValidPng(dialog, "retry-draft.png");
 
@@ -151,10 +153,13 @@ test.describe("M67 beta feedback center", () => {
     await expect(submit).toHaveClass(/bg-\[#367d6d\]/);
     await expect(submit).toHaveText("重新提交");
 
+    const retryResponsePromise = page.waitForResponse((response) => response.url().endsWith(feedbackContract.submitPath) && response.request().method() === "POST");
     await submit.click();
     await expect(submit).toBeDisabled();
     await submit.dispatchEvent("click");
     expect(inFlightRequests).toBeLessThanOrEqual(1);
+    const retryResponse = await retryResponsePromise;
+    expect(retryResponse.status(), await retryResponse.text()).toBe(201);
     await expect(dialog).toHaveAttribute("data-feedback-status", "submitted");
     await expect(dialog).toContainText(/FB-\d{8}-[A-Z0-9]+/);
     submittedReceipt = (await dialog.innerText()).match(/FB-\d{8}-[A-Z0-9]+/)?.[0] ?? "";

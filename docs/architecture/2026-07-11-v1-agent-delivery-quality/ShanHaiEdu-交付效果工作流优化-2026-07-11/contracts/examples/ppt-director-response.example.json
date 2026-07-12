@@ -1,0 +1,57 @@
+{
+  "communication_job": "到课程结束时，一年级学生应能用实物、点子和数字解释1到5的数量对应关系。",
+  "deck_narrative": {
+    "opening_tension": "博物馆的数字标签不见了",
+    "learning_progression": ["观察展品数量", "用点子表征", "匹配数字", "比较并迁移"],
+    "closing_resolution": "学生为展品恢复标签并解释理由",
+    "page_count_rationale": "每次认知转换由独立页面承接，避免在单页同时完成观察、抽象和验证。"
+  },
+  "learning_objective_coverage": [
+    { "objective_id": "obj_count_and_represent_1_to_5", "concepts": ["点数", "数量表征", "数字匹配"], "page_ids": ["page_03"] }
+  ],
+  "visual_system": { "palette": ["lake-blue", "mustard-yellow"], "minimum_contrast": "WCAG AA" },
+  "page_specs": [
+    {
+      "page_id": "page_03",
+      "page_number": 3,
+      "objective_ids": ["obj_count_and_represent_1_to_5"],
+      "narrative_job": "把观察到的数量转成点子和数字表征",
+      "teaching_action": "逐步揭示一组物体、同样多的点子和数字标签",
+      "student_action": "先点数，再选择同样多的点子，最后说出应恢复的数字标签",
+      "takeaway_title": "这组展品该找回哪个数字？",
+      "primary_visual_type": "relationship",
+      "primary_visual_brief": "左侧只出现当前一组可数物体，中间为可编辑点子托盘，右侧为空白标签；学生回答后才揭示本地数字层。",
+      "visible_text_budget": { "max_lines": 2, "max_characters": 34, "min_font_pt": 28 },
+      "local_math_layers": [{ "layer_id": "numeral_03", "role": "editable_numeral", "exact_content": "3" }],
+      "generated_asset_refs": ["asset_museum_background_01"],
+      "layout_constraints": ["数字揭示前标签保持空白"],
+      "alt_text": "三只小鸟、三个点子和待揭示数字3之间的对应关系",
+      "reading_order": ["takeaway_title", "numeral_03"],
+      "non_color_coding": ["数量对应同时使用位置连线和形状，不只靠颜色"],
+      "media_accessibility": { "captions_required": false, "transcript_required": false },
+      "transition_from_previous": "从观察页的展台向空白标签移动",
+      "presenter_note": "先让学生摆点子，再追问哪个数字表示这么多。",
+      "acceptance_checks": ["数字只在学生回答后出现"]
+    }
+  ],
+  "asset_requests": [
+    {
+      "asset_id": "asset_museum_background_01",
+      "page_ids": ["page_03"],
+      "asset_role": "沉浸式纸艺博物馆背景",
+      "generation_mode": "generate",
+      "aspect_ratio": "16:9",
+      "composition_safe_zone": "右侧标签区和顶部标题区保持低细节",
+      "prompt": "纸艺博物馆全幅场景，明确纵深和留白，不生成文字数字",
+      "negative_prompt": "no text, no number, no signage, no card grid",
+      "local_overlay_requirements": ["点子和数字使用本地可编辑层"],
+      "reuse_policy": "仅可复用为同一叙事段的背景，不跨课题复用"
+    }
+  ],
+  "self_check": {
+    "all_objectives_covered": true,
+    "page_numbers_continuous": true,
+    "all_assets_bound": true,
+    "violations": []
+  }
+}

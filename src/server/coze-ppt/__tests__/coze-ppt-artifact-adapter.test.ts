@@ -6,6 +6,7 @@ import { GET as getPptxRoute } from "@/app/api/workbench/projects/[projectId]/ar
 import { POST as postCozePptRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
   routeToolCall: vi.fn(),
@@ -63,7 +64,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
       pptxValid: true,
       hasPresentationXml: true,
     });
-    vi.mocked(routeToolCall).mockResolvedValueOnce({
+    vi.mocked(routeToolCall).mockImplementationOnce(async (input) => withPassedValidationReport(input, {
       status: "succeeded",
       toolId: "generate_pptx_from_design",
       capabilityId: "coze_ppt",
@@ -109,7 +110,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
         kind: "tool_succeeded",
         createdAt: "2026-07-10T00:00:00.000Z",
       },
-    });
+    }, { stage: "coze_ppt", domain: "ppt", toolId: "generate_pptx_from_design" }));
 
     const response = await postCozePptRoute(new Request("http://localhost", {
       method: "POST",

@@ -9,6 +9,7 @@ import { createDeterministicMainConversationAgent, type MainConversationAgent, t
 type OpenAIMainConversationAgentOptions = {
   client: OpenAIResponsesClient;
   model: string;
+  reasoningEffort?: "low" | "medium" | "high";
 };
 
 type StructuredMainAgentOutput = {
@@ -33,7 +34,10 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "lesson_plan",
   "ppt_outline",
   "ppt_design",
-  "coze_ppt",
+  "ppt_sample_assets",
+  "ppt_key_samples",
+  "ppt_full_assets",
+  "ppt_full_deck",
   "image_asset",
   "knowledge_anchor_extract",
   "creative_theme_generate",
@@ -53,10 +57,12 @@ const minimumMainAgentTimeoutMs = 10_000;
 export class OpenAIMainConversationAgent implements MainConversationAgent {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
+  private readonly reasoningEffort: "low" | "medium" | "high";
 
   constructor(options: OpenAIMainConversationAgentOptions) {
     this.client = options.client;
     this.model = options.model;
+    this.reasoningEffort = options.reasoningEffort ?? "high";
   }
 
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
@@ -65,7 +71,7 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
     }
 
     try {
-      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildMainAgentRequest(input));
+      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildMainAgentRequest(input, this.reasoningEffort));
       return normalizeModelTurn(parseMainAgentOutput(response.assistantText), input);
     } catch {
       return {
@@ -99,7 +105,7 @@ export function createMainConversationAgentFromEnv(env: OpenAICompatibleEnv = pr
     maxRetries: 0,
   }) as OpenAIResponsesClient;
 
-  return new OpenAIMainConversationAgent({ client, model: config.model });
+  return new OpenAIMainConversationAgent({ client, model: config.model, reasoningEffort: config.reasoningEffort });
 }
 
 export function resolveMainAgentTimeoutMs(env: OpenAICompatibleEnv = process.env) {
@@ -163,8 +169,9 @@ function unavailableTurnFromPlan(input: { toolPlan: CapabilityToolPlan; status: 
   };
 }
 
-function buildMainAgentRequest(input: MainConversationAgentInput) {
+function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffort: "low" | "medium" | "high" = "high") {
   return {
+    reasoning: { effort: reasoningEffort },
     instructions: [
       "你是山海课伴的主控备课 Agent。",
       "你在教师端的名字是“小酷”；需要自称时使用这个名字，不要自称为模型、系统或 AI。",

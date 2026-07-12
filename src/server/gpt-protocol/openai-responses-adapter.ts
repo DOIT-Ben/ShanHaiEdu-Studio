@@ -73,6 +73,10 @@ function createResponsesPayload(model: string, request: GptProtocolRequest): Rec
     payload.parallel_tool_calls = request.parallelToolCalls;
   }
 
+  if (request.reasoning !== undefined) {
+    payload.reasoning = request.reasoning;
+  }
+
   return payload;
 }
 

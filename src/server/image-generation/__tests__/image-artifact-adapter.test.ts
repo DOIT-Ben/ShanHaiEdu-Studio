@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as postImageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
   routeToolCall: vi.fn(),
@@ -38,7 +39,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
       messageId: sourceArtifact.id,
     });
 
-    vi.mocked(routeToolCall).mockResolvedValueOnce({
+    vi.mocked(routeToolCall).mockImplementationOnce(async (input) => withPassedValidationReport(input, {
       status: "succeeded",
       toolId: "generate_classroom_image",
       capabilityId: "image_asset",
@@ -81,7 +82,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
         kind: "tool_succeeded",
         createdAt: "2026-07-10T00:00:00.000Z",
       },
-    });
+    }, { stage: "image_asset", domain: "ppt", toolId: "generate_classroom_image" }));
 
     const response = await postImageRoute(new Request("http://localhost", {
       method: "POST",

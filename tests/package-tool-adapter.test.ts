@@ -1,13 +1,20 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { executePackageTool } from "@/server/tools/package-tool-adapter";
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { buildPptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
+import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
+import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
+import { buildPptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
+import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
 
 function artifact(kind: ArtifactRecord["kind"], id: string, overrides: Partial<ArtifactRecord> = {}): ArtifactRecord {
   return {
@@ -70,6 +77,174 @@ async function withArtifactStorage<T>(run: () => Promise<T>): Promise<T> {
 }
 
 describe("M68 PackageToolAdapter", () => {
+  it("runs the real PPT sample composer, LibreOffice renderer, and three-overview pipeline", async () => {
+    await withArtifactStorage(async () => {
+      const fixtures = validPptSampleFixtures();
+      for (const entry of fixtures.manifest.entries) {
+        const width = entry.assetKind === "AI_SCENE" ? 1920 : 1024;
+        const height = entry.assetKind === "AI_SCENE" ? 1080 : 1024;
+        const buffer = await sharp({
+          create: {
+            width,
+            height,
+            channels: 4,
+            background: entry.assetKind === "AI_SCENE" ? { r: 225, g: 238, b: 242, alpha: 1 } : { r: 50, g: 120, b: 105, alpha: 0 },
+          },
+        }).png().toBuffer();
+        const stored = writeLocalArtifact({ category: "image-artifacts", fileName: entry.fileName, buffer });
+        entry.storageRef = stored.localOutput;
+        entry.sha256 = createHash("sha256").update(buffer).digest("hex");
+        entry.bytes = buffer.length;
+        entry.width = width;
+        entry.height = height;
+      }
+      const { manifestDigest: _digest, ...semanticManifest } = fixtures.manifest;
+      fixtures.manifest.manifestDigest = createPptAssetManifestDigest(semanticManifest);
+      const design = artifact("ppt_design_draft", "design-real", { structuredContent: { pptDesignPackage: fixtures.designPackage } });
+      const assets = artifact("image_prompts", "assets-real", {
+        structuredContent: { pptAssetRequestBatch: fixtures.requestBatch, pptAssetManifest: fixtures.manifest },
+      });
+
+      const result = await executePackageTool({
+        tool: getToolDefinition("assemble_ppt_key_samples"),
+        projectId: "project-a",
+        artifactRefs: [{ kind: design.kind, artifactId: design.id }, { kind: assets.kind, artifactId: assets.id }],
+        resolvedArtifacts: [design, assets],
+      });
+
+      if (result.status !== "succeeded") {
+        throw new Error(result.observation.internalReasonSanitized);
+      }
+
+      expect(result).toMatchObject({
+        status: "succeeded",
+        artifactDraft: {
+          structuredContent: {
+            pptKeySampleCandidate: {
+              reviewStatus: "awaiting_dvp_review",
+              samplePageIds: fixtures.designPackage.samplePlan.samplePageIds,
+              overviews: expect.arrayContaining([
+                expect.objectContaining({ kind: "scene_and_primary_props" }),
+                expect.objectContaining({ kind: "micro_assets" }),
+                expect.objectContaining({ kind: "assembled_samples" }),
+              ]),
+            },
+          },
+        },
+      });
+      if (result.status === "succeeded") {
+        const candidate = result.artifactDraft.structuredContent?.pptKeySampleCandidate as { samplePptx: { storageRef: string }; assembledPages: Array<{ renderRef: string }> };
+        expect(existsSync(resolveLocalArtifactOutput(candidate.samplePptx.storageRef)!)).toBe(true);
+        expect(candidate.assembledPages.every((page) => existsSync(resolveLocalArtifactOutput(page.renderRef)!))).toBe(true);
+      }
+    });
+  }, 60_000);
+
+  it("assembles a PPT key sample review candidate without self-approving D/V/P", async () => {
+    const fixtures = validPptSampleFixtures();
+    const design = artifact("ppt_design_draft", "design", {
+      structuredContent: { pptDesignPackage: fixtures.designPackage },
+    });
+    const assets = artifact("image_prompts", "assets", {
+      structuredContent: {
+        pptAssetRequestBatch: fixtures.requestBatch,
+        pptAssetManifest: fixtures.manifest,
+      },
+    });
+    const candidate = buildPptKeySampleCandidate({
+      designPackage: fixtures.designPackage,
+      requestBatch: fixtures.requestBatch,
+      manifest: fixtures.manifest,
+      composition: {
+        pptxBuffer: Buffer.from("PK candidate"),
+        pptxSha256: fixtures.sampleSet.samplePptx.sha256,
+        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+      },
+      renderEvidence: {
+        samplePptx: fixtures.sampleSet.samplePptx,
+        pageRenders: fixtures.sampleSet.assembledPages.map((page) => ({ pageId: page.pageId, storageRef: page.renderRef, sha256: page.renderSha256 })),
+        overviews: fixtures.sampleSet.overviews,
+      },
+    });
+
+    const result = await executePackageTool({
+      tool: getToolDefinition("assemble_ppt_key_samples"),
+      projectId: "project-a",
+      artifactRefs: [{ kind: design.kind, artifactId: design.id }, { kind: assets.kind, artifactId: assets.id }],
+      resolvedArtifacts: [design, assets],
+      runPptKeySampleAssembly: async () => candidate,
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "assemble_ppt_key_samples",
+      capabilityId: "ppt_key_samples",
+      artifactDraft: {
+        nodeKey: "image_prompts",
+        kind: "image_prompts",
+        structuredContent: {
+          pptKeySampleCandidate: {
+            candidateDigest: candidate.candidateDigest,
+            reviewStatus: "awaiting_dvp_review",
+          },
+        },
+      },
+      qualityGate: { passed: true, gates: expect.arrayContaining(["awaiting_dvp_review"]) },
+    });
+    if (result.status === "succeeded") {
+      expect(result.artifactDraft.structuredContent).not.toHaveProperty("pptKeySampleSet");
+      expect(result.artifactDraft.structuredContent).not.toHaveProperty("pptSampleApproval");
+    }
+  });
+
+  it("assembles a full PPT delivery-review candidate without self-approving Delivery Critic", async () => {
+    const fixtures = validPptFullProductionFixtures();
+    const pageIds = fixtures.designPackage.pageSpecs.map((page) => page.pageId);
+    const composition = {
+      pptxBuffer: Buffer.from("PK full deck"),
+      pptxSha256: "a".repeat(64),
+      pageEvidence: fixtures.designPackage.pageSpecs.map((page) => ({
+        pageId: page.pageId,
+        assetIds: fixtures.manifest.entries.filter((entry) => entry.pageIds.includes(page.pageId)).map((entry) => entry.assetId),
+        editableTextLayerIds: page.editableText.map((layer) => layer.layerId),
+        editableMathLayerIds: page.editableMath.map((layer) => layer.layerId),
+        rasterizedExactContent: false as const,
+      })),
+    };
+    const renderEvidence = {
+      pptx: { storageRef: "artifact-storage/ppt-production-artifacts/deck.pptx", sha256: "a".repeat(64), bytes: 1000, slideCount: 12 },
+      pdf: { storageRef: "artifact-storage/ppt-production-artifacts/deck.pdf", sha256: "b".repeat(64), bytes: 900, pageCount: 12 },
+      pageRenders: pageIds.map((pageId, index) => ({ pageId, storageRef: `artifact-storage/ppt-production-artifacts/${pageId}.png`, sha256: (index + 10).toString(16).padStart(2, "0").repeat(32).slice(0, 64) })),
+      contactSheet: { storageRef: "artifact-storage/ppt-production-artifacts/contact.png", sha256: "c".repeat(64), pageIds },
+    };
+    const candidate = buildPptFullDeckCandidate({ ...fixtures, sampleApproval: fixtures.approval, composition, renderEvidence });
+    const design = artifact("ppt_design_draft", "design-full", { structuredContent: { pptDesignPackage: fixtures.designPackage } });
+    const assets = artifact("image_prompts", "assets-full", { structuredContent: {
+      pptAssetRequestBatch: fixtures.requestBatch,
+      pptAssetManifest: fixtures.manifest,
+      pptKeySampleSet: fixtures.sampleSet,
+      pptSampleApproval: fixtures.approval,
+    } });
+
+    const result = await executePackageTool({
+      tool: getToolDefinition("assemble_ppt_full_deck"),
+      projectId: "project-a",
+      artifactRefs: [{ kind: design.kind, artifactId: design.id }, { kind: assets.kind, artifactId: assets.id }],
+      resolvedArtifacts: [design, assets],
+      runPptFullDeckAssembly: async () => candidate,
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      capabilityId: "ppt_full_deck",
+      artifactDraft: { kind: "pptx_artifact", structuredContent: { pptFullDeckCandidate: { reviewStatus: "awaiting_delivery_review" } } },
+      qualityGate: { passed: true, gates: expect.arrayContaining(["awaiting_delivery_review"]) },
+    });
+    if (result.status === "succeeded") {
+      expect(result.artifactDraft.structuredContent).not.toHaveProperty("pptFullDeckPackage");
+    }
+  });
+
   it("assembles approved video segments into a persisted concat_only_assemble artifact", async () => {
     await withArtifactStorage(async () => {
       const first = writeLocalArtifact({ category: "video-artifacts", fileName: "s1.mp4", buffer: mp4Buffer("a") });

@@ -85,6 +85,11 @@ describe("ToolRegistry", () => {
       "concat_only_assemble",
       "create_final_package",
       "generate_pptx_from_design",
+      "generate_ppt_sample_assets",
+      "assemble_ppt_key_samples",
+      "assemble_ppt_full_deck",
+      "repair_ppt_full_deck_pages",
+      "generate_ppt_full_assets",
       "generate_classroom_image",
       "generate_video_segment",
     ]);

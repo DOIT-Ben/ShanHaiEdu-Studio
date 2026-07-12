@@ -78,6 +78,51 @@ export function resolveConversationControl(input: {
     };
   }
 
+  if (input.pendingPlan && isExplicitCancellation(input.userMessage)) {
+    return {
+      decision: {
+        kind: "cancel_active_offer",
+        reasonCode: "teacher_cancelled_active_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "已取消刚才待执行的内容。你可以直接告诉我接下来要调整什么。" },
+        state: "chatting",
+        toolPlan: undefined,
+        deliveryPlan: undefined,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
+  if (input.pendingPlan && isActiveOfferRevision(input.userMessage)) {
+    return {
+      decision: {
+        kind: "revise_active_offer",
+        reasonCode: "teacher_revised_active_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "我已按你的新要求更新这一步，旧版本不会继续执行。请确认后我再按新要求处理。" },
+        state: "awaiting_confirmation",
+        toolPlan: {
+          ...input.pendingPlan.toolPlan,
+          planId: `${input.pendingPlan.toolPlan.capabilityId}:revised-offer`,
+          inputDraft: { ...input.pendingPlan.toolPlan.inputDraft, teacherGoal: input.userMessage },
+          requiresConfirmation: true,
+        },
+        deliveryPlan: input.pendingPlan.deliveryPlan,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
   if (input.pendingPlan && isExplicitConfirmation(input.userMessage, pendingCapabilityId)) {
     const requiresHumanGate = toolRequiresHumanGate(pendingCapabilityId!);
     return {
@@ -213,4 +258,15 @@ function isExplicitConfirmation(text: string, capabilityId?: CapabilityId): bool
     video_segment_generate: /视频|片段/,
   };
   return capabilityTerms[capabilityId]?.test(normalized) ?? false;
+}
+
+function isExplicitCancellation(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "");
+  return /(?:取消|算了|停止|暂停|先不做|暂时不做|不要做)(?:这一步|刚才|当前|了|$)/.test(normalized)
+    || /(?:这一步|刚才|当前).*(?:取消|停止|先不做|暂时不做)/.test(normalized);
+}
+
+function isActiveOfferRevision(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "");
+  return /(?:修改|改成|改为|调整|换成|重写|重新做|不要按刚才|不是刚才)/.test(normalized);
 }

@@ -41,3 +41,13 @@ docs\architecture\decisions\YYYY-MM-DD-adr-主题.md
 ```
 
 ADR 应包含：背景、决策、取舍、风险、验证方式、回退方式。
+
+## 4. V1 Agent 与交付质量专题
+
+PPT、视频、受控 ReAct、节点合同、质量量表、提示词、框架审计和真实 API 实验统一从以下入口读取：
+
+```text
+docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
+```
+
+该专题属于候选设计与证据包，不覆盖产品需求基线或已接受 ADR。实施时必须先核对 `docs\mainlines\current-mainline-status.md` 的最新代码事实。

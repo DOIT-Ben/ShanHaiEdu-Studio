@@ -7,6 +7,7 @@ import type { ToolCallIntent } from "../../src/server/gpt-protocol/tool-call-int
 import type { ToolRouterInput } from "../../src/server/tools/tool-router";
 import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
 import { expectSucceeded } from "./test-helpers";
+import { validPptDesignPackage } from "../support/ppt-quality-fixture";
 
 function input(): AgentRuntimeInput {
   return {
@@ -34,7 +35,67 @@ function input(): AgentRuntimeInput {
   };
 }
 
+function pptDesignInput(): AgentRuntimeInput {
+  return {
+    ...input(),
+    task: "ppt_design",
+    userMessage: "请生成逐页 PPT 质量设计包。",
+    approvedArtifacts: [{
+      nodeKey: "ppt_draft",
+      title: "百分数 PPT 大纲",
+      summary: "已确认 12 页逐页大纲。",
+      markdown: "## 建议页数\n12 页\n\n## 逐页脚本\n12 页均已逐页确认。",
+    }],
+  };
+}
+
 describe("OpenAIRuntime", () => {
+  it("transports a validated PPT design package as structured artifact content", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const packageValue = validPptDesignPackage();
+    const client = {
+      responses: {
+        create: async (payload: Record<string, unknown>) => {
+          calls.push(payload);
+          return { output_text: structuredPptDesignOutput(packageValue) };
+        },
+      },
+    };
+
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    const result = expectSucceeded(await runtime.run(pptDesignInput()));
+
+    expect(result.artifactDraft.structuredContent).toEqual({ pptDesignPackage: packageValue });
+    expect(JSON.stringify(calls[0])).toContain("mediaAccessibility");
+    expect(JSON.stringify(calls[0])).toContain("独立的学习动作");
+    expect(calls[0]).toMatchObject({
+      text: {
+        format: {
+          schema: {
+            properties: {
+              artifactDraft: {
+                required: expect.arrayContaining(["structuredContentJson"]),
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("rejects PPT Director output when the structured design package is missing", async () => {
+    const client = {
+      responses: {
+        create: async () => ({ output_text: structuredPptDesignOutput(null) }),
+      },
+    };
+
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    const result = await runtime.run(pptDesignInput());
+
+    expect(result.status).toBe("failed");
+  });
+
   it("builds a Responses API request and parses structured output into the runtime contract", async () => {
     const calls: unknown[] = [];
     const client = {
@@ -441,6 +502,49 @@ function structuredLessonPlanOutput(): string {
     },
     nextSuggestedAction: {
       label: "查看并确认教案",
+    },
+  });
+}
+
+function structuredPptDesignOutput(packageValue: ReturnType<typeof validPptDesignPackage> | null): string {
+  return JSON.stringify({
+    assistantMessage: {
+      title: "PPT 设计包已生成",
+      body: "已生成可检查的逐页设计包。",
+    },
+    artifactDraft: {
+      title: "百分数 PPT 逐页设计包",
+      summary: "包含 12 页叙事、视觉、可编辑层和样张计划。",
+      markdown: [
+        "## 证据绑定",
+        "教材证据与目标逐项绑定。",
+        "## 叙事大纲",
+        "12 页均承担独立学习动作。",
+        "## 视觉系统",
+        "统一轻立体课堂视觉。",
+        "## 逐页设计",
+        "12 页逐页描述。",
+        "## 底图",
+        "场景层不嵌入文字和数学内容。",
+        "## 元素",
+        "课堂教具拆分为透明素材。",
+        "## 文字",
+        "全部保留为可编辑文字层。",
+        "## 排版",
+        "使用稳定阅读顺序和安全区。",
+        "## 可编辑层",
+        "精确文字和数学内容保持可编辑。",
+        "## 样张计划",
+        "覆盖不同页型和高风险页。",
+        "## 自检清单",
+        "逐页结构、数学层和样张覆盖已检查。",
+      ].join("\n"),
+      structuredContentJson: packageValue === null
+        ? null
+        : JSON.stringify({ pptDesignPackage: packageValue }),
+    },
+    nextSuggestedAction: {
+      label: "查看并确认 PPT 设计包",
     },
   });
 }

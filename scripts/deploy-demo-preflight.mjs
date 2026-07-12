@@ -76,11 +76,14 @@ try {
 
 function run(command, args, envOverrides = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const isWindowsNpm = process.platform === "win32" && command === "npm";
+    const executable = isWindowsNpm ? (process.env.ComSpec || "cmd.exe") : command;
+    const executableArgs = isWindowsNpm ? ["/d", "/s", "/c", `npm ${args.join(" ")}`] : args;
+    const child = spawn(executable, executableArgs, {
       cwd: root,
       env: { ...commandEnv, ...envOverrides },
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: false,
     });
 
     child.on("error", reject);

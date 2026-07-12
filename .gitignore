@@ -10,7 +10,7 @@ desktop-bundle/
 test-results/
 playwright-report/
 blob-report/
-graphify-out/
+output/
 .env
 .env.local
 .env.*

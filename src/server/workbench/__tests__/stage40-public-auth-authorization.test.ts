@@ -128,8 +128,14 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async startGenerationJob() {
       return makeGenerationJob("jobA", "projectA", "running");
     },
-    async finishGenerationJob() {
-      return makeGenerationJob("jobA", "projectA", "succeeded");
+    async getStagedGenerationResult() {
+      return null;
+    },
+    async stageGenerationResult() {
+      throw new Error("not used");
+    },
+    async promoteStagedGenerationResult() {
+      throw new Error("not used");
     },
     async failGenerationJob() {
       return makeGenerationJob("jobA", "projectA", "failed");

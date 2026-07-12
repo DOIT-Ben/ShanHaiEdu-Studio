@@ -111,6 +111,7 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       summary: result.artifactDraft.summary,
       markdownContent: result.artifactDraft.markdown,
       structuredContent: {
+        ...result.artifactDraft.structuredContent,
         capabilityId: input.capabilityId,
         generationMode: result.artifactDraft.generationMode,
         providerStatus: result.artifactDraft.generationMode === "model_generated" ? "real" : "deterministic_draft",

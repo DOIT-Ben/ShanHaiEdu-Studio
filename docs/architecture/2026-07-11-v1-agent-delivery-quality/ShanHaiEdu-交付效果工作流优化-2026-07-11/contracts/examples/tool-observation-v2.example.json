@@ -1,0 +1,30 @@
+{
+  "observationId": "obs-demo-001",
+  "invocationId": "invoke-demo-page-03-v1",
+  "toolId": "generate_visual_asset",
+  "status": "retryable_failed",
+  "modelActionableSummary": "图片文件可解码，但主体进入右侧标题安全区。请保持 PageSpec 不变，只调整构图或改用本地裁切。",
+  "teacherSafeSummary": "这一页的图片构图还需要调整，我会只修这张图片。",
+  "artifactRefs": ["artifact:page-03-main:v1"],
+  "measurements": {
+    "width": 1672,
+    "height": 941,
+    "safeZoneOverlapRatio": 0.28,
+    "sha256": "demo-sha256-redacted"
+  },
+  "truthGate": {
+    "passed": true,
+    "checks": ["file_exists", "image_decodes", "dimensions_recorded"]
+  },
+  "qualityGate": {
+    "passed": false,
+    "reviewRefs": ["review:page-03-main:v1"],
+    "failedComponentRefs": ["asset:page-03-main"]
+  },
+  "retryPolicy": {
+    "retryable": true,
+    "nextAction": "fix_inputs",
+    "sameInputAllowed": false
+  },
+  "committedAt": "2026-07-11T09:00:00+08:00"
+}

@@ -26,10 +26,11 @@ export function serializeFeedbackCsv(rows: FeedbackExportRow[], options: { heade
   })), {
     header: options.header ?? true,
     record_delimiter: "windows",
+    quoted_match: /[\r\n]/,
   });
 }
 
 export function safeSpreadsheetCell(value: string) {
   const cleaned = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
-  return /^[\u0020\u00a0]*[=+\-@\t\r]/.test(cleaned) ? `'${cleaned}` : cleaned;
+  return cleaned.replace(/(^|[\r\n])([\u0020\u00a0]*)(?=[=+\-@\t])/g, "$1'$2");
 }

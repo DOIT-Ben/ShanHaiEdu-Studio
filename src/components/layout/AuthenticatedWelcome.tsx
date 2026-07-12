@@ -1,9 +1,11 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { MessageCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InteractiveListRow } from "@/components/ui/interactive-list-row";
+import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import type { PasswordAuthUser } from "@/lib/auth-api";
+import type { OpenFeedback } from "@/lib/feedback-contracts";
 import type { ProjectItem, WorkbenchLoadState } from "@/lib/types";
 
 type AuthenticatedWelcomeProps = {
@@ -13,15 +15,26 @@ type AuthenticatedWelcomeProps = {
   errorMessage: string | null;
   onCreateProject: () => void | Promise<boolean>;
   onSelectProject: (projectId: string) => void;
+  onOpenFeedback: OpenFeedback;
+  onOpenUserManagement?: () => void;
+  onLogout?: () => Promise<void>;
+  onOpenXiaoKuSettings?: () => void;
 };
 
-export function AuthenticatedWelcome({ currentUser, projects, loadState, errorMessage, onCreateProject, onSelectProject }: AuthenticatedWelcomeProps) {
+export function AuthenticatedWelcome({ currentUser, projects, loadState, errorMessage, onCreateProject, onSelectProject, onOpenFeedback, onOpenUserManagement, onLogout, onOpenXiaoKuSettings }: AuthenticatedWelcomeProps) {
   const recentProjects = projects.slice(0, 4);
   const displayName = currentUser?.displayName?.trim() || "老师";
 
   return (
     <main className="flex min-h-0 flex-1 overflow-y-auto bg-card" data-authenticated-welcome>
       <section className="m-auto w-full max-w-[760px] px-5 py-12 sm:px-8 lg:py-16" aria-labelledby="authenticated-welcome-title">
+        <div className="mb-8 flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" data-feedback-origin="global" onClick={() => onOpenFeedback({ origin: "global" })} aria-label="提交反馈">
+            <MessageCircle className="h-4 w-4" />
+            反馈
+          </Button>
+          <ProfileMenu currentUser={currentUser} compact align="end" onOpenFeedback={onOpenFeedback} onOpenUserManagement={onOpenUserManagement} onLogout={onLogout} onOpenXiaoKuSettings={onOpenXiaoKuSettings} />
+        </div>
         <div className="max-w-[620px]">
           <p className="text-sm font-medium text-[#367d6d]">欢迎回来，{displayName}</p>
           <h1 id="authenticated-welcome-title" className="mt-3 text-[30px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[34px]">

@@ -2,6 +2,7 @@ import type { CapabilityId } from "@/server/capabilities/types";
 import type { SaveArtifactDraft } from "@/server/capabilities/types";
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { AgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
+import type { ValidationReport } from "@/server/quality/quality-types";
 
 export type ToolAdapterKind = "internal_capability" | "provider" | "package" | "mcp";
 
@@ -75,6 +76,7 @@ export type ToolExecutionResult =
       providerPayload?: Record<string, unknown>;
       assistantSummary: string;
       budgetEvent: AgentHarnessBudgetEvent;
+      validationReport?: ValidationReport;
     }
   | {
       status: "needs_input";
@@ -86,6 +88,7 @@ export type ToolExecutionResult =
       observation: ToolObservation;
       artifactCreated: false;
       budgetEvent: AgentHarnessBudgetEvent;
+      validationReport?: ValidationReport;
     }
   | {
       status: "failed" | "retryable_failed";
@@ -96,7 +99,12 @@ export type ToolExecutionResult =
       artifactCreated: false;
       errorCategory?: string;
       budgetEvent: AgentHarnessBudgetEvent;
+      validationReport?: ValidationReport;
     };
+
+export type RoutedToolExecutionResult = ToolExecutionResult & {
+  validationReport: ValidationReport;
+};
 
 export function isVerifiedProviderToolSuccess(
   result: ToolExecutionResult,
@@ -104,6 +112,7 @@ export function isVerifiedProviderToolSuccess(
   provider: string;
   artifactTruth: ToolArtifactTruth;
   qualityGate: ToolQualityGateResult;
+  validationReport: ValidationReport;
 } {
   return (
     result.status === "succeeded" &&
@@ -112,6 +121,7 @@ export function isVerifiedProviderToolSuccess(
     result.artifactTruth?.created === true &&
     result.artifactTruth.persisted === true &&
     result.artifactTruth.placeholder === false &&
-    result.qualityGate?.passed === true
+    result.qualityGate?.passed === true &&
+    result.validationReport?.overallStatus === "passed"
   );
 }

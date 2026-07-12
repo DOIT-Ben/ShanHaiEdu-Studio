@@ -377,6 +377,11 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
     };
   }
 
+  const pptSampleReview = pptSampleReviewFromContent(artifact.structuredContent);
+  const pptFullDeckReview = pptFullDeckReviewFromContent(artifact.structuredContent);
+  const hasSealedSampleSet = isObjectRecord(artifact.structuredContent.pptKeySampleSet);
+  const hasSealedFullDeck = isObjectRecord(artifact.structuredContent.pptFullDeckPackage);
+
   return {
     key: artifact.id,
     artifactId: artifact.id,
@@ -394,13 +399,77 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
       canCopy: true,
       canUseAsInput: true,
       canOpenDetail: true,
-      canConfirm: artifact.status === "needs_review",
+      canConfirm: artifact.status === "needs_review" && (!pptSampleReview || hasSealedSampleSet) && (!pptFullDeckReview || hasSealedFullDeck),
       canRegenerate: true,
     },
     content: contentFromArtifact(artifact),
     realAssetDownloads: realAssetDownloadsFromContent(artifact.structuredContent),
     routeGenerationActions: routeGenerationActionsFromContent(artifact.structuredContent),
+    pptSampleReview,
+    pptFullDeckReview,
   };
+}
+
+function pptFullDeckReviewFromContent(structuredContent: Record<string, unknown>): ArtifactItem["pptFullDeckReview"] {
+  const candidate = structuredContent.pptFullDeckCandidate;
+  if (!isObjectRecord(candidate) || typeof candidate.candidateDigest !== "string" || !Array.isArray(candidate.pageIds)) return undefined;
+  const pageIds = candidate.pageIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const review = structuredContent.pptFullDeckReview;
+  const overallStatus = isObjectRecord(review) ? review.overallStatus : undefined;
+  const qa = isObjectRecord(review) && Array.isArray(review.qa)
+    ? review.qa.flatMap((entry) => {
+        if (!isObjectRecord(entry) || typeof entry.pageId !== "string") return [];
+        const design = pptReviewStatus(entry.design);
+        const visual = pptReviewStatus(entry.visual);
+        const provenance = pptReviewStatus(entry.provenance);
+        const readability = pptReviewStatus(entry.readability);
+        if (!design || !visual || !provenance || !readability) return [];
+        const findings = Array.isArray(entry.findings) ? entry.findings.filter((finding): finding is string => typeof finding === "string") : [];
+        return [{ pageId: entry.pageId, design, visual, provenance, readability, findings }];
+      })
+    : undefined;
+  return {
+    candidateDigest: candidate.candidateDigest,
+    pageIds,
+    reviewStatus: overallStatus === "passed" || overallStatus === "failed" ? overallStatus : "awaiting_delivery_review",
+    ...(qa?.length ? { qa } : {}),
+  };
+}
+
+function pptSampleReviewFromContent(structuredContent: Record<string, unknown>): ArtifactItem["pptSampleReview"] {
+  const candidate = structuredContent.pptKeySampleCandidate;
+  if (!isObjectRecord(candidate) || typeof candidate.candidateDigest !== "string" || !Array.isArray(candidate.samplePageIds)) return undefined;
+  const pageIds = candidate.samplePageIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const overviews = Array.isArray(candidate.overviews) ? candidate.overviews : [];
+  const allowedKinds = new Set(["scene_and_primary_props", "micro_assets", "assembled_samples"] as const);
+  const overviewKinds = overviews
+    .map((value) => isObjectRecord(value) ? value.kind : undefined)
+    .filter((value): value is "scene_and_primary_props" | "micro_assets" | "assembled_samples" =>
+      typeof value === "string" && allowedKinds.has(value as "scene_and_primary_props" | "micro_assets" | "assembled_samples"));
+  const review = structuredContent.pptKeySampleReview;
+  const overallStatus = isObjectRecord(review) ? review.overallStatus : undefined;
+  const qa = isObjectRecord(review) && Array.isArray(review.qa)
+    ? review.qa.flatMap((entry) => {
+        if (!isObjectRecord(entry) || typeof entry.pageId !== "string") return [];
+        const design = pptReviewStatus(entry.design);
+        const visual = pptReviewStatus(entry.visual);
+        const provenance = pptReviewStatus(entry.provenance);
+        if (!design || !visual || !provenance) return [];
+        const findings = Array.isArray(entry.findings) ? entry.findings.filter((finding): finding is string => typeof finding === "string") : [];
+        return [{ pageId: entry.pageId, design, visual, provenance, findings }];
+      })
+    : undefined;
+  return {
+    candidateDigest: candidate.candidateDigest,
+    pageIds,
+    overviewKinds,
+    reviewStatus: overallStatus === "passed" || overallStatus === "failed" ? overallStatus : "awaiting_dvp_review",
+    ...(qa?.length ? { qa } : {}),
+  };
+}
+
+function pptReviewStatus(value: unknown): "passed" | "failed" | null {
+  return value === "passed" || value === "failed" ? value : null;
 }
 
 function routeGenerationActionsFromContent(structuredContent: Record<string, unknown>) {

@@ -60,6 +60,19 @@ describe("CapabilityAvailability", () => {
 
     expect(entry.status).toBe("needs_approved_inputs");
     expect(entry.missingApprovedInputs).toEqual(["requirement_spec"]);
+    expect(entry.reasonForUser).toContain("备课需求");
+    expect(entry.reasonForUser).not.toBe("请先确认前置成果后再继续。");
+  });
+
+  it("explains the minimum input needed when the teacher asks for only a video script", () => {
+    const entry = entryFor("video_script_generate");
+
+    expect(entry.status).toBe("needs_approved_inputs");
+    expect(entry.missingApprovedInputs).toEqual(["creative_theme_generate"]);
+    expect(entry.reasonForUser).toContain("可以只做视频脚本");
+    expect(entry.reasonForUser).toContain("导入创意主题");
+    expect(entry.reasonForUser).toMatch(/年级.*课题.*导入情境/);
+    expect(entry.reasonForUser).toContain("不会继续生成 PPT 或最终视频");
   });
 
   it("marks blocked external capabilities provider unavailable by default", () => {

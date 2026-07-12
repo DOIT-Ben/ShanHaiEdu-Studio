@@ -1,0 +1,22 @@
+{
+  "executedAt": "2026-07-11T08:02:18.1554841+08:00",
+  "provider": "Evolink",
+  "model": "grok-imagine-text-to-video-beta",
+  "request": { "durationSeconds": 6, "quality": "480p", "aspectRatio": "16:9", "sanitizedRequestFile": "request-sanitized.json" },
+  "artifact": {
+    "file": "optimized-opening-hook.mp4",
+    "bytes": 1452330,
+    "sha256": "A3AF7AE2C9C5F66171DB568C06548F8F3A6BDA16C76EA410087E1C2AF73C2A82",
+    "actualDurationSeconds": 6.041667,
+    "streams": [
+      { "index": 0, "type": "video", "codec": "h264", "width": 752, "height": 416, "frameRate": "24/1" },
+      { "index": 1, "type": "audio", "codec": "aac", "sampleRate": 44100, "channels": 2 },
+      { "index": 2, "type": "video", "codec": "mjpeg", "role": "attached_picture", "width": 752, "height": 416 }
+    ],
+    "audioMeasurement": { "method": "FFmpeg ebur128", "integratedLufs": -32.3, "loudnessRangeLu": 1.1, "truePeakDbfs": -19.6 }
+  },
+  "checks": { "fullDecode": "pass", "blackdetect": "pass_no_hits", "freezedetect": "pass_no_hits", "targetProfile": "fail_resolution_and_extra_stream", "visualTextConstraint": "fail_blurred_signage" },
+  "experimentBoundary": "Single optimized sample only; no same-provider baseline was generated, so this is not a video A/B result.",
+  "creditsConsumed": 4.8,
+  "secretsWritten": false
+}

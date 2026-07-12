@@ -142,4 +142,47 @@ describe("ConversationControlResolver", () => {
     expect(result.decision.usePendingActionId).toBeUndefined();
     expect(result.turn.shouldRunToolNow).toBe(false);
   });
+
+  it("supersedes the active offer when the teacher revises its content", () => {
+    const result = resolveConversationControl({
+      userMessage: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行",
+      pendingPlan: pendingPptOutlinePlan(),
+      agentTurn: baseTurn,
+      capabilityAvailability: [],
+    });
+
+    expect(result.decision).toMatchObject({ kind: "revise_active_offer", supersedePendingAction: true });
+    expect(result.turn.shouldRunToolNow).toBe(false);
+  });
+
+  it("supersedes the active offer when the teacher cancels it", () => {
+    const result = resolveConversationControl({
+      userMessage: "先取消这一步，暂时不要做了",
+      pendingPlan: pendingPptOutlinePlan(),
+      agentTurn: baseTurn,
+      capabilityAvailability: [],
+    });
+
+    expect(result.decision).toMatchObject({ kind: "cancel_active_offer", supersedePendingAction: true });
+    expect(result.turn).toMatchObject({ state: "chatting", shouldRunToolNow: false });
+  });
 });
+
+function pendingPptOutlinePlan() {
+  return {
+    actionId: "human:p:ppt_outline:m1",
+    teacherRequest: "做 PPT 大纲",
+    toolPlan: {
+      planId: "ppt:test",
+      capabilityId: "ppt_outline" as const,
+      reasonForUser: "做 PPT 大纲",
+      internalReason: "test",
+      inputDraft: {},
+      missingInputs: [],
+      upstreamPlan: [],
+      nextSuggestedCapabilities: [],
+      requiresConfirmation: false,
+      expectedArtifactKind: "ppt_draft",
+    },
+  };
+}

@@ -1,6 +1,6 @@
 # ShanHaiEdu 需求总账
 
-更新时间：2026-07-11（v1 封板复核）
+更新时间：2026-07-12（V1 Stage 0R 本地门禁收口）
 
 > 本文件记录未完成需求、新增需求、延期需求和优先级。当前产品质量门禁仍以 `docs\product\current-requirements-baseline.md` 为最高产品口径；本文件负责把“还没做完、刚发现、需要拆分”的需求集中管理。
 
@@ -46,7 +46,7 @@
 
 ### RQ-021 统一基础交互设计系统
 
-- 状态：`accepted`（工程与常用浏览器路径已验证；M77 owner 写路径浏览器门禁未关闭）
+- 状态：`done`（工程、常用浏览器路径和 M77 owner 写路径均已验证）
 - 来源：2026-07-11 基础列表、下拉框、表单和浮层一致性审查。
 - 目标：用小型、可组合的 UI primitives 统一高频交互，同时保持业务语义、权限枚举、回调和后端合同不变。
 - 统一约束：对象选择列表 hover 只改变背景、边框、文字和图标颜色，禁止位移、缩放、扩张、左侧竖线和 hover 阴影；Select 使用大圆角触发器、青色 open 状态、Popper 下方弹层、整行选中与右侧勾选；Input、Textarea、MenuItem、Popover、Tooltip、Dialog、Sheet 共享语义化边框、焦点和 elevation tokens。
@@ -56,7 +56,7 @@
 
 ### RQ-020 表单下拉框视觉与交互统一
 
-- 状态：`accepted`（自动化通过；真实 owner 的 Select 展开、键盘选择与保存仍待验收）
+- 状态：`done`（自动化、真实 owner Select 展开、键盘选择、保存、刷新恢复和 390px 弹层均已验证）
 - 来源：2026-07-11 协作成员权限下拉框体验反馈。
 - 问题：成员权限和账号角色仍使用浏览器原生 `select`，展开样式与山海课伴品牌、焦点反馈和弹层语言不一致。
 - 目标：统一使用项目 Select 组件，提供品牌化悬浮、选中、展开和键盘焦点状态，同时保持权限值与真实回调不变。
@@ -143,7 +143,7 @@
 
 ### RQ-015 非线性按需生产、多用户内测与反馈体验收口
 
-- 状态：`accepted`（实现与安全隔离已验证；按需视频脚本真实浏览器路径仍有前置确认差距）
+- 状态：`done`（实现、安全隔离和按需视频脚本桌面/390px 真实浏览器路径均已验证）
 - 来源：2026-07-11 用户真实使用反馈。
 - 问题：反馈类型切换会动态插入“快速补充”并改变弹窗高度和滚动位置；消息赞踩缺少明确结果提示；自然语言确认与直接工具意图仍可能被 HumanGate 错误阻断；已有多用户能力缺少真实双账号和历史数据归属验收。
 - 目标：允许教师从任意可用能力切入，模型负责理解目标、选择工具和解释缺失输入，不强迫从固定线性节点开始；同时保持真实外部生成、不可逆写入和高成本调用的必要安全确认。
@@ -295,7 +295,7 @@
 
 ### RQ-013 真实工具金路径闭环
 
-- 状态：`done`（工程实现完成；真实外部 provider smoke 待上线前执行）
+- 状态：`accepted`（工程实现已完成；真实外部 Provider 与教师全链路验收未完成，不能标记 done）
 - 来源：M64-R / M66-R 收尾后剩余主线缺口。
 - 问题：ToolRegistry 和 Runtime native loop 已接通，但 `asset_image_generate`、`concat_only_assemble` 和工具层真实最终包仍未实现；provider 工具也不能从 native loop 直接使用裸 artifact refs。
 - 目标：用服务端 resolved Artifact、真实 Provider 和质量门禁跑通一个教师任务从输入到最终下载包的完整链路。
@@ -321,7 +321,103 @@
   - 新增需求先进入需求总账，再进入阶段计划。
 - 收尾证据：`docs\stages\local-real-mvp-doc-governance-closeout.md`。
 
-## 6. 第二档需求
+## 6. V1 交付质量与邀请制上线需求
+
+### RQ-022 执行身份、租约、幂等与恢复
+
+- 状态：`done`（Stage 1A 执行身份/租约、Stage 1B 输入代际/幂等恢复、Stage 1C 原子提升与隔离均已完成）
+- 来源：V1 Agent 与交付质量审计、当前断点续跑和并发门禁。
+- 目标：后台任务携带真实 actor 和输入快照；同项目只允许一个有效写执行者；Provider 请求可去重、可恢复，旧结果不能覆盖新意图。
+- 验收：
+  - 缺失、停用或失效 actor 的后台写入 fail-closed。
+  - 同项目并发只有一个有效 lease；不同项目可并发；旧 fencing token 无法提交。
+  - GenerationJob 保存 idempotencyKey、inputHash、providerTaskId 和恢复状态；有 taskId 时只继续 poll，不重复付费提交。
+  - 教师修改上游意图后，旧 epoch 结果保留审计但进入 quarantine，不成为当前有效 Artifact。
+- Stage 1A 收尾：`docs\stages\local-real-v1-stage1a-execution-identity-lease-closeout.md`。
+- Stage 1B 收尾：`docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-closeout.md`。
+- Stage 1C 收尾：`docs\stages\local-real-v1-stage1c-atomic-promotion-closeout.md`。
+
+### RQ-023 可执行合同、质量决策与受控 ReAct
+
+- 状态：`done`（Stage 2A 可执行合同/ValidationReport、Stage 2B Critic/QualityDecision、Stage 2C Observation/Replan 与 finish 证据门均已完成）
+- 收尾证据：`docs\stages\local-real-v1-stage2a-contract-validation-closeout.md`、`docs\stages\local-real-v1-stage2b-quality-decision-closeout.md`、`docs\stages\local-real-v1-stage2c-observation-replan-closeout.md`。
+- 来源：节点合同草案、RQ-015 非线性按需生产和当前 Agent Harness。
+- 目标：Main Agent 基于 WorldState 执行有界 Observe、Plan、Guard、Act、Observe、Replan；合同和确定性门禁约束提交，不把顶层 Agent 固化成线性 DAG。
+- 验收：
+  - 关键节点具有可执行 pre/post contract、类型化错误 locator 和结构化 ValidationReport。
+  - Critic 只评价语义与效果，不能覆盖文件、页数、hash、血缘、参考图实传等硬门。
+  - 教师可在 Brief、大纲、视觉系统、PageSpec、样张、分镜、镜头和时间线处暂停、修改、改道或局部返修。
+  - 达到步骤、费用、重试或时间预算时暂停并请求教师决定，不无限循环。
+
+### RQ-024 PPT Quality 纵向闭环
+
+- 状态：`first real course complete / two fixed tasks pending`
+- 来源：用户提供的 PPT V8 手册、PPT 生产工艺设计和现有 PPTX 真伪门禁。
+- 目标：从教材证据、叙事大纲、视觉系统、逐页 PageSpec、关键样张和正式资产，生成真实可编辑 PPTX，并支持页级返修。
+- 验收：
+  - 教材主张可追溯；每页具备独立教学作用、布局、视觉、素材和教师动作。
+  - 样张批准后再批量生产；批准资产真实嵌入，精确信息保持可编辑。
+  - PPTX、PDF、逐页 PNG 和 contact sheet 页数一致；最终真实试点至少包含一套 12 页 PPTX。
+  - 问题精确定位到 pageId/assetId；修一页不重跑整套。
+
+### RQ-025 视频 Full Intro 逐镜头闭环
+
+- 状态：`first real course complete / two fixed tasks pending`
+- 来源：用户提供的《视频工作流制作手册V1.0》、视频工艺设计和现有视频门禁。
+- 目标：从课程锚点和独立创意形成 Beat、ShotSpec、视频专属参考资产、逐镜头任务、音字后期与真实合成，并支持镜头级恢复和返修。
+- 验收：
+  - 每个镜头独立绑定 shotId、inputHash、providerTaskId、参考资产和验收条件。
+  - 需要连续性的镜头能证明参考资产真实进入 Provider 请求；PPT 资产不得冒充视频参考资产。
+  - 单镜头失败、重启或返修不重跑全片；FFmpeg 合成结果与 TimelineManifest、ffprobe 一致。
+  - QA 覆盖课程回接、答案泄露、儿童安全、连续性、字幕、音轨和技术参数。
+
+### RQ-026 整堂课一致性、最终包与邀请制上线
+
+- 状态：`in_progress`
+- 来源：V1 快速上线目标和当前最终材料包真伪门禁。
+- 目标：教案、PPT、视觉图和视频形成可上课的同一版本，通过真实 Provider、服务器恢复和教师任务后开放邀请制 V1。
+- 验收：
+  - `ClassroomRunSpec` 对齐视频结束点、PPT 页面、教师操作、答案揭示和课堂节奏。
+  - 最终包只收录当前 `final_eligible` 版本；ZIP、manifest、hash、数据库记录和真实目录一致。
+  - 完成三个固定、递增难度的小学数学真实任务，至少一套 12 页 PPTX，三套真实 MP4/最终包，P0 为 0。
+  - 记录首次可授课率、人工修改时间、返修次数、成本、耗时和 Provider 失败率，并取得至少一名真实教师签收。
+  - 目标服务器共享卷重启、release 回滚、备份恢复和公开注册关闭复核通过后，才允许邀请真实用户。
+
+### RQ-027 教师可控生成强度与受控升级建议
+
+- 状态：`accepted / pending implementation`
+- 来源：2026-07-13 用户提出的四档生成强度、积分提示和复杂任务升级确认需求。
+- 当前事实：Main Agent 当前实现为 `gpt-5.6-terra + high`；本条只记录目标产品行为，不代表默认档已经改为 Medium，也不代表前端滑杆已经实现。
+- 目标：教师侧只感知“生成强度”，不暴露模型名称；V1 默认使用标准档。任务持续未解决时，系统可以建议提高强度，但必须说明积分消耗影响并取得明确确认，禁止静默升级。
+- 四档内部映射：
+
+| 教师可见档位 | 内部模型策略 | 使用边界 |
+|---|---|---|
+| 标准 | `gpt-5.6-terra + medium` | 目标默认档，普通对话、规划和常规生产 |
+| 增强 | `gpt-5.6-terra + high` | 较复杂规划、首次升级建议 |
+| 深度 | `gpt-5.6-terra + xhigh` | 多约束冲突、连续质量返修或复杂影响分析 |
+| 极致 | `gpt-5.6-sol + high` | 万不得已；只有前三档持续未解决且用户再次确认后使用 |
+
+- 交互要求：
+  - 在“高级”设置中提供四个稳定停靠点的生成强度滑杆，视觉参考为浅灰轨道、已选进度和单一圆形滑块。
+  - 默认展示“标准”；教师界面不得出现 Terra、Sol、模型 ID、reasoning effort 或 Provider 名称。
+  - 拖动时显示“强度越高，消耗的积分越快”；进入“极致”前必须再次提示更高积分消耗。
+  - 当前积分余额、预计消耗或价格没有可靠数据时，不得虚构具体积分数，只提示相对消耗趋势。
+- 升级建议机制：
+  - 只有同一 IntentEpoch 内出现可审计的复杂度或持续失败信号时才允许建议升级，例如同一质量定位连续两轮未关闭、达到当前档重试预算、上下游约束冲突无法收敛。
+  - Main Agent只生成升级建议；服务端策略根据真实状态决定是否允许展示，不能由模型文本自行切换模型。
+  - 提示必须说明建议档位、触发原因和“会消耗更多积分”，并提供“提高强度继续”和“保持当前强度”两个动作。
+  - 用户确认后生成受控 actionId，从下一次计划或返修调用开始升级；当前已提交的Provider任务不取消、不重复提交。
+  - “极致”不得自动推荐为第一次升级；只有增强/深度仍未解决时才可建议，并需要独立二次确认。
+  - 同一问题、同一档位只提示一次；拒绝后不循环打扰，除非任务状态或IntentEpoch发生实质变化。
+- 验收：
+  - 默认新任务落到标准档，内部映射为 Terra Medium。
+  - 四档滑杆支持鼠标、触摸和键盘操作，桌面与390px均无溢出；档位名称、当前值和积分提示可被辅助技术读取。
+  - 教师可见页面、消息、下载物和普通错误中不出现底层模型名称。
+  - 未确认升级时模型与强度不变；确认后只影响约定范围内的后续调用，记录可审计但不向其他用户泄露。
+  - 两名用户同时使用时，各自强度选择、升级建议、确认状态和积分提示互不串扰。
+
+## 7. 第二档需求
 
 ### RQ-010 竞品研究衍生能力
 
@@ -331,7 +427,7 @@
 - 当前决策：放入第二档，现阶段不实现；完成反馈中心、第一档 UI 收口和一轮真实内测后再按反馈决定取舍。
 - 需求文档：`docs\product\competitor-derived-second-tier-requirements.md`。
 
-## 7. 文档与历史治理需求
+## 8. 文档与历史治理需求
 
 ### RQ-007 旧阶段文档归档
 

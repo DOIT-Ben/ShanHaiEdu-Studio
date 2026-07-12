@@ -1,0 +1,13 @@
+{
+  "executedAt": "2026-07-11",
+  "providerProfile": "aiyunrouter-cnapi",
+  "model": "gpt-image-2",
+  "requestedAspectRatio": "16:9",
+  "requestedSemanticSize": "1K",
+  "actualDimensions": { "width": 1672, "height": 941 },
+  "artifacts": [
+    { "variant": "baseline", "file": "baseline.png", "promptFile": "baseline-prompt.txt", "sha256": "608768C7A6A4C78C5D1BE9366BF3F813CDF2073EE8058FBC6D43D79639023288", "promptSha256": "30B02D186754DD56F1492AD7E41D976CF2AB8A682353B55CAF20B61223670907" },
+    { "variant": "optimized", "file": "optimized.png", "promptFile": "optimized-prompt.txt", "sha256": "E4FD3FE3EFCCCA7B487CDBBC9B2076486BACF52D37F93D71A6D7CECAFECE2A19", "promptSha256": "FA0D5F367DB0DD3586C4726FF2056E17F8D2C8D425531843F7684D640F1A0244" }
+  ],
+  "secretsWritten": false
+}

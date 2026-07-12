@@ -15,8 +15,9 @@ export const feedbackSelectors = {
   profileTrigger: "[data-profile-menu]",
   profileFeedbackItem: "[data-feedback-origin='profile']",
   dialog: "[data-feedback-dialog]",
+  title: "[data-feedback-title]",
   description: "[data-feedback-description]",
-  fileInput: "input[type='file'][accept='image/png,image/jpeg,image/webp']",
+  fileInput: "input[data-feedback-image-kind='issue'][accept='image/png,image/jpeg,image/webp']",
   image: "[data-feedback-image]",
   removeImage: "button[aria-label^='删除图片']",
   submit: "[data-feedback-submit]",
@@ -77,8 +78,8 @@ export const validPng = Buffer.from(readFileSync(fixturePath, "utf8").trim(), "b
 export async function loginThroughUi(page: Page, credentials: E2ECredentials = teacherCredentials) {
   await page.goto("/");
   await page.waitForLoadState("domcontentloaded");
-  await expect(page.getByRole("heading", { name: "登录 ShanHaiEdu" })).toBeVisible();
-  await page.getByLabel("邮箱").fill(credentials.email);
+  await expect(page.getByRole("heading", { name: "欢迎回来" })).toBeVisible();
+  await page.getByLabel("账号").fill(credentials.email);
   await page.getByLabel("密码").fill(credentials.password);
   await page.locator("form").getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.locator(feedbackSelectors.globalTrigger)).toBeVisible();
@@ -229,7 +230,7 @@ export async function openMessageFeedback(page: Page, label: "这条有帮助" |
 }
 
 export async function closeFeedback(dialog: Locator) {
-  await dialog.getByRole("button", { name: "关闭反馈" }).click();
+  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(dialog).toBeHidden();
 }
 

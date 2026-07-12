@@ -1,0 +1,12 @@
+{
+  "finding_id": "finding_shot_01_signage",
+  "target_type": "shot",
+  "target_id": "shot_01",
+  "severity": "P1",
+  "rubric_dimension": "negative_constraint_adherence",
+  "evidence": ["frame at 4.0s contains blurred wall signage to the right of the arch"],
+  "expected": "No readable or pseudo-readable signage appears in any sampled frame.",
+  "observed": "Two wall plaques contain generated pseudo-text despite the negative constraint.",
+  "repair_instruction": "Regenerate shot_01 with wall plaques removed from scene context and add no plaques/no wall labels to the first half of the prompt.",
+  "rerun_scope": ["video_segment_generation:shot_01", "video_segment_review:shot_01"]
+}

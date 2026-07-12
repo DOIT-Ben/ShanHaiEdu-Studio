@@ -8,7 +8,7 @@ import { createWorkbenchService } from "../service";
 
 describe("Local Real MVP M60 conversation turn queue", () => {
   it("persists queued conversation turn jobs in the project snapshot", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 对话队列状态" });
     const teacherMessage = await service.addMessage(project.id, {
       role: "teacher",
@@ -41,7 +41,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("starts only the oldest queued turn job for one project", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 单项目串行" });
     const firstMessage = await service.addMessage(project.id, { role: "teacher", content: "第一条" });
     const secondMessage = await service.addMessage(project.id, { role: "teacher", content: "第二条" });
@@ -62,7 +62,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("deduplicates queued turn jobs by idempotency key", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 幂等入队" });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "重复发送" });
 
@@ -81,7 +81,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("POST /messages persists a teacher message and returns an accepted turn job", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 API 入队" });
 
     const response = await postMessageRoute(
@@ -104,7 +104,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("POST /messages persists confirmedActionId metadata and queued execution confirms the pending plan", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API confirmedActionId 入队确认", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
     const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
     await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
@@ -133,7 +133,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("POST /messages accepts actionId as an alias for confirmedActionId before queued execution", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API actionId 入队确认", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
     const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
     await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
@@ -160,7 +160,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("queued execution blocks a pending plan when POST /messages has no valid actionId", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API actionId 阻断", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
     const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
     await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
@@ -188,7 +188,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("POST /messages deduplicates teacher message and turn job by idempotency key", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 API 幂等入队" });
     const payload = {
       content: "同一个客户端请求只应该保存一次老师消息",
@@ -222,7 +222,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("restarts an expired running turn job instead of leaving the queue stuck", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 过期 running 恢复" });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "这条 running 会过期" });
     const queued = await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
@@ -238,7 +238,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("drains queued turn jobs for one project in FIFO order without concurrent running jobs", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 drain 串行" });
     const messages = await Promise.all([
       service.addMessage(project.id, { role: "teacher", content: "第一条" }),
@@ -280,7 +280,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("marks a failed turn job without deleting later queued work", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 drain 失败保留" });
     const firstMessage = await service.addMessage(project.id, { role: "teacher", content: "第一条会失败" });
     const secondMessage = await service.addMessage(project.id, { role: "teacher", content: "第二条继续" });
@@ -308,7 +308,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("skips max-attempt exhausted jobs and continues draining later queued work", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 exhausted job 跳过" });
     const exhaustedMessage = await service.addMessage(project.id, { role: "teacher", content: "这条达到最大次数" });
     const nextMessage = await service.addMessage(project.id, { role: "teacher", content: "下一条继续" });
@@ -333,7 +333,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
   });
 
   it("default drain executor runs the existing conversation turn service", async () => {
-    const service = createWorkbenchService();
+    const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 默认 executor" });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "你好" });
     await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
@@ -350,6 +350,14 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(assistantMessages[0].content).toContain("小酷");
   });
 });
+
+function createQueueTestService() {
+  return createWorkbenchService(undefined, undefined, {
+    actorUserId: "local-test-user",
+    actorAuthMode: "local",
+    authSessionId: null,
+  });
+}
 
 async function getLatestPendingActionId(service: ReturnType<typeof createWorkbenchService>, projectId: string) {
   const messages = await service.getMessages(projectId);

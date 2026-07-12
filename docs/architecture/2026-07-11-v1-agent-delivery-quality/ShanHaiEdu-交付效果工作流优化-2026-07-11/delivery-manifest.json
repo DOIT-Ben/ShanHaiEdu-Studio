@@ -1,0 +1,333 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-07-11T08:35:53.0979656+08:00",
+  "root": "E:\\desktop\\ShanHaiEdu-交付效果工作流优化-2026-07-11",
+  "fileCount": 65,
+  "files": [
+    {
+      "path": "01-现有底层设计抽象与工具地图.md",
+      "bytes": 5872,
+      "sha256": "FA2A11C634BD0C94E4E600FF9BA922809C5C668D08BBF3F34DB43E4BB8B6B745"
+    },
+    {
+      "path": "02-交付效果问题诊断.md",
+      "bytes": 4370,
+      "sha256": "B1E193BFEA54CCFC2E39171C3DD3E70E7024119F6CDA52BB90119C073EE88E5B"
+    },
+    {
+      "path": "03-A+-总体工作流设计.md",
+      "bytes": 6161,
+      "sha256": "451E089742DFEA104A9CD4EE3DFE82CC001DF1426556CE2E66EEA94A84B9B236"
+    },
+    {
+      "path": "04-PPT工作流优化.md",
+      "bytes": 5165,
+      "sha256": "7066EE98A921F705B0BC06FB2B2595AAD5E8A9AF39A35768D63302677F771728"
+    },
+    {
+      "path": "05-视频工作流优化.md",
+      "bytes": 5230,
+      "sha256": "222A291047A6958272E2A70A6C9BBFF3A6D7098D9069A6E9051ED5AF22BD6BB6"
+    },
+    {
+      "path": "06-质量评估与自动返工机制.md",
+      "bytes": 4427,
+      "sha256": "18BEDE738C7577C20CC2632C6AADF0DCEC889BC9E11050C92D0C1393771E3C22"
+    },
+    {
+      "path": "07-落地优先级与产品路线.md",
+      "bytes": 3335,
+      "sha256": "E83804D8C95485D742FB87698B686B80A4DC8A88A48F9501B62BEC15F111F411"
+    },
+    {
+      "path": "08-验证与交付边界.md",
+      "bytes": 1371,
+      "sha256": "A6BAF7DEC8E91B8B7FCA2454BDDE099AB71F194FE410C52E751F0D0FAC7E21DB"
+    },
+    {
+      "path": "contracts/delivery-strategy.schema.json",
+      "bytes": 1179,
+      "sha256": "0437EA3EE9C53C0E555ECED0AE805DFE9A94938E2E3A08C6532CE88EFCF78DFB"
+    },
+    {
+      "path": "contracts/examples/delivery-strategy.example.json",
+      "bytes": 816,
+      "sha256": "EE941F337F39BE026F02629533044CE4FD6047C1ACE9D2A5285C4BBEBB67C482"
+    },
+    {
+      "path": "contracts/examples/page-spec.example.json",
+      "bytes": 1926,
+      "sha256": "06A0345E8E7E395CA765DBB01DA2B4F2D21F7FC79F92A9C18D45457516F1A767"
+    },
+    {
+      "path": "contracts/examples/ppt-director-response.example.json",
+      "bytes": 3201,
+      "sha256": "D6CA4CDC52DEF8BE607437518F770BD66729E08401AE246651F0E5B2DA4D4A62"
+    },
+    {
+      "path": "contracts/examples/review-finding.example.json",
+      "bytes": 689,
+      "sha256": "0756E42502111063303D4B567954D5B0EFDAD8241D5E3588628A35833F37A9E3"
+    },
+    {
+      "path": "contracts/examples/shot-spec.example.json",
+      "bytes": 1212,
+      "sha256": "17DD4EFB45E7DB3600105936703011E94F2E4CD355726BBE7D55BFEA2586332E"
+    },
+    {
+      "path": "contracts/node-contracts-v2.json",
+      "bytes": 20933,
+      "sha256": "574E3D07DAD685DC50EA42029C5955D8CA57437223AE9B08510E35324F58E817"
+    },
+    {
+      "path": "contracts/node-contracts-v2.schema.json",
+      "bytes": 1597,
+      "sha256": "D11A66E62787D88C26C6C2191CD7E27E87EB903CDAB57DD48410359411A4BAAA"
+    },
+    {
+      "path": "contracts/page-spec.schema.json",
+      "bytes": 2847,
+      "sha256": "A3F45AB5498554F9F23486E37BD41A298CBD54CF6E236D7164AA3BD6CC19B114"
+    },
+    {
+      "path": "contracts/ppt-director-response.schema.json",
+      "bytes": 3302,
+      "sha256": "24213195285A1B4CF411A6754B690F5A5E89A864821E6CBF84F987F551DBAEB6"
+    },
+    {
+      "path": "contracts/review-finding.schema.json",
+      "bytes": 1080,
+      "sha256": "44FD74893946436CEDA0C39CA283A10B4991D553A69AD4836E49A371CFE85445"
+    },
+    {
+      "path": "contracts/shot-spec.schema.json",
+      "bytes": 1744,
+      "sha256": "2ABD9D392A31A74756E36B6AE5B0CEA90AD3483331F677C41CEED727A07A23DA"
+    },
+    {
+      "path": "contracts/validate_json_schema.py",
+      "bytes": 792,
+      "sha256": "8BE1DB0699E00D24A38834B39479CB07B307058E867B0AE428E0B4E640F93267"
+    },
+    {
+      "path": "contracts/validate-contracts.ps1",
+      "bytes": 1553,
+      "sha256": "E4A1806F00B132A4F021E44EA5756CC3176A91D88A4B04ED7D2536E76452FC84"
+    },
+    {
+      "path": "experiments/experiment-summary.md",
+      "bytes": 5622,
+      "sha256": "43AA2A2005C8C888D9F6038C3ECC82273F88AA8DAF888B8D9C7D2499DE67CC49"
+    },
+    {
+      "path": "experiments/images/baseline-prompt.txt",
+      "bytes": 210,
+      "sha256": "30B02D186754DD56F1492AD7E41D976CF2AB8A682353B55CAF20B61223670907"
+    },
+    {
+      "path": "experiments/images/baseline.png",
+      "bytes": 1438739,
+      "sha256": "608768C7A6A4C78C5D1BE9366BF3F813CDF2073EE8058FBC6D43D79639023288"
+    },
+    {
+      "path": "experiments/images/comparison-side-by-side.png",
+      "bytes": 3896815,
+      "sha256": "F36304AFD1D2B9D205ABB0CC0BF56607297DC2F642F7337748EB0E7A8955D150"
+    },
+    {
+      "path": "experiments/images/experiment-manifest.json",
+      "bytes": 783,
+      "sha256": "450CD4B753B4CF5F8DCDFE1E88656BF4649126C78E23947A738618D400C91AB2"
+    },
+    {
+      "path": "experiments/images/optimized-prompt.txt",
+      "bytes": 895,
+      "sha256": "FA0D5F367DB0DD3586C4726FF2056E17F8D2C8D425531843F7684D640F1A0244"
+    },
+    {
+      "path": "experiments/images/optimized.png",
+      "bytes": 2401312,
+      "sha256": "E4FD3FE3EFCCCA7B487CDBBC9B2076486BACF52D37F93D71A6D7CECAFECE2A19"
+    },
+    {
+      "path": "experiments/llm-baseline-output.txt",
+      "bytes": 9376,
+      "sha256": "3C5C5A9A12B3041A0C82EAC2FE9F6F403A39C9A0AC5AD56DA312DDA82CD1F320"
+    },
+    {
+      "path": "experiments/llm-baseline-response.json",
+      "bytes": 13394,
+      "sha256": "BE073B2A8584E3CB5218CEA16D186C047339078C30D625DE2F1CFEE736A07E03"
+    },
+    {
+      "path": "experiments/llm-blind-review-output.txt",
+      "bytes": 7916,
+      "sha256": "E95F32070E1AFB7C6FE2BB9C448A83828D5280D3832110D09D6C0B8BEFF9FDDA"
+    },
+    {
+      "path": "experiments/llm-blind-review-response.json",
+      "bytes": 13099,
+      "sha256": "46365FE8612EF81B38F6AD8942EACCD58FFB13CB8A2F77F4A25FEDAD7F98E58A"
+    },
+    {
+      "path": "experiments/llm-experiment-manifest.json",
+      "bytes": 311,
+      "sha256": "AF0919F26DB2A5703606389914D0B9E1F2D6B57C65315B38816ACF6E6B429BA7"
+    },
+    {
+      "path": "experiments/llm-optimized-output.txt",
+      "bytes": 7781,
+      "sha256": "1A3BE4FE7C84A3120B52E44F1B1435DD1063275F2BE0228F00D9F6C3DD53167A"
+    },
+    {
+      "path": "experiments/llm-optimized-response.json",
+      "bytes": 12268,
+      "sha256": "C566B5A13C43C02C45FDD2694B0C91F9085189BB01A188D55C7E4C1CD27C2811"
+    },
+    {
+      "path": "experiments/README.md",
+      "bytes": 793,
+      "sha256": "753FF397E495316AB63B722B11DE3728E5F532244C7C49C907A32B1791013413"
+    },
+    {
+      "path": "experiments/run-agent-brain-ab.ps1",
+      "bytes": 5381,
+      "sha256": "B00FBBBF1DAC5415DBB112976CD55DA0980447A18552F7ECA7B120C4AF491200"
+    },
+    {
+      "path": "experiments/run-video-shot.ps1",
+      "bytes": 6586,
+      "sha256": "DCD098E02BFEFB88E667DF65D3F52D2A9BADF094D809D14EE8F24E68B7DE2BF5"
+    },
+    {
+      "path": "experiments/video/completed-response.json",
+      "bytes": 624,
+      "sha256": "D56E0AE0B117C3BA7D30C2AEC109DC172E11BEF56F8B5594ACE9D3ED867DC9DE"
+    },
+    {
+      "path": "experiments/video/contact-sheet.png",
+      "bytes": 903095,
+      "sha256": "1E4216C2A2BFAA22D35F65C0BD052547158543BB63552C394D04704AC445AC09"
+    },
+    {
+      "path": "experiments/video/experiment-manifest.json",
+      "bytes": 1313,
+      "sha256": "DF11D359AFC9F48943DBACE637C599B9A07294568DA9E005B29BBBBADDA04D26"
+    },
+    {
+      "path": "experiments/video/frames/frame-0_2.png",
+      "bytes": 315278,
+      "sha256": "BEDC01BE284E23142039D94C4CDFF394AD68F9E6CD4EFE76E34DF101B06ECC3D"
+    },
+    {
+      "path": "experiments/video/frames/frame-2_0.png",
+      "bytes": 341519,
+      "sha256": "ACCA4471BDD306B056DF734DBCB99CDA405D832005349D8CB9C8B20C4FA9BFC6"
+    },
+    {
+      "path": "experiments/video/frames/frame-4_0.png",
+      "bytes": 373336,
+      "sha256": "18C11448E67943F41DE595B638CF9FEADCEE54A41CA7FE6ECB4730A59DBE23CB"
+    },
+    {
+      "path": "experiments/video/frames/frame-5_8.png",
+      "bytes": 334233,
+      "sha256": "54C241B95299B1CC258EA1BE9BD5ED741B5A464A5C546A852FEA656FE2312320"
+    },
+    {
+      "path": "experiments/video/optimized-opening-hook.mp4",
+      "bytes": 1452330,
+      "sha256": "A3AF7AE2C9C5F66171DB568C06548F8F3A6BDA16C76EA410087E1C2AF73C2A82"
+    },
+    {
+      "path": "experiments/video/request-sanitized.json",
+      "bytes": 1741,
+      "sha256": "ACD28B02D2A5E289B424D0C16061047024A8990C938BD45D236148C2B7CEE81A"
+    },
+    {
+      "path": "experiments/video/submit-response.json",
+      "bytes": 440,
+      "sha256": "A0F3D2C2F28850989416ACAAB3572F7C80A4940E43C9D58859C0D9C4CCFDB530"
+    },
+    {
+      "path": "generate-delivery-manifest.ps1",
+      "bytes": 918,
+      "sha256": "F5CFEC27026B39A29B11882417F820643E7BAA517738A925334BE01DAAE88A15"
+    },
+    {
+      "path": "prompts/01-delivery-orchestrator.md",
+      "bytes": 1809,
+      "sha256": "58B41EF3964655684425CEAD6949DB4D8B91774E5328C46A9DD41D4B3D1CBCE0"
+    },
+    {
+      "path": "prompts/02-ppt-director.md",
+      "bytes": 2518,
+      "sha256": "EF4DE63735551DEF0E6DBF5409453D93742A7F60B8F44B0C4F91432C234DF400"
+    },
+    {
+      "path": "prompts/03-ppt-critic.md",
+      "bytes": 1499,
+      "sha256": "6DD312B07500A6ED86104D8A24ADE647085A30ED8E026C3AB381A34123549EA4"
+    },
+    {
+      "path": "prompts/04-video-creative-director.md",
+      "bytes": 1258,
+      "sha256": "8EFD9200FFC76570A52F1C20AD2656F22100E723250F21FD7F672FF55E9F8CC7"
+    },
+    {
+      "path": "prompts/05-video-production-director.md",
+      "bytes": 1338,
+      "sha256": "A9F5A6626800F803378FA484C08270F348168CF07609B34A6005243BD54BF5DF"
+    },
+    {
+      "path": "prompts/05a-video-beat-director.md",
+      "bytes": 590,
+      "sha256": "B1F6440DA60A486B4725A790C0C918B0744A11B1F09F13DA08200BCCA2EB0389"
+    },
+    {
+      "path": "prompts/05b-shot-spec-author.md",
+      "bytes": 632,
+      "sha256": "065360B15FDF3BD20EBC0220A0A56ACE3826CBDE84B3508804C26C92ECF44F21"
+    },
+    {
+      "path": "prompts/05c-video-asset-bible.md",
+      "bytes": 557,
+      "sha256": "C77D26B326F43CC87D1EA88D601052BEB8F2DDAA8C8AB436197FD1DE60C6B814"
+    },
+    {
+      "path": "prompts/05d-video-segment-request.md",
+      "bytes": 492,
+      "sha256": "B85707B281D0501A5FA3E942985368CC0CA57E1054B87E9D88B4980270C92EEF"
+    },
+    {
+      "path": "prompts/05e-video-timeline-assembler.md",
+      "bytes": 479,
+      "sha256": "3CEEE1DD50D14672565E0E34DBA9ACBECA2C36AF5CA5BD4ABE88B65F046EDA28"
+    },
+    {
+      "path": "prompts/06-video-critic.md",
+      "bytes": 1879,
+      "sha256": "C7939C338E2D200C059D3E014714B073BB43E253F94B1381D145540DD193B488"
+    },
+    {
+      "path": "prompts/07-final-delivery-auditor.md",
+      "bytes": 946,
+      "sha256": "CC9377247E854364A2E7D724C0E79A912A4DFB6737A88E53AF2882EE6DBAB186"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2928,
+      "sha256": "504CFF9FA135305423E0C88AA8C25F7FD9DD059760E120775F1889E057CF16CB"
+    },
+    {
+      "path": "review/independent-agent-review.md",
+      "bytes": 4146,
+      "sha256": "16FBDB2E6CC932CCCAAA5D0050CC082E4E78C6C06CD1F96B806004F00289DA6E"
+    },
+    {
+      "path": "sources/official-research.md",
+      "bytes": 3279,
+      "sha256": "BAF0EA2F03B7D1DA753D8E24DDDFD94BFDDFFC09C85E8C699F7D927ED650B51D"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
+import { createAgentObservation, createRunCheckpoint } from "@/server/conversation/react-control";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -173,6 +174,46 @@ describe("AgentWorldState", () => {
     expect(state.draftArtifacts).toEqual([]);
     expect(JSON.stringify(state.toolObservations)).not.toMatch(/provider debug|local path|C:\\|token/i);
   });
+
+  it("exposes trusted ReAct observations and a paused checkpoint for restart recovery", () => {
+    const observation = createAgentObservation({
+      projectId: "project-1",
+      source: "quality",
+      status: "repair",
+      actionKey: "review_ppt",
+      inputHash: "quality-input",
+      reasonCodes: ["critic_major_present"],
+      reportRefs: [],
+      targetLocators: [{ kind: "page", pageId: "page-5", parentArtifactId: "ppt-1" }],
+      minimalNextAction: "repair_unit",
+      teacherSafeSummary: "第 5 页需要局部调整。",
+    });
+    const checkpoint = createRunCheckpoint({
+      projectId: "project-1",
+      planVersion: 4,
+      reason: "budget_exhausted",
+      observationRefs: [observation.observationId],
+    });
+    const state = buildAgentWorldState({
+      project: projectRecord(),
+      workflowNodes: [],
+      artifacts: [],
+      generationJobs: [],
+      turnJobs: [],
+      contextPackage: contextPackage(),
+      pendingPlan: null,
+      agentObservations: [observation],
+      runCheckpoint: checkpoint,
+    });
+
+    expect(state.agentObservations).toEqual([expect.objectContaining({
+      observationId: observation.observationId,
+      status: "repair",
+      minimalNextAction: "repair_unit",
+      targetLocators: [{ kind: "page", pageId: "page-5", parentArtifactId: "ppt-1" }],
+    })]);
+    expect(state.runCheckpoint).toMatchObject({ status: "paused", reason: "budget_exhausted", planVersion: 4 });
+  });
 });
 
 function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
@@ -236,6 +277,8 @@ function generationJobRecord(overrides: Partial<GenerationJobRecord>): Generatio
     projectId: "project-1",
     kind: overrides.kind ?? "pptx",
     sourceArtifactId: "artifact-1",
+    intentEpoch: 0,
+    inputHash: null,
     status: "failed",
     attempts: 2,
     maxAttempts: 3,
@@ -259,6 +302,10 @@ function turnJobRecord(overrides: Partial<ConversationTurnJobRecord>): Conversat
     attempts: 1,
     maxAttempts: 2,
     idempotencyKey: null,
+    actorUserId: null,
+    actorAuthMode: null,
+    authSessionId: null,
+    fencingToken: null,
     lockedBy: null,
     lockedUntil: null,
     errorCode: overrides.errorCode ?? null,

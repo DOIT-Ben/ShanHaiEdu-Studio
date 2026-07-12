@@ -9,7 +9,7 @@ function readSource(relativePath) {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
-test("M59 registers ppt_design between ppt_outline and coze_ppt", () => {
+test("M59 keeps coze_ppt available while V1 full delivery uses the quality PPT path", () => {
   const typesSource = readSource("src/server/capabilities/types.ts");
   const registrySource = readSource("src/server/capabilities/capability-registry.ts");
   const plannerSource = readSource("src/server/capabilities/capability-planner.ts");
@@ -20,7 +20,8 @@ test("M59 registers ppt_design between ppt_outline and coze_ppt", () => {
   assert.match(registrySource, /workflowNodeKey: "ppt_design_draft"/);
   assert.match(registrySource, /id: "coze_ppt"[\s\S]*upstreamCapabilities: \["ppt_design"\]/);
   assert.match(registrySource, /id: "coze_ppt"[\s\S]*inputSchema: \{ required: \["ppt_design_draft"\] \}/);
-  assert.match(plannerSource, /"ppt_outline",\s*\n\s*"ppt_design",\s*\n\s*"coze_ppt"/);
+  assert.match(plannerSource, /"ppt_outline",\s*\n\s*"ppt_design",\s*\n\s*"ppt_sample_assets",\s*\n\s*"ppt_key_samples",\s*\n\s*"ppt_full_assets",\s*\n\s*"ppt_full_deck"/);
+  assert.match(plannerSource, /buildPlan\("coze_ppt"/);
 });
 
 test("M59 adds a distinct ppt_design_draft workflow artifact and teacher mapping", () => {

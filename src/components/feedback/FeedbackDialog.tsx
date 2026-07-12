@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { FeedbackController } from "@/hooks/useFeedbackController";
-import { feedbackCategoryOptions } from "@/lib/feedback-contracts";
+import { feedbackCategoryOptions, feedbackSeverityOptions } from "@/lib/feedback-contracts";
 import { cn } from "@/lib/utils";
 
 export function FeedbackDialog({ controller }: { controller: FeedbackController }) {
@@ -59,6 +59,9 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
           <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
             <CheckCircle2 className="h-9 w-9 text-[#367d6d]" />
             <p className="mt-4 text-base font-medium text-foreground">反馈成功</p>
+            {controller.receipt?.receiptCode && (
+              <p className="mt-2 text-sm text-muted-foreground">回执编号：{controller.receipt.receiptCode}</p>
+            )}
             <Button className="mt-6" variant="secondary" onClick={controller.closeFeedback}>完成</Button>
           </div>
         ) : (
@@ -119,6 +122,32 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
                     })}
                   </div>
                 </div>
+
+                <fieldset>
+                  <legend className="text-sm font-semibold text-foreground">影响程度</legend>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {feedbackSeverityOptions.map((option) => {
+                      const selected = controller.severity === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          data-feedback-severity={option.id}
+                          disabled={submitting}
+                          aria-pressed={selected}
+                          onClick={() => controller.setSeverity(option.id)}
+                          className={cn(
+                            "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#367d6d]",
+                            selected ? selectedChoiceClass : idleChoiceClass,
+                          )}
+                        >
+                          {selected && <Check className="h-3.5 w-3.5" />}
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
 
                <label className="block" data-feedback-paste-kind="issue">
                   <span className="text-sm font-semibold text-foreground">反馈标题</span>

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-export type LocalArtifactCategory = "coze-ppt-artifacts" | "image-artifacts" | "video-artifacts" | "package-artifacts";
+export type LocalArtifactCategory = "coze-ppt-artifacts" | "ppt-sample-artifacts" | "ppt-production-artifacts" | "image-artifacts" | "video-artifacts" | "package-artifacts";
 
 type LocalArtifactEnv = {
   [key: string]: string | undefined;

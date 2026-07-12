@@ -58,7 +58,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(snapshot.artifacts).toEqual([]);
   });
 
-  it("keeps the route envelopes stable across the backend workflow happy path", async () => {
+  it("keeps the route envelopes stable across the backend workflow route sequence", async () => {
     const projectResponse = await postProjectRoute(
       new Request("http://localhost/api/workbench/projects", {
         method: "POST",
@@ -130,7 +130,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     const runFinishResponse = await postFinishRun(
       new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ status: "succeeded" }),
+        body: JSON.stringify({ status: "failed", errorMessage: "测试运行未产出可验收材料" }),
       }),
       { params: Promise.resolve({ projectId, runId: runStartBody.run.id }) },
     );
@@ -150,7 +150,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(runFinishResponse.status).toBe(200);
     expect(snapshot).toMatchObject({
       project: { id: projectId, title: "Stage 7 合同项目" },
-      agentRuns: [{ id: runStartBody.run.id, status: "succeeded" }],
+      agentRuns: [{ id: runStartBody.run.id, status: "failed" }],
     });
     expect(snapshot.messages).toEqual(
       expect.arrayContaining([expect.objectContaining({ role: "teacher", content: "我要做百分数公开课", artifactRefs: [], metadata: {} })]),

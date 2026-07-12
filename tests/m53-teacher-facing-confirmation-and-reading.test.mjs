@@ -109,7 +109,9 @@ test("assistant feedback actions persist a message-specific reaction", () => {
   assert.match(source, /onSetReaction/);
   assert.match(source, /reaction === "helpful"/);
   assert.match(source, /reaction === "unhelpful"/);
-  assert.match(source, /onSetReaction\(messageId, previousReaction === value \? null : value\)/);
+  assert.match(source, /const nextReaction = previousReaction === value \? null : value/);
+  assert.match(source, /await onSetReaction\(messageId, nextReaction\)/);
+  assert.match(source, /if \(nextReaction\) onOpenFeedback/);
   assert.doesNotMatch(source, /反馈入口暂未开放/);
 
   for (const forbidden of ["backend", "API", "debug", "provider", "schema", "manifest", "node_id", "storage"]) {

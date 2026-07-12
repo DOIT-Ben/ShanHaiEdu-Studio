@@ -11,6 +11,7 @@ describe("GptProtocolAdapter", () => {
       instructions: "只输出教师可读内容。",
       input: "生成一段导入语。",
       text: { format: { type: "text" } },
+      reasoning: { effort: "high" },
     });
 
     expect(client.lastPayload).toEqual({
@@ -18,6 +19,7 @@ describe("GptProtocolAdapter", () => {
       instructions: "只输出教师可读内容。",
       input: "生成一段导入语。",
       text: { format: { type: "text" } },
+      reasoning: { effort: "high" },
     });
     expect(response.assistantText).toBe("老师您好，这是生成结果。");
     expect(response.rawText).toBe("老师您好，这是生成结果。");

@@ -12,6 +12,7 @@ export type GptProtocolRequest = {
   tools?: unknown;
   toolChoice?: unknown;
   parallelToolCalls?: boolean;
+  reasoning?: { effort: "low" | "medium" | "high" };
 };
 
 export type GptFunctionCall = {

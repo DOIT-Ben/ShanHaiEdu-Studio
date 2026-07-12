@@ -18,7 +18,10 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "lesson_plan",
   "ppt_outline",
   "ppt_design",
-  "coze_ppt",
+  "ppt_sample_assets",
+  "ppt_key_samples",
+  "ppt_full_assets",
+  "ppt_full_deck",
   "image_asset",
   "knowledge_anchor_extract",
   "creative_theme_generate",
@@ -35,6 +38,12 @@ const fullDeliveryStepIds: CapabilityId[] = [
 export function planCapabilityForRequest(input: CapabilityPlannerInput): CapabilityToolPlan | null {
   const text = input.userMessage.trim();
   if (isCasualChat(text) || isExplorationOnly(text)) return null;
+
+  if (wantsPptPageRepair(text)) {
+    const required = ["pptx_artifact", "ppt_design_draft", "image_prompts"];
+    const missing = required.filter((kind) => !input.availableArtifactKinds.includes(kind));
+    return buildPlan("ppt_page_repair", text, missing, [], required, input.capabilityAvailability);
+  }
 
   if (wantsFullDelivery(text)) {
     const capabilityId = firstMissingDeliveryStep(fullDeliveryStepIds, input.availableArtifactKinds);
@@ -55,6 +64,15 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
     const hasPptOutline = input.availableArtifactKinds.includes("ppt_draft") || input.availableArtifactKinds.includes("ppt_outline");
     const hasPptDesign = input.availableArtifactKinds.includes("ppt_design_draft");
     const wantsConcretePptx = /pptx|文件|下载|生成\s*ppt/i.test(text);
+    const wantsQualityPpt = /精品|高质量|可编辑|样张|正式/.test(text);
+    const imageBundleCount = input.availableArtifactKinds.filter((kind) => kind === "image_prompts").length;
+
+    if (hasPptDesign && wantsConcretePptx && wantsQualityPpt) {
+      if (imageBundleCount === 0) return buildPlan("ppt_sample_assets", text, [], ["ppt_key_samples"], ["ppt_design_draft"], input.capabilityAvailability);
+      if (imageBundleCount === 1) return buildPlan("ppt_key_samples", text, [], ["ppt_full_assets"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
+      if (imageBundleCount === 2) return buildPlan("ppt_full_assets", text, [], ["ppt_full_deck"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
+      return buildPlan("ppt_full_deck", text, [], [], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
+    }
 
     if (hasPptDesign && wantsConcretePptx) {
       return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"], input.capabilityAvailability);
@@ -193,6 +211,10 @@ function isExplorationOnly(text: string): boolean {
 
 function wantsPpt(text: string): boolean {
   return /ppt|PPT|课件|幻灯片/.test(text);
+}
+
+function wantsPptPageRepair(text: string): boolean {
+  return /第\s*\d{1,2}\s*页/.test(text) && /PPT|课件|幻灯片/.test(text) && /调整|修改|返修|重做|优化/.test(text);
 }
 
 function wantsLessonPlan(text: string): boolean {

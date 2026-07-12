@@ -3,8 +3,10 @@ import type { ImageGenerationResult } from "@/server/image-generation/image-gene
 import { executeProviderTool, type ProviderToolAdapterInput } from "@/server/tools/provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
 import type { ToolDefinition, ToolExecutionResult } from "@/server/tools/tool-types";
-import type { VideoGenerationResult } from "@/server/video-generation/video-generation-run";
+import { VideoTaskPersistenceUnknownError, type VideoGenerationResult } from "@/server/video-generation/video-generation-run";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
+import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
 
 const forbiddenSensitiveText = /token|providerMode|API|api[_-]?key|Bearer\s+\S+|C:\\|\\Users\\|local path|SECRET|credential/i;
 
@@ -155,6 +157,106 @@ function unsupportedProviderTool(overrides: Partial<ToolDefinition> = {}): ToolD
 }
 
 describe("M64-C ProviderToolAdapter", () => {
+  it("returns a manifest-backed PPT sample asset bundle from the quality provider tool", async () => {
+    const fixtures = validPptSampleFixtures();
+    const source = pptDesignArtifact({ structuredContent: { pptDesignPackage: fixtures.designPackage } });
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_ppt_sample_assets"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [source],
+      runPptAssetBatch: async () => ({ requestBatch: fixtures.requestBatch, manifest: fixtures.manifest }),
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      toolId: "generate_ppt_sample_assets",
+      capabilityId: "ppt_sample_assets",
+      provider: "image_asset",
+      artifactDraft: {
+        nodeKey: "image_prompts",
+        kind: "image_prompts",
+        structuredContent: {
+          pptAssetRequestBatch: { batchDigest: fixtures.requestBatch.batchDigest },
+          pptAssetManifest: { manifestDigest: fixtures.manifest.manifestDigest },
+          storage: { pptAssetBundle: { assets: expect.any(Array) } },
+        },
+      },
+      qualityGate: { passed: true, gates: expect.arrayContaining(["ppt_asset_manifest_valid"]) },
+    });
+  });
+
+  it("generates full-production PPT assets only with the current explicit sample approval", async () => {
+    const fixtures = validPptFullProductionFixtures();
+    const design = pptDesignArtifact({ structuredContent: { pptDesignPackage: fixtures.designPackage } });
+    const approval = resolvedArtifact("image_prompts", "artifact-ppt-samples-approved", { structuredContent: {
+      pptKeySampleSet: fixtures.sampleSet,
+      pptSampleApproval: fixtures.approval,
+    } });
+    const evidence = resolvedArtifact("lesson_plan", "artifact_textbook_evidence", { title: "教材证据", summary: "已确认的教材事实依据" });
+    let observedScope: string | undefined;
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_ppt_full_assets"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef(), artifactRef("image_prompts", approval.id, approval.markdownContent)],
+      resolvedArtifacts: [design, approval, evidence],
+      runPptAssetBatch: async (input) => {
+        observedScope = input.scope;
+        return { requestBatch: fixtures.requestBatch, manifest: fixtures.manifest };
+      },
+    });
+
+    expect(observedScope).toBe("full_production");
+    expect(result).toMatchObject({
+      status: "succeeded",
+      capabilityId: "ppt_full_assets",
+      artifactDraft: { structuredContent: {
+        pptAssetRequestBatch: { scope: "full_production" },
+        pptAssetManifest: { scope: "full_production" },
+        pptKeySampleSet: { sampleSetDigest: fixtures.sampleSet.sampleSetDigest },
+        pptSampleApproval: { sampleSetDigest: fixtures.sampleSet.sampleSetDigest },
+      } },
+    });
+  });
+
+  it("blocks full-production assets before the provider call when design evidence is not a resolved approved artifact", async () => {
+    const fixtures = validPptFullProductionFixtures();
+    const design = pptDesignArtifact({ structuredContent: { pptDesignPackage: fixtures.designPackage } });
+    const approval = resolvedArtifact("image_prompts", "artifact-ppt-samples-approved", { structuredContent: {
+      pptKeySampleSet: fixtures.sampleSet,
+      pptSampleApproval: fixtures.approval,
+    } });
+    let calls = 0;
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_ppt_full_assets"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef(), artifactRef("image_prompts", approval.id, approval.markdownContent)],
+      resolvedArtifacts: [design, approval],
+      runPptAssetBatch: async () => { calls += 1; return { requestBatch: fixtures.requestBatch, manifest: fixtures.manifest }; },
+    });
+
+    expect(calls).toBe(0);
+    expect(result).toMatchObject({ status: "failed", errorCategory: "quality_gate_failed" });
+  });
+
+  it("does not call the full asset provider when sample approval is stale", async () => {
+    const fixtures = validPptFullProductionFixtures();
+    fixtures.approval.sampleSetDigest = "f".repeat(64);
+    const design = pptDesignArtifact({ structuredContent: { pptDesignPackage: fixtures.designPackage } });
+    const approval = resolvedArtifact("image_prompts", "artifact-ppt-samples-stale", { structuredContent: { pptKeySampleSet: fixtures.sampleSet, pptSampleApproval: fixtures.approval } });
+    let calls = 0;
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_ppt_full_assets"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef(), artifactRef("image_prompts", approval.id, approval.markdownContent)],
+      resolvedArtifacts: [design, approval],
+      runPptAssetBatch: async () => { calls += 1; return { requestBatch: fixtures.requestBatch, manifest: fixtures.manifest }; },
+    });
+
+    expect(calls).toBe(0);
+    expect(result.status).toBe("retryable_failed");
+  });
+
   it("wraps coze_ppt success through an injected provider runner without saving artifacts", async () => {
     const tool = getToolDefinition("generate_pptx_from_design");
     let calledWith: unknown;
@@ -743,9 +845,36 @@ describe("M64-C ProviderToolAdapter", () => {
   });
 
   describe("M64-R video_segment_generate", () => {
+    it("classifies an accepted-but-unpersisted video task as submission_unknown", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("video_segment_generate"),
+        projectId: "project-a",
+        project: projectRecord(),
+        artifactRefs: videoArtifactRefs(),
+        resolvedArtifacts: videoArtifacts(),
+        runVideo: async () => {
+          throw new VideoTaskPersistenceUnknownError();
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        errorCategory: "submission_unknown",
+        observation: {
+          kind: "provider_unavailable",
+          retryPolicy: { retryable: false, nextAction: "do_not_retry_automatically" },
+        },
+      });
+    });
+
     it("passes the segment plan and both upstream artifacts to the video runner and returns lineage with truth gates", async () => {
       let calledWith: unknown;
       const resolvedArtifacts = videoArtifacts();
+      const generationTaskLifecycle = {
+        providerTaskId: "persisted-task",
+        onTaskAccepted: async () => undefined,
+        onPoll: async () => undefined,
+      };
       const result = await executeFutureProviderTool({
         tool: getToolDefinitionByCapabilityId("video_segment_generate"),
         projectId: "project-a",
@@ -754,6 +883,7 @@ describe("M64-C ProviderToolAdapter", () => {
         artifactRefs: videoArtifactRefs(),
         resolvedArtifacts,
         sourceMessageId: "message-a",
+        generationTaskLifecycle,
         runVideo: async (input) => {
           calledWith = input;
           return {
@@ -774,6 +904,7 @@ describe("M64-C ProviderToolAdapter", () => {
           expect.objectContaining({ id: "artifact-storyboard-a", kind: "storyboard_generate", status: "approved", version: 7, isApproved: true }),
           expect.objectContaining({ id: "artifact-assets-a", kind: "asset_image_generate", status: "approved", version: 7, isApproved: true }),
         ]),
+        taskLifecycle: generationTaskLifecycle,
       });
       expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(resolvedArtifacts[0]);
       expect((calledWith as { upstreamArtifacts: ArtifactRecord[] }).upstreamArtifacts).toEqual([resolvedArtifacts[1], resolvedArtifacts[2]]);

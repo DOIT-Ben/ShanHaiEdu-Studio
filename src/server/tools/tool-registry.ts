@@ -297,6 +297,62 @@ const toolDefinitions: ToolDefinition[] = [
     implemented: true,
   },
   {
+    id: "generate_ppt_sample_assets",
+    label: "生成 PPT 关键样张资产批次",
+    description: "按已确认 PageSpec 生成关键场景和透明小素材，并输出逐对象来源清单。",
+    adapterKind: "provider",
+    capabilityId: "ppt_sample_assets",
+    providerToolId: "image_asset.generate_ppt_sample_assets",
+    inputSchema: artifactInputSchema(["ppt_design_draft"]),
+    outputSchema: artifactOutputSchema("image_prompts"),
+    requiresHumanGate: true,
+    sideEffectLevel: "external_call",
+    requiredArtifactKinds: ["ppt_design_draft"],
+    producedArtifactKind: "image_prompts",
+    failurePolicy: defaultFailurePolicy,
+    implemented: true,
+  },
+  packageTool({
+    id: "assemble_ppt_key_samples",
+    label: "组装 PPT 关键样张",
+    description: "把已确认的逐页设计和真实样张资产组装为可编辑 PPTX、逐页预览与三份独立总览，等待 D/V/P 审查。",
+    capabilityId: "ppt_key_samples",
+    requiredArtifactKinds: ["ppt_design_draft", "image_prompts"],
+    producedArtifactKind: "image_prompts",
+  }),
+  packageTool({
+    id: "assemble_ppt_full_deck",
+    label: "组装完整可编辑 PPT",
+    description: "使用已批准样张、完整真实资产和逐页设计组装完整 PPTX、PDF、逐页预览与总览，等待交付审查。",
+    capabilityId: "ppt_full_deck",
+    requiredArtifactKinds: ["ppt_design_draft", "image_prompts"],
+    producedArtifactKind: "pptx_artifact",
+  }),
+  packageTool({
+    id: "repair_ppt_full_deck_pages",
+    label: "返修指定 PPT 页面",
+    description: "只返修教师明确指定的页面，保留未受影响页的素材和渲染证据。",
+    capabilityId: "ppt_page_repair",
+    requiredArtifactKinds: ["pptx_artifact", "ppt_design_draft", "image_prompts"],
+    producedArtifactKind: "pptx_artifact",
+  }),
+  {
+    id: "generate_ppt_full_assets",
+    label: "生成 PPT 全量正式资产",
+    description: "在当前关键样张明确批准后，为全部页面生成正式场景和透明小素材，并输出完整来源清单。",
+    adapterKind: "provider",
+    capabilityId: "ppt_full_assets",
+    providerToolId: "image_asset.generate_ppt_full_assets",
+    inputSchema: artifactInputSchema(["ppt_design_draft", "image_prompts"]),
+    outputSchema: artifactOutputSchema("image_prompts"),
+    requiresHumanGate: true,
+    sideEffectLevel: "external_call",
+    requiredArtifactKinds: ["ppt_design_draft", "image_prompts"],
+    producedArtifactKind: "image_prompts",
+    failurePolicy: defaultFailurePolicy,
+    implemented: true,
+  },
+  {
     id: "generate_classroom_image",
     label: "生成课堂图片素材",
     description: "基于已确认的课件大纲生成课堂图片素材。",
@@ -337,6 +393,8 @@ function cloneToolDefinition(definition: ToolDefinition): ToolDefinition {
 export function listToolDefinitions(): ToolDefinition[] {
   return toolDefinitions.map(cloneToolDefinition);
 }
+
+export const getToolDefinitions = listToolDefinitions;
 
 export function getToolDefinition(id: string): ToolDefinition {
   const definition = toolDefinitions.find((tool) => tool.id === id);

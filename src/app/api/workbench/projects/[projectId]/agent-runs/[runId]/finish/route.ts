@@ -13,6 +13,7 @@ export async function POST(request: Request, context: RouteContext) {
       const run = await service.finishAgentRun(projectId, runId, {
         status: assertFinishStatus(body.status),
         errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
+        evidence: parseFinishEvidence(body.evidence),
       });
       return NextResponse.json({ run });
     } catch (error) {
@@ -21,6 +22,26 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: message }, { status });
     }
   });
+}
+
+function parseFinishEvidence(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("完成证据格式无效");
+  }
+  const evidence = value as Record<string, unknown>;
+  if (
+    typeof evidence.artifactId !== "string" || !evidence.artifactId ||
+    typeof evidence.validationReportId !== "string" || !evidence.validationReportId ||
+    typeof evidence.qualityDecisionId !== "string" || !evidence.qualityDecisionId
+  ) {
+    throw new Error("完成证据格式无效");
+  }
+  return {
+    artifactId: evidence.artifactId,
+    validationReportId: evidence.validationReportId,
+    qualityDecisionId: evidence.qualityDecisionId,
+  };
 }
 
 function assertFinishStatus(value: unknown) {

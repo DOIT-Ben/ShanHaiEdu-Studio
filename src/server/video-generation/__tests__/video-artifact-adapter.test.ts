@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as postVideoRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
   routeToolCall: vi.fn(),
@@ -56,7 +57,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       messageId: sourceArtifact.id,
     });
 
-    vi.mocked(routeToolCall).mockResolvedValueOnce({
+    vi.mocked(routeToolCall).mockImplementationOnce(async (input) => withPassedValidationReport(input, {
       status: "succeeded",
       toolId: "generate_video_segment",
       capabilityId: "video_segment_generate",
@@ -99,7 +100,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
         kind: "tool_succeeded",
         createdAt: "2026-07-10T00:00:00.000Z",
       },
-    });
+    }, { stage: "video_segment_generate", domain: "video", toolId: "generate_video_segment" }));
 
     const response = await postVideoRoute(new Request("http://localhost", {
       method: "POST",
@@ -135,6 +136,18 @@ describe("Local Real MVP M21 video artifact adapter", () => {
     expect(JSON.stringify(body)).not.toContain("Bearer ");
     expect(JSON.stringify(body)).not.toMatch(/https:\/\/.+/i);
     expect(JSON.stringify(body)).not.toMatch(/task[_-]?id/i);
+
+    const repeatedResponse = await postVideoRoute(new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({ confirmedActionId }),
+    }), {
+      params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
+    });
+    const repeatedBody = await repeatedResponse.json();
+    expect(repeatedResponse.status).toBe(200);
+    expect(repeatedBody).toMatchObject({ reused: true, artifact: { id: body.artifact.id }, job: { id: body.job.id } });
+    expect(routeToolCall).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(repeatedBody)).not.toMatch(/task[_-]?id/i);
   });
 
   it.each([

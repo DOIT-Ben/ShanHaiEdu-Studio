@@ -1,0 +1,21 @@
+{
+  "shot_id": "shot_01",
+  "beat_id": "beat_01",
+  "start_seconds": 0,
+  "duration_seconds": 6,
+  "viewer_experience": "安静的博物馆突然出现标签飞走的意外",
+  "subject": "穿芥末黄色外套的一年级儿童",
+  "action": "孩子发现空白纸标签被风卷起并转身追随",
+  "context": "明亮的纸艺博物馆和湖蓝色弧形通道",
+  "framing": "儿童视角宽景，人物位于左下三分区",
+  "camera_motion": "沿飞纸轨迹平滑向右前方 dolly in",
+  "start_state": "孩子刚进入安静展厅，纸张静止",
+  "end_state": "纸张飞向发光门洞，孩子停下仰望",
+  "narration": null,
+  "caption": null,
+  "asset_refs": ["style_ref_01", "character_ref_01", "museum_ref_01"],
+  "continuity_keys": { "jacket": "mustard-yellow", "child_hair": "short-black", "floor_path": "lake-blue", "key_light": "warm-right" },
+  "negative_constraints": ["no readable text", "no signage", "no numbers", "no card grid", "no duplicate child"],
+  "course_anchor_relation": "只建立标签失踪的悬念，不解释数字对应",
+  "acceptance_checks": ["完整解码", "人物和飞纸动作可读", "没有模糊展签文字", "没有超过0.5秒的非计划静止"]
+}

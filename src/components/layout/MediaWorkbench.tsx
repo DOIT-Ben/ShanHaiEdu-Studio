@@ -126,6 +126,11 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
                     onViewChange={controller.openProjectView}
                     onMutateProject={controller.mutateProjectLifecycle}
                     onCreateProject={createProjectFromSheet}
+                    currentUser={currentUser}
+                    onOpenFeedback={feedbackController.openFeedback}
+                    onOpenUserManagement={() => setUserManagementOpen(true)}
+                    onLogout={onLogout}
+                    onOpenXiaoKuSettings={() => setXiaoKuSettingsOpen(true)}
                   />
                 </SheetContent>
               </Sheet>
@@ -174,6 +179,10 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
                 errorMessage={controller.errorMessage}
                 onCreateProject={controller.createProject}
                 onSelectProject={controller.selectProject}
+                onOpenFeedback={feedbackController.openFeedback}
+                onOpenUserManagement={() => setUserManagementOpen(true)}
+                onLogout={onLogout}
+                onOpenXiaoKuSettings={() => setXiaoKuSettingsOpen(true)}
               />
             )}
           </div>
@@ -224,6 +233,8 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         onCopy={controller.copyArtifact}
         onUseAsInput={controller.useAsInput}
         onConfirm={controller.confirmArtifact}
+        onPptSampleReview={controller.submitPptSampleReview}
+        onPptFullDeckReview={controller.submitPptFullDeckReview}
         onRegenerate={controller.regenerateArtifact}
         onGenerateRealAsset={controller.generateRealAsset}
         realAssetGenerationKey={controller.realAssetGenerationKey}

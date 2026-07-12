@@ -169,7 +169,9 @@ test("M67 routes global, profile, and assistant message feedback into the single
   assert.match(transcriptSource, /data-message-id=\{message\.id\}/);
   assert.match(transcriptSource, /projectId=\{projectId\}/);
   assert.match(transcriptSource, /messageId=\{message\.id\}/);
-  assert.match(actionsSource, /onSetReaction\(messageId, previousReaction === value \? null : value\)/);
+  assert.match(actionsSource, /const nextReaction = previousReaction === value \? null : value/);
+  assert.match(actionsSource, /await onSetReaction\(messageId, nextReaction\)/);
+  assert.match(actionsSource, /if \(nextReaction\) onOpenFeedback/);
   assert.match(actionsSource, /reaction === "helpful"/);
   assert.match(actionsSource, /reaction === "unhelpful"/);
   assert.match(actionsSource, /projectId/);

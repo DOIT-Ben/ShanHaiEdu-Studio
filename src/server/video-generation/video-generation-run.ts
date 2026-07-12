@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
+import type { EvolinkReferenceUploadEvidence } from "./evolink-reference-upload";
 
 export const EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE = {
   provider: "evolink",
@@ -21,6 +22,10 @@ export type VideoGenerationResult = {
   sha256: string;
   videoValid: true;
   mime: "video/mp4";
+  requestEvidence?: {
+    shotId: string;
+    references: EvolinkReferenceUploadEvidence[];
+  };
 };
 
 type VideoProviderConfig = {
@@ -38,18 +43,38 @@ type VideoProviderConfig = {
   maxPolls: number;
 };
 
+export type VideoGenerationTaskLifecycle = {
+  providerTaskId?: string | null;
+  onTaskAccepted?: (providerTaskId: string) => Promise<void>;
+  onPoll?: () => Promise<void>;
+};
+
+export class VideoTaskPersistenceUnknownError extends Error {
+  readonly code = "video_task_persistence_unknown";
+
+  constructor() {
+    super("video_task_persistence_unknown");
+    this.name = "VideoTaskPersistenceUnknownError";
+  }
+}
+
 const MIN_VIDEO_BYTES = 1024;
 
 export async function generateVideoFromArtifact(input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
   upstreamArtifacts?: ArtifactRecord[];
+  taskLifecycle?: VideoGenerationTaskLifecycle;
+  shot?: ResolvedShotVideoRequest;
 }): Promise<VideoGenerationResult> {
   assertVideoProviderPreconditions(input);
   const config = readConfig(process.env);
-  const submitPayload = await submitVideoTask(config, input);
-  const taskId = extractTaskId(submitPayload);
-  const completedPayload = await pollVideoTask(config, taskId);
+  const completedPayload = await executeRecoverableVideoTask({
+    providerTaskId: input.taskLifecycle?.providerTaskId,
+    submit: async () => extractTaskId(await submitVideoTask(config, input)),
+    onTaskAccepted: input.taskLifecycle?.onTaskAccepted,
+    poll: async (taskId) => pollVideoTask(config, taskId, input.taskLifecycle?.onPoll),
+  });
   const videoUrl = extractVideoResultUrl(completedPayload);
   const videoBuffer = await downloadVideo(videoUrl, config.timeoutMs);
   const validation = validateMp4Buffer(videoBuffer);
@@ -71,6 +96,7 @@ export async function generateVideoFromArtifact(input: {
     sha256: createHash("sha256").update(videoBuffer).digest("hex"),
     videoValid: true,
     mime: "video/mp4",
+    ...(input.shot ? { requestEvidence: { shotId: input.shot.shotId, references: input.shot.referenceEvidence } } : {}),
   };
 }
 
@@ -107,6 +133,25 @@ export function buildVideoQueryUrl(baseUrl: string, taskId: string, channel = "o
   return `${buildVideoEndpointUrl(baseUrl, channel)}/${encodeURIComponent(taskId)}`;
 }
 
+export async function executeRecoverableVideoTask<T>(input: {
+  providerTaskId?: string | null;
+  submit: () => Promise<string>;
+  onTaskAccepted?: (providerTaskId: string) => Promise<void>;
+  poll: (providerTaskId: string) => Promise<T>;
+}): Promise<T> {
+  let providerTaskId = input.providerTaskId?.trim() || null;
+  if (!providerTaskId) {
+    providerTaskId = (await input.submit()).trim();
+    if (!providerTaskId) throw new Error("missing_video_task_id");
+    try {
+      await input.onTaskAccepted?.(providerTaskId);
+    } catch {
+      throw new VideoTaskPersistenceUnknownError();
+    }
+  }
+  return input.poll(providerTaskId);
+}
+
 export function assertVideoProviderPreconditions(input: {
   artifact: ArtifactRecord;
   upstreamArtifacts?: ArtifactRecord[];
@@ -133,8 +178,45 @@ export function assertVideoProviderPreconditions(input: {
   }
 }
 
-export function buildVideoRequestBody(config: Pick<VideoProviderConfig, "channel" | "model" | "size" | "duration" | "quality" | "mode" | "aspectRatio">, prompt: string) {
+export type ResolvedShotVideoRequest = {
+  shotId: string;
+  prompt: string;
+  referenceImageUrls: string[];
+  referenceEvidence: EvolinkReferenceUploadEvidence[];
+};
+
+export function buildResolvedShotVideoRequest(input: {
+  shotId: string;
+  prompt: string;
+  referenceEvidence?: EvolinkReferenceUploadEvidence[];
+}): ResolvedShotVideoRequest {
+  const shotId = input.shotId.trim();
+  const prompt = input.prompt.trim();
+  if (!/^shot_[a-z0-9_-]+$/i.test(shotId) || !prompt) throw new Error("video_shot_request_invalid");
+  const referenceEvidence = input.referenceEvidence ?? [];
+  for (const evidence of referenceEvidence) {
+    if (evidence.shotId !== shotId) throw new Error("video_reference_evidence_shot_mismatch");
+    if (evidence.assetDomain !== "video") throw new Error("video_reference_asset_domain_invalid");
+    if (!/^[a-f0-9]{64}$/i.test(evidence.localSha256)) throw new Error("video_reference_evidence_hash_invalid");
+    if (!/^https:\/\//i.test(evidence.uploadedUrl)) throw new Error("video_reference_upload_url_untrusted");
+  }
+  return {
+    shotId,
+    prompt,
+    referenceImageUrls: referenceEvidence.map((evidence) => evidence.uploadedUrl),
+    referenceEvidence,
+  };
+}
+
+export function buildVideoRequestBody(
+  config: Pick<VideoProviderConfig, "channel" | "model" | "size" | "duration" | "quality" | "mode" | "aspectRatio">,
+  prompt: string,
+  referenceImageUrls: string[] = [],
+) {
   if (config.channel === "evolink") {
+    if (referenceImageUrls.length > EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE.imageUrls.max) {
+      throw new Error("video_reference_image_limit_exceeded");
+    }
     return {
       model: config.model,
       prompt,
@@ -142,6 +224,7 @@ export function buildVideoRequestBody(config: Pick<VideoProviderConfig, "channel
       quality: config.quality,
       mode: config.mode,
       aspect_ratio: config.aspectRatio,
+      ...(referenceImageUrls.length > 0 ? { image_urls: [...referenceImageUrls] } : {}),
     };
   }
   return {
@@ -149,6 +232,14 @@ export function buildVideoRequestBody(config: Pick<VideoProviderConfig, "channel
     prompt,
     size: config.size,
   };
+}
+
+export function buildShotVideoRequestBody(
+  config: Pick<VideoProviderConfig, "channel" | "model" | "size" | "duration" | "quality" | "mode" | "aspectRatio">,
+  shot: ResolvedShotVideoRequest,
+) {
+  if (!/^shot_[a-z0-9_-]+$/i.test(shot.shotId) || !shot.prompt.trim()) throw new Error("video_shot_request_invalid");
+  return buildVideoRequestBody(config, shot.prompt, shot.referenceImageUrls);
 }
 
 function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {
@@ -177,7 +268,7 @@ function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {
 
 async function submitVideoTask(
   config: VideoProviderConfig,
-  input: { project: ProjectRecord; artifact: ArtifactRecord },
+  input: { project: ProjectRecord; artifact: ArtifactRecord; shot?: ResolvedShotVideoRequest },
 ) {
   const response = await fetch(buildVideoEndpointUrl(config.baseUrl, config.channel), {
     method: "POST",
@@ -185,7 +276,9 @@ async function submitVideoTask(
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildVideoRequestBody(config, buildPrompt(input.project, input.artifact))),
+    body: JSON.stringify(input.shot
+      ? buildShotVideoRequestBody(config, input.shot)
+      : buildVideoRequestBody(config, buildPrompt(input.project, input.artifact))),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
 
@@ -195,9 +288,10 @@ async function submitVideoTask(
   return response.json();
 }
 
-async function pollVideoTask(config: VideoProviderConfig, taskId: string) {
+async function pollVideoTask(config: VideoProviderConfig, taskId: string, onPoll?: () => Promise<void>) {
   let lastStatus = "unknown";
   for (let attempt = 0; attempt < config.maxPolls; attempt += 1) {
+    await onPoll?.();
     const response = await fetch(buildVideoQueryUrl(config.baseUrl, taskId, config.channel), {
       method: "GET",
       headers: {

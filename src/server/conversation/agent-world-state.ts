@@ -1,6 +1,7 @@
 import type { CapabilityToolPlan } from "@/server/capabilities/types";
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { ContextPackage } from "@/server/conversation/context-package";
+import type { AgentObservation, RunCheckpoint } from "@/server/conversation/react-control";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -59,6 +60,22 @@ export type AgentWorldStateToolObservation = Pick<
   | "createdAt"
 >;
 
+export type AgentWorldStateObservation = Pick<
+  AgentObservation,
+  | "observationId"
+  | "source"
+  | "status"
+  | "actionKey"
+  | "inputHash"
+  | "reasonCodes"
+  | "reportRefs"
+  | "targetLocators"
+  | "responsibleStage"
+  | "minimalNextAction"
+  | "teacherSafeSummary"
+  | "createdAt"
+>;
+
 export type AgentWorldState = {
   project: Pick<ProjectRecord, "id" | "title" | "grade" | "subject" | "textbookVersion" | "lessonTopic" | "status">;
   currentNodeKey: WorkflowNodeKey;
@@ -67,6 +84,8 @@ export type AgentWorldState = {
   blockedItems: AgentWorldStateBlockedItem[];
   failedJobs: AgentWorldStateFailedJob[];
   toolObservations: AgentWorldStateToolObservation[];
+  agentObservations: AgentWorldStateObservation[];
+  runCheckpoint: RunCheckpoint | null;
   pendingPlan: AgentWorldStatePendingPlan | null;
   nextRisks: AgentWorldStateRisk[];
 };
@@ -87,6 +106,8 @@ export type BuildAgentWorldStateInput = {
     actionId?: string;
   } | null;
   toolObservations?: ToolObservation[];
+  agentObservations?: AgentObservation[];
+  runCheckpoint?: RunCheckpoint | null;
 };
 
 const generationJobLabels: Record<GenerationJobRecord["kind"], string> = {
@@ -147,8 +168,30 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
     toolObservations: (input.toolObservations ?? [])
       .filter((observation) => observation.status === "active")
       .map(toWorldStateToolObservation),
+    agentObservations: (input.agentObservations ?? [])
+      .filter((observation) => observation.projectId === input.project.id)
+      .slice(-12)
+      .map(toWorldStateObservation),
+    runCheckpoint: input.runCheckpoint?.projectId === input.project.id ? input.runCheckpoint : null,
     pendingPlan: input.pendingPlan ? toPendingPlan(input.pendingPlan) : null,
     nextRisks: [...staleRisks, ...blockedItems],
+  };
+}
+
+function toWorldStateObservation(observation: AgentObservation): AgentWorldStateObservation {
+  return {
+    observationId: observation.observationId,
+    source: observation.source,
+    status: observation.status,
+    actionKey: observation.actionKey,
+    inputHash: observation.inputHash,
+    reasonCodes: observation.reasonCodes,
+    reportRefs: observation.reportRefs,
+    targetLocators: observation.targetLocators,
+    responsibleStage: observation.responsibleStage,
+    minimalNextAction: observation.minimalNextAction,
+    teacherSafeSummary: sanitizeTeacherMessage(observation.teacherSafeSummary) || "这一步的结果需要重新核对。",
+    createdAt: observation.createdAt,
   };
 }
 

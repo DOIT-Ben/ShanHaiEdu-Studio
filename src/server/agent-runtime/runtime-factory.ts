@@ -27,6 +27,7 @@ export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env):
     new OpenAIRuntime({
       client,
       model: config.model,
+      reasoningEffort: config.reasoningEffort,
     }),
     fallback,
   );
@@ -39,6 +40,7 @@ export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env):
     new OpenAIRuntime({
       client,
       model: config.model,
+      reasoningEffort: config.reasoningEffort,
       nativeToolLoop,
     }),
     fallback,

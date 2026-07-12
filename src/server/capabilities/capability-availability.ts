@@ -28,6 +28,8 @@ export function resolveRuntimeProviderAvailability(env: Partial<NodeJS.ProcessEn
   return {
     ...(hasCozePptProvider(env) ? { coze_ppt: true as const } : {}),
     ...(hasImageProvider(env) ? { image_asset: true as const } : {}),
+    ...(hasImageProvider(env) ? { ppt_sample_assets: true as const } : {}),
+    ...(hasImageProvider(env) ? { ppt_full_assets: true as const } : {}),
     ...(hasVideoProvider(env) ? { video_segment_generate: true as const } : {}),
   };
 }
@@ -47,7 +49,7 @@ export function buildCapabilityAvailability(input: BuildCapabilityAvailabilityIn
         status: "needs_approved_inputs",
         missingApprovedInputs,
         reasonForModel: `status=needs_approved_inputs; capability=${definition.id}; missingApprovedInputs=${missingApprovedInputs.join(",")}`,
-        reasonForUser: "请先确认前置成果后再继续。",
+        reasonForUser: buildMissingApprovedInputsReason(definition, missingApprovedInputs, definitionsById),
       });
     }
 
@@ -72,6 +74,22 @@ export function buildCapabilityAvailability(input: BuildCapabilityAvailabilityIn
       reasonForUser: definition.requiresConfirmation ? "前置成果已确认，可以继续，执行前仍需教师确认。" : "前置成果已确认，可以继续。",
     });
   });
+}
+
+function buildMissingApprovedInputsReason(
+  definition: CapabilityDefinition,
+  missingApprovedInputs: CapabilityId[],
+  definitionsById: Map<CapabilityId, CapabilityDefinition>,
+): string {
+  if (definition.id === "video_script_generate") {
+    return "可以只做视频脚本，但现在还缺少已确认的导入创意主题。请补充这节课的年级、课题和希望采用的导入情境；我会据此规划最短前置步骤，不会继续生成 PPT 或最终视频。";
+  }
+
+  const missingLabels = missingApprovedInputs.map((capabilityId) => {
+    const label = definitionsById.get(capabilityId)?.userLabel ?? "前置内容";
+    return label.replace(/^(整理|生成|提取|规划|只拼接)/, "");
+  });
+  return `要继续${definition.userLabel}，还缺少已确认的${missingLabels.join("、")}。请先补充或确认这些内容，再继续当前任务。`;
 }
 
 function hasApprovedArtifactForCapability(artifacts: ArtifactRecord[], definition: CapabilityDefinition): boolean {

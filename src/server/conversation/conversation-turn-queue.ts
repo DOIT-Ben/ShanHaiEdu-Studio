@@ -3,6 +3,8 @@ import { createConversationTurnService, type MessageTurnResponse } from "@/serve
 import type { MainConversationAgent } from "@/server/conversation/main-conversation-agent";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ConversationTurnJobRecord } from "@/server/workbench/types";
+import type { ExecutionIdentitySnapshot, ProjectExecutionFence } from "@/server/workbench/types";
+import { randomUUID } from "node:crypto";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
@@ -24,6 +26,8 @@ export type DrainProjectConversationQueueOptions = {
   runtime?: AgentRuntime;
   agent?: MainConversationAgent;
   executor?: ConversationTurnJobExecutor;
+  workerId?: string;
+  leaseMs?: number;
 };
 
 export type DrainProjectConversationQueueResult = {
@@ -44,54 +48,108 @@ export async function drainProjectConversationQueue(
 
   activeProjectDrains.add(projectId);
   const result: DrainProjectConversationQueueResult = { started: 0, succeeded: 0, failed: 0 };
+  const holderId = options.workerId?.trim() || `conversation-worker-${randomUUID()}`;
+  const leaseMs = options.leaseMs ?? 10 * 60 * 1000;
+  const lease = await options.service.acquireProjectExecutionLease({ projectId, holderId, leaseMs }).catch((error) => {
+    activeProjectDrains.delete(projectId);
+    throw error;
+  });
+  if (!lease) {
+    activeProjectDrains.delete(projectId);
+    return result;
+  }
+  const fence: ProjectExecutionFence = { projectId, holderId, fencingToken: lease.fencingToken };
+  const stopHeartbeat = startLeaseHeartbeat(options.service, fence, leaseMs);
 
   try {
     const executor = options.executor ?? createDefaultExecutor(options);
     while (true) {
-      const job = await options.service.startNextConversationTurnJob(projectId);
+      const job = await options.service.startNextConversationTurnJob(projectId, {
+        lockedBy: holderId,
+        lockMs: leaseMs,
+        fence,
+      });
       if (!job) break;
       if (job.status !== "running") {
-        if (job.status === "failed") result.failed += 1;
+        if (job.status === "failed" || job.status === "quarantined") result.failed += 1;
         continue;
       }
 
       result.started += 1;
+      const executionService = options.service.withExecutionGuard({
+        ...fence,
+        identity: readJobExecutionIdentity(job),
+      });
       try {
-        const execution = await executor({ projectId, job, service: options.service });
+        const execution = await executor({ projectId, job, service: executionService });
+        await options.service.renewProjectExecutionLease({ ...fence, leaseMs });
         if (execution.status === "blocked") {
-          await options.service.finishConversationTurnJob(projectId, job.id, {
+          const completed = await executionService.finishConversationTurnJob(projectId, job.id, {
             assistantMessageId: execution.assistantMessageId,
             status: "blocked",
             errorCode: execution.errorCode,
             errorMessage: execution.errorMessage,
           });
+          if (completed.status === "quarantined") {
+            result.failed += 1;
+            continue;
+          }
         } else {
-          await options.service.finishConversationTurnJob(projectId, job.id, {
+          const completed = await executionService.finishConversationTurnJob(projectId, job.id, {
             assistantMessageId: execution.assistantMessageId,
             status: "succeeded",
           });
+          if (completed.status === "quarantined") {
+            result.failed += 1;
+            continue;
+          }
         }
         result.succeeded += 1;
       } catch (error) {
         const failure = normalizeExecutionFailure(error);
-        await options.service.failConversationTurnJob(projectId, job.id, failure);
+        await executionService.failConversationTurnJob(projectId, job.id, failure).catch(() => null);
         result.failed += 1;
       }
     }
   } finally {
+    stopHeartbeat();
+    await options.service.releaseProjectExecutionLease(fence).catch(() => false);
     activeProjectDrains.delete(projectId);
   }
 
   return result;
 }
 
+function readJobExecutionIdentity(job: ConversationTurnJobRecord): ExecutionIdentitySnapshot {
+  if (!job.actorUserId || !isExecutionAuthMode(job.actorAuthMode)) {
+    throw new Error("Conversation turn job execution identity is missing.");
+  }
+  return {
+    actorUserId: job.actorUserId,
+    actorAuthMode: job.actorAuthMode,
+    authSessionId: job.authSessionId,
+  };
+}
+
+function isExecutionAuthMode(value: string | null): value is ExecutionIdentitySnapshot["actorAuthMode"] {
+  return value === "local" || value === "password" || value === "oauth" || value === "sso";
+}
+
+function startLeaseHeartbeat(service: WorkbenchService, fence: ProjectExecutionFence, leaseMs: number) {
+  const intervalMs = Math.max(25, Math.floor(leaseMs / 3));
+  const timer = setInterval(() => {
+    void service.renewProjectExecutionLease({ ...fence, leaseMs }).catch(() => null);
+  }, intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 function createDefaultExecutor(options: DrainProjectConversationQueueOptions): ConversationTurnJobExecutor {
   if (!options.runtime) {
     throw new Error("Conversation turn queue drain requires an AgentRuntime when no executor is provided.");
   }
-  const turnService = createConversationTurnService({ service: options.service, runtime: options.runtime, agent: options.agent });
-
-  return async ({ projectId, job }) => {
+  return async ({ projectId, job, service }) => {
+    const turnService = createConversationTurnService({ service, runtime: options.runtime!, agent: options.agent });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {
       throw new ConversationTurnJobFailure({

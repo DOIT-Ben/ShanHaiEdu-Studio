@@ -3,6 +3,7 @@ import { GET as getGenerationJobsRoute } from "@/app/api/workbench/projects/[pro
 import { POST as postImageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
 import { createWorkbenchService } from "../service";
 
@@ -23,6 +24,20 @@ const actorB = createWorkbenchActor({
 });
 
 describe("Local Real MVP M30 generation job queue", () => {
+  it("keeps video generation idempotency independent for each shot unit", async () => {
+    const service = createWorkbenchService(undefined, actorA);
+    const project = await service.createProject({ title: "镜头任务" });
+    const source = await service.saveArtifact(project.id, {
+      nodeKey: "video_segment_plan", kind: "video_segment_plan", title: "分镜计划", status: "approved", summary: "已确认", markdownContent: "# 分镜", structuredContent: {},
+    });
+    const first = await service.createGenerationJob(project.id, { kind: "video", sourceArtifactId: source.id, capabilityId: "video_segment_generate", unitId: "shot_01" });
+    const second = await service.createGenerationJob(project.id, { kind: "video", sourceArtifactId: source.id, capabilityId: "video_segment_generate", unitId: "shot_02" });
+
+    expect(first.id).not.toBe(second.id);
+    expect(first.unitId).toBe("shot_01");
+    expect(second.unitId).toBe("shot_02");
+  });
+
   it("persists generation job state transitions and restores them in snapshots", async () => {
     const service = createWorkbenchService(undefined, actorA);
     const project = await service.createProject({ title: "M30 generation job state" });
@@ -56,17 +71,31 @@ describe("Local Real MVP M30 generation job queue", () => {
     expect(running.attempts).toBe(1);
     expect(running.startedAt).not.toBeNull();
 
-    const resultArtifact = await service.saveArtifact(project.id, {
-      nodeKey: "image_prompts",
-      kind: "image_prompts",
+    const resultDraft = {
+      nodeKey: "image_prompts" as const,
+      kind: "image_prompts" as const,
       title: "真实课堂视觉图",
-      status: "needs_review",
+      status: "needs_review" as const,
       summary: "已生成图片。",
       markdownContent: "# 已生成图片",
+    };
+    const committed = await service.commitGenerationResult(project.id, queued.id, {
+      ...resultDraft,
+      validationReport: createValidationReport({
+        reportId: `validation-${queued.id}`,
+        createdAt: new Date().toISOString(),
+        domain: "ppt",
+        stage: "image_asset",
+        target: { kind: "artifact_draft", targetDigest: hashArtifactDraft(resultDraft) },
+        contract: { id: "tool:generate_classroom_image", version: "tool-v1" },
+        inputHash: queued.inputHash ?? undefined,
+        intentEpoch: queued.intentEpoch,
+        overallStatus: "passed",
+        gates: [],
+      }),
     });
-    const succeeded = await service.finishGenerationJob(project.id, queued.id, {
-      resultArtifactId: resultArtifact.id,
-    });
+    const resultArtifact = committed.artifact;
+    const succeeded = committed.job;
     expect(succeeded.status).toBe("succeeded");
     expect(succeeded.resultArtifactId).toBe(resultArtifact.id);
     expect(succeeded.finishedAt).not.toBeNull();

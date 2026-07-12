@@ -36,7 +36,8 @@ export function MessageActions({ text, projectId, messageId, onOpenFeedback, rea
     setReacting(true);
     try {
       if (onSetReaction) {
-        await onSetReaction(messageId, previousReaction === value ? null : value);
+        const nextReaction = previousReaction === value ? null : value;
+        await onSetReaction(messageId, nextReaction);
         setReactionAnnouncement(
           previousReaction === value
             ? "已取消评价"
@@ -44,6 +45,7 @@ export function MessageActions({ text, projectId, messageId, onOpenFeedback, rea
               ? `已改为${value === "helpful" ? "点赞" : "点踩"}`
               : `已${value === "helpful" ? "点赞" : "点踩"}`,
         );
+        if (nextReaction) onOpenFeedback?.({ origin: value === "helpful" ? "message_helpful" : "message_unhelpful", projectId, messageId });
       }
       else onOpenFeedback?.({ origin: value === "helpful" ? "message_helpful" : "message_unhelpful", projectId, messageId });
     } catch {

@@ -32,7 +32,7 @@ test("M61 real generation routes require route-level PlanGuard/HumanGate before 
     const source = readSource(routeCase.routePath);
     const guardIndex = source.indexOf("assertRouteLevelGenerationConfirmation({");
     const createJobIndex = source.indexOf("createGenerationJob");
-    const saveArtifactIndex = source.indexOf("saveArtifact");
+    const commitResultIndex = source.indexOf("commitGenerationResult");
 
     assert.match(source, /assertRouteLevelGenerationConfirmation/,
       `${routeCase.label} route must use a route-level PlanGuard/HumanGate helper`);
@@ -42,8 +42,10 @@ test("M61 real generation routes require route-level PlanGuard/HumanGate before 
       `${routeCase.label} route must accept body.confirmedActionId/actionId through a shared parser`);
     assert.ok(guardIndex >= 0 && createJobIndex >= 0 && guardIndex < createJobIndex,
       `${routeCase.label} route must guard before creating a generation job`);
-    assert.ok(guardIndex >= 0 && saveArtifactIndex >= 0 && guardIndex < saveArtifactIndex,
-      `${routeCase.label} route must guard before saving generated artifacts`);
+    assert.ok(guardIndex >= 0 && commitResultIndex >= 0 && guardIndex < commitResultIndex,
+      `${routeCase.label} route must guard before atomically committing generated artifacts`);
+    assert.match(source, /runWithProjectExecutionLease/,
+      `${routeCase.label} route must hold a project execution lease across generation`);
     assert.doesNotMatch(source, /expectedActionId\s*[:=]\s*body\./,
       `${routeCase.label} route must not let the same request self-provide expectedActionId`);
   }

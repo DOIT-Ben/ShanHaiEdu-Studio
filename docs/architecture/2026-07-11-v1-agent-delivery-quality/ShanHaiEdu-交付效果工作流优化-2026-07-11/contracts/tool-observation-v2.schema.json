@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shanhaiedu.local/contracts/tool-observation-v2.schema.json",
+  "title": "ToolObservationV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observationId",
+    "invocationId",
+    "toolId",
+    "status",
+    "modelActionableSummary",
+    "teacherSafeSummary",
+    "artifactRefs",
+    "measurements",
+    "truthGate",
+    "qualityGate",
+    "retryPolicy",
+    "committedAt"
+  ],
+  "properties": {
+    "observationId": { "type": "string", "minLength": 1 },
+    "invocationId": { "type": "string", "minLength": 1 },
+    "toolId": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "needs_input", "retryable_failed", "failed", "blocked"]
+    },
+    "modelActionableSummary": { "type": "string", "minLength": 1 },
+    "teacherSafeSummary": { "type": "string", "minLength": 1 },
+    "artifactRefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean", "null"]
+      }
+    },
+    "truthGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "checks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "qualityGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "reviewRefs", "failedComponentRefs"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "reviewRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "failedComponentRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "retryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retryable", "nextAction", "sameInputAllowed"],
+      "properties": {
+        "retryable": { "type": "boolean" },
+        "nextAction": {
+          "type": "string",
+          "enum": ["continue", "fix_inputs", "change_tool", "ask_teacher", "wait", "stop"]
+        },
+        "sameInputAllowed": { "type": "boolean" }
+      }
+    },
+    "committedAt": { "type": "string", "format": "date-time" }
+  }
+}

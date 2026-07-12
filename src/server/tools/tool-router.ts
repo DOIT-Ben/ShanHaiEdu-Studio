@@ -2,13 +2,16 @@ import type { AgentProjectContext, AgentRuntime, ApprovedArtifactInput } from "@
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
+import { createValidationReport, validateToolExecutionResult, validateToolPreconditions } from "@/server/contracts/contract-validator";
+import type { ValidationReport } from "@/server/quality/quality-types";
 import type { ProjectRecord } from "@/server/workbench/types";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import type { VideoGenerationTaskLifecycle } from "@/server/video-generation/video-generation-run";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
 import { executePackageTool, type PackageToolAdapterInput } from "./package-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "./tool-registry";
-import { isVerifiedProviderToolSuccess, type ToolDefinition, type ToolExecutionResult } from "./tool-types";
+import { isVerifiedProviderToolSuccess, type RoutedToolExecutionResult, type ToolDefinition, type ToolExecutionResult } from "./tool-types";
 
 export type ToolRouterInput = {
   toolName?: string;
@@ -22,6 +25,9 @@ export type ToolRouterInput = {
   projectContext?: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
   sourceMessageId?: string;
+  generationTaskLifecycle?: VideoGenerationTaskLifecycle;
+  executionInputHash?: string;
+  executionIntentEpoch?: number;
 };
 
 export type ToolRouterDependencies = {
@@ -34,7 +40,7 @@ export type ToolRouterDependencies = {
 export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRouterDependencies = {}): Promise<ToolExecutionResult> {
   const tool = resolveToolDefinition(input, dependencies);
   if (!tool) {
-    return buildBlockedResult({
+    return withUnknownToolValidation(input, buildBlockedResult({
       input,
       toolId: "unknown_tool",
       capabilityId: "unknown",
@@ -45,13 +51,13 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       budgetStatus: "blocked",
       budgetKind: "blocked_by_policy",
       errorCategory: "unknown_tool",
-    });
+    }));
   }
 
   const capabilityId = tool.capabilityId ?? "unknown";
 
   if (!tool.implemented || tool.blockedReason) {
-    return buildBlockedResult({
+    return withKnownToolFailureValidation(input, tool, buildBlockedResult({
       input,
       toolId: tool.id,
       capabilityId,
@@ -62,17 +68,28 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       budgetStatus: "blocked",
       budgetKind: "blocked_by_policy",
       errorCategory: "blocked_tool",
-    });
+    }));
   }
 
-  const missingArtifactKinds = findMissingArtifactKinds(tool, input);
+  const preValidationReport = validateToolPreconditions({
+    tool,
+    projectId: input.projectId,
+    approvedArtifacts: input.approvedArtifacts,
+    artifactRefs: input.artifactRefs,
+    resolvedArtifacts: input.resolvedArtifacts,
+    inputHash: input.executionInputHash,
+    intentEpoch: input.executionIntentEpoch,
+  });
+  const missingArtifactKinds = preValidationReport.gates
+    .filter((gate) => gate.status === "failed" && gate.gateId.startsWith("required_input:"))
+    .map((gate) => gate.gateId.slice("required_input:".length));
   if (missingArtifactKinds.length > 0) {
-    return buildNeedsInputResult(input, tool, capabilityId, missingArtifactKinds);
+    return buildNeedsInputResult(input, tool, capabilityId, missingArtifactKinds, preValidationReport);
   }
 
   if (tool.adapterKind === "internal_capability") {
     if (!input.runtime || !input.projectContext) {
-      return buildBlockedResult({
+      return withKnownToolFailureValidation(input, tool, buildBlockedResult({
         input,
         toolId: tool.id,
         capabilityId,
@@ -83,11 +100,11 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
         budgetStatus: "blocked",
         budgetKind: "blocked_by_policy",
         errorCategory: "router_missing_context",
-      });
+      }));
     }
 
     const internalExecutor = dependencies.internalExecutor ?? executeInternalCapabilityTool;
-    return internalExecutor({
+    const result = await internalExecutor({
       tool,
       runtime: input.runtime,
       projectId: input.projectId,
@@ -96,6 +113,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       approvedArtifacts: input.approvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
     });
+    return attachPostValidation(input, tool, result);
   }
 
   if (tool.adapterKind === "provider") {
@@ -108,25 +126,36 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       artifactRefs: input.artifactRefs ?? [],
       resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
+      generationTaskLifecycle: input.generationTaskLifecycle,
     });
-    if (result.status === "succeeded" && !isVerifiedProviderToolSuccess(result)) {
-      return buildUnverifiedProviderResult(input, tool, result.provider);
+    const validationReport = validateToolExecutionResult({
+      tool,
+      projectId: input.projectId,
+      result,
+      inputHash: input.executionInputHash,
+      intentEpoch: input.executionIntentEpoch,
+    });
+    const validatedResult = { ...result, validationReport };
+    if (validatedResult.status === "succeeded" && (!isVerifiedProviderToolSuccess(validatedResult) || validationReport.overallStatus !== "passed")) {
+      return buildUnverifiedProviderResult(input, tool, result.provider, validationReport);
     }
-    return result;
+    return validatedResult;
   }
 
   if (tool.adapterKind === "package") {
     const packageExecutor = dependencies.packageExecutor ?? executePackageTool;
-    return packageExecutor({
+    const result = await packageExecutor({
       tool,
       projectId: input.projectId,
+      userInstruction: input.userInstruction,
       artifactRefs: input.artifactRefs ?? [],
       resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
     });
+    return attachPostValidation(input, tool, result);
   }
 
-  return buildBlockedResult({
+  return withKnownToolFailureValidation(input, tool, buildBlockedResult({
     input,
     toolId: tool.id,
     capabilityId,
@@ -137,7 +166,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
     budgetStatus: "blocked",
     budgetKind: "blocked_by_policy",
     errorCategory: "unsupported_tool_adapter",
-  });
+  }));
 }
 
 export const executeTool = routeToolCall;
@@ -162,40 +191,7 @@ function resolveToolDefinition(input: ToolRouterInput, dependencies: ToolRouterD
   return undefined;
 }
 
-function findMissingArtifactKinds(tool: ToolDefinition, input: ToolRouterInput): string[] {
-  if (tool.adapterKind === "provider" || tool.adapterKind === "package") {
-    return tool.requiredArtifactKinds.filter((kind) => !hasResolvedArtifactRef(kind, input));
-  }
-
-  return tool.requiredArtifactKinds.filter((kind) => !hasArtifactRef(kind, input.artifactRefs) && !hasApprovedArtifact(kind, input.approvedArtifacts));
-}
-
-function hasResolvedArtifactRef(kind: string, input: ToolRouterInput): boolean {
-  const refs = input.artifactRefs ?? [];
-  const artifacts = input.resolvedArtifacts ?? [];
-  return refs.some((ref) => {
-    if (ref.kind !== kind || !ref.artifactId.trim()) return false;
-    return artifacts.some(
-      (artifact) =>
-        artifact.id === ref.artifactId &&
-        artifact.projectId === input.projectId &&
-        artifact.kind === kind &&
-        artifact.nodeKey === kind &&
-        artifact.status === "approved" &&
-        artifact.isApproved === true,
-    );
-  });
-}
-
-function hasArtifactRef(kind: string, artifactRefs: ProviderArtifactRef[] | undefined): boolean {
-  return (artifactRefs ?? []).some((artifactRef) => artifactRef.kind === kind && artifactRef.artifactId.trim().length > 0);
-}
-
-function hasApprovedArtifact(kind: string, approvedArtifacts: ApprovedArtifactInput[] | undefined): boolean {
-  return (approvedArtifacts ?? []).some((artifact) => artifact.nodeKey === kind);
-}
-
-function buildNeedsInputResult(input: ToolRouterInput, tool: ToolDefinition, capabilityId: string, missingInputs: string[]): ToolExecutionResult {
+function buildNeedsInputResult(input: ToolRouterInput, tool: ToolDefinition, capabilityId: string, missingInputs: string[], validationReport: ValidationReport): RoutedToolExecutionResult {
   const assistantPrompt = "请先确认前置材料，再继续生成。";
 
   return {
@@ -220,6 +216,7 @@ function buildNeedsInputResult(input: ToolRouterInput, tool: ToolDefinition, cap
     }),
     artifactCreated: false,
     budgetEvent: buildBudgetEvent(tool.id, capabilityId, tool.producedArtifactKind, "blocked", "blocked_by_policy"),
+    validationReport,
   };
 }
 
@@ -258,7 +255,7 @@ function buildBlockedResult(details: {
   };
 }
 
-function buildUnverifiedProviderResult(input: ToolRouterInput, tool: ToolDefinition, provider?: string): ToolExecutionResult {
+function buildUnverifiedProviderResult(input: ToolRouterInput, tool: ToolDefinition, provider: string | undefined, validationReport: ValidationReport): RoutedToolExecutionResult {
   const capabilityId = tool.capabilityId ?? "unknown";
   const teacherSafeSummary = "生成结果没有通过交付校验，我没有保存这份结果。请稍后重试。";
   return {
@@ -279,6 +276,88 @@ function buildUnverifiedProviderResult(input: ToolRouterInput, tool: ToolDefinit
     artifactCreated: false,
     errorCategory: "quality_gate_failed",
     budgetEvent: buildBudgetEvent(tool.id, capabilityId, tool.producedArtifactKind, "failed", "quality_gate_failed"),
+    validationReport,
+  };
+}
+
+function attachPostValidation(input: ToolRouterInput, tool: ToolDefinition, result: ToolExecutionResult): RoutedToolExecutionResult {
+  const validationReport = validateToolExecutionResult({
+    tool,
+    projectId: input.projectId,
+    result,
+    inputHash: input.executionInputHash,
+    intentEpoch: input.executionIntentEpoch,
+  });
+  if (result.status === "succeeded" && validationReport.overallStatus !== "passed") {
+    return buildPostValidationFailureResult(input, tool, validationReport);
+  }
+  return { ...result, validationReport };
+}
+
+function buildPostValidationFailureResult(input: ToolRouterInput, tool: ToolDefinition, validationReport: ValidationReport): RoutedToolExecutionResult {
+  const capabilityId = tool.capabilityId ?? "unknown";
+  return {
+    status: "failed",
+    toolId: tool.id,
+    capabilityId,
+    observation: createToolObservation({
+      projectId: input.projectId,
+      sourceMessageId: input.sourceMessageId,
+      capabilityId,
+      expectedArtifactKind: tool.producedArtifactKind,
+      kind: "quality_gate_failed",
+      teacherSafeSummary: "生成结果没有通过交付校验，我没有保存这份结果。",
+      internalReasonSanitized: "Tool output failed deterministic runtime contract validation.",
+      retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+    }),
+    artifactCreated: false,
+    errorCategory: "quality_gate_failed",
+    budgetEvent: buildBudgetEvent(tool.id, capabilityId, tool.producedArtifactKind, "failed", "quality_gate_failed"),
+    validationReport,
+  };
+}
+
+function withKnownToolFailureValidation(
+  input: ToolRouterInput,
+  tool: ToolDefinition,
+  result: ToolExecutionResult,
+): RoutedToolExecutionResult {
+  return {
+    ...result,
+    validationReport: validateToolExecutionResult({
+      tool,
+      projectId: input.projectId,
+      result,
+      inputHash: input.executionInputHash,
+      intentEpoch: input.executionIntentEpoch,
+    }),
+  };
+}
+
+function withUnknownToolValidation(input: ToolRouterInput, result: ToolExecutionResult): RoutedToolExecutionResult {
+  return {
+    ...result,
+    validationReport: createValidationReport({
+      reportId: `unknown-tool:${input.projectId}:${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      domain: "generic",
+      stage: "unknown",
+      target: { kind: "tool_execution", targetId: "unknown_tool" },
+      contract: { id: "router:unknown_tool", version: "v1" },
+      inputHash: input.executionInputHash,
+      intentEpoch: input.executionIntentEpoch,
+      overallStatus: "failed",
+      gates: [{
+        gateId: "known_tool",
+        validatorId: "tool_router",
+        validatorVersion: "v1",
+        status: "failed",
+        evidenceRefs: [],
+        locators: [{ kind: "tool", toolId: "unknown_tool" }],
+        responsibleStage: "unknown",
+        reasonCode: "unknown_tool",
+      }],
+    }),
   };
 }
 

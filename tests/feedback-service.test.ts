@@ -374,7 +374,7 @@ describe("FeedbackService reconciliation and admin access", () => {
       category: "bug",
       severity: "affected",
       status: "submitted",
-      description: "=HYPERLINK(\"https://bad\")\r\nsecond line",
+      description: "=HYPERLINK(\"https://bad\")\r\nsecond line\n  @SUM(1,1)",
       pageRoute: "/workbench,detail",
       appVersion: "0.1.0",
       attachmentCount: 1,
@@ -391,7 +391,8 @@ describe("FeedbackService reconciliation and admin access", () => {
       createdAt: "2026-07-10T00:01:00.000Z",
     }]);
 
-    expect(csv).toContain('"\'=HYPERLINK(""https://bad"")\r\nsecond line"');
+    expect(csv).toContain('"\'=HYPERLINK(""https://bad"")\r\nsecond line\n\'  @SUM(1,1)"');
+    expect(csv).not.toContain("\nsecond line\n'  @SUM(1,1),");
     expect(csv).toContain('"/workbench,detail"');
     expect(csv).toContain("ordinary text");
     expect(csv.split("\r\n")).toHaveLength(5);
@@ -597,7 +598,7 @@ describe("feedback HTTP handlers", () => {
         id,
         receipt: `FB-BULK-${String(index).padStart(3, "0")}`,
         idempotencyKey: `bulk-key-${index}`,
-        description: `bulk description ${index}`,
+        description: index === 104 ? "=1+1 formula on a later export page" : `bulk description ${index}`,
         createdAt: new Date(template.createdAt.getTime() - index),
         updatedAt: new Date(template.updatedAt.getTime() - index),
         attachments: [],
@@ -626,7 +627,10 @@ describe("feedback HTTP handlers", () => {
       passwordAdminActor,
       service,
     );
-    expect(await csv.text()).toContain("FB-BULK-204");
+    const csvText = await csv.text();
+    expect(csvText).toContain("FB-BULK-204");
+    expect(csvText).toContain("'=1+1 formula on a later export page");
+    expect(csvText).not.toMatch(/(?:^|,)=[^,\r\n]*/m);
   });
 
   it("exports one page per pull without requesting repeated totals", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCapabilityRunResult, runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
+import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 
 describe("M54-B CapabilityRunner contract", () => {
   it("keeps failed tool results failed and user-readable", () => {
@@ -99,6 +100,62 @@ describe("M54-B CapabilityRunner contract", () => {
     });
   });
 
+  it("preserves the PPT design package while adding runtime metadata", async () => {
+    const packageValue = validPptDesignPackage();
+    const runtime: AgentRuntime = {
+      async run(input) {
+        return {
+          status: "succeeded",
+          run: {
+            runId: input.runId,
+            projectId: input.projectId,
+            task: input.task,
+            runtimeKind: "openai",
+            status: "succeeded",
+          },
+          assistantMessage: { title: "PPT 设计包已生成", body: "请检查逐页设计。" },
+          artifactDraft: {
+            nodeKey: "ppt_design",
+            kind: "ppt_design",
+            title: "百分数 PPT 设计包",
+            summary: "12 页逐页质量设计。",
+            markdown: validPptDesignMarkdown(),
+            contentType: "text/markdown",
+            generationMode: "model_generated",
+            isReadyForTeacherReview: true,
+            structuredContent: { pptDesignPackage: packageValue },
+          },
+          nextSuggestedAction: { type: "review_artifact", label: "查看并确认设计包" },
+        };
+      },
+    };
+
+    const result = await runCapabilityWithAgentRuntime({
+      runtime,
+      projectId: "project-ppt-quality",
+      capabilityId: "ppt_design",
+      userMessage: "生成 PPT 设计包",
+      projectContext: {
+        grade: "五年级",
+        subject: "数学",
+        topic: "百分数",
+        requestedOutputs: ["PPT 设计包"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        structuredContent: {
+          pptDesignPackage: packageValue,
+          capabilityId: "ppt_design",
+          generationMode: "model_generated",
+          providerStatus: "real",
+        },
+      },
+    });
+  });
+
   it("fails external capabilities instead of returning placeholder success from the text runtime", async () => {
     const runtime: AgentRuntime = {
       async run() {
@@ -130,3 +187,16 @@ describe("M54-B CapabilityRunner contract", () => {
     }
   });
 });
+
+function validPptDesignMarkdown(): string {
+  return [
+    "总页数：12 页",
+    ...Array.from({ length: 12 }, (_, index) => [
+      `## 第 ${index + 1} 页`,
+      "- 底图：无文字课堂场景。",
+      "- 元素：透明背景教具。",
+      "- 文字：可编辑标题。",
+      "- 排版：稳定阅读顺序。",
+    ].join("\n")),
+  ].join("\n");
+}

@@ -2,17 +2,29 @@ import type { AgentProjectContext, AgentRuntime } from "@/server/agent-runtime/t
 import { buildCapabilityAvailability, resolveRuntimeProviderAvailability, type CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
 import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
 import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
-import { appendToolObservationMetadata, createToolObservation, readActiveToolObservationsFromMessages, type ToolObservationKind } from "@/server/capabilities/tool-observation";
+import { appendToolObservationMetadata, createToolObservation, readActiveToolObservationsFromMessages, type ToolObservation, type ToolObservationKind } from "@/server/capabilities/tool-observation";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
 import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
 import { resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
+import {
+  appendAgentObservationMetadata,
+  appendRunCheckpointMetadata,
+  clearRunCheckpointMetadata,
+  createAgentObservation,
+  guardReActTransition,
+  readAgentObservationsFromMessages,
+  readLatestRunCheckpointFromMessages,
+  type AgentObservation,
+} from "@/server/conversation/react-control";
+import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
 import { routeToolCall } from "@/server/tools/tool-router";
 import { getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
 import { isVerifiedProviderToolSuccess, type ToolExecutionResult } from "@/server/tools/tool-types";
+import type { ValidationReport } from "@/server/quality/quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
@@ -143,6 +155,8 @@ async function executeTeacherMessageTurn(input: {
 
   const pendingPlan = findPendingDeliveryPlan(messages);
   const toolObservations = readActiveToolObservationsFromMessages(messages);
+  const agentObservations = readAgentObservationsFromMessages(messages);
+  const runCheckpoint = readLatestRunCheckpointFromMessages(messages);
   const budgetEvents = readAgentHarnessBudgetEventsFromMessages(messages);
   const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
   const capabilityAvailability = buildCapabilityAvailability({
@@ -159,6 +173,8 @@ async function executeTeacherMessageTurn(input: {
     contextPackage,
     pendingPlan,
     toolObservations,
+    agentObservations,
+    runCheckpoint,
   });
 
   const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
@@ -181,6 +197,31 @@ async function executeTeacherMessageTurn(input: {
 
   if (controlResolution.decision.supersedePendingAction && pendingPlan) {
     await updatePendingPlanStatus(input.service, input.projectId, pendingPlan, "superseded");
+    const currentIntentEpoch = project.intentEpoch ?? 0;
+    const planVersion = await input.service.advanceProjectIntentEpoch(input.projectId, currentIntentEpoch);
+    const revisionObservation = createAgentObservation({
+      projectId: input.projectId,
+      source: "teacher_revision",
+      status: "repair",
+      actionKey: `${controlResolution.decision.kind}:${pendingPlan.toolPlan.capabilityId}`,
+      inputHash: hashRunInput({
+        planId: pendingPlan.toolPlan.planId,
+        previousIntentEpoch: currentIntentEpoch,
+        planVersion,
+        teacherContent,
+      }),
+      reasonCodes: [controlResolution.decision.reasonCode],
+      reportRefs: [],
+      targetLocators: [],
+      responsibleStage: pendingPlan.toolPlan.capabilityId,
+      minimalNextAction: controlResolution.decision.kind === "cancel_active_offer" ? "pause" : "repair_upstream",
+      teacherSafeSummary: controlResolution.decision.kind === "cancel_active_offer"
+        ? "已取消刚才待执行的内容。"
+        : "已按新的要求废止旧计划，后续内容会重新核对。",
+    });
+    await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, clearRunCheckpointMetadata(
+      appendAgentObservationMetadata(input.triggerMessage.metadata, revisionObservation),
+    ));
   }
 
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
@@ -198,6 +239,7 @@ async function executeTeacherMessageTurn(input: {
       },
       capabilityAvailability,
       budgetEvents,
+      agentObservations,
       contextTokenEstimate: contextPackage.tokenEstimate,
       reference,
       confirmedActionId: effectiveConfirmedActionId,
@@ -249,6 +291,7 @@ async function runPlannedArtifact(input: {
   plannedTurn: MainAgentTurn;
   capabilityAvailability: CapabilityAvailabilityEntry[];
   budgetEvents: ReturnType<typeof readAgentHarnessBudgetEventsFromMessages>;
+  agentObservations: AgentObservation[];
   contextTokenEstimate: number;
   reference: string;
   triggerMessage: ConversationMessageRecord;
@@ -277,6 +320,9 @@ async function runPlannedArtifact(input: {
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
   }
+
+  const actionKey = buildToolActionKey(plannedTurn.toolPlan);
+  const actionInputHash = buildReActActionInputHash(input, plannedTurn.toolPlan);
 
   const availability = input.capabilityAvailability.find((entry) => entry.capabilityId === plannedTurn.toolPlan?.capabilityId);
   if (availability && availability.status !== "available") {
@@ -309,6 +355,13 @@ async function runPlannedArtifact(input: {
       content: observation.teacherSafeSummary,
       metadata: {
         ...appendToolObservationMetadata(undefined, observation),
+        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          observation,
+          status: availability.status === "needs_approved_inputs" ? "needs_input" : "blocked",
+        })),
         agentHarnessBudgetEvent: budgetEvent,
       },
     });
@@ -352,10 +405,64 @@ async function runPlannedArtifact(input: {
       content: observation.teacherSafeSummary,
       metadata: {
         ...appendToolObservationMetadata(undefined, observation),
+        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          observation,
+          status: "needs_input",
+        })),
         agentHarnessBudgetEvent: budgetEvent,
       },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: blockedTurn };
+  }
+
+
+  const reactDecision = guardReActTransition({
+    projectId: input.project.id,
+    planVersion: input.project.intentEpoch ?? 0,
+    candidate: { actionKey, inputHash: actionInputHash, requestedNextAction: "continue" },
+    latestObservation: input.agentObservations.at(-1),
+    observationHistory: input.agentObservations,
+  });
+  if (!reactDecision.allowed && "checkpoint" in reactDecision) {
+    const summary = reactDecision.nextAction === "ask_teacher"
+      ? "同一步在相同输入下连续失败，我已暂停原样重试。请调整要求或材料后再继续。"
+      : "当前处理已暂停，可以稍后从这里继续。";
+    const observation = createAgentObservation({
+      projectId: input.project.id,
+      source: "budget",
+      status: "needs_input",
+      actionKey,
+      inputHash: actionInputHash,
+      reasonCodes: reactDecision.reasonCodes,
+      reportRefs: [],
+      targetLocators: [],
+      responsibleStage: plannedTurn.toolPlan.capabilityId,
+      minimalNextAction: reactDecision.nextAction,
+      teacherSafeSummary: summary,
+    });
+    const metadata = appendRunCheckpointMetadata(
+      appendAgentObservationMetadata(undefined, observation),
+      reactDecision.checkpoint,
+    );
+    const assistantMessage = await input.service.addMessage(input.project.id, {
+      role: "assistant",
+      content: summary,
+      metadata,
+    });
+    return {
+      message: input.triggerMessage,
+      assistantMessage,
+      agentTurn: {
+        ...plannedTurn,
+        assistantMessage: { body: summary },
+        state: "failed_blocked",
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
   }
 
   const budgetDecision = evaluateAgentHarnessBudget({
@@ -365,6 +472,10 @@ async function runPlannedArtifact(input: {
     contextTokenEstimate: input.contextTokenEstimate,
     isSideEffectful: plannedTurn.toolPlan.requiresConfirmation,
     hasConfirmedHumanGate: Boolean(input.confirmedActionId),
+    policy: {
+      maxSameActionRepeat: Number.MAX_SAFE_INTEGER,
+      maxRetryPerCapability: Number.MAX_SAFE_INTEGER,
+    },
   });
 
   if (!budgetDecision.allowed) {
@@ -391,11 +502,30 @@ async function runPlannedArtifact(input: {
       shouldRunToolNow: false,
       artifactRefs: [],
     };
+    const budgetPauseDecision = guardReActTransition({
+      projectId: input.project.id,
+      planVersion: input.project.intentEpoch ?? 0,
+      candidate: { actionKey, inputHash: actionInputHash, requestedNextAction: "continue" },
+      observationHistory: input.agentObservations,
+      budgetExhausted: true,
+    });
+    if (budgetPauseDecision.allowed || !("checkpoint" in budgetPauseDecision)) {
+      throw new Error("Budget exhaustion did not create a paused checkpoint.");
+    }
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: observation.teacherSafeSummary,
       metadata: {
         ...appendToolObservationMetadata(undefined, observation),
+        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          observation,
+          status: "blocked",
+          reasonCodes: [budgetDecision.reason ?? "budget_exhausted"],
+        })),
+        ...appendRunCheckpointMetadata(undefined, budgetPauseDecision.checkpoint),
         agentHarnessBudgetEvent: budgetEvent,
       },
     });
@@ -447,6 +577,17 @@ async function runPlannedArtifact(input: {
       content: observation.teacherSafeSummary,
       metadata: {
         ...appendToolObservationMetadata(undefined, observation),
+        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          observation,
+          status: result.status === "needs_input" ? "needs_input" : "failed",
+          reasonCodes: [
+            observation.kind,
+            ...(result.status === "failed" ? [result.errorCategory] : []),
+          ],
+        })),
         agentHarnessBudgetEvent: budgetEvent,
       },
     });
@@ -506,6 +647,14 @@ async function runPlannedArtifact(input: {
         }
       : undefined,
       createToolSucceededBudgetMetadata(plannedTurn.toolPlan),
+      clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, createSucceededAgentObservation({
+        projectId: input.project.id,
+        actionKey,
+        inputHash: actionInputHash,
+        capabilityId: plannedTurn.toolPlan.capabilityId,
+        artifactKind: artifact.kind,
+        artifactId: artifact.id,
+      }))),
     ),
   });
 
@@ -521,21 +670,101 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   const plannedTurn = input.plannedTurn;
   const toolPlan = plannedTurn.toolPlan;
   if (!toolPlan || !toolRouterCapabilityIds.has(toolPlan.capabilityId)) return null;
+  const actionKey = buildToolActionKey(toolPlan);
+  const actionInputHash = buildReActActionInputHash(input, toolPlan);
 
   const generationUserMessage = input.generationUserMessage;
   const userInstruction = input.reference ? `${generationUserMessage}\n\n引用：${input.reference}` : generationUserMessage;
   const approvedArtifacts = buildApprovedArtifactInputs(input.artifacts);
-  const artifactRefs = buildProviderArtifactRefs(input.artifacts);
+  const executionArtifacts = toolPlan.capabilityId === "ppt_page_repair"
+    ? input.artifacts.filter((artifact) => isApprovedArtifact(artifact) || isRepairablePptArtifact(artifact))
+    : input.artifacts.filter(isApprovedArtifact);
+  const artifactRefs = buildProviderArtifactRefs(executionArtifacts);
 
   const generationJob = resolveProviderGenerationJob(toolPlan.capabilityId, input.artifacts);
   let jobId: string | null = null;
+  let activeGenerationJob: Awaited<ReturnType<WorkbenchService["startGenerationJobForExecution"]>> | null = null;
   if (generationJob) {
     const queuedJob = await input.service.createGenerationJob(input.project.id, {
       kind: generationJob.kind,
       sourceArtifactId: generationJob.sourceArtifact.id,
+      capabilityId: toolPlan.capabilityId,
+      sourceArtifactIds: input.artifacts.filter(isApprovedArtifact).map((artifact) => artifact.id),
+      inputSnapshot: {
+        userInstruction,
+        artifacts: input.artifacts.filter(isApprovedArtifact).map((artifact) => ({
+          id: artifact.id,
+          kind: artifact.kind,
+          nodeKey: artifact.nodeKey,
+          version: artifact.version,
+          updatedAt: artifact.updatedAt,
+        })),
+      },
     });
     jobId = queuedJob.id;
-    await input.service.startGenerationJob(input.project.id, jobId);
+    const recovered = queuedJob.status === "succeeded" && queuedJob.resultArtifactId
+      ? { artifact: await input.service.getArtifact(input.project.id, queuedJob.resultArtifactId) }
+      : await input.service.resumeStagedGenerationResult(input.project.id, jobId);
+    if (recovered) {
+      const artifact = recovered.artifact;
+      const assistantMessage = await input.service.addMessage(input.project.id, {
+        role: "assistant",
+        content: `已复用当前输入对应的${artifact.title}，没有重复调用生成服务。`,
+        artifactRefs: [artifact.id],
+        metadata: clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, createSucceededAgentObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          capabilityId: toolPlan.capabilityId,
+          artifactKind: artifact.kind,
+          artifactId: artifact.id,
+        }))),
+      });
+      return {
+        message: input.triggerMessage,
+        assistantMessage,
+        artifact,
+        agentTurn: {
+          ...plannedTurn,
+          assistantMessage: { body: assistantMessage.content },
+          state: "succeeded",
+          shouldRunToolNow: false,
+          artifactRefs: [artifact.id],
+        },
+      };
+    }
+    activeGenerationJob = await input.service.startGenerationJobForExecution(input.project.id, jobId);
+    if (activeGenerationJob.job.status === "submission_unknown") {
+      const content = "生成任务的恢复信息需要核对，系统没有自动重复提交。";
+      const assistantMessage = await input.service.addMessage(input.project.id, {
+        role: "assistant",
+        content,
+        metadata: appendAgentObservationMetadata(undefined, createAgentObservation({
+          projectId: input.project.id,
+          source: "tool",
+          status: "inconclusive",
+          actionKey,
+          inputHash: actionInputHash,
+          reasonCodes: ["submission_unknown"],
+          reportRefs: [],
+          targetLocators: [],
+          responsibleStage: toolPlan.capabilityId,
+          minimalNextAction: "pause",
+          teacherSafeSummary: content,
+        })),
+      });
+      return {
+        message: input.triggerMessage,
+        assistantMessage,
+        agentTurn: {
+          ...plannedTurn,
+          assistantMessage: { body: content },
+          state: "failed_blocked",
+          shouldRunToolNow: false,
+          artifactRefs: [],
+        },
+      };
+    }
   }
 
   let result = await input.toolRouter({
@@ -547,18 +776,36 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
     approvedArtifacts,
     artifactRefs,
-    resolvedArtifacts: input.artifacts.filter(isApprovedArtifact),
+    resolvedArtifacts: executionArtifacts,
     sourceMessageId: input.triggerMessage.id,
+    executionInputHash: activeGenerationJob?.job.inputHash ?? undefined,
+    executionIntentEpoch: activeGenerationJob?.job.intentEpoch,
+    generationTaskLifecycle: activeGenerationJob ? {
+      providerTaskId: activeGenerationJob.providerTaskId,
+      onTaskAccepted: async (providerTaskId) => {
+        await input.service.recordGenerationProviderTask(input.project.id, activeGenerationJob!.job.id, { providerTaskId });
+      },
+      onPoll: async () => {
+        await input.service.recordGenerationPoll(input.project.id, activeGenerationJob!.job.id);
+      },
+    } : undefined,
   });
 
   const toolDefinition = getToolDefinitionByCapabilityId(toolPlan.capabilityId);
   if (result.status === "succeeded" && toolDefinition.adapterKind === "provider" && !isVerifiedProviderToolSuccess(result)) {
     result = buildUnverifiedProviderResult(input, toolPlan);
   }
+  if (result.status === "succeeded" && result.validationReport?.overallStatus !== "passed") {
+    result = buildUnverifiedProviderResult(input, toolPlan);
+  }
 
   if (result.status !== "succeeded") {
     if (jobId) {
-      await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: result.observation.teacherSafeSummary });
+      if ("errorCategory" in result && result.errorCategory === "submission_unknown") {
+        await input.service.markGenerationSubmissionUnknown(input.project.id, jobId, result.observation.teacherSafeSummary);
+      } else {
+        await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: result.observation.teacherSafeSummary });
+      }
     }
     const budgetEvent = normalizeToolRouterBudgetEvent(result, toolPlan);
     const failedTurn: MainAgentTurn = {
@@ -573,24 +820,40 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
       content: result.observation.teacherSafeSummary,
       metadata: {
         ...appendToolObservationMetadata(undefined, result.observation),
+        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+          projectId: input.project.id,
+          actionKey,
+          inputHash: actionInputHash,
+          observation: result.observation,
+          validationReport: result.validationReport,
+          status: result.status === "needs_input" ? "needs_input" : "failed",
+          reasonCodes: [
+            result.observation.kind,
+            ...("errorCategory" in result && result.errorCategory ? [result.errorCategory] : []),
+          ],
+        })),
         agentHarnessBudgetEvent: budgetEvent,
       },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
   }
+  if (!result.validationReport) {
+    throw new Error("ToolRouter succeeded without a ValidationReport.");
+  }
 
-  const artifact = await input.service.saveArtifact(input.project.id, {
+  const artifactInput = {
     nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
     kind: result.artifactDraft.kind as ArtifactKind,
     title: result.artifactDraft.title,
-    status: "needs_review",
+    status: "needs_review" as const,
     summary: result.artifactDraft.summary,
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
-  });
-  if (jobId) {
-    await input.service.finishGenerationJob(input.project.id, jobId, { resultArtifactId: artifact.id });
-  }
+    validationReport: result.validationReport,
+  };
+  const artifact = jobId
+    ? (await input.service.commitGenerationResult(input.project.id, jobId, artifactInput)).artifact
+    : await input.service.saveArtifact(input.project.id, artifactInput);
   const advancedDeliveryPlan = plannedTurn.deliveryPlan
     ? advanceDeliveryPlan(plannedTurn.deliveryPlan, toolPlan.capabilityId)
     : null;
@@ -635,6 +898,15 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
         }
       : undefined,
       createToolRouterBudgetMetadata(result, toolPlan),
+      clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, createSucceededAgentObservation({
+        projectId: input.project.id,
+        actionKey,
+        inputHash: actionInputHash,
+        capabilityId: toolPlan.capabilityId,
+        artifactKind: artifact.kind,
+        artifactId: artifact.id,
+        validationReport: result.validationReport,
+      }))),
     ),
   });
 
@@ -689,7 +961,7 @@ function buildApprovedArtifactInputs(artifacts: ArtifactRecord[]) {
 }
 
 function buildProviderArtifactRefs(artifacts: ArtifactRecord[]) {
-  return artifacts.filter(isApprovedArtifact).map((artifact) => ({
+  return artifacts.map((artifact) => ({
     kind: artifact.kind,
     artifactId: artifact.id,
     title: artifact.title,
@@ -697,6 +969,10 @@ function buildProviderArtifactRefs(artifacts: ArtifactRecord[]) {
     markdownContent: artifact.markdownContent,
     structuredContent: artifact.structuredContent,
   }));
+}
+
+function isRepairablePptArtifact(artifact: ArtifactRecord): boolean {
+  return artifact.kind === "pptx_artifact" && artifact.nodeKey === "pptx_artifact" && artifact.status === "needs_review" && artifact.isApproved === false && Boolean(artifact.structuredContent.pptFullDeckCandidate);
 }
 
 function isApprovedArtifact(artifact: ArtifactRecord) {
@@ -787,6 +1063,81 @@ function buildToolActionKey(toolPlan: CapabilityToolPlan): string {
   return `${toolPlan.capabilityId}:${toolPlan.expectedArtifactKind ?? ""}`;
 }
 
+function buildReActActionInputHash(input: Parameters<typeof runPlannedArtifact>[0], toolPlan: CapabilityToolPlan) {
+  return hashRunInput({
+    projectId: input.project.id,
+    intentEpoch: input.project.intentEpoch ?? 0,
+    planId: toolPlan.planId,
+    capabilityId: toolPlan.capabilityId,
+    inputDraft: toolPlan.inputDraft,
+    teacherRequest: input.generationUserMessage,
+    reference: input.reference,
+    approvedArtifacts: input.artifacts.filter(isApprovedArtifact).map((artifact) => ({
+      id: artifact.id,
+      kind: artifact.kind,
+      version: artifact.version,
+      updatedAt: artifact.updatedAt,
+    })),
+  });
+}
+
+function createAgentObservationFromToolObservation(input: {
+  projectId: string;
+  actionKey: string;
+  inputHash: string;
+  observation: ToolObservation;
+  status: AgentObservation["status"];
+  reasonCodes?: string[];
+  validationReport?: ValidationReport;
+}) {
+  const report = input.validationReport;
+  return createAgentObservation({
+    projectId: input.projectId,
+    source: report ? "validation" : "tool",
+    status: input.status,
+    actionKey: input.actionKey,
+    inputHash: input.inputHash,
+    reasonCodes: input.reasonCodes ?? [input.observation.kind],
+    reportRefs: report ? [{ kind: "validation", id: report.reportId, digest: report.reportDigest }] : [],
+    targetLocators: report ? report.gates.flatMap((gate) => gate.locators) : [],
+    responsibleStage: report?.stage ?? input.observation.capabilityId,
+    minimalNextAction: mapToolObservationNextAction(input.observation),
+    teacherSafeSummary: input.observation.teacherSafeSummary,
+  });
+}
+
+function createSucceededAgentObservation(input: {
+  projectId: string;
+  actionKey: string;
+  inputHash: string;
+  capabilityId: string;
+  artifactKind: string;
+  artifactId: string;
+  validationReport?: ValidationReport;
+}) {
+  const report = input.validationReport;
+  return createAgentObservation({
+    projectId: input.projectId,
+    source: report ? "validation" : "tool",
+    status: "succeeded",
+    actionKey: input.actionKey,
+    inputHash: input.inputHash,
+    reasonCodes: report ? ["validation_passed"] : ["tool_succeeded"],
+    reportRefs: report ? [{ kind: "validation", id: report.reportId, digest: report.reportDigest }] : [],
+    targetLocators: [{ kind: "artifact", artifactKind: input.artifactKind, artifactId: input.artifactId }],
+    responsibleStage: report?.stage ?? input.capabilityId,
+    minimalNextAction: "continue",
+    teacherSafeSummary: "这一步已经完成并保存，可以继续检查或推进下一步。",
+  });
+}
+
+function mapToolObservationNextAction(observation: ToolObservation): AgentObservation["minimalNextAction"] {
+  if (observation.retryPolicy.nextAction === "ask_teacher") return "ask_teacher";
+  if (observation.retryPolicy.nextAction === "fix_inputs") return "repair_upstream";
+  if (observation.retryPolicy.nextAction === "do_not_retry_automatically") return "pause";
+  return "continue";
+}
+
 function createToolSucceededBudgetMetadata(toolPlan: CapabilityToolPlan): Record<string, unknown> {
   return {
     agentHarnessBudgetEvent: buildAgentHarnessBudgetEvent({
@@ -834,6 +1185,18 @@ function createUnavailableCapabilityObservationMetadata(
 
   return {
     ...appendToolObservationMetadata(undefined, observation),
+    ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
+      projectId,
+      actionKey: buildToolActionKey(agentTurn.toolPlan),
+      inputHash: hashRunInput({
+        projectId,
+        sourceMessageId: triggerMessage.id,
+        capabilityId: agentTurn.toolPlan.capabilityId,
+        inputDraft: agentTurn.toolPlan.inputDraft,
+      }),
+      observation,
+      status: availability.status === "needs_approved_inputs" ? "needs_input" : "blocked",
+    })),
     agentHarnessBudgetEvent: budgetEvent,
   };
 }

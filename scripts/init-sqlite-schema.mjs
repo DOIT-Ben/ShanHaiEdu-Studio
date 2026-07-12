@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS "Project" (
   "archivedAt" DATETIME,
   "deletedAt" DATETIME,
   "lifecycleVersion" INTEGER NOT NULL DEFAULT 0,
+  "intentEpoch" INTEGER NOT NULL DEFAULT 0,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "Project_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "LocalUser" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -110,6 +111,15 @@ CREATE TABLE IF NOT EXISTS "GenerationJob" (
   "projectId" TEXT NOT NULL,
   "kind" TEXT NOT NULL,
   "sourceArtifactId" TEXT NOT NULL,
+  "unitId" TEXT,
+  "runInputSnapshotId" TEXT,
+  "intentEpoch" INTEGER NOT NULL DEFAULT 0,
+  "idempotencyKey" TEXT,
+  "inputHash" TEXT,
+  "providerTaskId" TEXT,
+  "pollState" TEXT NOT NULL DEFAULT 'not_started',
+  "providerAcceptedAt" DATETIME,
+  "lastPolledAt" DATETIME,
   "status" TEXT NOT NULL DEFAULT 'queued',
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "maxAttempts" INTEGER NOT NULL DEFAULT 2,
@@ -119,7 +129,145 @@ CREATE TABLE IF NOT EXISTS "GenerationJob" (
   "updatedAt" DATETIME NOT NULL,
   "startedAt" DATETIME,
   "finishedAt" DATETIME,
-  CONSTRAINT "GenerationJob_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "GenerationJob_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "GenerationJob_runInputSnapshotId_fkey" FOREIGN KEY ("runInputSnapshotId") REFERENCES "RunInputSnapshot" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "VideoShot" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "sourceArtifactId" TEXT NOT NULL,
+  "shotId" TEXT NOT NULL,
+  "ordinal" INTEGER NOT NULL,
+  "inputHash" TEXT NOT NULL,
+  "providerTaskId" TEXT,
+  "selectedArtifactId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'planned',
+  "qaJson" TEXT NOT NULL DEFAULT '{}',
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  CONSTRAINT "VideoShot_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "RunInputSnapshot" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "intentEpoch" INTEGER NOT NULL,
+  "capabilityId" TEXT NOT NULL,
+  "sourceArtifactIdsJson" TEXT NOT NULL DEFAULT '[]',
+  "payloadJson" TEXT NOT NULL,
+  "inputHash" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "RunInputSnapshot_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "StagedArtifactCommit" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "generationJobId" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'awaiting_result',
+  "nodeKey" TEXT,
+  "kind" TEXT,
+  "title" TEXT,
+  "artifactStatus" TEXT,
+  "summary" TEXT,
+  "markdownContent" TEXT,
+  "structuredContentJson" TEXT NOT NULL DEFAULT '{}',
+  "storageRefsJson" TEXT NOT NULL DEFAULT '[]',
+  "intentEpoch" INTEGER NOT NULL,
+  "inputHash" TEXT NOT NULL,
+  "holderId" TEXT,
+  "fencingToken" INTEGER,
+  "actorUserId" TEXT,
+  "actorAuthMode" TEXT,
+  "authSessionId" TEXT,
+  "resultArtifactId" TEXT,
+  "quarantineReason" TEXT,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  "committedAt" DATETIME,
+  CONSTRAINT "StagedArtifactCommit_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "StagedArtifactCommit_generationJobId_fkey" FOREIGN KEY ("generationJobId") REFERENCES "GenerationJob" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "StagedArtifactCommit_resultArtifactId_fkey" FOREIGN KEY ("resultArtifactId") REFERENCES "Artifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "ValidationReportRecord" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "capabilityId" TEXT NOT NULL,
+  "stage" TEXT NOT NULL,
+  "authority" TEXT NOT NULL,
+  "domain" TEXT NOT NULL,
+  "targetKind" TEXT NOT NULL,
+  "targetId" TEXT,
+  "targetVersion" INTEGER,
+  "targetDigest" TEXT,
+  "inputHash" TEXT,
+  "intentEpoch" INTEGER,
+  "contractId" TEXT NOT NULL,
+  "contractVersion" TEXT NOT NULL,
+  "overallStatus" TEXT NOT NULL,
+  "reportDigest" TEXT NOT NULL,
+  "payloadJson" TEXT NOT NULL,
+  "artifactId" TEXT,
+  "generationJobId" TEXT,
+  "stagedArtifactCommitId" TEXT,
+  "createdAt" DATETIME NOT NULL,
+  CONSTRAINT "ValidationReportRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ValidationReportRecord_artifactId_fkey" FOREIGN KEY ("artifactId") REFERENCES "Artifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "ValidationReportRecord_generationJobId_fkey" FOREIGN KEY ("generationJobId") REFERENCES "GenerationJob" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ValidationReportRecord_stagedArtifactCommitId_fkey" FOREIGN KEY ("stagedArtifactCommitId") REFERENCES "StagedArtifactCommit" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "CriticReportRecord" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "artifactId" TEXT NOT NULL,
+  "reportDigest" TEXT NOT NULL,
+  "authority" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "domain" TEXT NOT NULL,
+  "stage" TEXT NOT NULL,
+  "targetVersion" INTEGER NOT NULL,
+  "targetDigest" TEXT NOT NULL,
+  "productionPath" TEXT NOT NULL,
+  "inputHash" TEXT,
+  "rubricId" TEXT NOT NULL,
+  "rubricVersion" TEXT NOT NULL,
+  "rubricDigest" TEXT NOT NULL,
+  "validationRefsJson" TEXT NOT NULL,
+  "payloadJson" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL,
+  CONSTRAINT "CriticReportRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "CriticReportRecord_artifactId_fkey" FOREIGN KEY ("artifactId") REFERENCES "Artifact" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "QualityDecisionRecord" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "artifactId" TEXT NOT NULL,
+  "criticReportId" TEXT,
+  "decisionDigest" TEXT NOT NULL,
+  "authority" TEXT NOT NULL,
+  "domain" TEXT NOT NULL,
+  "stage" TEXT NOT NULL,
+  "targetVersion" INTEGER NOT NULL,
+  "targetDigest" TEXT NOT NULL,
+  "productionPath" TEXT NOT NULL,
+  "inputHash" TEXT,
+  "outcome" TEXT NOT NULL,
+  "weightedScore" REAL,
+  "reasonCodesJson" TEXT NOT NULL,
+  "nextAction" TEXT NOT NULL,
+  "repairTargetsJson" TEXT NOT NULL,
+  "deliveryEligibility" TEXT NOT NULL,
+  "validationDigestsJson" TEXT NOT NULL,
+  "rubricDigest" TEXT NOT NULL,
+  "payloadJson" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL,
+  CONSTRAINT "QualityDecisionRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "QualityDecisionRecord_artifactId_fkey" FOREIGN KEY ("artifactId") REFERENCES "Artifact" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "QualityDecisionRecord_criticReportId_fkey" FOREIGN KEY ("criticReportId") REFERENCES "CriticReportRecord" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
@@ -131,6 +279,10 @@ CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "maxAttempts" INTEGER NOT NULL DEFAULT 2,
   "idempotencyKey" TEXT,
+  "actorUserId" TEXT,
+  "actorAuthMode" TEXT,
+  "authSessionId" TEXT,
+  "fencingToken" INTEGER,
   "lockedBy" TEXT,
   "lockedUntil" DATETIME,
   "errorCode" TEXT,
@@ -140,6 +292,16 @@ CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
   "startedAt" DATETIME,
   "finishedAt" DATETIME,
   CONSTRAINT "ConversationTurnJob_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "ProjectExecutionLease" (
+  "projectId" TEXT NOT NULL PRIMARY KEY,
+  "holderId" TEXT NOT NULL,
+  "fencingToken" INTEGER NOT NULL DEFAULT 1,
+  "leasedUntil" DATETIME NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  CONSTRAINT "ProjectExecutionLease_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "AuthSession" (
@@ -252,7 +414,24 @@ ensureColumn(db, "Project", "ownerUserId", 'ALTER TABLE "Project" ADD COLUMN "ow
 ensureColumn(db, "Project", "archivedAt", 'ALTER TABLE "Project" ADD COLUMN "archivedAt" DATETIME');
 ensureColumn(db, "Project", "deletedAt", 'ALTER TABLE "Project" ADD COLUMN "deletedAt" DATETIME');
 ensureColumn(db, "Project", "lifecycleVersion", 'ALTER TABLE "Project" ADD COLUMN "lifecycleVersion" INTEGER NOT NULL DEFAULT 0');
+ensureColumn(db, "Project", "intentEpoch", 'ALTER TABLE "Project" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
+ensureColumn(db, "ConversationTurnJob", "actorUserId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorUserId" TEXT');
+ensureColumn(db, "ConversationTurnJob", "actorAuthMode", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorAuthMode" TEXT');
+ensureColumn(db, "ConversationTurnJob", "authSessionId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "authSessionId" TEXT');
+ensureColumn(db, "ConversationTurnJob", "fencingToken", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "fencingToken" INTEGER');
+ensureColumn(db, "GenerationJob", "runInputSnapshotId", 'ALTER TABLE "GenerationJob" ADD COLUMN "runInputSnapshotId" TEXT');
+ensureColumn(db, "GenerationJob", "unitId", 'ALTER TABLE "GenerationJob" ADD COLUMN "unitId" TEXT');
+ensureColumn(db, "GenerationJob", "intentEpoch", 'ALTER TABLE "GenerationJob" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');
+ensureColumn(db, "GenerationJob", "idempotencyKey", 'ALTER TABLE "GenerationJob" ADD COLUMN "idempotencyKey" TEXT');
+ensureColumn(db, "GenerationJob", "inputHash", 'ALTER TABLE "GenerationJob" ADD COLUMN "inputHash" TEXT');
+ensureColumn(db, "GenerationJob", "providerTaskId", 'ALTER TABLE "GenerationJob" ADD COLUMN "providerTaskId" TEXT');
+ensureColumn(db, "GenerationJob", "pollState", 'ALTER TABLE "GenerationJob" ADD COLUMN "pollState" TEXT NOT NULL DEFAULT \'not_started\'');
+ensureColumn(db, "GenerationJob", "providerAcceptedAt", 'ALTER TABLE "GenerationJob" ADD COLUMN "providerAcceptedAt" DATETIME');
+ensureColumn(db, "GenerationJob", "lastPolledAt", 'ALTER TABLE "GenerationJob" ADD COLUMN "lastPolledAt" DATETIME');
+ensureColumn(db, "StagedArtifactCommit", "actorUserId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorUserId" TEXT');
+ensureColumn(db, "StagedArtifactCommit", "actorAuthMode", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorAuthMode" TEXT');
+ensureColumn(db, "StagedArtifactCommit", "authSessionId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "authSessionId" TEXT');
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
 ensureColumn(db, "LocalUser", "passwordHash", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordHash" TEXT');
@@ -274,9 +453,32 @@ CREATE INDEX IF NOT EXISTS "Artifact_projectId_nodeKey_version_idx" ON "Artifact
 CREATE INDEX IF NOT EXISTS "AgentRun_projectId_nodeKey_startedAt_idx" ON "AgentRun"("projectId", "nodeKey", "startedAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_status_createdAt_idx" ON "GenerationJob"("projectId", "status", "createdAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_sourceArtifactId_idx" ON "GenerationJob"("sourceArtifactId");
+CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_kind_unitId_createdAt_idx" ON "GenerationJob"("projectId", "kind", "unitId", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "GenerationJob_projectId_idempotencyKey_key" ON "GenerationJob"("projectId", "idempotencyKey");
+CREATE INDEX IF NOT EXISTS "GenerationJob_runInputSnapshotId_idx" ON "GenerationJob"("runInputSnapshotId");
+CREATE UNIQUE INDEX IF NOT EXISTS "VideoShot_projectId_sourceArtifactId_shotId_key" ON "VideoShot"("projectId", "sourceArtifactId", "shotId");
+CREATE INDEX IF NOT EXISTS "VideoShot_projectId_sourceArtifactId_ordinal_idx" ON "VideoShot"("projectId", "sourceArtifactId", "ordinal");
+CREATE INDEX IF NOT EXISTS "VideoShot_projectId_status_updatedAt_idx" ON "VideoShot"("projectId", "status", "updatedAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "RunInputSnapshot_projectId_inputHash_key" ON "RunInputSnapshot"("projectId", "inputHash");
+CREATE INDEX IF NOT EXISTS "RunInputSnapshot_projectId_intentEpoch_createdAt_idx" ON "RunInputSnapshot"("projectId", "intentEpoch", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "StagedArtifactCommit_generationJobId_key" ON "StagedArtifactCommit"("generationJobId");
+CREATE UNIQUE INDEX IF NOT EXISTS "StagedArtifactCommit_resultArtifactId_key" ON "StagedArtifactCommit"("resultArtifactId");
+CREATE INDEX IF NOT EXISTS "StagedArtifactCommit_projectId_state_createdAt_idx" ON "StagedArtifactCommit"("projectId", "state", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_artifactId_key" ON "ValidationReportRecord"("artifactId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_generationJobId_key" ON "ValidationReportRecord"("generationJobId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_stagedArtifactCommitId_key" ON "ValidationReportRecord"("stagedArtifactCommitId");
+CREATE INDEX IF NOT EXISTS "ValidationReportRecord_projectId_stage_createdAt_idx" ON "ValidationReportRecord"("projectId", "stage", "createdAt");
+CREATE INDEX IF NOT EXISTS "ValidationReportRecord_projectId_reportDigest_idx" ON "ValidationReportRecord"("projectId", "reportDigest");
+CREATE INDEX IF NOT EXISTS "ValidationReportRecord_targetKind_targetId_idx" ON "ValidationReportRecord"("targetKind", "targetId");
+CREATE UNIQUE INDEX IF NOT EXISTS "CriticReportRecord_projectId_reportDigest_key" ON "CriticReportRecord"("projectId", "reportDigest");
+CREATE INDEX IF NOT EXISTS "CriticReportRecord_projectId_artifactId_createdAt_idx" ON "CriticReportRecord"("projectId", "artifactId", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "QualityDecisionRecord_projectId_decisionDigest_key" ON "QualityDecisionRecord"("projectId", "decisionDigest");
+CREATE INDEX IF NOT EXISTS "QualityDecisionRecord_projectId_artifactId_createdAt_idx" ON "QualityDecisionRecord"("projectId", "artifactId", "createdAt");
+CREATE INDEX IF NOT EXISTS "QualityDecisionRecord_criticReportId_idx" ON "QualityDecisionRecord"("criticReportId");
 CREATE UNIQUE INDEX IF NOT EXISTS "ConversationTurnJob_projectId_idempotencyKey_key" ON "ConversationTurnJob"("projectId", "idempotencyKey");
 CREATE INDEX IF NOT EXISTS "ConversationTurnJob_projectId_status_createdAt_idx" ON "ConversationTurnJob"("projectId", "status", "createdAt");
 CREATE INDEX IF NOT EXISTS "ConversationTurnJob_teacherMessageId_idx" ON "ConversationTurnJob"("teacherMessageId");
+CREATE INDEX IF NOT EXISTS "ProjectExecutionLease_leasedUntil_idx" ON "ProjectExecutionLease"("leasedUntil");
 CREATE UNIQUE INDEX IF NOT EXISTS "AuthSession_sessionTokenHash_key" ON "AuthSession"("sessionTokenHash");
 CREATE INDEX IF NOT EXISTS "AuthSession_userId_expiresAt_idx" ON "AuthSession"("userId", "expiresAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "ProjectMembership_projectId_userId_key" ON "ProjectMembership"("projectId", "userId");

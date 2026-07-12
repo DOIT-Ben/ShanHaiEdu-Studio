@@ -79,6 +79,46 @@ export type ArtifactItem = {
   content: Record<string, string | string[]>;
   realAssetDownloads?: RealAssetKind[];
   routeGenerationActions?: ArtifactRouteGenerationActions;
+  pptSampleReview?: {
+    candidateDigest: string;
+    pageIds: string[];
+    overviewKinds: Array<"scene_and_primary_props" | "micro_assets" | "assembled_samples">;
+    reviewStatus: "awaiting_dvp_review" | "failed" | "passed";
+    qa?: PptSampleReviewSubmission["qa"];
+  };
+  pptFullDeckReview?: {
+    candidateDigest: string;
+    pageIds: string[];
+    reviewStatus: "awaiting_delivery_review" | "failed" | "passed";
+    qa?: PptFullDeckReviewSubmission["qa"];
+  };
+};
+
+export type PptSampleReviewSubmission = {
+  candidateDigest: string;
+  reviewSource: "teacher" | "critic";
+  reviewerMessageId?: string | null;
+  qa: Array<{
+    pageId: string;
+    design: "passed" | "failed";
+    visual: "passed" | "failed";
+    provenance: "passed" | "failed";
+    findings: string[];
+  }>;
+};
+
+export type PptFullDeckReviewSubmission = {
+  candidateDigest: string;
+  reviewSource: "teacher" | "critic";
+  reviewerMessageId?: string | null;
+  qa: Array<{
+    pageId: string;
+    design: "passed" | "failed";
+    visual: "passed" | "failed";
+    provenance: "passed" | "failed";
+    readability: "passed" | "failed";
+    findings: string[];
+  }>;
 };
 
 export type ChatMessage = {
@@ -157,6 +197,8 @@ export type WorkbenchDataSource = {
   sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
   setMessageReaction?: (projectId: string, messageId: string, value: ChatMessage["reaction"] | null) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
+  submitPptSampleReview: (projectId: string, artifactKey: string, review: PptSampleReviewSubmission) => Promise<WorkbenchSnapshot>;
+  submitPptFullDeckReview: (projectId: string, artifactKey: string, review: PptFullDeckReviewSubmission) => Promise<WorkbenchSnapshot>;
   regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
 };
@@ -168,4 +210,3 @@ export type StepDefinition = {
   label: string;
   Icon: LucideIcon;
 };
-

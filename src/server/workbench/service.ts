@@ -1,4 +1,4 @@
-import { createPrismaWorkbenchRepository, type WorkbenchRepository } from "./repository";
+import { createPrismaWorkbenchRepository, GenerationResultQuarantinedError, type WorkbenchRepository } from "./repository";
 import { getProjectLifecycleState, mutateProjectLifecycle } from "./project-lifecycle-service";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { canReadProject, canTriggerGeneration, canWriteProjectContent } from "@/server/auth/authorization";
@@ -16,8 +16,8 @@ import type {
   FailGenerationJobInput,
   FinishConversationTurnInput,
   FinishAgentRunInput,
-  FinishGenerationJobInput,
   GenerationJobRecord,
+  GenerationResultCommitRecord,
   ProjectRecord,
   ProjectLifecycleMutation,
   ProjectLifecycleState,
@@ -27,13 +27,39 @@ import type {
   SetMessageReactionInput,
   StartAgentRunInput,
   WorkflowNodeRecord,
+  ExecutionIdentitySnapshot,
+  ProjectExecutionFence,
+  ProjectExecutionGuard,
+  RecordGenerationProviderTaskInput,
+  StageGenerationResultInput,
+  SubmitPptSampleReviewInput,
+  SubmitPptFullDeckReviewInput,
+  UpsertVideoShotsInput,
+  VideoShotRecord,
 } from "./types";
-import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, WorkflowNode } from "@/generated/prisma/client";
+import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot, WorkflowNode } from "@/generated/prisma/client";
+import { sealPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
+import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleCandidate, PptKeySampleSet } from "@/server/ppt-quality/ppt-asset-types";
+import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
+import { sealPptFullDeckCandidate, validatePptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
+import type { PptFullDeckCandidate, PptFullDeckPackage } from "@/server/ppt-quality/ppt-production-types";
 
-export function createWorkbenchService(repository: WorkbenchRepository = createPrismaWorkbenchRepository(), actor?: WorkbenchActor) {
+export function createWorkbenchService(
+  repository: WorkbenchRepository = createPrismaWorkbenchRepository(),
+  actor?: WorkbenchActor,
+  executionIdentity?: ExecutionIdentitySnapshot,
+  executionGuard?: ProjectExecutionGuard,
+) {
   async function ensureProjectAccess(projectId: string, access: "read" | "write" | "generate" = "read"): Promise<Project> {
     const project = await repository.getProject(projectId);
-    if (!project || !canAccessProject(project, actor, access)) {
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+    if (executionGuard && access !== "read") {
+      await repository.assertExecutionGuard(projectId, executionGuard);
+      return project;
+    }
+    if (!canAccessProject(project, actor, access)) {
       throw new Error(`Project not found: ${projectId}`);
     }
     return project;
@@ -112,6 +138,95 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapArtifact(artifact);
     },
 
+    async submitPptSampleReview(projectId: string, artifactId: string, input: SubmitPptSampleReviewInput): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId, "write");
+      const stored = await repository.getArtifact(projectId, artifactId);
+      if (!stored) throw new Error(`Artifact not found: ${artifactId}`);
+      const artifact = mapArtifact(stored);
+      const candidate = artifact.structuredContent.pptKeySampleCandidate as PptKeySampleCandidate | undefined;
+      const designPackage = artifact.structuredContent.pptDesignPackage as PptDesignPackage | undefined;
+      const requestBatch = artifact.structuredContent.pptAssetRequestBatch as PptAssetRequestBatch | undefined;
+      const manifest = artifact.structuredContent.pptAssetManifest as PptAssetManifest | undefined;
+      if (!candidate || !designPackage || !requestBatch || !manifest || !validatePptKeySampleCandidate(candidate)) {
+        throw new Error("PPT key sample review evidence is incomplete.");
+      }
+      if (input.candidateDigest !== candidate.candidateDigest) throw new Error("PPT key sample review version conflict.");
+      assertPptSampleQa(candidate, input.qa);
+
+      const allPassed = input.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0);
+      const review = {
+        schemaVersion: "ppt-sample-review.v1",
+        candidateDigest: candidate.candidateDigest,
+        reviewSource: input.reviewSource,
+        reviewerMessageId: input.reviewerMessageId ?? null,
+        overallStatus: allPassed ? "passed" : "failed",
+        qa: input.qa.map((entry) => ({ ...entry, findings: [...entry.findings] })),
+        reviewedAt: new Date().toISOString(),
+      };
+      let sampleSet: PptKeySampleSet | undefined;
+      if (allPassed) {
+        sampleSet = sealPptKeySampleCandidate({ designPackage, requestBatch, manifest, candidate, qa: input.qa });
+      }
+      const nextStructuredContent = {
+        ...artifact.structuredContent,
+        pptKeySampleReview: review,
+        ...(sampleSet ? { pptKeySampleSet: sampleSet } : {}),
+      };
+      const saved = await repository.saveArtifact(projectId, {
+        nodeKey: artifact.nodeKey,
+        kind: artifact.kind,
+        title: sampleSet ? "PPT 关键样张验收包" : "PPT 关键样张返修包",
+        status: "needs_review",
+        summary: sampleSet ? "逐页 D/V/P 已通过，等待教师批准。" : "逐页 D/V/P 存在未关闭问题，需要定点返修后重新审查。",
+        markdownContent: sampleSet
+          ? "# PPT 关键样张验收包\n\n逐页 D/V/P 已全部通过，等待教师明确批准。"
+          : "# PPT 关键样张返修包\n\n存在未关闭的设计、视觉或来源问题，尚不能批准。",
+        structuredContent: nextStructuredContent,
+      });
+      return mapArtifact(saved);
+    },
+
+    async submitPptFullDeckReview(projectId: string, artifactId: string, input: SubmitPptFullDeckReviewInput): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId, "write");
+      const stored = await repository.getArtifact(projectId, artifactId);
+      if (!stored) throw new Error(`Artifact not found: ${artifactId}`);
+      const artifact = mapArtifact(stored);
+      const candidate = artifact.structuredContent.pptFullDeckCandidate as PptFullDeckCandidate | undefined;
+      if (!candidate || !validatePptFullDeckCandidate(candidate)) throw new Error("PPT full deck review evidence is incomplete.");
+      if (input.candidateDigest !== candidate.candidateDigest) throw new Error("PPT full deck review version conflict.");
+      assertPptFullDeckQa(candidate, input.qa);
+
+      const allPassed = input.qa.every((entry) =>
+        entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0);
+      const review = {
+        schemaVersion: "ppt-full-deck-review.v1",
+        candidateDigest: candidate.candidateDigest,
+        reviewSource: input.reviewSource,
+        reviewerMessageId: input.reviewerMessageId ?? null,
+        overallStatus: allPassed ? "passed" : "failed",
+        qa: input.qa.map((entry) => ({ ...entry, findings: [...entry.findings] })),
+        reviewedAt: new Date().toISOString(),
+      };
+      let deckPackage: PptFullDeckPackage | undefined;
+      if (allPassed) deckPackage = sealPptFullDeckCandidate(candidate, input.qa);
+      const saved = await repository.saveArtifact(projectId, {
+        nodeKey: artifact.nodeKey,
+        kind: artifact.kind,
+        title: deckPackage ? "完整 PPT 交付验收包" : "完整 PPT 页级返修包",
+        status: "needs_review",
+        summary: deckPackage ? "12 页 Delivery Critic 已通过，等待教师确认用于最终交付。" : "存在未关闭的页面问题，需要按页返修后重新审查。",
+        markdownContent: deckPackage
+          ? "# 完整 PPT 交付验收包\n\n全部页面的设计、视觉、来源和可读性审查通过，等待教师确认进入最终交付。"
+          : "# 完整 PPT 页级返修包\n\n存在未关闭的页面问题，尚不能进入最终交付。",
+        structuredContent: {
+          ...artifact.structuredContent,
+          pptFullDeckReview: review,
+          ...(deckPackage ? { pptFullDeckPackage: deckPackage } : {}),
+        },
+      });
+      return mapArtifact(saved);
+    },
+
     async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput): Promise<ArtifactRecord> {
       await ensureProjectAccess(projectId, "write");
       const artifact = await repository.regenerateArtifact(projectId, artifactId, input);
@@ -150,7 +265,7 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       if (!sourceArtifact) {
         throw new Error(`Artifact not found: ${input.sourceArtifactId}`);
       }
-      const job = await repository.createGenerationJob(projectId, input);
+      const job = await repository.createGenerationJob(projectId, input, executionGuard);
       return mapGenerationJob(job);
     },
 
@@ -160,10 +275,45 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return mapGenerationJob(job);
     },
 
-    async finishGenerationJob(projectId: string, jobId: string, input: FinishGenerationJobInput): Promise<GenerationJobRecord> {
+    async startGenerationJobForExecution(projectId: string, jobId: string) {
       await ensureProjectAccess(projectId, "generate");
-      const job = await repository.finishGenerationJob(projectId, jobId, input);
-      return mapGenerationJob(job);
+      const job = await repository.startGenerationJob(projectId, jobId);
+      return {
+        job: mapGenerationJob(job),
+        providerTaskId: job.providerTaskId,
+        pollState: job.pollState,
+      };
+    },
+
+    async commitGenerationResult(
+      projectId: string,
+      jobId: string,
+      input: StageGenerationResultInput,
+    ): Promise<GenerationResultCommitRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      const staged = await repository.stageGenerationResult(projectId, jobId, input, executionGuard);
+      if ("status" in staged && staged.status === "quarantined") {
+        throw new GenerationResultQuarantinedError(staged.reason);
+      }
+      const promoted = await repository.promoteStagedGenerationResult(projectId, jobId, executionGuard);
+      if (promoted.status === "quarantined") {
+        throw new GenerationResultQuarantinedError(promoted.reason);
+      }
+      return { artifact: mapArtifact(promoted.artifact), job: mapGenerationJob(promoted.job) };
+    },
+
+    async resumeStagedGenerationResult(projectId: string, jobId: string): Promise<GenerationResultCommitRecord | null> {
+      await ensureProjectAccess(projectId, "generate");
+      const stage = await repository.getStagedGenerationResult(projectId, jobId);
+      if (!stage || stage.state === "awaiting_result") return null;
+      if (stage.state === "quarantined") {
+        throw new GenerationResultQuarantinedError(stage.quarantineReason ?? "quarantined");
+      }
+      const promoted = await repository.promoteStagedGenerationResult(projectId, jobId, executionGuard);
+      if (promoted.status === "quarantined") {
+        throw new GenerationResultQuarantinedError(promoted.reason);
+      }
+      return { artifact: mapArtifact(promoted.artifact), job: mapGenerationJob(promoted.job) };
     },
 
     async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput): Promise<GenerationJobRecord> {
@@ -178,9 +328,59 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       return jobs.map(mapGenerationJob);
     },
 
+    async upsertVideoShots(projectId: string, input: UpsertVideoShotsInput): Promise<VideoShotRecord[]> {
+      await ensureProjectAccess(projectId, "generate");
+      return (await repository.upsertVideoShots(projectId, input)).map(mapVideoShot);
+    },
+
+    async recordVideoShotProviderTask(projectId: string, sourceArtifactId: string, shotId: string, providerTaskId: string): Promise<VideoShotRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapVideoShot(await repository.recordVideoShotProviderTask(projectId, sourceArtifactId, shotId, providerTaskId));
+    },
+
+    async selectVideoShotArtifact(projectId: string, sourceArtifactId: string, shotId: string, artifactId: string, qa: Record<string, unknown> = {}): Promise<VideoShotRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapVideoShot(await repository.selectVideoShotArtifact(projectId, sourceArtifactId, shotId, artifactId, qa));
+    },
+
+    async updateVideoShotQa(projectId: string, sourceArtifactId: string, shotId: string, status: "ready" | "needs_retake" | "failed", qa: Record<string, unknown>): Promise<VideoShotRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapVideoShot(await repository.updateVideoShotQa(projectId, sourceArtifactId, shotId, status, qa));
+    },
+
+    async getVideoShots(projectId: string, sourceArtifactId?: string): Promise<VideoShotRecord[]> {
+      await ensureProjectAccess(projectId);
+      return (await repository.getVideoShots(projectId, sourceArtifactId)).map(mapVideoShot);
+    },
+
+    async recordGenerationProviderTask(
+      projectId: string,
+      jobId: string,
+      input: RecordGenerationProviderTaskInput,
+    ): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapGenerationJob(await repository.recordGenerationProviderTask(projectId, jobId, input));
+    },
+
+    async markGenerationSubmissionUnknown(projectId: string, jobId: string, errorMessage: string): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapGenerationJob(await repository.markGenerationSubmissionUnknown(projectId, jobId, errorMessage));
+    },
+
+    async recordGenerationPoll(projectId: string, jobId: string): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapGenerationJob(await repository.recordGenerationPoll(projectId, jobId));
+    },
+
+    async advanceProjectIntentEpoch(projectId: string, expectedIntentEpoch: number): Promise<number> {
+      await ensureProjectAccess(projectId, "write");
+      const project = await repository.advanceProjectIntentEpoch(projectId, expectedIntentEpoch);
+      return project.intentEpoch;
+    },
+
     async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput): Promise<ConversationTurnJobRecord> {
       await ensureProjectAccess(projectId, "write");
-      const job = await repository.enqueueConversationTurn(projectId, input);
+      const job = await repository.enqueueConversationTurn(projectId, { ...input, executionIdentity });
       return mapConversationTurnJob(job);
     },
 
@@ -189,13 +389,13 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
       input: EnqueueMessageAndConversationTurnInput,
     ): Promise<{ message: ConversationMessageRecord; job: ConversationTurnJobRecord }> {
       await ensureProjectAccess(projectId, "write");
-      const result = await repository.enqueueMessageAndConversationTurn(projectId, input);
+      const result = await repository.enqueueMessageAndConversationTurn(projectId, { ...input, executionIdentity });
       return { message: mapMessage(result.message), job: mapConversationTurnJob(result.job) };
     },
 
     async startNextConversationTurnJob(
       projectId: string,
-      input: { lockedBy?: string; lockMs?: number } = {},
+      input: { lockedBy?: string; lockMs?: number; fence?: ProjectExecutionFence; now?: Date } = {},
     ): Promise<ConversationTurnJobRecord | null> {
       await ensureProjectAccess(projectId, "generate");
       const job = await repository.startNextConversationTurnJob(projectId, input);
@@ -203,14 +403,14 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
     },
 
     async finishConversationTurnJob(projectId: string, jobId: string, input: FinishConversationTurnInput): Promise<ConversationTurnJobRecord> {
-      await ensureProjectAccess(projectId, "generate");
-      const job = await repository.finishConversationTurnJob(projectId, jobId, input);
+      if (!executionGuard) await ensureProjectAccess(projectId, "generate");
+      const job = await repository.finishConversationTurnJob(projectId, jobId, input, executionGuard);
       return mapConversationTurnJob(job);
     },
 
     async failConversationTurnJob(projectId: string, jobId: string, input: FailConversationTurnInput): Promise<ConversationTurnJobRecord> {
-      await ensureProjectAccess(projectId, "generate");
-      const job = await repository.failConversationTurnJob(projectId, jobId, input);
+      if (!executionGuard) await ensureProjectAccess(projectId, "generate");
+      const job = await repository.failConversationTurnJob(projectId, jobId, input, executionGuard);
       return mapConversationTurnJob(job);
     },
 
@@ -240,12 +440,15 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
 
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
       const project = await ensureProjectAccess(projectId);
-      const [messages, nodes, artifacts, agentRuns, generationJobs, turnJobs, reactions] = await Promise.all([
+      const [messages, nodes, artifacts, agentRuns, generationJobs, videoShots, turnJobs, reactions] = await Promise.all([
         repository.getMessages(projectId),
         repository.getNodes(projectId),
         repository.getArtifacts(projectId),
         repository.getAgentRuns(projectId),
         repository.getGenerationJobs(projectId),
+        typeof repository.getVideoShots === "function"
+          ? repository.getVideoShots(projectId)
+          : Promise.resolve([]),
         repository.getConversationTurnJobs(projectId),
         actor?.userId && typeof repository.getMessageReactions === "function"
           ? repository.getMessageReactions(projectId, actor.userId)
@@ -260,10 +463,65 @@ export function createWorkbenchService(repository: WorkbenchRepository = createP
         artifacts: artifacts.map(mapArtifact),
         agentRuns: agentRuns.map(mapAgentRun),
         generationJobs: generationJobs.map(mapGenerationJob),
+        videoShots: videoShots.map(mapVideoShot),
         turnJobs: turnJobs.map(mapConversationTurnJob),
       };
     },
+
+    getExecutionIdentity() {
+      return executionIdentity;
+    },
+
+    withExecutionGuard(guard: ProjectExecutionGuard) {
+      return createWorkbenchService(repository, actor, guard.identity, guard);
+    },
+
+    acquireProjectExecutionLease(input: { projectId: string; holderId: string; leaseMs?: number; now?: Date }) {
+      return repository.acquireProjectExecutionLease(input);
+    },
+
+    renewProjectExecutionLease(input: ProjectExecutionFence & { leaseMs?: number; now?: Date }) {
+      return repository.renewProjectExecutionLease(input);
+    },
+
+    releaseProjectExecutionLease(fence: ProjectExecutionFence, now?: Date) {
+      return repository.releaseProjectExecutionLease(fence, now);
+    },
   };
+}
+
+function assertPptSampleQa(candidate: PptKeySampleCandidate, qa: SubmitPptSampleReviewInput["qa"]): void {
+  const expected = [...candidate.samplePageIds].sort();
+  const actual = qa.map((entry) => entry.pageId).sort();
+  if (actual.length !== expected.length || actual.some((pageId, index) => pageId !== expected[index])) {
+    throw new Error("PPT key sample review page set mismatch.");
+  }
+  for (const entry of qa) {
+    const failed = entry.design === "failed" || entry.visual === "failed" || entry.provenance === "failed";
+    if (failed && entry.findings.every((finding) => !finding.trim())) {
+      throw new Error(`PPT key sample review findings required: ${entry.pageId}`);
+    }
+    if (!failed && entry.findings.length > 0) {
+      throw new Error(`PPT key sample review has unresolved findings: ${entry.pageId}`);
+    }
+  }
+}
+
+function assertPptFullDeckQa(candidate: PptFullDeckCandidate, qa: SubmitPptFullDeckReviewInput["qa"]): void {
+  const expected = [...candidate.pageIds].sort();
+  const actual = qa.map((entry) => entry.pageId).sort();
+  if (actual.length !== expected.length || actual.some((pageId, index) => pageId !== expected[index])) {
+    throw new Error("PPT full deck review page set mismatch.");
+  }
+  for (const entry of qa) {
+    const failed = entry.design === "failed" || entry.visual === "failed" || entry.provenance === "failed" || entry.readability === "failed";
+    if (failed && entry.findings.every((finding) => !finding.trim())) {
+      throw new Error(`PPT full deck review findings required: ${entry.pageId}`);
+    }
+    if (!failed && entry.findings.length > 0) {
+      throw new Error(`PPT full deck review has unresolved findings: ${entry.pageId}`);
+    }
+  }
 }
 
 function canAccessProject(project: Project, actor: WorkbenchActor | undefined, access: "read" | "write" | "generate") {
@@ -284,6 +542,7 @@ function mapProject(project: Project): ProjectRecord {
     lessonTopic: project.lessonTopic,
     lifecycleState: getProjectLifecycleState(project),
     lifecycleVersion: project.lifecycleVersion,
+    intentEpoch: project.intentEpoch,
     archivedAt: project.archivedAt?.toISOString() ?? null,
     deletedAt: project.deletedAt?.toISOString() ?? null,
     createdAt: project.createdAt.toISOString(),
@@ -356,6 +615,9 @@ function mapGenerationJob(job: GenerationJob): GenerationJobRecord {
     projectId: job.projectId,
     kind: job.kind as GenerationJobRecord["kind"],
     sourceArtifactId: job.sourceArtifactId,
+    unitId: job.unitId,
+    intentEpoch: job.intentEpoch,
+    inputHash: job.inputHash,
     status: job.status as GenerationJobRecord["status"],
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
@@ -365,6 +627,23 @@ function mapGenerationJob(job: GenerationJob): GenerationJobRecord {
     updatedAt: job.updatedAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function mapVideoShot(shot: VideoShot): VideoShotRecord {
+  return {
+    id: shot.id,
+    projectId: shot.projectId,
+    sourceArtifactId: shot.sourceArtifactId,
+    shotId: shot.shotId,
+    ordinal: shot.ordinal,
+    inputHash: shot.inputHash,
+    providerTaskId: shot.providerTaskId,
+    selectedArtifactId: shot.selectedArtifactId,
+    status: shot.status as VideoShotRecord["status"],
+    qa: parseJsonObject(shot.qaJson),
+    createdAt: shot.createdAt.toISOString(),
+    updatedAt: shot.updatedAt.toISOString(),
   };
 }
 
@@ -378,6 +657,10 @@ function mapConversationTurnJob(job: ConversationTurnJob): ConversationTurnJobRe
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
     idempotencyKey: job.idempotencyKey,
+    actorUserId: job.actorUserId,
+    actorAuthMode: job.actorAuthMode,
+    authSessionId: job.authSessionId,
+    fencingToken: job.fencingToken,
     lockedBy: job.lockedBy,
     lockedUntil: job.lockedUntil?.toISOString() ?? null,
     errorCode: job.errorCode,

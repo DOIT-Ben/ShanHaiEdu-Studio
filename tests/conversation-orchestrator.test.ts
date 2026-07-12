@@ -148,6 +148,17 @@ describe("ConversationOrchestrator", () => {
 });
 
 describe("OpenAI-compatible config", () => {
+  it("defaults Main Agent model selection to Terra High", () => {
+    const config = pickOpenAICompatibleConfig({
+      AGENT_BRAIN_API_KEY: "ledger-secret",
+    });
+
+    expect(config).toMatchObject({
+      model: "gpt-5.6-terra",
+      reasoningEffort: "high",
+    });
+  });
+
   it("selects OpenAI env before ledger env", () => {
     const config = pickOpenAICompatibleConfig({
       OPENAI_API_KEY: "openai-secret",

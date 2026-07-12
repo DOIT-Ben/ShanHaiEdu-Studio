@@ -1,0 +1,14 @@
+{
+  "audience": {
+    "grade": "小学一年级",
+    "learner_profile": "处于从具体数量表征过渡到数字符号表征的学生"
+  },
+  "classroom_job": "让学生通过观察、摆放和比较建立数量与数字之间的稳定对应",
+  "central_learning_change": "从凭直觉说多少转变为能用点子、实物和数字解释数量关系",
+  "evidence_scope": ["textbook:p12-p15", "lesson_plan:objective_01"],
+  "ppt_role": "组织课堂观察、操作、表征和反馈",
+  "video_role": "制造标签失踪的独立悬念并把问题交还课堂",
+  "course_anchor_ref": "course_anchor:number_labels:v2",
+  "cross_delivery_constraints": ["事实术语一致", "视频不提前揭示数字对应结论"],
+  "non_goals": ["不把教案逐段搬到屏幕", "不把 PPT 页面动画化为视频"]
+}

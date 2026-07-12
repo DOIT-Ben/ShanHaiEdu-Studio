@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shanhaiedu.local/schemas/delivery-strategy.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["audience", "classroom_job", "central_learning_change", "evidence_scope", "ppt_role", "video_role", "course_anchor_ref", "cross_delivery_constraints", "non_goals"],
+  "properties": {
+    "audience": { "type": "object", "required": ["grade", "learner_profile"], "properties": { "grade": { "type": "string" }, "learner_profile": { "type": "string" } } },
+    "classroom_job": { "type": "string", "minLength": 10 },
+    "central_learning_change": { "type": "string", "minLength": 10 },
+    "evidence_scope": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "ppt_role": { "type": "string", "minLength": 5 },
+    "video_role": { "type": "string", "minLength": 5 },
+    "course_anchor_ref": { "type": "string", "pattern": "^course_anchor:[A-Za-z0-9._-]+:v[0-9]+$" },
+    "cross_delivery_constraints": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "non_goals": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+  }
+}

@@ -9,6 +9,11 @@ import { NextResponse } from "next/server";
 export type AuthenticatedWorkbenchRequest = {
   actor: WorkbenchActor;
   service: ReturnType<typeof createWorkbenchService>;
+  executionIdentity: {
+    actorUserId: string;
+    actorAuthMode: WorkbenchActor["authMode"];
+    authSessionId: string | null;
+  };
 };
 
 export async function withLocalWorkbenchActor(
@@ -38,9 +43,15 @@ export async function withLocalWorkbenchActor(
     }
   }
 
+  const executionIdentity = {
+    actorUserId: session.actor.userId,
+    actorAuthMode: session.authMode,
+    authSessionId: session.publicSession?.id ?? null,
+  };
   const response = await handler({
     actor: session.actor,
-    service: createWorkbenchService(undefined, session.actor),
+    executionIdentity,
+    service: createWorkbenchService(undefined, session.actor, executionIdentity),
   });
 
   if (session.setCookieHeader) {

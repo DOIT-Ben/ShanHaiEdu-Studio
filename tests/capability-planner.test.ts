@@ -18,7 +18,10 @@ const fullDeliveryCapabilityIds = [
   "lesson_plan",
   "ppt_outline",
   "ppt_design",
-  "coze_ppt",
+  "ppt_sample_assets",
+  "ppt_key_samples",
+  "ppt_full_assets",
+  "ppt_full_deck",
   "image_asset",
   "knowledge_anchor_extract",
   "creative_theme_generate",
@@ -33,6 +36,20 @@ const fullDeliveryCapabilityIds = [
 ];
 
 describe("M54-B CapabilityPlanner", () => {
+  it("plans a page-scoped repair only when the teacher explicitly names a PPT page", () => {
+    const plan = planCapabilityForRequest({
+      userMessage: "请调整 PPT 第 6 页的标题和布局",
+      availableArtifactKinds: ["pptx_artifact", "ppt_design_draft", "image_prompts"],
+    });
+
+    expect(plan).toMatchObject({
+      capabilityId: "ppt_page_repair",
+      expectedArtifactKind: "pptx_artifact",
+      requiresConfirmation: true,
+    });
+    expect(plan?.missingInputs).toEqual([]);
+  });
+
   it("does not create a tool plan for casual chat", () => {
     const plan = planCapabilityForRequest({ userMessage: "你好", availableArtifactKinds: [] });
 
@@ -93,6 +110,14 @@ describe("M54-B CapabilityPlanner", () => {
     });
   });
 
+  it("routes a quality editable PPT through samples, full assets, and the full deck tool", () => {
+    const base = { userMessage: "根据现有设计稿生成高质量可编辑 PPTX 文件", availableArtifactKinds: ["ppt_design_draft"] };
+    expect(planCapabilityForRequest(base)?.capabilityId).toBe("ppt_sample_assets");
+    expect(planCapabilityForRequest({ ...base, availableArtifactKinds: [...base.availableArtifactKinds, "image_prompts"] })?.capabilityId).toBe("ppt_key_samples");
+    expect(planCapabilityForRequest({ ...base, availableArtifactKinds: [...base.availableArtifactKinds, "image_prompts", "image_prompts"] })?.capabilityId).toBe("ppt_full_assets");
+    expect(planCapabilityForRequest({ ...base, availableArtifactKinds: [...base.availableArtifactKinds, "image_prompts", "image_prompts", "image_prompts"] })?.capabilityId).toBe("ppt_full_deck");
+  });
+
   it("collects missing inputs for vague courseware requests", () => {
     const plan = planCapabilityForRequest({ userMessage: "帮我做一个课件", availableArtifactKinds: [] });
 
@@ -116,6 +141,9 @@ describe("M54-B CapabilityPlanner", () => {
     expect(plan?.steps.map((step) => step.capabilityId)).toEqual(fullDeliveryCapabilityIds);
     expect(plan?.steps.map((step) => step.status)).toEqual([
       "awaiting_confirmation",
+      "pending",
+      "pending",
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -157,7 +185,10 @@ describe("M54-B CapabilityPlanner", () => {
       ["lesson_plan", "awaiting_confirmation"],
       ["ppt_outline", "pending"],
       ["ppt_design", "pending"],
-      ["coze_ppt", "pending"],
+      ["ppt_sample_assets", "pending"],
+      ["ppt_key_samples", "pending"],
+      ["ppt_full_assets", "pending"],
+      ["ppt_full_deck", "pending"],
       ["image_asset", "pending"],
       ["knowledge_anchor_extract", "pending"],
       ["creative_theme_generate", "pending"],
@@ -189,7 +220,10 @@ describe("M54-B CapabilityPlanner", () => {
       ["lesson_plan", "succeeded"],
       ["ppt_outline", "succeeded"],
       ["ppt_design", "awaiting_confirmation"],
-      ["coze_ppt", "pending"],
+      ["ppt_sample_assets", "pending"],
+      ["ppt_key_samples", "pending"],
+      ["ppt_full_assets", "pending"],
+      ["ppt_full_deck", "pending"],
       ["image_asset", "pending"],
       ["knowledge_anchor_extract", "pending"],
       ["creative_theme_generate", "pending"],

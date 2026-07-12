@@ -51,6 +51,7 @@ export type ProjectRecord = {
   lessonTopic: string | null;
   lifecycleState: ProjectLifecycleState;
   lifecycleVersion: number;
+  intentEpoch?: number;
   archivedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -112,15 +113,36 @@ export type AgentRunStatus = "running" | "succeeded" | "failed";
 
 export type GenerationJobKind = "pptx" | "image" | "video";
 
-export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "submission_unknown" | "quarantined";
 
-export type ConversationTurnJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled" | "blocked";
+export type VideoShotStatus = "planned" | "submitted" | "ready" | "needs_retake" | "failed";
+
+export type ConversationTurnJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled" | "blocked" | "quarantined";
+
+export type ExecutionIdentitySnapshot = {
+  actorUserId: string;
+  actorAuthMode: "local" | "password" | "oauth" | "sso";
+  authSessionId: string | null;
+};
+
+export type ProjectExecutionFence = {
+  projectId: string;
+  holderId: string;
+  fencingToken: number;
+};
+
+export type ProjectExecutionGuard = ProjectExecutionFence & {
+  identity: ExecutionIdentitySnapshot;
+};
 
 export type GenerationJobRecord = {
   id: string;
   projectId: string;
   kind: GenerationJobKind;
   sourceArtifactId: string;
+  unitId?: string | null;
+  intentEpoch: number;
+  inputHash: string | null;
   status: GenerationJobStatus;
   attempts: number;
   maxAttempts: number;
@@ -132,6 +154,26 @@ export type GenerationJobRecord = {
   finishedAt: string | null;
 };
 
+export type VideoShotRecord = {
+  id: string;
+  projectId: string;
+  sourceArtifactId: string;
+  shotId: string;
+  ordinal: number;
+  inputHash: string;
+  providerTaskId: string | null;
+  selectedArtifactId: string | null;
+  status: VideoShotStatus;
+  qa: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UpsertVideoShotsInput = {
+  sourceArtifactId: string;
+  shots: Array<{ shotId: string; ordinal: number; inputHash: string }>;
+};
+
 export type ConversationTurnJobRecord = {
   id: string;
   projectId: string;
@@ -141,6 +183,10 @@ export type ConversationTurnJobRecord = {
   attempts: number;
   maxAttempts: number;
   idempotencyKey: string | null;
+  actorUserId: string | null;
+  actorAuthMode: string | null;
+  authSessionId: string | null;
+  fencingToken: number | null;
   lockedBy: string | null;
   lockedUntil: string | null;
   errorCode: string | null;
@@ -158,6 +204,7 @@ export type ProjectSnapshot = {
   artifacts: ArtifactRecord[];
   agentRuns: AgentRunRecord[];
   generationJobs: GenerationJobRecord[];
+  videoShots: VideoShotRecord[];
   turnJobs: ConversationTurnJobRecord[];
 };
 
@@ -190,6 +237,34 @@ export type SaveArtifactInput = {
   summary: string;
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
+  validationReport?: import("@/server/quality/quality-types").ValidationReport;
+};
+
+export type SubmitPptSampleReviewInput = {
+  candidateDigest: string;
+  reviewSource: "teacher" | "critic";
+  reviewerMessageId?: string | null;
+  qa: Array<{
+    pageId: string;
+    design: "passed" | "failed";
+    visual: "passed" | "failed";
+    provenance: "passed" | "failed";
+    findings: string[];
+  }>;
+};
+
+export type SubmitPptFullDeckReviewInput = {
+  candidateDigest: string;
+  reviewSource: "teacher" | "critic";
+  reviewerMessageId?: string | null;
+  qa: Array<{
+    pageId: string;
+    design: "passed" | "failed";
+    visual: "passed" | "failed";
+    provenance: "passed" | "failed";
+    readability: "passed" | "failed";
+    findings: string[];
+  }>;
 };
 
 export type RegenerateArtifactInput = {
@@ -208,31 +283,52 @@ export type StartAgentRunInput = {
 export type FinishAgentRunInput = {
   status: Exclude<AgentRunStatus, "running">;
   errorMessage?: string;
+  evidence?: {
+    artifactId: string;
+    validationReportId: string;
+    qualityDecisionId: string;
+  };
 };
 
 export type CreateGenerationJobInput = {
   kind: GenerationJobKind;
   sourceArtifactId: string;
+  unitId?: string;
   maxAttempts?: number;
+  capabilityId?: string;
+  idempotencyKey?: string;
+  inputSnapshot?: Record<string, unknown>;
+  sourceArtifactIds?: string[];
 };
 
-export type FinishGenerationJobInput = {
-  resultArtifactId: string;
+export type StageGenerationResultInput = Omit<SaveArtifactInput, "validationReport"> & {
+  validationReport: import("@/server/quality/quality-types").ValidationReport;
+};
+
+export type GenerationResultCommitRecord = {
+  artifact: ArtifactRecord;
+  job: GenerationJobRecord;
 };
 
 export type FailGenerationJobInput = {
   errorMessage: string;
 };
 
+export type RecordGenerationProviderTaskInput = {
+  providerTaskId: string;
+};
+
 export type EnqueueConversationTurnInput = {
   teacherMessageId: string;
   idempotencyKey?: string;
   maxAttempts?: number;
+  executionIdentity?: ExecutionIdentitySnapshot;
 };
 
 export type EnqueueMessageAndConversationTurnInput = AddMessageInput & {
   idempotencyKey?: string;
   maxAttempts?: number;
+  executionIdentity?: ExecutionIdentitySnapshot;
 };
 
 export type FinishConversationTurnInput = {

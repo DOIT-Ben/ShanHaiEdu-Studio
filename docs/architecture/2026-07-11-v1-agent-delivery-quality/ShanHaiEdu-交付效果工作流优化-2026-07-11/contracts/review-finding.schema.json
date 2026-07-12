@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shanhaiedu.local/schemas/review-finding.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["finding_id", "target_type", "target_id", "severity", "rubric_dimension", "evidence", "expected", "observed", "repair_instruction", "rerun_scope"],
+  "properties": {
+    "finding_id": { "type": "string", "pattern": "^finding_[a-z0-9_]+$" },
+    "target_type": { "enum": ["deck", "page", "asset", "beat", "shot", "caption", "audio", "timeline", "package"] },
+    "target_id": { "type": "string", "minLength": 1 },
+    "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+    "rubric_dimension": { "type": "string", "minLength": 3 },
+    "evidence": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "expected": { "type": "string", "minLength": 5 },
+    "observed": { "type": "string", "minLength": 5 },
+    "repair_instruction": { "type": "string", "minLength": 10 },
+    "rerun_scope": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+  }
+}

@@ -13,56 +13,64 @@ datasource db {
 }
 
 model Project {
-  id              String                @id @default(cuid())
-  title           String
-  status          String                @default("active")
-  currentNodeKey  String
-  ownerUserId     String?
-  grade           String?
-  subject         String?
-  textbookVersion String?
-  lessonTopic     String?
-  archivedAt      DateTime?
-  deletedAt       DateTime?
-  lifecycleVersion Int                 @default(0)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  owner           LocalUser?            @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
-  messages        ConversationMessage[]
-  nodes           WorkflowNode[]
-  artifacts       Artifact[]
-  agentRuns       AgentRun[]
-  generationJobs  GenerationJob[]
-  turnJobs        ConversationTurnJob[]
-  memberships     ProjectMembership[]
-  auditLogs       AuditLog[]
-   feedbackRecords FeedbackRecord[]
-   messageReactions MessageReaction[]
+  id                    String                 @id @default(cuid())
+  title                 String
+  status                String                 @default("active")
+  currentNodeKey        String
+  ownerUserId           String?
+  grade                 String?
+  subject               String?
+  textbookVersion       String?
+  lessonTopic           String?
+  archivedAt            DateTime?
+  deletedAt             DateTime?
+  lifecycleVersion      Int                    @default(0)
+  intentEpoch           Int                    @default(0)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  owner                 LocalUser?             @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  messages              ConversationMessage[]
+  nodes                 WorkflowNode[]
+  artifacts             Artifact[]
+  agentRuns             AgentRun[]
+  generationJobs        GenerationJob[]
+  videoShots            VideoShot[]
+  turnJobs              ConversationTurnJob[]
+  executionLease        ProjectExecutionLease?
+  runInputSnapshots     RunInputSnapshot[]
+  stagedArtifactCommits StagedArtifactCommit[]
+  validationReports     ValidationReportRecord[]
+  criticReports         CriticReportRecord[]
+  qualityDecisions      QualityDecisionRecord[]
+  memberships           ProjectMembership[]
+  auditLogs             AuditLog[]
+  feedbackRecords       FeedbackRecord[]
+  messageReactions      MessageReaction[]
 
   @@index([ownerUserId, updatedAt])
   @@index([archivedAt, deletedAt, updatedAt])
 }
 
 model LocalUser {
-  id             String              @id
-  displayName    String
-  role           String              @default("teacher")
-  authMode       String              @default("local")
-  email          String?             @unique
-  passwordHash   String?
-  disabledAt     DateTime?
-  disabledReason String?
-  lastLoginAt    DateTime?
-  passwordResetAt DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  projects       Project[]
-  sessions       AuthSession[]
-  memberships    ProjectMembership[]
-  auditLogs      AuditLog[]
-  csrfTokens     CsrfToken[]
-   feedbackRecords FeedbackRecord[]
-   messageReactions MessageReaction[]
+  id               String              @id
+  displayName      String
+  role             String              @default("teacher")
+  authMode         String              @default("local")
+  email            String?             @unique
+  passwordHash     String?
+  disabledAt       DateTime?
+  disabledReason   String?
+  lastLoginAt      DateTime?
+  passwordResetAt  DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  projects         Project[]
+  sessions         AuthSession[]
+  memberships      ProjectMembership[]
+  auditLogs        AuditLog[]
+  csrfTokens       CsrfToken[]
+  feedbackRecords  FeedbackRecord[]
+  messageReactions MessageReaction[]
 }
 
 model AuthSession {
@@ -95,16 +103,16 @@ model ProjectMembership {
 }
 
 model AuditLog {
-  id          String     @id @default(cuid())
-  actorUserId String?
-  action      String
-  targetType  String
-  targetId    String?
-  projectId   String?
-  metadataJson String    @default("{}")
-  createdAt   DateTime   @default(now())
-  actor       LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id           String     @id @default(cuid())
+  actorUserId  String?
+  action       String
+  targetType   String
+  targetId     String?
+  projectId    String?
+  metadataJson String     @default("{}")
+  createdAt    DateTime   @default(now())
+  actor        LocalUser? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  project      Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([actorUserId, createdAt])
   @@index([projectId, createdAt])
@@ -112,55 +120,55 @@ model AuditLog {
 }
 
 model CsrfToken {
-  id        String      @id @default(cuid())
-  sessionId String
-  userId    String
-  tokenHash String      @unique
-  expiresAt DateTime
+  id         String      @id @default(cuid())
+  sessionId  String
+  userId     String
+  tokenHash  String      @unique
+  expiresAt  DateTime
   consumedAt DateTime?
-  createdAt DateTime    @default(now())
-  session   AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user      LocalUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+  session    AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       LocalUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, expiresAt])
   @@index([userId, expiresAt])
 }
 
 model ConversationMessage {
-  id               String   @id @default(cuid())
+  id               String            @id @default(cuid())
   projectId        String
   role             String
   content          String
-  artifactRefsJson String   @default("[]")
-  metadataJson     String   @default("{}")
-  createdAt        DateTime @default(now())
-  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-   feedbackRecords  FeedbackRecord[]
-   reactions        MessageReaction[]
+  artifactRefsJson String            @default("[]")
+  metadataJson     String            @default("{}")
+  createdAt        DateTime          @default(now())
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  feedbackRecords  FeedbackRecord[]
+  reactions        MessageReaction[]
 
   @@index([projectId, createdAt])
 }
 
 model WorkflowNode {
-  id                 String    @id @default(cuid())
-  projectId          String
-  key                String
-  title              String
-  status             String    @default("not_started")
-  order              Int
-  upstreamNodeKeysJson String  @default("[]")
-  approvedArtifactId String?
-  staleReason        String?
-  updatedAt          DateTime  @updatedAt
-  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  approvedArtifact   Artifact? @relation("ApprovedArtifact", fields: [approvedArtifactId], references: [id])
+  id                   String    @id @default(cuid())
+  projectId            String
+  key                  String
+  title                String
+  status               String    @default("not_started")
+  order                Int
+  upstreamNodeKeysJson String    @default("[]")
+  approvedArtifactId   String?
+  staleReason          String?
+  updatedAt            DateTime  @updatedAt
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approvedArtifact     Artifact? @relation("ApprovedArtifact", fields: [approvedArtifactId], references: [id])
 
   @@unique([projectId, key])
   @@index([projectId, order])
 }
 
 model Artifact {
-  id                    String         @id @default(cuid())
+  id                    String                @id @default(cuid())
   projectId             String
   nodeKey               String
   title                 String
@@ -168,13 +176,17 @@ model Artifact {
   status                String
   summary               String
   markdownContent       String
-  structuredContentJson String         @default("{}")
+  structuredContentJson String                @default("{}")
   version               Int
-  isApproved            Boolean        @default(false)
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  project               Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  approvedByNodes       WorkflowNode[] @relation("ApprovedArtifact")
+  isApproved            Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  project               Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  approvedByNodes       WorkflowNode[]        @relation("ApprovedArtifact")
+  stagedCommit          StagedArtifactCommit? @relation("StagedArtifactResult")
+  validationReport      ValidationReportRecord?
+  criticReports         CriticReportRecord[]
+  qualityDecisions      QualityDecisionRecord[]
 
   @@index([projectId, nodeKey, version])
 }
@@ -194,23 +206,198 @@ model AgentRun {
 }
 
 model GenerationJob {
-  id               String    @id @default(cuid())
-  projectId        String
-  kind             String
-  sourceArtifactId String
-  status           String    @default("queued")
-  attempts         Int       @default(0)
-  maxAttempts      Int       @default(2)
-  resultArtifactId String?
-  errorMessage     String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  startedAt        DateTime?
-  finishedAt       DateTime?
-  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                   String                @id @default(cuid())
+  projectId            String
+  kind                 String
+  sourceArtifactId     String
+  unitId               String?
+  runInputSnapshotId   String?
+  intentEpoch          Int                   @default(0)
+  idempotencyKey       String?
+  inputHash            String?
+  providerTaskId       String?
+  pollState            String                @default("not_started")
+  providerAcceptedAt   DateTime?
+  lastPolledAt         DateTime?
+  status               String                @default("queued")
+  attempts             Int                   @default(0)
+  maxAttempts          Int                   @default(2)
+  resultArtifactId     String?
+  errorMessage         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  project              Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runInputSnapshot     RunInputSnapshot?     @relation(fields: [runInputSnapshotId], references: [id], onDelete: SetNull)
+  stagedArtifactCommit StagedArtifactCommit?
+  validationReport     ValidationReportRecord?
 
+  @@unique([projectId, idempotencyKey])
   @@index([projectId, status, createdAt])
   @@index([sourceArtifactId])
+  @@index([projectId, kind, unitId, createdAt])
+  @@index([runInputSnapshotId])
+}
+
+model VideoShot {
+  id                 String   @id @default(cuid())
+  projectId          String
+  sourceArtifactId   String
+  shotId             String
+  ordinal            Int
+  inputHash          String
+  providerTaskId     String?
+  selectedArtifactId String?
+  status             String   @default("planned")
+  qaJson             String   @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, sourceArtifactId, shotId])
+  @@index([projectId, sourceArtifactId, ordinal])
+  @@index([projectId, status, updatedAt])
+}
+
+model StagedArtifactCommit {
+  id                    String        @id @default(cuid())
+  projectId             String
+  generationJobId       String        @unique
+  state                 String        @default("awaiting_result")
+  nodeKey               String?
+  kind                  String?
+  title                 String?
+  artifactStatus        String?
+  summary               String?
+  markdownContent       String?
+  structuredContentJson String        @default("{}")
+  storageRefsJson       String        @default("[]")
+  intentEpoch           Int
+  inputHash             String
+  holderId              String?
+  fencingToken          Int?
+  actorUserId           String?
+  actorAuthMode         String?
+  authSessionId         String?
+  resultArtifactId      String?       @unique
+  quarantineReason      String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  committedAt           DateTime?
+  project               Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generationJob         GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+  resultArtifact        Artifact?     @relation("StagedArtifactResult", fields: [resultArtifactId], references: [id], onDelete: SetNull)
+  validationReport      ValidationReportRecord?
+
+  @@index([projectId, state, createdAt])
+}
+
+model ValidationReportRecord {
+  id                     String                @id
+  projectId              String
+  capabilityId           String
+  stage                  String
+  authority              String
+  domain                 String
+  targetKind             String
+  targetId               String?
+  targetVersion          Int?
+  targetDigest           String?
+  inputHash              String?
+  intentEpoch            Int?
+  contractId             String
+  contractVersion        String
+  overallStatus          String
+  reportDigest           String
+  payloadJson            String
+  artifactId             String?               @unique
+  generationJobId        String?               @unique
+  stagedArtifactCommitId String?               @unique
+  createdAt              DateTime
+  project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifact               Artifact?              @relation(fields: [artifactId], references: [id], onDelete: SetNull)
+  generationJob          GenerationJob?         @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+  stagedArtifactCommit   StagedArtifactCommit?  @relation(fields: [stagedArtifactCommitId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, stage, createdAt])
+  @@index([projectId, reportDigest])
+  @@index([targetKind, targetId])
+}
+
+model CriticReportRecord {
+  id                   String                  @id
+  projectId            String
+  artifactId           String
+  reportDigest         String
+  authority            String
+  status               String
+  domain               String
+  stage                String
+  targetVersion        Int
+  targetDigest         String
+  productionPath       String
+  inputHash            String?
+  rubricId             String
+  rubricVersion        String
+  rubricDigest         String
+  validationRefsJson   String
+  payloadJson          String
+  createdAt            DateTime
+  project              Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifact             Artifact                @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  qualityDecisions     QualityDecisionRecord[]
+
+  @@unique([projectId, reportDigest])
+  @@index([projectId, artifactId, createdAt])
+}
+
+model QualityDecisionRecord {
+  id                      String              @id
+  projectId               String
+  artifactId              String
+  criticReportId          String?
+  decisionDigest          String
+  authority               String
+  domain                  String
+  stage                   String
+  targetVersion           Int
+  targetDigest            String
+  productionPath          String
+  inputHash               String?
+  outcome                 String
+  weightedScore           Float?
+  reasonCodesJson         String
+  nextAction              String
+  repairTargetsJson       String
+  deliveryEligibility     String
+  validationDigestsJson   String
+  rubricDigest            String
+  payloadJson             String
+  createdAt               DateTime
+  project                 Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifact                Artifact            @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  criticReport            CriticReportRecord? @relation(fields: [criticReportId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, decisionDigest])
+  @@index([projectId, artifactId, createdAt])
+  @@index([criticReportId])
+}
+
+model RunInputSnapshot {
+  id                    String          @id @default(cuid())
+  projectId             String
+  intentEpoch           Int
+  capabilityId          String
+  sourceArtifactIdsJson String          @default("[]")
+  payloadJson           String
+  inputHash             String
+  createdAt             DateTime        @default(now())
+  project               Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generationJobs        GenerationJob[]
+
+  @@unique([projectId, inputHash])
+  @@index([projectId, intentEpoch, createdAt])
 }
 
 model FeedbackRecord {
@@ -292,6 +479,10 @@ model ConversationTurnJob {
   attempts           Int       @default(0)
   maxAttempts        Int       @default(2)
   idempotencyKey     String?
+  actorUserId        String?
+  actorAuthMode      String?
+  authSessionId      String?
+  fencingToken       Int?
   lockedBy           String?
   lockedUntil        DateTime?
   errorCode          String?
@@ -305,4 +496,16 @@ model ConversationTurnJob {
   @@unique([projectId, idempotencyKey])
   @@index([projectId, status, createdAt])
   @@index([teacherMessageId])
+}
+
+model ProjectExecutionLease {
+  projectId    String   @id
+  holderId     String
+  fencingToken Int      @default(1)
+  leasedUntil  DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([leasedUntil])
 }

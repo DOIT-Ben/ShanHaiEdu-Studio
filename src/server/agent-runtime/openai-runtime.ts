@@ -12,6 +12,8 @@ import type { ToolCallIntent } from "@/server/gpt-protocol/tool-call-intent";
 import type { GptProtocolRequest } from "@/server/gpt-protocol/types";
 import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
+import { validatePptDesignPackage } from "@/server/ppt-quality/ppt-design-validator";
+import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 
 type OpenAIResponsePayload = GptProtocolRequest & {
   instructions: string;
@@ -51,6 +53,7 @@ export type OpenAIRuntimeNativeToolLoopResolver = (
 export type OpenAIRuntimeOptions = {
   client: OpenAIResponsesClient;
   model: string;
+  reasoningEffort?: "low" | "medium" | "high";
   nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 };
 
@@ -63,6 +66,8 @@ type StructuredRuntimeOutput = {
     title: string;
     summary: string;
     markdown: string;
+    structuredContentJson?: string | null;
+    structuredContent?: Record<string, unknown>;
   };
   nextSuggestedAction: {
     label: string;
@@ -72,18 +77,20 @@ type StructuredRuntimeOutput = {
 export class OpenAIRuntime implements AgentRuntime {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
+  private readonly reasoningEffort: "low" | "medium" | "high";
   private readonly nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 
   constructor(options: OpenAIRuntimeOptions) {
     this.client = options.client;
     this.model = options.model;
+    this.reasoningEffort = options.reasoningEffort ?? "high";
     this.nativeToolLoop = options.nativeToolLoop;
   }
 
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     try {
       const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
-      const request = buildOpenAIResponseRequest(input);
+      const request = buildOpenAIResponseRequest(input, this.reasoningEffort);
       const assistantText = await this.createAssistantText(adapter, request, input);
       const parsed = parseStructuredOutput(assistantText, input.task);
 
@@ -134,16 +141,18 @@ function resolveNativeToolLoop(
   return nativeToolLoop;
 }
 
-export function buildOpenAIResponseRequest(input: AgentRuntimeInput, _model?: string): OpenAIResponsePayload {
+export function buildOpenAIResponseRequest(input: AgentRuntimeInput, reasoningEffort: "low" | "medium" | "high" = "high"): OpenAIResponsePayload {
   return {
+    reasoning: { effort: reasoningEffort },
     instructions: [
       "你是山海课伴的小学数学公开课备课助手。",
-      "只生成面向教师可阅读的 Markdown 文本产物。",
+      "每个任务都生成面向教师可阅读的 Markdown 审阅层；需要机器执行的专业任务还要同时返回对应结构化内容。",
       "不要输出工程实现细节、密钥、调试信息、本地路径或底层错误。",
       "如果是导入视频方案，必须保持独立创意，不提前讲知识点结论，并通过课程锚点回到课堂。",
       "如果是视频工作流任务，必须按知识锚点、创意主题、视频脚本、分镜、资产、每镜头时长、课堂边界约束逐步生成；缺分镜或资产图时不得调用视频生成服务。",
       "如果是最终视频组装，只允许只拼接：按分镜顺序拼接已校验片段，不重排、不加转场、不加滤镜、不重写内容。",
-      "如果是 PPT 设计稿，必须输出逐页四层 PPT 设计稿，并逐页写清底图、元素、文字、排版。",
+      "如果是 PPT 设计稿，必须输出逐页四层 PPT 设计稿，并逐页明确底图、元素、文字、排版。每页还必须有独立的学习动作、面向学生的结论式标题、原创视觉事件、AI 场景/素材职责和可编辑数学职责；不得使用“第N页”“本页解决的问题”或重复空教室作为占位描述。",
+      "如果任务是 ppt_design，还必须把完整 ppt-design-package.v1 作为 JSON 字符串写入 artifactDraft.structuredContentJson；其他任务写 null。",
       "artifactDraft.markdown 必须包含任务必备字段，并以 ## 自检清单 结尾。",
       "返回内容必须严格符合指定 JSON 结构。",
     ].join("\n"),
@@ -162,6 +171,7 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, _model?: st
         summary: artifact.summary,
         markdownExcerpt: createMarkdownExcerpt(artifact.markdown),
       })),
+      structuredContentContract: structuredContentContractFor(input.task),
     }),
     text: {
       format: {
@@ -188,6 +198,11 @@ function parseStructuredOutput(outputText: string | undefined, task: AgentRuntim
   assertNonEmptyString(parsed.nextSuggestedAction?.label);
   assertMarkdownMeetsTaskGuidance(parsed.artifactDraft.markdown, task);
 
+  parsed.artifactDraft.structuredContent = parseStructuredContent(
+    parsed.artifactDraft.structuredContentJson,
+    task,
+  );
+
   return parsed as StructuredRuntimeOutput;
 }
 
@@ -204,6 +219,98 @@ function assertMarkdownMeetsTaskGuidance(markdown: string, task: AgentRuntimeTas
   if (missingField || !markdown.includes("## 自检清单")) {
     throw new Error("Model output missed required teacher review sections");
   }
+}
+
+function parseStructuredContent(
+  structuredContentJson: string | null | undefined,
+  task: AgentRuntimeTask,
+): Record<string, unknown> | undefined {
+  if (structuredContentJson === null || structuredContentJson === undefined) {
+    if (task === "ppt_design") throw new Error("PPT design package is required");
+    return undefined;
+  }
+
+  const parsed = JSON.parse(structuredContentJson) as unknown;
+  if (!isRecord(parsed)) throw new Error("Structured artifact content must be an object");
+  if (task !== "ppt_design") return parsed;
+
+  const packageValue = parsed.pptDesignPackage;
+  if (!isRecord(packageValue)) throw new Error("PPT design package is required");
+  const validation = validatePptDesignPackage(packageValue as PptDesignPackage);
+  if (!validation.valid) throw new Error("PPT design package failed validation");
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function structuredContentContractFor(task: AgentRuntimeTask): Record<string, unknown> | null {
+  if (task !== "ppt_design") return null;
+  return {
+    field: "artifactDraft.structuredContentJson",
+    encoding: "JSON string",
+    root: "pptDesignPackage",
+    schemaVersion: "ppt-design-package.v1",
+    productionPath: "ppt_quality_asset_assembly",
+    requiredSections: [
+      "brief",
+      "evidenceBindings",
+      "objectives",
+      "narrative",
+      "visualSystem",
+      "pageSpecs",
+      "samplePlan",
+    ],
+    pageSpecRequiredFields: [
+      "pageId",
+      "pageNumber",
+      "objectiveIds",
+      "narrativeJob",
+      "teachingAction",
+      "studentAction",
+      "takeawayTitle",
+      "primaryVisualType",
+      "primaryVisualBrief",
+      "visibleTextBudget",
+      "aiScene",
+      "aiAssets",
+      "editableMath",
+      "editableText",
+      "layoutFamily",
+      "layoutConstraints",
+      "composition",
+      "altText",
+      "readingOrder",
+      "nonColorCoding",
+      "mediaAccessibility",
+      "transitionFromPrevious",
+      "presenterNote",
+      "acceptanceChecks",
+      "riskLevel",
+    ],
+    nestedShapes: {
+      brief: ["grade", "subject", "topic", "audience", "useCase", "targetSlideCount", "objectiveIds", "evidenceRefs"],
+      evidenceBinding: ["evidenceId", "sourceArtifactId", "sourceType", "pageRefs", "claims", "digest"],
+      objective: ["objectiveId", "statement", "evidenceRefs"],
+      narrative: ["communicationJob", "openingTension", "learningProgression", "closingResolution", "pageCount"],
+      visualSystem: ["profileId", "palette", "materialLanguage", "lighting", "camera", "typography", "layoutFamilies"],
+      visibleTextBudget: ["maxLines", "maxCharacters", "minFontPt"],
+      aiScene: ["assetId", "brief", "forbiddenContentExcluded"],
+      aiAsset: ["assetId", "role", "promptBrief", "containsEmbeddedText", "containsExactMath"],
+      editableLayer: ["layerId", "role", "exactContent or text"],
+      mediaAccessibility: ["captionsRequired", "transcriptRequired"],
+      composition: ["canvasWidth=1920", "canvasHeight=1080", "layers: layerId/layerKind/sourceId/x/y/width/height/zIndex"],
+      samplePlan: ["samplePageIds", "rationaleByPage", "requiredRiskCoverage"],
+    },
+    invariants: [
+      "pageId must equal page_XX for the continuous pageNumber",
+      "AI scene must exclude text, formula, answer, and exact_countable_objects",
+      "exact text and math belong only in editable layers",
+      "each page must advance a distinct learning action and define its own visual event; generic ordinal titles, repeated scene prompts, and placeholder PageSpecs are forbidden",
+      "sample 3-4 pages across at least two layout families and include a high-risk page",
+    ],
+  };
 }
 
 function isNativeToolLoopEnabled(options: OpenAIRuntimeNativeToolLoopOptions | undefined): options is OpenAIRuntimeNativeToolLoopOptions {
@@ -227,6 +334,7 @@ function buildSucceededResult(input: AgentRuntimeInput, parsed: StructuredRuntim
     contentType: "text/markdown",
     generationMode: "model_generated",
     isReadyForTeacherReview: true,
+    structuredContent: parsed.artifactDraft.structuredContent,
   };
 
   return {
@@ -307,11 +415,17 @@ const runtimeOutputJsonSchema = {
     artifactDraft: {
       type: "object",
       additionalProperties: false,
-      required: ["title", "summary", "markdown"],
+      required: ["title", "summary", "markdown", "structuredContentJson"],
       properties: {
         title: { type: "string" },
         summary: { type: "string" },
         markdown: { type: "string" },
+        structuredContentJson: {
+          anyOf: [
+            { type: "string" },
+            { type: "null" },
+          ],
+        },
       },
     },
     nextSuggestedAction: {

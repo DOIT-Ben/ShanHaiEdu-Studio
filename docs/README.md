@@ -17,6 +17,41 @@
 7. 相关架构入口：`docs\architecture\README.md`。
 8. 当前阶段计划：`docs\stages\...-plan.md`。
 
+V1 Agent、PPT、视频和交付质量专题资料统一入口：
+
+```text
+docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
+```
+
+当前 V1 执行与验证入口：
+
+```text
+docs\stages\local-real-v1-quality-release-mainline-plan.md
+docs\stages\local-real-v1-quality-release-mainline-test-plan.md
+docs\stages\local-real-v1-stage0r-local-gates-closeout.md
+docs\stages\local-real-v1-stage0r-provider-capability-report.md
+docs\stages\local-real-v1-stage0r-old-flow-baseline-report.md
+docs\stages\local-real-v1-stage1a-execution-identity-lease-plan.md
+docs\stages\local-real-v1-stage1a-execution-identity-lease-test-plan.md
+docs\stages\local-real-v1-stage1a-execution-identity-lease-closeout.md
+docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-plan.md
+docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-test-plan.md
+docs\stages\local-real-v1-stage1b-input-idempotency-provider-recovery-closeout.md
+docs\stages\local-real-v1-stage1c-atomic-promotion-plan.md
+docs\stages\local-real-v1-stage1c-atomic-promotion-test-plan.md
+docs\stages\local-real-v1-stage1c-atomic-promotion-closeout.md
+docs\stages\local-real-v1-stage2-contract-quality-react-plan.md
+docs\stages\local-real-v1-stage2-contract-quality-react-test-plan.md
+docs\stages\local-real-v1-stage2a-contract-validation-closeout.md
+docs\stages\local-real-v1-stage2b-quality-decision-closeout.md
+docs\stages\local-real-v1-stage2c-observation-replan-closeout.md
+docs\stages\local-real-v1-stage3a-ppt-design-contract-plan.md
+docs\stages\local-real-v1-stage3a-ppt-design-contract-test-plan.md
+docs\stages\local-real-v1-stage3a-ppt-design-contract-closeout.md
+docs\stages\local-real-v1-stage3b-ppt-samples-assets-plan.md
+docs\stages\local-real-v1-stage3b-ppt-samples-assets-test-plan.md
+```
+
 ## 2. 目录职责
 
 | 目录 | 职责 | 不能放什么 |

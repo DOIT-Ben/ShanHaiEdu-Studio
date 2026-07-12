@@ -11,7 +11,7 @@ function pickOpenAICompatibleConfig(env) {
       credential: openaiCredential,
       credentialSource: "openai_env",
       baseURL: env.OPENAI_BASE_URL?.trim(),
-      model: env.OPENAI_MODEL?.trim() || "gpt-5.5",
+      model: env.OPENAI_MODEL?.trim() || "gpt-5.6-terra",
     };
   }
 
@@ -44,7 +44,7 @@ function pickOpenAICompatibleConfig(env) {
       credential: ledgerCredential,
       credentialSource: selectedLedgerChannel.credentialSource,
       baseURL: env[selectedLedgerChannel.baseURL]?.trim(),
-      model: env[selectedLedgerChannel.model]?.trim() || "gpt-5.5",
+      model: env[selectedLedgerChannel.model]?.trim() || "gpt-5.6-terra",
     };
   }
 
@@ -86,6 +86,7 @@ const client = new OpenAI(clientOptions);
 try {
   const response = await client.responses.create({
     model: config.model,
+    reasoning: { effort: "high" },
     instructions: "Return only the requested JSON. Do not include secrets, local paths, debug traces, or provider diagnostics.",
     input: "Smoke test ShanHaiEdu OpenAI Runtime Adapter readiness with one short Chinese sentence.",
     text: {

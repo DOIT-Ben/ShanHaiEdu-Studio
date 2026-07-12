@@ -3,12 +3,15 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { buildAgentHarnessBudgetEvent, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import { readAgentObservationsFromMessages, readLatestRunCheckpointFromMessages } from "@/server/conversation/react-control";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation, readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
 import type { routeToolCall } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { createWorkbenchService } from "@/server/workbench/service";
+import { withPassedValidationReport } from "./support/validation-report";
+import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 
 const legacyProviderMocks = vi.hoisted(() => ({
   generateImageFromArtifact: vi.fn(async () => {
@@ -32,7 +35,10 @@ const fullDeliveryCapabilityIds = [
   "lesson_plan",
   "ppt_outline",
   "ppt_design",
-  "coze_ppt",
+  "ppt_sample_assets",
+  "ppt_key_samples",
+  "ppt_full_assets",
+  "ppt_full_deck",
   "image_asset",
   "knowledge_anchor_extract",
   "creative_theme_generate",
@@ -143,7 +149,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       shouldRunToolNow: false,
       artifactRefs: [],
     });
-    expect(body.assistantMessage?.content).toBe("请先确认前置成果后再继续。");
+    expect(body.assistantMessage?.content).toContain("PPT 设计稿");
+    expect(body.assistantMessage?.content).not.toBe("请先确认前置成果后再继续。");
     expect(body.artifact).toBeUndefined();
     expect(await service.getGenerationJobs(project.id)).toEqual([]);
   });
@@ -225,6 +232,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
     expect(capturedSecondInput?.conversationContext?.agentWorldState?.toolObservations).toEqual([
       expect.objectContaining({ capabilityId: "coze_ppt", kind: "blocked_by_policy", artifactCreated: false }),
+    ]);
+    expect(capturedSecondInput?.conversationContext?.agentWorldState?.agentObservations).toEqual([
+      expect.objectContaining({ source: "tool", status: "needs_input", minimalNextAction: "ask_teacher" }),
     ]);
   });
 
@@ -319,6 +329,101 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(events.some((event) => event.kind === "retry_exhausted")).toBe(false);
   });
 
+  it("invalidates the old action and intent epoch when the teacher revises an active offer", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Stage 2C revision 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const oldActionId = await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: {
+        async respond() {
+          return {
+            assistantMessage: { body: "我会按新要求重新规划。" },
+            state: "chatting",
+            quickReplies: [],
+            recommendedOptions: [],
+            shouldRunToolNow: false,
+            runtimeKind: "deterministic",
+          };
+        },
+      },
+    });
+
+    const revised = await turnService.createTurn(project.id, {
+      role: "teacher",
+      content: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行",
+    });
+    const messages = await service.getMessages(project.id);
+    const oldPlanMessage = messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
+    const latestActionId = await getLatestPendingActionId(service, project.id);
+
+    expect((await service.getProject(project.id)).intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
+    expect(pendingDeliveryPlanOf(oldPlanMessage).status).toBe("superseded");
+    expect(latestActionId).not.toBe(oldActionId);
+    expect(revised.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
+    expect(readAgentObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "teacher_revision", status: "repair", reasonCodes: ["teacher_revised_active_offer"] }),
+    ]));
+
+    const staleConfirmation = await turnService.createTurn(project.id, {
+      role: "teacher",
+      content: "确认开始",
+      confirmedActionId: oldActionId,
+    });
+    expect(staleConfirmation.agentTurn).toMatchObject({ shouldRunToolNow: false });
+    expect(staleConfirmation.artifact).toBeUndefined();
+  });
+
+  it("persists a checkpoint and blocks the third identical failed tool attempt", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Stage 2C repeated failure 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const actionId = await seedPendingPlan(service, project.id, "requirement_spec", "requirement_spec");
+    const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => ({
+      status: "retryable_failed",
+      toolId: "create_requirement_spec",
+      capabilityId: "requirement_spec",
+      observation: createToolObservation({
+        projectId: input.projectId,
+        sourceMessageId: input.sourceMessageId,
+        capabilityId: "requirement_spec",
+        expectedArtifactKind: "requirement_spec",
+        kind: "tool_failed",
+        teacherSafeSummary: "这一步暂时没有完成。",
+        internalReasonSanitized: "temporary_failure",
+        retryPolicy: { retryable: true, nextAction: "retry_later" },
+      }),
+      artifactCreated: false,
+      errorCategory: "temporary_failure",
+      budgetEvent: buildAgentHarnessBudgetEvent({
+        capabilityId: "requirement_spec",
+        expectedArtifactKind: "requirement_spec",
+        status: "retryable_failed",
+        kind: "tool_failed",
+      }),
+    }));
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      toolRouter,
+      agent: { async respond() { return buildAgentToolTurn("requirement_spec", "requirement_spec"); } },
+    });
+
+    await turnService.createTurn(project.id, { role: "teacher", content: "继续同一步", confirmedActionId: actionId });
+    await turnService.createTurn(project.id, { role: "teacher", content: "继续同一步", confirmedActionId: actionId });
+    const third = await turnService.createTurn(project.id, { role: "teacher", content: "继续同一步", confirmedActionId: actionId });
+    const messages = await service.getMessages(project.id);
+
+    expect(toolRouter).toHaveBeenCalledTimes(2);
+    expect(third.agentTurn).toMatchObject({ state: "failed_blocked", shouldRunToolNow: false });
+    expect(third.assistantMessage?.content).toContain("暂停原样重试");
+    expect(readLatestRunCheckpointFromMessages(messages)).toMatchObject({
+      projectId: project.id,
+      status: "paused",
+      reason: "repeated_failure",
+    });
+  });
+
   it("runs confirmed requirement_spec through the injected ToolRouter and persists one succeeded budget event", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M64-E router requirement 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
@@ -326,7 +431,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
     const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
       capturedRouterInput = input;
-      return {
+      return withPassedValidationReport(input, {
         status: "succeeded",
         toolId: "create_requirement_spec",
         capabilityId: "requirement_spec",
@@ -346,7 +451,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           kind: "tool_succeeded",
           createdAt: "2026-07-10T00:00:00.000Z",
         },
-      };
+      }, { stage: "requirement_spec", domain: "lesson", toolId: "create_requirement_spec" });
     });
     const turnService = createConversationTurnService({
       service,
@@ -652,7 +757,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
       const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
         capturedRouterInput = input;
-        return {
+        return withPassedValidationReport(input, {
           status: "succeeded",
           toolId: "generate_pptx_from_design",
           capabilityId: "coze_ppt",
@@ -680,7 +785,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
             kind: "tool_succeeded",
             createdAt: "2026-07-10T00:00:00.000Z",
           },
-        };
+        }, { stage: "coze_ppt", domain: "ppt", toolId: "generate_pptx_from_design" });
       });
       const turnService = createConversationTurnService({
         service,
@@ -755,7 +860,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
       const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
         capturedRouterInput = input;
-        return {
+        return withPassedValidationReport(input, {
           status: "succeeded",
           toolId: "generate_classroom_image",
         capabilityId: "image_asset",
@@ -783,7 +888,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
             kind: "tool_succeeded",
             createdAt: "2026-07-10T00:00:00.000Z",
           },
-        };
+        }, { stage: "image_asset", domain: "ppt", toolId: "generate_classroom_image" });
       });
       const turnService = createConversationTurnService({
         service,
@@ -873,7 +978,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
       const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
         capturedRouterInput = input;
-        return {
+        return withPassedValidationReport(input, {
           status: "succeeded",
           toolId: "generate_video_segment",
         capabilityId: "video_segment_generate",
@@ -901,7 +1006,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
             kind: "tool_succeeded",
             createdAt: "2026-07-10T00:00:00.000Z",
           },
-        };
+        }, { stage: "video_segment_generate", domain: "video", toolId: "generate_video_segment" });
       });
       const turnService = createConversationTurnService({
         service,
@@ -990,6 +1095,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     ]));
     expect(readAgentHarnessBudgetEventsFromMessages(messages)).toEqual(expect.arrayContaining([
       expect.objectContaining({ capabilityId: "requirement_spec", status: "retryable_failed", kind: "tool_failed" }),
+    ]));
+    expect(readAgentObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "validation", status: "failed", actionKey: "requirement_spec:requirement_spec" }),
     ]));
   });
 
@@ -1541,15 +1649,15 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       grade: "五年级",
       subject: "数学",
       lessonTopic: "百分数",
-    });
+    }, new PptQualityTestRuntime());
 
     await turnService.createTurn(projectId, { role: "teacher", content: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频" });
 
     const internalSteps = [
-      { content: "确认开始", capabilityId: "requirement_spec", nodeKey: "requirement_spec", nextCapabilityId: "lesson_plan" },
-      { content: "继续下一步", capabilityId: "lesson_plan", nodeKey: "lesson_plan", nextCapabilityId: "ppt_outline" },
-      { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "ppt_design" },
-      { content: "继续下一步", capabilityId: "ppt_design", nodeKey: "ppt_design_draft", nextCapabilityId: "coze_ppt" },
+      { content: "确认开始", capabilityId: "requirement_spec", nodeKey: "requirement_spec", nextCapabilityId: "lesson_plan", providerStatus: "deterministic_draft" },
+      { content: "继续下一步", capabilityId: "lesson_plan", nodeKey: "lesson_plan", nextCapabilityId: "ppt_outline", providerStatus: "deterministic_draft" },
+      { content: "继续下一步", capabilityId: "ppt_outline", nodeKey: "ppt_draft", nextCapabilityId: "ppt_design", providerStatus: "deterministic_draft" },
+      { content: "继续下一步", capabilityId: "ppt_design", nodeKey: "ppt_design_draft", nextCapabilityId: "ppt_sample_assets", providerStatus: "real" },
     ];
 
     for (const step of internalSteps) {
@@ -1568,7 +1676,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         status: "needs_review",
         structuredContent: {
           capabilityId: step.capabilityId,
-          providerStatus: "deterministic_draft",
+          providerStatus: step.providerStatus,
         },
       });
       expect(body.assistantMessage!.content).not.toMatch(/schema|provider|node_id|storage|debug|local path|API/i);
@@ -1612,12 +1720,34 @@ describe("M54-B3 ConversationTurnService route contract", () => {
   });
 });
 
-async function createServiceProject(input: Record<string, unknown> = {}) {
+async function createServiceProject(
+  input: Record<string, unknown> = {},
+  runtime: AgentRuntime = new DeterministicRuntime(),
+) {
   const service = createWorkbenchService();
   const project = await service.createProject({ title: "测试项目", ...input });
-  const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
+  const turnService = createConversationTurnService({ service, runtime });
 
   return { service, turnService, projectId: project.id };
+}
+
+class PptQualityTestRuntime implements AgentRuntime {
+  private readonly deterministic = new DeterministicRuntime();
+
+  async run(input: Parameters<AgentRuntime["run"]>[0]) {
+    const result = await this.deterministic.run(input);
+    if (input.task !== "ppt_design" || result.status !== "succeeded") return result;
+
+    return {
+      ...result,
+      run: { ...result.run, runtimeKind: "openai" as const },
+      artifactDraft: {
+        ...result.artifactDraft,
+        generationMode: "model_generated" as const,
+        structuredContent: { pptDesignPackage: validPptDesignPackage() },
+      },
+    };
+  }
 }
 
 async function getLatestPendingActionId(service: ReturnType<typeof createWorkbenchService>, projectId: string) {

@@ -44,6 +44,7 @@ export type ConversationDecision = {
 
 type OpenAIConversationResponsePayload = {
   model: string;
+  reasoning: { effort: "low" | "medium" | "high" };
   instructions: string;
   input: string;
   text: {
@@ -73,23 +74,26 @@ export type ConversationOrchestrator = {
 type OpenAIConversationOrchestratorOptions = {
   client: OpenAIConversationClient;
   model: string;
+  reasoningEffort?: "low" | "medium" | "high";
   fallback: ConversationOrchestrator;
 };
 
 export class OpenAIConversationOrchestrator implements ConversationOrchestrator {
   private readonly client: OpenAIConversationClient;
   private readonly model: string;
+  private readonly reasoningEffort: "low" | "medium" | "high";
   private readonly fallback: ConversationOrchestrator;
 
   constructor(options: OpenAIConversationOrchestratorOptions) {
     this.client = options.client;
     this.model = options.model;
+    this.reasoningEffort = options.reasoningEffort ?? "high";
     this.fallback = options.fallback;
   }
 
   async decide(input: ConversationInput): Promise<ConversationDecision> {
     try {
-      const response = await this.client.responses.create(buildOpenAIConversationRequest(input, this.model));
+      const response = await this.client.responses.create(buildOpenAIConversationRequest(input, this.model, this.reasoningEffort));
       return {
         ...parseConversationDecision(response.output_text),
         runtimeKind: "openai",
@@ -117,6 +121,7 @@ export function createConversationOrchestratorFromEnv(env: OpenAICompatibleEnv =
   return new OpenAIConversationOrchestrator({
     client,
     model: config.model,
+    reasoningEffort: config.reasoningEffort,
     fallback,
   });
 }
@@ -162,9 +167,10 @@ export function createDeterministicConversationOrchestrator(): ConversationOrche
   };
 }
 
-export function buildOpenAIConversationRequest(input: ConversationInput, model: string): OpenAIConversationResponsePayload {
+export function buildOpenAIConversationRequest(input: ConversationInput, model: string, reasoningEffort: "low" | "medium" | "high" = "high"): OpenAIConversationResponsePayload {
   return {
     model,
+    reasoning: { effort: reasoningEffort },
     instructions: [
       "你是 ShanHaiEdu 小学公开课备课工作台的对话智能体。",
       "你的任务是先理解教师消息，而不是每句话都启动生成。",

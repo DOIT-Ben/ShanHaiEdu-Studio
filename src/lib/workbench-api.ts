@@ -134,6 +134,18 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot),
       );
     },
+    submitPptSampleReview(projectId, artifactKey, review) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/ppt-sample-review`, {
+        method: "POST",
+        body: JSON.stringify(review),
+      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+    },
+    submitPptFullDeckReview(projectId, artifactKey, review) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/ppt-full-deck-review`, {
+        method: "POST",
+        body: JSON.stringify(review),
+      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+    },
     regenerateArtifact(projectId, artifactKey) {
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/regenerate`, {
         method: "POST",
@@ -411,6 +423,22 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       );
       current.activeArtifactKey = artifactKey;
       touchProject(projectId, "已确认");
+      return snapshot(projectId);
+    },
+    async submitPptSampleReview(projectId, artifactKey, review) {
+      const current = ensureSnapshot(projectId);
+      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
+      current.artifacts = current.artifacts.map((item) => item.key === artifactKey && item.pptSampleReview
+        ? { ...item, pptSampleReview: { ...item.pptSampleReview, reviewStatus: review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0) ? "passed" : "failed" } }
+        : item);
+      return snapshot(projectId);
+    },
+    async submitPptFullDeckReview(projectId, artifactKey, review) {
+      const current = ensureSnapshot(projectId);
+      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
+      current.artifacts = current.artifacts.map((item) => item.key === artifactKey && item.pptFullDeckReview
+        ? { ...item, pptFullDeckReview: { ...item.pptFullDeckReview, reviewStatus: review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0) ? "passed" : "failed" } }
+        : item);
       return snapshot(projectId);
     },
     async regenerateArtifact(projectId, artifactKey) {

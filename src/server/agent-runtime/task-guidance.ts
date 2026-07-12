@@ -28,9 +28,9 @@ export const taskGuidance: Record<AgentRuntimeTask, RuntimeTaskGuidance> = {
     checklist: ["每页是否只承载一个教学动作。", "页面节奏是否匹配课堂时长。", "主视觉需求是否服务教学而非装饰。"],
   },
   ppt_design: {
-    label: "逐页四层 PPT 设计稿",
-    requiredFields: ["整体视觉风格", "页面清单", "底图", "元素", "文字", "排版"],
-    checklist: ["每页是否都有底图、元素、文字、排版四层。", "四层设计是否能直接交给 Coze 生成可编辑 PPTX。", "页面是否服务课堂教学动作而不是说明文档堆字。"],
+    label: "PPT 逐页质量设计包",
+    requiredFields: ["证据绑定", "叙事大纲", "视觉系统", "逐页设计", "底图", "元素", "文字", "排版", "可编辑层", "样张计划"],
+    checklist: ["每页是否只承担一个叙事和教学动作。", "AI 场景、AI 素材、可编辑文字与数学层是否职责分离。", "样张是否覆盖不同页型并包含高风险页。"],
   },
   intro_video_plan: {
     label: "导入视频方案",

@@ -59,6 +59,7 @@ export type AgentArtifactDraft = {
   contentType: "text/markdown";
   generationMode: "deterministic_draft" | "model_generated";
   isReadyForTeacherReview: boolean;
+  structuredContent?: Record<string, unknown>;
 };
 
 export type AgentNextSuggestedAction = {

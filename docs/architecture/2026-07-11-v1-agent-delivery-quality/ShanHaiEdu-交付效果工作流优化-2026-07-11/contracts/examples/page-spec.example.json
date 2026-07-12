@@ -1,0 +1,26 @@
+{
+  "page_id": "page_03",
+  "page_number": 3,
+  "objective_ids": ["obj_count_and_represent_1_to_5"],
+  "narrative_job": "把观察到的数量转成点子和数字表征",
+  "teaching_action": "逐步揭示一组物体、同样多的点子和数字标签",
+  "student_action": "先点数，再选择同样多的点子，最后说出应恢复的数字标签",
+  "takeaway_title": "这组展品该找回哪个数字？",
+  "primary_visual_type": "relationship",
+  "primary_visual_brief": "左侧只出现当前一组可数物体，中间为可编辑点子托盘，右侧为空白标签；学生回答后才揭示本地数字层。",
+  "visible_text_budget": { "max_lines": 2, "max_characters": 34, "min_font_pt": 28 },
+  "local_math_layers": [
+    { "layer_id": "count_objects_03", "role": "exact_countable_objects", "exact_content": { "count": 3, "object": "小鸟" } },
+    { "layer_id": "dots_03", "role": "dot_representation", "exact_content": { "count": 3 } },
+    { "layer_id": "numeral_03", "role": "editable_numeral", "exact_content": "3" }
+  ],
+  "generated_asset_refs": ["asset_museum_background_01"],
+  "layout_constraints": ["不做三列卡片", "数字揭示前标签保持空白", "主对象最小投影高度不低于画面高度的30%"],
+  "alt_text": "三只小鸟、三个点子和待揭示数字3之间的对应关系",
+  "reading_order": ["takeaway_title", "count_objects_03", "dots_03", "numeral_03"],
+  "non_color_coding": ["物体、点子与数字同时使用位置连线和形状标识，不只靠颜色区分"],
+  "media_accessibility": { "captions_required": false, "transcript_required": false },
+  "transition_from_previous": "镜头从观察页的展台向空白标签移动",
+  "presenter_note": "先让学生摆点子，再追问哪个数字可以表示这么多。",
+  "acceptance_checks": ["物体和点子均严格为3", "数字3只在学生回答后出现", "未展示其他数字答案"]
+}

@@ -1,0 +1,24 @@
+{
+  "created": 1783727999,
+  "duration": 57,
+  "id": "task-unified-1783727998-9av9wl6u",
+  "model": "grok-imagine-text-to-video-beta",
+  "object": "video.generation.task",
+  "progress": 100,
+  "result_data": {
+    "urls": [
+      "https://files.evolink.ai/00117M85H8VLOA9MK1/videos/2026/07/11/29cae01c2df843b18e799eef42a9af50.mp4"
+    ]
+  },
+  "results": [
+    "https://files.evolink.ai/00117M85H8VLOA9MK1/videos/2026/07/11/29cae01c2df843b18e799eef42a9af50.mp4"
+  ],
+  "status": "completed",
+  "task_info": {
+    "can_cancel": false
+  },
+  "type": "video",
+  "usage": {
+    "credits_used": 4.8
+  }
+}

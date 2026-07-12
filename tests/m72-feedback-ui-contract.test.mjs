@@ -34,5 +34,7 @@ test("M72 message reactions announce save, switch, cancel, and failure results a
   assert.match(source, /`已\$\{value === "helpful" \? "点赞" : "点踩"\}`/);
   assert.match(source, /"评价保存失败，请重试"/);
   assert.match(source, /role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(source, /onSetReaction\(messageId, previousReaction === value \? null : value\)/);
+  assert.match(source, /const nextReaction = previousReaction === value \? null : value/);
+  assert.match(source, /await onSetReaction\(messageId, nextReaction\)/);
+  assert.match(source, /if \(nextReaction\) onOpenFeedback/);
 });

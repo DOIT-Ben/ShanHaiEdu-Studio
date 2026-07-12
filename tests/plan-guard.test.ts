@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
 
 describe("PlanGuard", () => {
+  it("requires an exact HumanGate action for the PPT sample asset batch", () => {
+    expect(evaluateToolPlan({ capabilityId: "ppt_sample_assets", hasHumanConfirmation: false }).status).toBe("needs_confirmation");
+    expect(evaluateToolPlan({
+      capabilityId: "ppt_sample_assets",
+      hasHumanConfirmation: true,
+      expectedActionId: "human:project-1:ppt_sample_assets:message-1",
+      confirmedActionId: "human:project-1:ppt_sample_assets:message-1",
+    }).status).toBe("allowed");
+  });
+
   it("blocks unknown capability ids", () => {
     const result = evaluateToolPlan({ capabilityId: "unknown", hasHumanConfirmation: true, confirmedActionId: "human:p:unknown:m" });
 

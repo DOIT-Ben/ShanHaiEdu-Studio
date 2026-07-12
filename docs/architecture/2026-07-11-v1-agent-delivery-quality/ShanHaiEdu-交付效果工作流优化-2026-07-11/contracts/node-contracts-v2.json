@@ -1,0 +1,1297 @@
+{
+  "schemaVersion": "2.1",
+  "principles": [
+    "Agent proposes; contracts and gates decide; tools execute; artifacts prove.",
+    "PPT and video share evidence and the course anchor, not page scripts or creative structure.",
+    "A passed technical file gate does not imply a passed delivery-effect gate.",
+    "Repair the smallest failed page, shot, asset, caption, audio track, or package claim.",
+    "nextOnPass is advisory for Agent planning or internal to a deterministic capsule; it is not a mandatory top-level transition."
+  ],
+  "contracts": [
+    {
+      "id": "delivery_strategy",
+      "version": "v2",
+      "purpose": "Turn approved teaching intent and evidence into separate PPT and video communication jobs.",
+      "requiredInputs": [
+        "requirement_spec",
+        "lesson_plan",
+        "evidence_package",
+        "course_anchor"
+      ],
+      "requiredOutputs": [
+        "audience",
+        "classroom_job",
+        "central_learning_change",
+        "evidence_scope",
+        "ppt_role",
+        "video_role",
+        "course_anchor_ref",
+        "cross_delivery_constraints",
+        "non_goals"
+      ],
+      "forbidden": [
+        {
+          "rule": "Using PPT page scripts as the video creative brief",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Inventing textbook facts",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Treating a file list as a delivery strategy",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every output is evidence-linked",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "PPT and video roles are materially different",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Course anchor does not reveal the lesson conclusion",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "delivery_strategy",
+      "recommendedNext": [
+        "visual_system",
+        "ppt_narrative",
+        "video_concept_set"
+      ]
+    },
+    {
+      "id": "course_anchor",
+      "version": "v2",
+      "purpose": "Define the only required bridge from an independent intro video back to the classroom task.",
+      "requiredInputs": [
+        "lesson_plan",
+        "evidence_package",
+        "instruction_intent"
+      ],
+      "requiredOutputs": [
+        "anchor_trigger",
+        "classroom_question",
+        "do_not_explain",
+        "handoff_moment",
+        "evidence_refs"
+      ],
+      "forbidden": [
+        {
+          "rule": "Explaining the target conclusion",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Using the full lesson plan as video content",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Inventing evidence",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "All claims link to evidence",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "The classroom question is answerable only after classroom activity",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "The video can remain independently understandable",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "course_anchor",
+      "recommendedNext": [
+        "delivery_strategy"
+      ]
+    },
+    {
+      "id": "visual_system",
+      "version": "v2",
+      "purpose": "Define reusable visual identity without prescribing repeated card layouts.",
+      "requiredInputs": [
+        "delivery_strategy",
+        "audience_profile"
+      ],
+      "requiredOutputs": [
+        "palette",
+        "typography",
+        "shape_language",
+        "texture",
+        "motion_character",
+        "accessibility_targets",
+        "avoidance_rules"
+      ],
+      "forbidden": [
+        {
+          "rule": "UI dashboard defaults",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Color-only meaning",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Unlicensed fonts or assets",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Contrast targets are measurable",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Rules work for PPT and video without forcing identical layouts",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Avoidance rules are testable",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "visual_system",
+      "recommendedNext": [
+        "ppt_asset_plan",
+        "video_asset_bible"
+      ]
+    },
+    {
+      "id": "ppt_narrative",
+      "version": "v2",
+      "purpose": "Define the cumulative learning story before deciding individual slide layouts.",
+      "requiredInputs": [
+        "delivery_strategy",
+        "lesson_plan",
+        "evidence_package"
+      ],
+      "requiredOutputs": [
+        "communication_job",
+        "opening_tension",
+        "learning_progression",
+        "section_beats",
+        "closing_resolution",
+        "page_count_rationale"
+      ],
+      "forbidden": [
+        {
+          "rule": "Agenda-only structure",
+          "enforcement": "must"
+        },
+        {
+          "rule": "One slide per lesson-plan heading",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Fixing page count before the learning progression",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Each beat creates the need for the next",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Opening and closing resolve the same learning question",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Every requested teaching activity has an explicit place",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "ppt_narrative",
+      "recommendedNext": [
+        "ppt_page_specs"
+      ]
+    },
+    {
+      "id": "ppt_page_specs",
+      "version": "v2",
+      "purpose": "Create one executable PageSpec per slide with a single teaching and narrative job.",
+      "requiredInputs": [
+        "ppt_narrative",
+        "lesson_plan",
+        "evidence_package"
+      ],
+      "requiredOutputs": [
+        "learning_objective_coverage",
+        "page_id",
+        "page_number",
+        "narrative_job",
+        "teaching_action",
+        "student_action",
+        "takeaway_title",
+        "primary_visual_type",
+        "primary_visual_brief",
+        "visible_text_budget",
+        "local_math_layers",
+        "layout_constraints",
+        "alt_text",
+        "reading_order",
+        "non_color_coding",
+        "media_accessibility",
+        "transition_from_previous",
+        "presenter_note",
+        "acceptance_checks"
+      ],
+      "forbidden": [
+        {
+          "rule": "Merged page ranges",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Generic topic titles",
+          "enforcement": "must"
+        },
+        {
+          "rule": "More than one primary teaching action",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Baking exact Chinese text, formulas, or counts into generated images",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "All page numbers are unique and continuous",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every approved learning objective maps to one or more pages and no required concept is omitted",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every page has a primary visual that explains the teaching action",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Every meaningful visual has alt text and an explicit reading order",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Meaning is not encoded by color alone and embedded media declares caption/transcript requirements",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "No consecutive layout silhouette repeats more than twice",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "All mathematical facts have evidence or deterministic layers",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "failed_page_ids",
+      "recommendedNext": [
+        "ppt_asset_plan"
+      ]
+    },
+    {
+      "id": "ppt_asset_plan",
+      "version": "v2",
+      "purpose": "Bind every generated, reconstructed, or local visual asset to PageSpec IDs.",
+      "requiredInputs": [
+        "ppt_page_specs",
+        "visual_system"
+      ],
+      "requiredOutputs": [
+        "asset_id",
+        "page_ids",
+        "asset_role",
+        "generation_mode",
+        "aspect_ratio",
+        "composition_safe_zone",
+        "prompt",
+        "negative_prompt",
+        "local_overlay_requirements",
+        "reuse_policy"
+      ],
+      "forbidden": [
+        {
+          "rule": "One generic image for the entire deck unless it is an approved reusable background",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Unbound assets",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Generated readable Chinese or exact mathematical quantity",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every visual requirement resolves to an asset or deterministic local layer",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Prompt states subject position and crop intent",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Output dimensions match placement",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "failed_asset_ids",
+      "recommendedNext": [
+        "ppt_asset_generation"
+      ]
+    },
+    {
+      "id": "ppt_asset_generation",
+      "version": "v2",
+      "purpose": "Generate or reconstruct exactly one planned PPT asset while preserving deterministic text and mathematics as local layers.",
+      "requiredInputs": [
+        "approved_asset_request",
+        "visual_system",
+        "provider_profile"
+      ],
+      "requiredOutputs": [
+        "asset_id",
+        "asset_file",
+        "actual_dimensions",
+        "provider_metadata",
+        "source_refs",
+        "local_overlay_manifest"
+      ],
+      "forbidden": [
+        {
+          "rule": "Generating unplanned assets",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Baking readable Chinese, formulas, or exact quantities into raster images",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Accepting an API response without a real decodable file",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Asset file exists and decodes",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Dimensions and safe zones match the request",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "asset_id and source refs are traceable",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Local overlay requirements remain editable",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "asset_id",
+      "recommendedNext": [
+        "ppt_asset_review"
+      ]
+    },
+    {
+      "id": "ppt_asset_review",
+      "version": "v2",
+      "purpose": "Review every real PPT asset against its bound request before PPTX generation can begin.",
+      "requiredInputs": [
+        "generated_ppt_assets",
+        "ppt_asset_plan",
+        "ppt_page_specs"
+      ],
+      "requiredOutputs": [
+        "required_asset_ids",
+        "approved_asset_ids",
+        "asset_scores",
+        "technical_checks",
+        "findings",
+        "failed_asset_ids",
+        "repair_routes"
+      ],
+      "forbidden": [
+        {
+          "rule": "Approving from prompts alone",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Passing unresolved asset IDs",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Ignoring generated text, logos, watermarks, crop, or safe-zone failures",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every required asset ID has exactly one reviewed file",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "approved_asset_ids equals required_asset_ids before PPTX generation",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every file decodes and matches its placement dimensions",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Generated text, exact-count, crop, copyright, and safe-zone checks pass",
+          "enforcement": "must"
+        }
+      ],
+      "transitionRules": [
+        "Proceed only when set(approved_asset_ids) == set(required_asset_ids); otherwise rerun ppt_asset_generation for failed_asset_ids only"
+      ],
+      "repairTarget": "failed_asset_ids",
+      "recommendedNext": [
+        "pptx_generation"
+      ]
+    },
+    {
+      "id": "ppt_render_review",
+      "version": "v2",
+      "purpose": "Review the real rendered PPTX, not its prompt or design draft.",
+      "requiredInputs": [
+        "pptx_artifact",
+        "ppt_page_specs",
+        "rendered_slides",
+        "evidence_package"
+      ],
+      "requiredOutputs": [
+        "artifact_truth",
+        "deck_score",
+        "page_scores",
+        "findings",
+        "failed_page_ids",
+        "repair_routes"
+      ],
+      "forbidden": [
+        {
+          "rule": "Passing from slide count alone",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Reviewing only a contact sheet",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Vague aesthetic feedback",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "PPTX structure and slide count pass",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every page is inspected full-size",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "No critical math/evidence error",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No overflow, clipping, unreadable contrast, or missing primary visual",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Alt text, reading order, non-color encoding, and required media captions/transcripts pass",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Weighted score at least 80 and every hard gate at least 3/4",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "failed_page_ids",
+      "recommendedNext": [
+        "cross_delivery_review"
+      ]
+    },
+    {
+      "id": "pptx_generation",
+      "version": "v2",
+      "purpose": "Generate a real editable PPTX from approved PageSpecs and bound assets without changing the learning sequence.",
+      "requiredInputs": [
+        "approved_ppt_page_specs",
+        "approved_ppt_assets",
+        "visual_system"
+      ],
+      "requiredOutputs": [
+        "pptx_file",
+        "slide_count",
+        "page_spec_mapping",
+        "asset_mapping",
+        "accessibility_mapping",
+        "generation_metadata"
+      ],
+      "forbidden": [
+        {
+          "rule": "Adding explanation slides",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Merging PageSpecs",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Replacing editable math layers with raster text",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Claiming success before PPTX validation",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "PPTX container and presentation.xml exist",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "slide_count equals approved PageSpec count",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every page_id maps to exactly one slide",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every required asset resolves",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Alt text and reading order are written to the editable PPTX",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Embedded media has captions or transcript when required",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "failed_page_or_asset_ids",
+      "recommendedNext": [
+        "ppt_render_review"
+      ]
+    },
+    {
+      "id": "video_concept_set",
+      "version": "v2",
+      "purpose": "Produce an intro-video concept set appropriate to the current exploration or teacher-provided selection mode.",
+      "requiredInputs": [
+        "delivery_strategy",
+        "course_anchor",
+        "lesson_plan",
+        "concept_set_mode"
+      ],
+      "requiredOutputs": [
+        "concept_set_mode",
+        "design_id",
+        "category",
+        "independent_theme",
+        "hook",
+        "novelty_tags",
+        "one_sentence_story",
+        "course_anchor",
+        "classroom_landing_question",
+        "do_not_explain",
+        "recommendation_score",
+        "recommendation_reason",
+        "adaptation_risk"
+      ],
+      "forbidden": [
+        {
+          "rule": "PPT page animation",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Lesson-plan summary",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Explaining the final knowledge conclusion",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Fewer than three materially different categories when divergent exploration mode is requested",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Divergent exploration mode produces exactly nine concepts across three categories; teacher-provided mode may preserve one approved concept without forced expansion",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Each concept is understandable without the lesson plan",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Each concept returns to class through one minimal anchor",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Risks are concrete",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "failed_design_ids",
+      "recommendedNext": [
+        "video_concept_selection"
+      ]
+    },
+    {
+      "id": "video_concept_selection",
+      "version": "v2",
+      "purpose": "Lock the approved concept set consumed by downstream video nodes.",
+      "requiredInputs": [
+        "video_concept_set",
+        "teacher_selection_or_policy"
+      ],
+      "requiredOutputs": [
+        "selection_mode",
+        "selected_design_ids",
+        "primary_design_id",
+        "selection_reason",
+        "downstream_generation_mode"
+      ],
+      "forbidden": [
+        {
+          "rule": "Downstream re-selection",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Reading PPT page scripts",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Continuing without a valid primary design",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Primary design is in selected IDs",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Selection reason references the rubric and classroom constraints",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "video_concept_selection",
+      "recommendedNext": [
+        "video_script"
+      ]
+    },
+    {
+      "id": "video_script",
+      "version": "v2",
+      "purpose": "Turn the selected independent concept into narration, action, silence, and the classroom handoff without pre-teaching the answer.",
+      "requiredInputs": [
+        "video_concept_selection",
+        "primary_concept",
+        "course_anchor",
+        "target_duration"
+      ],
+      "requiredOutputs": [
+        "script_beats",
+        "narration",
+        "caption_intent",
+        "non_speech_audio",
+        "silence_budget",
+        "classroom_handoff"
+      ],
+      "forbidden": [
+        {
+          "rule": "Lesson-plan summary",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Answer reveal",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Narration that fills the entire duration",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Narration fits the speaking-time budget",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Silence and visual breathing are explicit",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "The last line or action hands off to the classroom question",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "failed_script_beat_ids",
+      "recommendedNext": [
+        "video_beat_sheet"
+      ]
+    },
+    {
+      "id": "video_beat_sheet",
+      "version": "v2",
+      "purpose": "Direct viewer experience, rhythm, motion, depth, transition, and sound before shot prompts.",
+      "requiredInputs": [
+        "video_concept_selection",
+        "primary_concept",
+        "target_duration"
+      ],
+      "requiredOutputs": [
+        "beat_id",
+        "time_range",
+        "concept",
+        "viewer_feeling",
+        "choreography_verbs",
+        "visual_focuses",
+        "depth_layers",
+        "transition",
+        "audio_cue",
+        "build_breathe_resolve_budget"
+      ],
+      "forbidden": [
+        {
+          "rule": "Web-card layout descriptions",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Static slide sequence",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Identical entrance or transition pattern for all beats",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Beat durations sum to target duration",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Energy curve has a named rhythm",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Every beat has motion or an intentional hold",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Final hold supports the classroom question",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "failed_beat_ids",
+      "recommendedNext": [
+        "video_shot_specs"
+      ]
+    },
+    {
+      "id": "video_shot_specs",
+      "version": "v2",
+      "purpose": "Create one provider-ready ShotSpec per generated clip.",
+      "requiredInputs": [
+        "video_beat_sheet",
+        "video_script",
+        "course_anchor"
+      ],
+      "requiredOutputs": [
+        "shot_id",
+        "beat_id",
+        "start_seconds",
+        "duration_seconds",
+        "viewer_experience",
+        "subject",
+        "action",
+        "context",
+        "framing",
+        "camera_motion",
+        "start_state",
+        "end_state",
+        "narration",
+        "caption",
+        "asset_refs",
+        "continuity_keys",
+        "negative_constraints",
+        "course_anchor_relation",
+        "acceptance_checks"
+      ],
+      "forbidden": [
+        {
+          "rule": "Generic mood-only prompts",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Missing start/end state",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Generated text or exact count when a deterministic overlay is required",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Shot durations cover all beats",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Every shot has subject-action-context-camera",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Continuity keys connect adjacent shots",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Narration and captions fit the time budget",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "failed_shot_ids",
+      "recommendedNext": [
+        "video_asset_bible"
+      ]
+    },
+    {
+      "id": "video_asset_bible",
+      "version": "v2",
+      "purpose": "Produce persistent visual references for style, character, scene, props, and keyframes.",
+      "requiredInputs": [
+        "video_shot_specs",
+        "visual_system"
+      ],
+      "requiredOutputs": [
+        "style_reference",
+        "character_views",
+        "scene_views",
+        "prop_refs",
+        "shot_keyframes",
+        "palette",
+        "lighting_rules",
+        "continuity_lock"
+      ],
+      "forbidden": [
+        {
+          "rule": "Single unstructured reference image for a multi-shot story",
+          "enforcement": "must"
+        },
+        {
+          "rule": "PPT renders as video references",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Untracked asset reuse",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every ShotSpec resolves its asset refs",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Locked traits are explicit",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Reference files exist and match required dimensions",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "failed_asset_ids",
+      "recommendedNext": [
+        "video_segment_generation"
+      ]
+    },
+    {
+      "id": "video_segment_review",
+      "version": "v2",
+      "purpose": "Review each real generated clip against its ShotSpec before assembly.",
+      "requiredInputs": [
+        "video_segments",
+        "video_shot_specs",
+        "video_asset_bible"
+      ],
+      "requiredOutputs": [
+        "required_shot_ids",
+        "approved_shot_ids",
+        "shot_scores",
+        "technical_checks",
+        "continuity_findings",
+        "failed_shot_ids",
+        "repair_routes"
+      ],
+      "forbidden": [
+        {
+          "rule": "Approving from MP4 headers alone",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Assembling failed clips",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Whole-video regeneration for a single failed shot",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every required shot ID has exactly one reviewed segment",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "approved_shot_ids equals required_shot_ids before timeline assembly",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Full decode passes",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Duration is within tolerance",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Subject/action/count/continuity pass",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No unintended black or freeze interval",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Weighted shot score at least 80",
+          "enforcement": "should"
+        }
+      ],
+      "transitionRules": [
+        "Proceed only when set(approved_shot_ids) == set(required_shot_ids); otherwise rerun video_segment_generation for failed_shot_ids only"
+      ],
+      "repairTarget": "failed_shot_ids",
+      "recommendedNext": [
+        "video_timeline_assembly"
+      ]
+    },
+    {
+      "id": "video_segment_generation",
+      "version": "v2",
+      "purpose": "Generate one real video clip for exactly one approved ShotSpec using resolved video assets.",
+      "requiredInputs": [
+        "approved_shot_spec",
+        "resolved_video_assets",
+        "provider_profile"
+      ],
+      "requiredOutputs": [
+        "shot_id",
+        "video_file",
+        "actual_duration",
+        "actual_stream_profile",
+        "provider_metadata",
+        "source_asset_ids"
+      ],
+      "forbidden": [
+        {
+          "rule": "Batching unrelated shots into one prompt",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Using unresolved or PPT assets",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Accepting generated text or exact math when deterministic overlays are required",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "File fully decodes",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Actual profile is recorded",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "shot_id and source assets are traceable",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "No placeholder or smoke file is accepted",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "shot_id",
+      "recommendedNext": [
+        "video_segment_review"
+      ]
+    },
+    {
+      "id": "video_timeline_assembly",
+      "version": "v2",
+      "purpose": "Normalize and assemble approved clips, overlays, captions, narration, and music into a valid media timeline.",
+      "requiredInputs": [
+        "approved_video_segments",
+        "timeline_plan",
+        "caption_track",
+        "audio_mix_plan",
+        "delivery_profile"
+      ],
+      "requiredOutputs": [
+        "assembled_video",
+        "normalized_stream_profile",
+        "actual_duration",
+        "timeline_manifest",
+        "caption_manifest",
+        "audio_manifest"
+      ],
+      "forbidden": [
+        {
+          "rule": "Byte-concatenating MP4 files",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Reordering approved shots",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Adding undocumented transitions or content",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "FFmpeg concat/filter or equivalent media-aware assembly is used",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Full decode and timestamp continuity pass",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Actual duration matches the timeline within tolerance",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Output has the expected primary video/audio stream count",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "timeline_or_media_layer",
+      "recommendedNext": [
+        "video_final_review"
+      ]
+    },
+    {
+      "id": "video_final_review",
+      "version": "v2",
+      "purpose": "Review the assembled MP4 for timeline integrity, narrative effect, sound, captions, and classroom landing.",
+      "requiredInputs": [
+        "assembled_video",
+        "video_beat_sheet",
+        "video_shot_specs",
+        "course_anchor",
+        "caption_track",
+        "audio_mix"
+      ],
+      "requiredOutputs": [
+        "artifact_truth",
+        "final_score",
+        "timeline_findings",
+        "audio_findings",
+        "caption_findings",
+        "content_findings",
+        "repair_routes"
+      ],
+      "forbidden": [
+        {
+          "rule": "Buffer byte concatenation",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Container-only approval",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Treating long freezes as intentional without beat evidence",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Timeline uses valid timestamps and full decode",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Duration, resolution, aspect ratio, frame rate, codec, audio sample rate, and stream count match the delivery profile",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No unintended generated text, signage, logos, or watermarks appear in sampled frames",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Captions synchronize and remain readable",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Audio is intelligible",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No critical continuity or math error",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Final question and hold preserve the course anchor",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Weighted score at least 80 and hard gates at least 3/4",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "timeline_or_failed_shot_ids",
+      "recommendedNext": [
+        "cross_delivery_review"
+      ]
+    },
+    {
+      "id": "cross_delivery_review",
+      "version": "v2",
+      "purpose": "Ensure PPT and video form one classroom experience without collapsing into the same artifact.",
+      "requiredInputs": [
+        "approved_ppt",
+        "approved_video",
+        "delivery_strategy",
+        "course_anchor",
+        "lesson_plan"
+      ],
+      "requiredOutputs": [
+        "shared_fact_check",
+        "role_separation_check",
+        "handoff_check",
+        "duplication_check",
+        "teacher_sequence",
+        "findings"
+      ],
+      "forbidden": [
+        {
+          "rule": "Requiring identical visual scripts",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Allowing contradictions in facts or terminology",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Video teaching the answer that PPT expects students to discover",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Facts and terminology agree",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Video ends where the PPT learning task begins",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No unnecessary duplication",
+          "enforcement": "should"
+        },
+        {
+          "criterion": "Teacher can state the transition in one sentence",
+          "enforcement": "should"
+        }
+      ],
+      "repairTarget": "smallest_shared_contract",
+      "recommendedNext": [
+        "final_delivery_audit"
+      ]
+    },
+    {
+      "id": "final_delivery_audit",
+      "version": "v2",
+      "purpose": "Generate the final manifest from actual verified files and block inconsistent claims.",
+      "requiredInputs": [
+        "required_deliverables",
+        "actual_file_inventory",
+        "artifact_metadata",
+        "quality_gate_results"
+      ],
+      "requiredOutputs": [
+        "verified_manifest",
+        "passed_items",
+        "missing_items",
+        "failed_items",
+        "unverifiable_items",
+        "delivery_status"
+      ],
+      "forbidden": [
+        {
+          "rule": "Trusting README claims",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Including unapproved artifacts",
+          "enforcement": "must"
+        },
+        {
+          "rule": "Marking delivery complete with missing required files",
+          "enforcement": "must"
+        }
+      ],
+      "qualityGates": [
+        {
+          "criterion": "Every manifest entry maps to an existing file",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "Hash, size, format, and gate version are recorded",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "README is regenerated from the verified manifest",
+          "enforcement": "must"
+        },
+        {
+          "criterion": "No missing or failed required item",
+          "enforcement": "must"
+        }
+      ],
+      "repairTarget": "missing_or_failed_item",
+      "recommendedNext": [
+        "delivered"
+      ]
+    }
+  ]
+}

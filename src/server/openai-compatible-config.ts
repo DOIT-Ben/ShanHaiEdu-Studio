@@ -14,6 +14,11 @@ export type OpenAICompatibleEnv = Record<string, string | undefined> & {
   AGENT_BRAIN_FALLBACK_MODEL?: string;
 };
 
+export type OpenAIReasoningEffort = "low" | "medium" | "high";
+
+export const DEFAULT_MAIN_AGENT_MODEL = "gpt-5.6-terra";
+export const DEFAULT_MAIN_AGENT_REASONING_EFFORT: OpenAIReasoningEffort = "high";
+
 export type OpenAICompatibleCredentialSource =
   | "openai_env"
   | "agent_brain_ledger_env"
@@ -25,6 +30,7 @@ export type OpenAICompatibleConfig = {
   credentialSource: OpenAICompatibleCredentialSource;
   baseURL?: string;
   model: string;
+  reasoningEffort: OpenAIReasoningEffort;
 };
 
 type LedgerChannelConfig = {
@@ -62,7 +68,8 @@ export function pickOpenAICompatibleConfig(env: OpenAICompatibleEnv = process.en
       credential: openaiCredential,
       credentialSource: "openai_env",
       baseURL: trimOptional(env.OPENAI_BASE_URL),
-      model: env.OPENAI_MODEL?.trim() || "gpt-5.5",
+      model: env.OPENAI_MODEL?.trim() || DEFAULT_MAIN_AGENT_MODEL,
+      reasoningEffort: DEFAULT_MAIN_AGENT_REASONING_EFFORT,
     };
   }
 
@@ -77,7 +84,8 @@ export function pickOpenAICompatibleConfig(env: OpenAICompatibleEnv = process.en
     credential: ledgerCredential,
     credentialSource: selectedLedgerChannel.credentialSource,
     baseURL: trimOptional(env[selectedLedgerChannel.baseURL]),
-    model: env[selectedLedgerChannel.model]?.trim() || "gpt-5.5",
+    model: env[selectedLedgerChannel.model]?.trim() || DEFAULT_MAIN_AGENT_MODEL,
+    reasoningEffort: DEFAULT_MAIN_AGENT_REASONING_EFFORT,
   };
 }
 

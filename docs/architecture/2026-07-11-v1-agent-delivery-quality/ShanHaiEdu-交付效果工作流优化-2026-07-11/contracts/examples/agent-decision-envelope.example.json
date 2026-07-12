@@ -1,0 +1,45 @@
+{
+  "executionId": "exec-demo-001",
+  "decisionType": "call_tools",
+  "decisionSummary": "PPT 页面规格已批准，三个互不依赖的主视觉可以并行生成。",
+  "actionIntents": [
+    {
+      "intentId": "intent-page-03",
+      "toolName": "generate_visual_asset",
+      "goal": "为第 3 页生成数量关系主视觉，精确数字由本地可编辑层叠加。",
+      "targetRefs": ["page:03", "asset:page-03-main"],
+      "parallelGroup": "ppt-assets-batch-1",
+      "expectedObservation": "返回真实可解码图片、尺寸、哈希、裁切安全区和质量检查结果。",
+      "requestedScope": "single_component"
+    },
+    {
+      "intentId": "intent-page-06",
+      "toolName": "generate_visual_asset",
+      "goal": "为第 6 页生成生活情境主视觉，不在图片中生成可读中文。",
+      "targetRefs": ["page:06", "asset:page-06-main"],
+      "parallelGroup": "ppt-assets-batch-1",
+      "expectedObservation": "返回真实可解码图片、尺寸、哈希、裁切安全区和质量检查结果。",
+      "requestedScope": "single_component"
+    }
+  ],
+  "planDelta": {
+    "baseRevision": 3,
+    "operations": [
+      {
+        "operation": "parallelize",
+        "stepId": "prepare-ppt-assets",
+        "objective": "并行完成互不依赖的页面主视觉，保留页面级 lineage。",
+        "status": "active",
+        "candidateCapabilities": ["generate_visual_asset"],
+        "dependsOnStepIds": ["approve-ppt-page-specs"],
+        "acceptanceCriteria": ["每个目标页面都返回独立 Artifact 与 ToolObservation"],
+        "positionMode": "unchanged",
+        "positionAfterStepId": null,
+        "parallelGroup": "ppt-assets-batch-1",
+        "preserveArtifactRefs": ["artifact:ppt-page-specs:v3"]
+      }
+    ]
+  },
+  "teacherMessage": null,
+  "completionEvidenceRefs": []
+}

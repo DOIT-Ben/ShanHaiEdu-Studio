@@ -1,0 +1,8 @@
+{
+  "model": "grok-imagine-text-to-video-beta",
+  "prompt": "Shot ID: opening_hook_01. Six-second continuous cinematic shot for a first-grade classroom intro video.\nSubject: a curious seven-year-old child in a mustard-yellow jacket inside a handcrafted paper-cut museum hall.\nAction: a sudden warm breeze lifts a trail of blank paper exhibit labels from the displays; the child notices, turns, and follows them with visible surprise.\nContext: bright ivory museum interior with lake-blue floor path and sunflower-yellow accents, playful picture-book paper texture, no classroom and no presentation screen.\nFraming and camera: begin as a wide child-eye-level establishing shot; smooth forward dolly follows the flying paper trail toward a glowing empty exhibition arch on the right; maintain a strong diagonal depth path and keep the child's full body readable.\nStart state: quiet hall, child entering from lower left, blank papers resting near exhibits.\nEnd state: papers curve toward the glowing arch, child stops and looks up, clear unresolved mystery.\nMotion: papers flutter with varied arcs, jacket and leaves respond subtly to the breeze, no static hold longer than half a second.\nStyle and lighting: premium children's picture-book, handcrafted layered paper, warm diffuse daylight, crisp silhouettes, classroom projection readability.\nNo dialogue and no on-screen text. No letters, numbers, signage, subtitles, logos, watermark, card grid, five-column layout, dashboard, repeated display boxes, distorted hands, extra limbs, duplicate child, dark horror mood, camera shake, abrupt cuts, answer reveal, or mathematical explanation.",
+  "duration": 6,
+  "quality": "480p",
+  "mode": "normal",
+  "aspect_ratio": "16:9"
+}

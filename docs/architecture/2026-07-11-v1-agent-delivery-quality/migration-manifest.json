@@ -1,0 +1,784 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-07-12T00:17:44.8187471+08:00",
+  "targetRoot": "docs\\architecture\\2026-07-11-v1-agent-delivery-quality",
+  "sourceDeletionStatus": "retained_pending_separate_approval",
+  "sourceCount": 3,
+  "fileCount": 93,
+  "bytes": 11980797,
+  "mismatchCount": 0,
+  "sources": [
+    {
+      "sourceRoot": "E:\\desktop\\ShanHaiEdu-Agent架构审计资料库-20260711",
+      "destinationDirectory": "ShanHaiEdu-Agent架构审计资料库-20260711",
+      "fileCount": 11,
+      "bytes": null,
+      "files": [
+        {
+          "path": "01-当前Main-Agent运行时审计.md",
+          "bytes": 5652,
+          "sha256": "8579D19200218AED702EA03D94E24E73023150B6085F1DE55241C2AE0920BE56",
+          "targetExists": true,
+          "targetSha256": "8579D19200218AED702EA03D94E24E73023150B6085F1DE55241C2AE0920BE56",
+          "match": true
+        },
+        {
+          "path": "02-框架适配对比.md",
+          "bytes": 6326,
+          "sha256": "59189EBDB7DC433694AD7019A8F92B801F319C2757444300768BD8A2FC6BBC01",
+          "targetExists": true,
+          "targetSha256": "59189EBDB7DC433694AD7019A8F92B801F319C2757444300768BD8A2FC6BBC01",
+          "match": true
+        },
+        {
+          "path": "03-候选接入边界与迁移风险.md",
+          "bytes": 5750,
+          "sha256": "46144A5AC2C6B15137B1F2CE94FACD348ACAE40AD21534B282BC9C0676C089D9",
+          "targetExists": true,
+          "targetSha256": "46144A5AC2C6B15137B1F2CE94FACD348ACAE40AD21534B282BC9C0676C089D9",
+          "match": true
+        },
+        {
+          "path": "04-官方参考来源与核验状态.md",
+          "bytes": 7898,
+          "sha256": "198158DD9E554E06EEAAC4B659F880C5FE3EE9AFE03CD7F96584FB856E3F3305",
+          "targetExists": true,
+          "targetSha256": "198158DD9E554E06EEAAC4B659F880C5FE3EE9AFE03CD7F96584FB856E3F3305",
+          "match": true
+        },
+        {
+          "path": "05-后续整体分析问题清单.md",
+          "bytes": 6164,
+          "sha256": "FCCDD953D7421C139CCA06C9B7ECAC4C26513170EBC1D9D6A2A9B50E13702B16",
+          "targetExists": true,
+          "targetSha256": "FCCDD953D7421C139CCA06C9B7ECAC4C26513170EBC1D9D6A2A9B50E13702B16",
+          "match": true
+        },
+        {
+          "path": "06-第一性原理产品架构遗漏审计.md",
+          "bytes": 14232,
+          "sha256": "31144B2EED6656DA72C30DF164F40CFA5A5A38BF038385E89DBCF07527C69F75",
+          "targetExists": true,
+          "targetSha256": "31144B2EED6656DA72C30DF164F40CFA5A5A38BF038385E89DBCF07527C69F75",
+          "match": true
+        },
+        {
+          "path": "07-快速上线V1实施计划与职责分工.md",
+          "bytes": 22939,
+          "sha256": "58948CA3191C652C51A8BFDBFAABD1983F20C741FA3CC0C770FF2279639C942E",
+          "targetExists": true,
+          "targetSha256": "58948CA3191C652C51A8BFDBFAABD1983F20C741FA3CC0C770FF2279639C942E",
+          "match": true
+        },
+        {
+          "path": "08-v1标签基线复核与收尾任务指令.md",
+          "bytes": 10635,
+          "sha256": "650AA465B7069AFD53313A8FFC9F97CE7DBB94EA7CC18E1451BF63DBA5319574",
+          "targetExists": true,
+          "targetSha256": "650AA465B7069AFD53313A8FFC9F97CE7DBB94EA7CC18E1451BF63DBA5319574",
+          "match": true
+        },
+        {
+          "path": "README.md",
+          "bytes": 5149,
+          "sha256": "CD321CB01462CF4B7E0C746DAFA22767A315886C00297864B4008DE806A9FE6C",
+          "targetExists": true,
+          "targetSha256": "CD321CB01462CF4B7E0C746DAFA22767A315886C00297864B4008DE806A9FE6C",
+          "match": true
+        },
+        {
+          "path": "decisions\\ADR-001-通用Agent-Runtime框架化-提案.md",
+          "bytes": 4263,
+          "sha256": "FB767537C1C7A03CA674BA66BFD1F81A7E711A7F38675A1B73E0F11BEE09D917",
+          "targetExists": true,
+          "targetSha256": "FB767537C1C7A03CA674BA66BFD1F81A7E711A7F38675A1B73E0F11BEE09D917",
+          "match": true
+        },
+        {
+          "path": "evidence\\2026-07-11-代码快照证据.md",
+          "bytes": 4109,
+          "sha256": "75A129B2ED00C729772D79AC1A1C020EBFC73EB6CE736109BC5A787F2B5BF093",
+          "targetExists": true,
+          "targetSha256": "75A129B2ED00C729772D79AC1A1C020EBFC73EB6CE736109BC5A787F2B5BF093",
+          "match": true
+        }
+      ]
+    },
+    {
+      "sourceRoot": "E:\\desktop\\ShanHaiEdu-智能体与交付工艺架构设计-20260711",
+      "destinationDirectory": "ShanHaiEdu-智能体与交付工艺架构设计-20260711",
+      "fileCount": 10,
+      "bytes": null,
+      "files": [
+        {
+          "path": "01-当前代码基线与分析纠偏.md",
+          "bytes": 12605,
+          "sha256": "2F2123A09C13F53978CB4F0909F342446E144940CBD044E2704F8119977E606B",
+          "targetExists": true,
+          "targetSha256": "2F2123A09C13F53978CB4F0909F342446E144940CBD044E2704F8119977E606B",
+          "match": true
+        },
+        {
+          "path": "02-三层架构与受控ReAct设计.md",
+          "bytes": 10694,
+          "sha256": "F19CF78FB5F88C0ED01694F070E8709E3C1E81CE5B0949314E3AA0744874A895",
+          "targetExists": true,
+          "targetSha256": "F19CF78FB5F88C0ED01694F070E8709E3C1E81CE5B0949314E3AA0744874A895",
+          "match": true
+        },
+        {
+          "path": "03-PPT生产工艺与质量架构.md",
+          "bytes": 11334,
+          "sha256": "8CFD4FD5F52EA63C509B1FC15217CB4187DCAA3186871D30BD7D74CF5E8E157B",
+          "targetExists": true,
+          "targetSha256": "8CFD4FD5F52EA63C509B1FC15217CB4187DCAA3186871D30BD7D74CF5E8E157B",
+          "match": true
+        },
+        {
+          "path": "04-视频生产工艺与质量架构.md",
+          "bytes": 11913,
+          "sha256": "D0BAC4983F588F415BD7F98E8D663C776679B948C050850D9846E58EB27AE489",
+          "targetExists": true,
+          "targetSha256": "D0BAC4983F588F415BD7F98E8D663C776679B948C050850D9846E58EB27AE489",
+          "match": true
+        },
+        {
+          "path": "05-Skills-Tools-Contracts-Rubrics职责边界.md",
+          "bytes": 9357,
+          "sha256": "5E72CFC5DACAAA85758994D6A9775B9D5FC77EA8EB9660325450D8DE6E4E1455",
+          "targetExists": true,
+          "targetSha256": "5E72CFC5DACAAA85758994D6A9775B9D5FC77EA8EB9660325450D8DE6E4E1455",
+          "match": true
+        },
+        {
+          "path": "06-现有架构接入映射与实施顺序.md",
+          "bytes": 23061,
+          "sha256": "B227240C28F132F7E79758C31026AF5C64C4826E0668105DF2D637406854F150",
+          "targetExists": true,
+          "targetSha256": "B227240C28F132F7E79758C31026AF5C64C4826E0668105DF2D637406854F150",
+          "match": true
+        },
+        {
+          "path": "07-决策记录与证据索引.md",
+          "bytes": 16062,
+          "sha256": "FE35D2A8A2CF4BBFDDDC8C7606EBE8F219856720EFF346D9DBAC32CEAB795977",
+          "targetExists": true,
+          "targetSha256": "FE35D2A8A2CF4BBFDDDC8C7606EBE8F219856720EFF346D9DBAC32CEAB795977",
+          "match": true
+        },
+        {
+          "path": "08-节点合同-质量量表-提示词草案.md",
+          "bytes": 45494,
+          "sha256": "686FF822EFB4C9A9AB7A89DC825F3812BC566595C5DD11ADE9120C8727094F5B",
+          "targetExists": true,
+          "targetSha256": "686FF822EFB4C9A9AB7A89DC825F3812BC566595C5DD11ADE9120C8727094F5B",
+          "match": true
+        },
+        {
+          "path": "09-独立审查报告.md",
+          "bytes": 12783,
+          "sha256": "E48D200F9BDB88318DCB678220B739AA54D49FF966320EA39CBAAACA5A8CFCCE",
+          "targetExists": true,
+          "targetSha256": "E48D200F9BDB88318DCB678220B739AA54D49FF966320EA39CBAAACA5A8CFCCE",
+          "match": true
+        },
+        {
+          "path": "README.md",
+          "bytes": 8021,
+          "sha256": "C24740E6B893B3E21B9935F78877B5E98E391C266FC69D7C16FD8B33400E33FA",
+          "targetExists": true,
+          "targetSha256": "C24740E6B893B3E21B9935F78877B5E98E391C266FC69D7C16FD8B33400E33FA",
+          "match": true
+        }
+      ]
+    },
+    {
+      "sourceRoot": "E:\\desktop\\ShanHaiEdu-交付效果工作流优化-2026-07-11",
+      "destinationDirectory": "ShanHaiEdu-交付效果工作流优化-2026-07-11",
+      "fileCount": 72,
+      "bytes": null,
+      "files": [
+        {
+          "path": "01-现有底层设计抽象与工具地图.md",
+          "bytes": 5872,
+          "sha256": "FA2A11C634BD0C94E4E600FF9BA922809C5C668D08BBF3F34DB43E4BB8B6B745",
+          "targetExists": true,
+          "targetSha256": "FA2A11C634BD0C94E4E600FF9BA922809C5C668D08BBF3F34DB43E4BB8B6B745",
+          "match": true
+        },
+        {
+          "path": "02-交付效果问题诊断.md",
+          "bytes": 4370,
+          "sha256": "B1E193BFEA54CCFC2E39171C3DD3E70E7024119F6CDA52BB90119C073EE88E5B",
+          "targetExists": true,
+          "targetSha256": "B1E193BFEA54CCFC2E39171C3DD3E70E7024119F6CDA52BB90119C073EE88E5B",
+          "match": true
+        },
+        {
+          "path": "03-A+-总体工作流设计.md",
+          "bytes": 9300,
+          "sha256": "2A22346887E3153E13444CF02A54F79E8091305C7151ED1D769E4459E2CBC0F7",
+          "targetExists": true,
+          "targetSha256": "2A22346887E3153E13444CF02A54F79E8091305C7151ED1D769E4459E2CBC0F7",
+          "match": true
+        },
+        {
+          "path": "04-PPT工作流优化.md",
+          "bytes": 5733,
+          "sha256": "712904B0E7D4EA56AE852AB4E06F09D133B180FDB76F89B2E8436E794E3D94EB",
+          "targetExists": true,
+          "targetSha256": "712904B0E7D4EA56AE852AB4E06F09D133B180FDB76F89B2E8436E794E3D94EB",
+          "match": true
+        },
+        {
+          "path": "05-视频工作流优化.md",
+          "bytes": 6001,
+          "sha256": "BB68D0934FF5386AA3F25C5860F9A4B7E6BCEC2F4816629DA224D8386A866C00",
+          "targetExists": true,
+          "targetSha256": "BB68D0934FF5386AA3F25C5860F9A4B7E6BCEC2F4816629DA224D8386A866C00",
+          "match": true
+        },
+        {
+          "path": "06-质量评估与自动返工机制.md",
+          "bytes": 4427,
+          "sha256": "18BEDE738C7577C20CC2632C6AADF0DCEC889BC9E11050C92D0C1393771E3C22",
+          "targetExists": true,
+          "targetSha256": "18BEDE738C7577C20CC2632C6AADF0DCEC889BC9E11050C92D0C1393771E3C22",
+          "match": true
+        },
+        {
+          "path": "07-落地优先级与产品路线.md",
+          "bytes": 4804,
+          "sha256": "744CBC8754132A69405B6D483AC0DA8DE1FFD3287EF354722AD37DE26D781866",
+          "targetExists": true,
+          "targetSha256": "744CBC8754132A69405B6D483AC0DA8DE1FFD3287EF354722AD37DE26D781866",
+          "match": true
+        },
+        {
+          "path": "08-验证与交付边界.md",
+          "bytes": 2001,
+          "sha256": "85D8864755033E0C5EB7ACAE4E412A589B4C7006ED2C3813BDBA76A9C881D6A4",
+          "targetExists": true,
+          "targetSha256": "85D8864755033E0C5EB7ACAE4E412A589B4C7006ED2C3813BDBA76A9C881D6A4",
+          "match": true
+        },
+        {
+          "path": "09-权威Agent设计与ShanHaiEdu-ReAct适配分析.md",
+          "bytes": 19335,
+          "sha256": "1D10795D73865066FF2EB3EEC72145C46E21E701EC7A86CA8389B896003333C1",
+          "targetExists": true,
+          "targetSha256": "1D10795D73865066FF2EB3EEC72145C46E21E701EC7A86CA8389B896003333C1",
+          "match": true
+        },
+        {
+          "path": "delivery-manifest.json",
+          "bytes": 11620,
+          "sha256": "EED833BF38FCB611F5192EDD4E0047F10FB53844AA8282E27994DC227BBF6EED",
+          "targetExists": true,
+          "targetSha256": "EED833BF38FCB611F5192EDD4E0047F10FB53844AA8282E27994DC227BBF6EED",
+          "match": true
+        },
+        {
+          "path": "generate-delivery-manifest.ps1",
+          "bytes": 918,
+          "sha256": "F5CFEC27026B39A29B11882417F820643E7BAA517738A925334BE01DAAE88A15",
+          "targetExists": true,
+          "targetSha256": "F5CFEC27026B39A29B11882417F820643E7BAA517738A925334BE01DAAE88A15",
+          "match": true
+        },
+        {
+          "path": "README.md",
+          "bytes": 3323,
+          "sha256": "AB3E8AB79E5539CB863D6DBF5110F4856637E2155DE92373750166A680601E01",
+          "targetExists": true,
+          "targetSha256": "AB3E8AB79E5539CB863D6DBF5110F4856637E2155DE92373750166A680601E01",
+          "match": true
+        },
+        {
+          "path": "contracts\\agent-decision-envelope.schema.json",
+          "bytes": 6228,
+          "sha256": "B37A63FD55751511093184582059A1CEBCA236537FEC5B27D38AA77E123F21D0",
+          "targetExists": true,
+          "targetSha256": "B37A63FD55751511093184582059A1CEBCA236537FEC5B27D38AA77E123F21D0",
+          "match": true
+        },
+        {
+          "path": "contracts\\delivery-strategy.schema.json",
+          "bytes": 1179,
+          "sha256": "0437EA3EE9C53C0E555ECED0AE805DFE9A94938E2E3A08C6532CE88EFCF78DFB",
+          "targetExists": true,
+          "targetSha256": "0437EA3EE9C53C0E555ECED0AE805DFE9A94938E2E3A08C6532CE88EFCF78DFB",
+          "match": true
+        },
+        {
+          "path": "contracts\\node-contracts-v2.json",
+          "bytes": 37917,
+          "sha256": "95137F39FC00E983867E929353AA703A5E0789D880FBF2DF62BED13593CC180E",
+          "targetExists": true,
+          "targetSha256": "95137F39FC00E983867E929353AA703A5E0789D880FBF2DF62BED13593CC180E",
+          "match": true
+        },
+        {
+          "path": "contracts\\node-contracts-v2.schema.json",
+          "bytes": 2380,
+          "sha256": "9D8958634639BF6F45A048391EBD39590D20BD7467744206DB8A029D836043C4",
+          "targetExists": true,
+          "targetSha256": "9D8958634639BF6F45A048391EBD39590D20BD7467744206DB8A029D836043C4",
+          "match": true
+        },
+        {
+          "path": "contracts\\page-spec.schema.json",
+          "bytes": 2847,
+          "sha256": "A3F45AB5498554F9F23486E37BD41A298CBD54CF6E236D7164AA3BD6CC19B114",
+          "targetExists": true,
+          "targetSha256": "A3F45AB5498554F9F23486E37BD41A298CBD54CF6E236D7164AA3BD6CC19B114",
+          "match": true
+        },
+        {
+          "path": "contracts\\ppt-director-response.schema.json",
+          "bytes": 3302,
+          "sha256": "24213195285A1B4CF411A6754B690F5A5E89A864821E6CBF84F987F551DBAEB6",
+          "targetExists": true,
+          "targetSha256": "24213195285A1B4CF411A6754B690F5A5E89A864821E6CBF84F987F551DBAEB6",
+          "match": true
+        },
+        {
+          "path": "contracts\\README.md",
+          "bytes": 1830,
+          "sha256": "299099F7EA63F631BC934955C6F8F4931559AAF45C01477A330A8BE666EE1FB5",
+          "targetExists": true,
+          "targetSha256": "299099F7EA63F631BC934955C6F8F4931559AAF45C01477A330A8BE666EE1FB5",
+          "match": true
+        },
+        {
+          "path": "contracts\\review-finding.schema.json",
+          "bytes": 1080,
+          "sha256": "44FD74893946436CEDA0C39CA283A10B4991D553A69AD4836E49A371CFE85445",
+          "targetExists": true,
+          "targetSha256": "44FD74893946436CEDA0C39CA283A10B4991D553A69AD4836E49A371CFE85445",
+          "match": true
+        },
+        {
+          "path": "contracts\\shot-spec.schema.json",
+          "bytes": 1744,
+          "sha256": "2ABD9D392A31A74756E36B6AE5B0CEA90AD3483331F677C41CEED727A07A23DA",
+          "targetExists": true,
+          "targetSha256": "2ABD9D392A31A74756E36B6AE5B0CEA90AD3483331F677C41CEED727A07A23DA",
+          "match": true
+        },
+        {
+          "path": "contracts\\tool-observation-v2.schema.json",
+          "bytes": 2544,
+          "sha256": "118E26C3092F38A37A712D75E25E3F5BD4C1F7FFA800E46259BD1A7A6A8F975D",
+          "targetExists": true,
+          "targetSha256": "118E26C3092F38A37A712D75E25E3F5BD4C1F7FFA800E46259BD1A7A6A8F975D",
+          "match": true
+        },
+        {
+          "path": "contracts\\validate_json_schema.py",
+          "bytes": 792,
+          "sha256": "8BE1DB0699E00D24A38834B39479CB07B307058E867B0AE428E0B4E640F93267",
+          "targetExists": true,
+          "targetSha256": "8BE1DB0699E00D24A38834B39479CB07B307058E867B0AE428E0B4E640F93267",
+          "match": true
+        },
+        {
+          "path": "contracts\\validate-contracts.ps1",
+          "bytes": 1748,
+          "sha256": "8FF33A3485E5B086AA9065C2FDB054B2789CC1F36F9D041261FC43B7E6CB9D8F",
+          "targetExists": true,
+          "targetSha256": "8FF33A3485E5B086AA9065C2FDB054B2789CC1F36F9D041261FC43B7E6CB9D8F",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\agent-decision-envelope.example.json",
+          "bytes": 1849,
+          "sha256": "39BA2E8B9C924B7F389707570588B8F350EE928D17565B21D5B86DEEB2A3973F",
+          "targetExists": true,
+          "targetSha256": "39BA2E8B9C924B7F389707570588B8F350EE928D17565B21D5B86DEEB2A3973F",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\delivery-strategy.example.json",
+          "bytes": 816,
+          "sha256": "EE941F337F39BE026F02629533044CE4FD6047C1ACE9D2A5285C4BBEBB67C482",
+          "targetExists": true,
+          "targetSha256": "EE941F337F39BE026F02629533044CE4FD6047C1ACE9D2A5285C4BBEBB67C482",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\page-spec.example.json",
+          "bytes": 1926,
+          "sha256": "06A0345E8E7E395CA765DBB01DA2B4F2D21F7FC79F92A9C18D45457516F1A767",
+          "targetExists": true,
+          "targetSha256": "06A0345E8E7E395CA765DBB01DA2B4F2D21F7FC79F92A9C18D45457516F1A767",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\ppt-director-response.example.json",
+          "bytes": 3201,
+          "sha256": "D6CA4CDC52DEF8BE607437518F770BD66729E08401AE246651F0E5B2DA4D4A62",
+          "targetExists": true,
+          "targetSha256": "D6CA4CDC52DEF8BE607437518F770BD66729E08401AE246651F0E5B2DA4D4A62",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\review-finding.example.json",
+          "bytes": 689,
+          "sha256": "0756E42502111063303D4B567954D5B0EFDAD8241D5E3588628A35833F37A9E3",
+          "targetExists": true,
+          "targetSha256": "0756E42502111063303D4B567954D5B0EFDAD8241D5E3588628A35833F37A9E3",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\shot-spec.example.json",
+          "bytes": 1212,
+          "sha256": "17DD4EFB45E7DB3600105936703011E94F2E4CD355726BBE7D55BFEA2586332E",
+          "targetExists": true,
+          "targetSha256": "17DD4EFB45E7DB3600105936703011E94F2E4CD355726BBE7D55BFEA2586332E",
+          "match": true
+        },
+        {
+          "path": "contracts\\examples\\tool-observation-v2.example.json",
+          "bytes": 1001,
+          "sha256": "32674EC8636C408451262D4E0193EE59034D3AD93908CBAE70221A798A1D3E22",
+          "targetExists": true,
+          "targetSha256": "32674EC8636C408451262D4E0193EE59034D3AD93908CBAE70221A798A1D3E22",
+          "match": true
+        },
+        {
+          "path": "experiments\\experiment-summary.md",
+          "bytes": 5622,
+          "sha256": "43AA2A2005C8C888D9F6038C3ECC82273F88AA8DAF888B8D9C7D2499DE67CC49",
+          "targetExists": true,
+          "targetSha256": "43AA2A2005C8C888D9F6038C3ECC82273F88AA8DAF888B8D9C7D2499DE67CC49",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-baseline-output.txt",
+          "bytes": 9376,
+          "sha256": "3C5C5A9A12B3041A0C82EAC2FE9F6F403A39C9A0AC5AD56DA312DDA82CD1F320",
+          "targetExists": true,
+          "targetSha256": "3C5C5A9A12B3041A0C82EAC2FE9F6F403A39C9A0AC5AD56DA312DDA82CD1F320",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-baseline-response.json",
+          "bytes": 13394,
+          "sha256": "BE073B2A8584E3CB5218CEA16D186C047339078C30D625DE2F1CFEE736A07E03",
+          "targetExists": true,
+          "targetSha256": "BE073B2A8584E3CB5218CEA16D186C047339078C30D625DE2F1CFEE736A07E03",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-blind-review-output.txt",
+          "bytes": 7916,
+          "sha256": "E95F32070E1AFB7C6FE2BB9C448A83828D5280D3832110D09D6C0B8BEFF9FDDA",
+          "targetExists": true,
+          "targetSha256": "E95F32070E1AFB7C6FE2BB9C448A83828D5280D3832110D09D6C0B8BEFF9FDDA",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-blind-review-response.json",
+          "bytes": 13099,
+          "sha256": "46365FE8612EF81B38F6AD8942EACCD58FFB13CB8A2F77F4A25FEDAD7F98E58A",
+          "targetExists": true,
+          "targetSha256": "46365FE8612EF81B38F6AD8942EACCD58FFB13CB8A2F77F4A25FEDAD7F98E58A",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-experiment-manifest.json",
+          "bytes": 311,
+          "sha256": "AF0919F26DB2A5703606389914D0B9E1F2D6B57C65315B38816ACF6E6B429BA7",
+          "targetExists": true,
+          "targetSha256": "AF0919F26DB2A5703606389914D0B9E1F2D6B57C65315B38816ACF6E6B429BA7",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-optimized-output.txt",
+          "bytes": 7781,
+          "sha256": "1A3BE4FE7C84A3120B52E44F1B1435DD1063275F2BE0228F00D9F6C3DD53167A",
+          "targetExists": true,
+          "targetSha256": "1A3BE4FE7C84A3120B52E44F1B1435DD1063275F2BE0228F00D9F6C3DD53167A",
+          "match": true
+        },
+        {
+          "path": "experiments\\llm-optimized-response.json",
+          "bytes": 12268,
+          "sha256": "C566B5A13C43C02C45FDD2694B0C91F9085189BB01A188D55C7E4C1CD27C2811",
+          "targetExists": true,
+          "targetSha256": "C566B5A13C43C02C45FDD2694B0C91F9085189BB01A188D55C7E4C1CD27C2811",
+          "match": true
+        },
+        {
+          "path": "experiments\\README.md",
+          "bytes": 793,
+          "sha256": "753FF397E495316AB63B722B11DE3728E5F532244C7C49C907A32B1791013413",
+          "targetExists": true,
+          "targetSha256": "753FF397E495316AB63B722B11DE3728E5F532244C7C49C907A32B1791013413",
+          "match": true
+        },
+        {
+          "path": "experiments\\run-agent-brain-ab.ps1",
+          "bytes": 5381,
+          "sha256": "B00FBBBF1DAC5415DBB112976CD55DA0980447A18552F7ECA7B120C4AF491200",
+          "targetExists": true,
+          "targetSha256": "B00FBBBF1DAC5415DBB112976CD55DA0980447A18552F7ECA7B120C4AF491200",
+          "match": true
+        },
+        {
+          "path": "experiments\\run-video-shot.ps1",
+          "bytes": 6586,
+          "sha256": "DCD098E02BFEFB88E667DF65D3F52D2A9BADF094D809D14EE8F24E68B7DE2BF5",
+          "targetExists": true,
+          "targetSha256": "DCD098E02BFEFB88E667DF65D3F52D2A9BADF094D809D14EE8F24E68B7DE2BF5",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\baseline-prompt.txt",
+          "bytes": 210,
+          "sha256": "30B02D186754DD56F1492AD7E41D976CF2AB8A682353B55CAF20B61223670907",
+          "targetExists": true,
+          "targetSha256": "30B02D186754DD56F1492AD7E41D976CF2AB8A682353B55CAF20B61223670907",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\baseline.png",
+          "bytes": 1438739,
+          "sha256": "608768C7A6A4C78C5D1BE9366BF3F813CDF2073EE8058FBC6D43D79639023288",
+          "targetExists": true,
+          "targetSha256": "608768C7A6A4C78C5D1BE9366BF3F813CDF2073EE8058FBC6D43D79639023288",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\comparison-side-by-side.png",
+          "bytes": 3896815,
+          "sha256": "F36304AFD1D2B9D205ABB0CC0BF56607297DC2F642F7337748EB0E7A8955D150",
+          "targetExists": true,
+          "targetSha256": "F36304AFD1D2B9D205ABB0CC0BF56607297DC2F642F7337748EB0E7A8955D150",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\experiment-manifest.json",
+          "bytes": 783,
+          "sha256": "450CD4B753B4CF5F8DCDFE1E88656BF4649126C78E23947A738618D400C91AB2",
+          "targetExists": true,
+          "targetSha256": "450CD4B753B4CF5F8DCDFE1E88656BF4649126C78E23947A738618D400C91AB2",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\optimized-prompt.txt",
+          "bytes": 895,
+          "sha256": "FA0D5F367DB0DD3586C4726FF2056E17F8D2C8D425531843F7684D640F1A0244",
+          "targetExists": true,
+          "targetSha256": "FA0D5F367DB0DD3586C4726FF2056E17F8D2C8D425531843F7684D640F1A0244",
+          "match": true
+        },
+        {
+          "path": "experiments\\images\\optimized.png",
+          "bytes": 2401312,
+          "sha256": "E4FD3FE3EFCCCA7B487CDBBC9B2076486BACF52D37F93D71A6D7CECAFECE2A19",
+          "targetExists": true,
+          "targetSha256": "E4FD3FE3EFCCCA7B487CDBBC9B2076486BACF52D37F93D71A6D7CECAFECE2A19",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\completed-response.json",
+          "bytes": 624,
+          "sha256": "D56E0AE0B117C3BA7D30C2AEC109DC172E11BEF56F8B5594ACE9D3ED867DC9DE",
+          "targetExists": true,
+          "targetSha256": "D56E0AE0B117C3BA7D30C2AEC109DC172E11BEF56F8B5594ACE9D3ED867DC9DE",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\contact-sheet.png",
+          "bytes": 903095,
+          "sha256": "1E4216C2A2BFAA22D35F65C0BD052547158543BB63552C394D04704AC445AC09",
+          "targetExists": true,
+          "targetSha256": "1E4216C2A2BFAA22D35F65C0BD052547158543BB63552C394D04704AC445AC09",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\experiment-manifest.json",
+          "bytes": 1313,
+          "sha256": "DF11D359AFC9F48943DBACE637C599B9A07294568DA9E005B29BBBBADDA04D26",
+          "targetExists": true,
+          "targetSha256": "DF11D359AFC9F48943DBACE637C599B9A07294568DA9E005B29BBBBADDA04D26",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\optimized-opening-hook.mp4",
+          "bytes": 1452330,
+          "sha256": "A3AF7AE2C9C5F66171DB568C06548F8F3A6BDA16C76EA410087E1C2AF73C2A82",
+          "targetExists": true,
+          "targetSha256": "A3AF7AE2C9C5F66171DB568C06548F8F3A6BDA16C76EA410087E1C2AF73C2A82",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\request-sanitized.json",
+          "bytes": 1741,
+          "sha256": "ACD28B02D2A5E289B424D0C16061047024A8990C938BD45D236148C2B7CEE81A",
+          "targetExists": true,
+          "targetSha256": "ACD28B02D2A5E289B424D0C16061047024A8990C938BD45D236148C2B7CEE81A",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\submit-response.json",
+          "bytes": 440,
+          "sha256": "A0F3D2C2F28850989416ACAAB3572F7C80A4940E43C9D58859C0D9C4CCFDB530",
+          "targetExists": true,
+          "targetSha256": "A0F3D2C2F28850989416ACAAB3572F7C80A4940E43C9D58859C0D9C4CCFDB530",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\frames\\frame-0_2.png",
+          "bytes": 315278,
+          "sha256": "BEDC01BE284E23142039D94C4CDFF394AD68F9E6CD4EFE76E34DF101B06ECC3D",
+          "targetExists": true,
+          "targetSha256": "BEDC01BE284E23142039D94C4CDFF394AD68F9E6CD4EFE76E34DF101B06ECC3D",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\frames\\frame-2_0.png",
+          "bytes": 341519,
+          "sha256": "ACCA4471BDD306B056DF734DBCB99CDA405D832005349D8CB9C8B20C4FA9BFC6",
+          "targetExists": true,
+          "targetSha256": "ACCA4471BDD306B056DF734DBCB99CDA405D832005349D8CB9C8B20C4FA9BFC6",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\frames\\frame-4_0.png",
+          "bytes": 373336,
+          "sha256": "18C11448E67943F41DE595B638CF9FEADCEE54A41CA7FE6ECB4730A59DBE23CB",
+          "targetExists": true,
+          "targetSha256": "18C11448E67943F41DE595B638CF9FEADCEE54A41CA7FE6ECB4730A59DBE23CB",
+          "match": true
+        },
+        {
+          "path": "experiments\\video\\frames\\frame-5_8.png",
+          "bytes": 334233,
+          "sha256": "54C241B95299B1CC258EA1BE9BD5ED741B5A464A5C546A852FEA656FE2312320",
+          "targetExists": true,
+          "targetSha256": "54C241B95299B1CC258EA1BE9BD5ED741B5A464A5C546A852FEA656FE2312320",
+          "match": true
+        },
+        {
+          "path": "prompts\\01-delivery-orchestrator.md",
+          "bytes": 3688,
+          "sha256": "9405147B217991FD7B5D2ADEC770DF9CEE1241D43995CEF74CC1577874F98F8C",
+          "targetExists": true,
+          "targetSha256": "9405147B217991FD7B5D2ADEC770DF9CEE1241D43995CEF74CC1577874F98F8C",
+          "match": true
+        },
+        {
+          "path": "prompts\\02-ppt-director.md",
+          "bytes": 2518,
+          "sha256": "EF4DE63735551DEF0E6DBF5409453D93742A7F60B8F44B0C4F91432C234DF400",
+          "targetExists": true,
+          "targetSha256": "EF4DE63735551DEF0E6DBF5409453D93742A7F60B8F44B0C4F91432C234DF400",
+          "match": true
+        },
+        {
+          "path": "prompts\\03-ppt-critic.md",
+          "bytes": 1499,
+          "sha256": "6DD312B07500A6ED86104D8A24ADE647085A30ED8E026C3AB381A34123549EA4",
+          "targetExists": true,
+          "targetSha256": "6DD312B07500A6ED86104D8A24ADE647085A30ED8E026C3AB381A34123549EA4",
+          "match": true
+        },
+        {
+          "path": "prompts\\04-video-creative-director.md",
+          "bytes": 1634,
+          "sha256": "ADDE25CED6EDA10656CBAD8610837DE9A30D613E409E8A1939AA89205A26DB78",
+          "targetExists": true,
+          "targetSha256": "ADDE25CED6EDA10656CBAD8610837DE9A30D613E409E8A1939AA89205A26DB78",
+          "match": true
+        },
+        {
+          "path": "prompts\\05-video-production-director.md",
+          "bytes": 1338,
+          "sha256": "A9F5A6626800F803378FA484C08270F348168CF07609B34A6005243BD54BF5DF",
+          "targetExists": true,
+          "targetSha256": "A9F5A6626800F803378FA484C08270F348168CF07609B34A6005243BD54BF5DF",
+          "match": true
+        },
+        {
+          "path": "prompts\\05a-video-beat-director.md",
+          "bytes": 590,
+          "sha256": "B1F6440DA60A486B4725A790C0C918B0744A11B1F09F13DA08200BCCA2EB0389",
+          "targetExists": true,
+          "targetSha256": "B1F6440DA60A486B4725A790C0C918B0744A11B1F09F13DA08200BCCA2EB0389",
+          "match": true
+        },
+        {
+          "path": "prompts\\05b-shot-spec-author.md",
+          "bytes": 632,
+          "sha256": "065360B15FDF3BD20EBC0220A0A56ACE3826CBDE84B3508804C26C92ECF44F21",
+          "targetExists": true,
+          "targetSha256": "065360B15FDF3BD20EBC0220A0A56ACE3826CBDE84B3508804C26C92ECF44F21",
+          "match": true
+        },
+        {
+          "path": "prompts\\05c-video-asset-bible.md",
+          "bytes": 557,
+          "sha256": "C77D26B326F43CC87D1EA88D601052BEB8F2DDAA8C8AB436197FD1DE60C6B814",
+          "targetExists": true,
+          "targetSha256": "C77D26B326F43CC87D1EA88D601052BEB8F2DDAA8C8AB436197FD1DE60C6B814",
+          "match": true
+        },
+        {
+          "path": "prompts\\05d-video-segment-request.md",
+          "bytes": 492,
+          "sha256": "B85707B281D0501A5FA3E942985368CC0CA57E1054B87E9D88B4980270C92EEF",
+          "targetExists": true,
+          "targetSha256": "B85707B281D0501A5FA3E942985368CC0CA57E1054B87E9D88B4980270C92EEF",
+          "match": true
+        },
+        {
+          "path": "prompts\\05e-video-timeline-assembler.md",
+          "bytes": 479,
+          "sha256": "3CEEE1DD50D14672565E0E34DBA9ACBECA2C36AF5CA5BD4ABE88B65F046EDA28",
+          "targetExists": true,
+          "targetSha256": "3CEEE1DD50D14672565E0E34DBA9ACBECA2C36AF5CA5BD4ABE88B65F046EDA28",
+          "match": true
+        },
+        {
+          "path": "prompts\\06-video-critic.md",
+          "bytes": 1879,
+          "sha256": "C7939C338E2D200C059D3E014714B073BB43E253F94B1381D145540DD193B488",
+          "targetExists": true,
+          "targetSha256": "C7939C338E2D200C059D3E014714B073BB43E253F94B1381D145540DD193B488",
+          "match": true
+        },
+        {
+          "path": "prompts\\07-final-delivery-auditor.md",
+          "bytes": 946,
+          "sha256": "CC9377247E854364A2E7D724C0E79A912A4DFB6737A88E53AF2882EE6DBAB186",
+          "targetExists": true,
+          "targetSha256": "CC9377247E854364A2E7D724C0E79A912A4DFB6737A88E53AF2882EE6DBAB186",
+          "match": true
+        },
+        {
+          "path": "review\\independent-agent-review.md",
+          "bytes": 4146,
+          "sha256": "16FBDB2E6CC932CCCAAA5D0050CC082E4E78C6C06CD1F96B806004F00289DA6E",
+          "targetExists": true,
+          "targetSha256": "16FBDB2E6CC932CCCAAA5D0050CC082E4E78C6C06CD1F96B806004F00289DA6E",
+          "match": true
+        },
+        {
+          "path": "sources\\official-research.md",
+          "bytes": 8779,
+          "sha256": "923AC7B213AFC76FEF308957FB0EEFBB6F66B37B97B1DE826C9CFAF94208DF7B",
+          "targetExists": true,
+          "targetSha256": "923AC7B213AFC76FEF308957FB0EEFBB6F66B37B97B1DE826C9CFAF94208DF7B",
+          "match": true
+        }
+      ]
+    }
+  ],
+  "targetOnlyFiles": [
+    "README.md",
+    "migration-manifest.json"
+  ]
+}

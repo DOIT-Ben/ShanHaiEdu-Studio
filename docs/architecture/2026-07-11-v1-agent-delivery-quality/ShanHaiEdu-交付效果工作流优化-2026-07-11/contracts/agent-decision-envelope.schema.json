@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shanhaiedu.local/contracts/agent-decision-envelope.schema.json",
+  "title": "AgentDecisionEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "executionId",
+    "decisionType",
+    "decisionSummary",
+    "actionIntents",
+    "planDelta",
+    "teacherMessage",
+    "completionEvidenceRefs"
+  ],
+  "properties": {
+    "executionId": { "type": "string", "minLength": 1 },
+    "decisionType": {
+      "type": "string",
+      "enum": ["respond", "ask_teacher", "call_tools", "pause", "finish"]
+    },
+    "decisionSummary": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "actionIntents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/actionIntent" }
+    },
+    "planDelta": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/planDelta" }
+      ]
+    },
+    "teacherMessage": { "type": ["string", "null"] },
+    "completionEvidenceRefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "decisionType": { "const": "call_tools" } } },
+      "then": { "properties": { "actionIntents": { "minItems": 1 } } },
+      "else": { "properties": { "actionIntents": { "maxItems": 0 } } }
+    },
+    {
+      "if": { "properties": { "decisionType": { "enum": ["respond", "ask_teacher", "pause", "finish"] } } },
+      "then": { "properties": { "teacherMessage": { "type": "string", "minLength": 1 } } }
+    },
+    {
+      "if": { "properties": { "decisionType": { "const": "finish" } } },
+      "then": { "properties": { "completionEvidenceRefs": { "minItems": 1 } } },
+      "else": { "properties": { "completionEvidenceRefs": { "maxItems": 0 } } }
+    }
+  ],
+  "$defs": {
+    "actionIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intentId",
+        "toolName",
+        "goal",
+        "targetRefs",
+        "parallelGroup",
+        "expectedObservation",
+        "requestedScope"
+      ],
+      "properties": {
+        "intentId": { "type": "string", "minLength": 1 },
+        "toolName": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string", "minLength": 1 },
+        "targetRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "parallelGroup": { "type": ["string", "null"] },
+        "expectedObservation": { "type": "string", "minLength": 1 },
+        "requestedScope": {
+          "type": "string",
+          "enum": ["read_only", "single_component", "multiple_independent_components", "whole_artifact", "final_delivery"]
+        }
+      }
+    },
+    "planDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseRevision", "operations"],
+      "properties": {
+        "baseRevision": { "type": "integer", "minimum": 0 },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/planStepPatch" }
+        }
+      }
+    },
+    "planStepPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "stepId",
+        "objective",
+        "status",
+        "candidateCapabilities",
+        "dependsOnStepIds",
+        "acceptanceCriteria",
+        "positionMode",
+        "positionAfterStepId",
+        "parallelGroup",
+        "preserveArtifactRefs"
+      ],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["add", "replace", "reorder", "parallelize", "complete", "cancel"]
+        },
+        "stepId": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["proposed", "active", "blocked", "completed", "cancelled"]
+        },
+        "candidateCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "dependsOnStepIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "acceptanceCriteria": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "positionMode": {
+          "type": "string",
+          "enum": ["unchanged", "first", "after"]
+        },
+        "positionAfterStepId": { "type": ["string", "null"] },
+        "parallelGroup": { "type": ["string", "null"] },
+        "preserveArtifactRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "enum": ["add", "replace"] } } },
+          "then": {
+            "properties": {
+              "candidateCapabilities": { "minItems": 1 },
+              "acceptanceCriteria": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "reorder" } } },
+          "then": { "properties": { "positionMode": { "enum": ["first", "after"] } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": { "const": "reorder" },
+              "positionMode": { "const": "after" }
+            },
+            "required": ["operation", "positionMode"]
+          },
+          "then": { "properties": { "positionAfterStepId": { "type": "string", "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "parallelize" } } },
+          "then": { "properties": { "parallelGroup": { "type": "string", "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "complete" } } },
+          "then": { "properties": { "status": { "const": "completed" } } }
+        },
+        {
+          "if": { "properties": { "operation": { "const": "cancel" } } },
+          "then": { "properties": { "status": { "const": "cancelled" } } }
+        }
+      ]
+    }
+  }
+}
