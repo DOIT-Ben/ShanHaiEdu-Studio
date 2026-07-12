@@ -93,9 +93,10 @@ PPT路径成功
 2. 当教师没有提供可用创意或Main Agent判断需要发散时，进入探索模式：从叙事情境、视觉奇观、真实生活挑战等不同机制生成足够候选，数量由决策难度与预算决定；不得只换角色和颜色。
 3. 每案只允许一个课程锚点：触发事件、课堂第一问、禁止提前解释、交接瞬间。
 4. 用户批准Concept Selection Set后才能生成Beat Sheet、参考图和视频。
-5. Video Critic必须先回答三个阻塞问题：不懂教材是否看得懂、去掉课堂结尾是否仍值得看、是否只是PPT动态版。
-6. 上述锚点审查必须由产品内Video Critic Agent Tool执行，Main Agent根据结构化CriticReport自主换案、返修或请求HumanGate；外部Codex只实现和验收，不代替运行时决策。
-7. 编排验证阶段使用确定性夹具和失败注入；真实图片、视频和最终包只在产品内编排及双用户门通过后的收尾阶段集中验证。
+5. 产品内独立`delivery_critic.review(domain="video", stage="course_anchor")`必须在Provider前回答六个硬门；Director或Main Agent自评不能替代。
+6. 真实MP4组装后，产品内独立`delivery_critic.review(domain="video", stage="video_final_review")`必须读取成片、字幕/转写、采样帧、音轨和时间线，检查创意与锚点是否漂移，并把finding定位到shot或时间范围。
+7. Main Agent根据结构化CriticReport自主换案、返修或请求HumanGate；外部Codex只实现和验收，不代替运行时决策。
+8. 编排验证阶段使用确定性夹具和失败注入；真实图片、视频和最终包只在产品内编排及双用户门通过后的收尾阶段集中验证。
 
 ## 调整方案
 
@@ -122,15 +123,16 @@ PPT路径成功
 
 | 预防动作 | 责任载体 | 验收条件 | 状态 |
 |---|---|---|---|
-| 独立短片三问门禁 | Director候选预检；独立Video Critic权威裁决 | 六硬门全部通过才可进入后续Guard，否则返修或阻塞 | Prompt与V1-2合同候选及注入执行测试已落实；生产Executor和Main Agent接线待V1-3/V1-7 |
+| 独立短片六硬门 | Director候选预检；独立`delivery_critic.review(stage="course_anchor")`权威裁决 | 六硬门全部通过才可进入后续Guard，否则返修或阻塞 | V1-2合同候选已形成；当前Router仍有8个合同红灯，生产Executor和Main Agent接线待V1-3/V1-7 |
 | 多机制候选探索 | `04-video-creative-director.md` | 仅在无可用创意或需要发散时启用；候选跨不同故事机制，数量受决策难度和预算约束 | Prompt方法已落实；按当前决策暂停真实重跑 |
 | 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment，并记录trigger、doNotExplain、version与digest | V1-2合同候选及纵深测试已落实；生产持久化待V1-3/V1-7 |
-| 创意维度硬门 | Video Critic | 六硬门任一failed/inconclusive即返工并阻塞媒体Tool | Prompt与注入执行测试已落实；生产Critic运行时待V1-3/V1-7验证 |
+| 创意维度硬门 | `delivery_critic.review(stage="course_anchor")` | 六硬门任一failed/inconclusive即返工并阻塞媒体Tool | Prompt与注入执行测试已落实；生产Critic运行时待V1-3/V1-7验证 |
+| 成片锚点漂移复核 | `delivery_critic.review(stage="video_final_review")` | 实际MP4、字幕/转写、采样帧、音轨和时间线通过；finding定位shot/时间范围 | 产品基线与V1-7测试口径已落实；运行时待实现 |
 | 选案后再调用Provider | HumanGate / PlanGuard | 缺少用户选案actionId时零视频任务 | 待实现 |
 | 验收包整体状态 | FinalDeliveryGate | PPT、视频任一核心产物不合格则整包不可交付 | 待实现 |
 | 外部Codex降权 | V1主线测试计划/编排归因审计 | 真实E2E运行中外部选案、批准、返修决策次数为0 | 规则已落实，运行时待验证 |
-| 阶段末黑盒审核 | V1-9 E2E/交付Rubric | 产品智能体先独立成包，外部验收者后审并定位责任层 | 规则已落实，执行待验证 |
+| 阶段末黑盒审核 | V1-9 E2E/交付Rubric | 产品智能体先独立成包，外部验收者后审并生成只读`ExternalAcceptanceReport` | 报告字段与边界已落实，执行待验证 |
 
 - 文档验证：检查文件存在、索引链接、UTF-8开头和关键规则可检索。
 - 残余风险：当前60秒视频仍是不合格方向的技术产物，只能保留为反例和Provider证据，不得继续作为正式交付视频。
-- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭两类审批状态一致性红灯，完成V1-2全量验证与正式closeout；随后在V1-3/V1-7把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan和持久化恢复合同。产品内部编排、课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核，按问题责任层推动下一轮优化。
+- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭当前8个Router合同红灯，完成V1-2全量验证与正式closeout；随后在V1-3/V1-7把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan、`video_final_review`和持久化恢复合同。产品内部编排、前置与成片后课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核并生成只读`ExternalAcceptanceReport`，按问题责任层推动下一轮优化。

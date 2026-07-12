@@ -367,6 +367,7 @@
 - 目标：先形成移除教材知识任务、PPT结构和教师讲解依赖后仍成立的独立创意，再用唯一最小课程锚点回接学习任务，形成 Beat、ShotSpec、视频专属参考资产、逐镜头任务、音字后期与真实合成，并支持镜头级恢复和返修。儿童、教师或教室可以服务独立叙事；课程锚点不得被扩大成小学课堂世界观，也不得因为受众是小学生就强制儿童主角、教室场景或课堂教学活动。
 - 验收：
   - 产品内`delivery_critic.review(domain="video", stage="course_anchor")`执行六硬门审查；Main Agent依据CriticReport自主Replan或触发HumanGate，外部Codex不代做选案、批准和返修决策。
+  - 合成后由产品内`delivery_critic.review(domain="video", stage="video_final_review")`读取真实MP4、字幕或转写、采样帧、音轨和时间线证据，复核独立创意与唯一最小课程锚点没有在生成中漂移；finding定位到`shotId`、时间范围或字幕/音轨片段，Main Agent只返修受影响组件。
   - 每个镜头独立绑定 shotId、inputHash、providerTaskId、参考资产和验收条件。
   - 需要连续性的镜头能证明参考资产真实进入 Provider 请求；PPT 资产不得冒充视频参考资产。
   - 单镜头失败、重启或返修不重跑全片；FFmpeg 合成结果与 TimelineManifest、ffprobe 一致。
@@ -381,6 +382,7 @@
   - `ClassroomRunSpec` 对齐视频结束点、PPT 页面、教师操作、答案揭示和课堂节奏。
   - 最终包只收录当前 `final_eligible` 版本；ZIP、manifest、hash、数据库记录和真实目录一致。
   - V1不再以外部Codex制作更多整包作为前置；产品内Main Agent必须独立完成至少一次真实PPTX、MP4和最终包E2E，运行中外部干预为0，P0为0。
+  - 成包后的外部黑盒审核形成只读`ExternalAcceptanceReport`，绑定最终包版本与digest、Rubric版本、finding locator、责任层、严重度和建议回归用例；报告不得伪装成产品内计划、批准、CriticReport或返修执行证据。
   - 记录首次可授课率、人工修改时间、返修次数、成本、耗时和 Provider 失败率，并取得至少一名真实教师签收。
   - 目标服务器共享卷重启、release 回滚、备份恢复和公开注册关闭复核通过后，才允许邀请真实用户。
 

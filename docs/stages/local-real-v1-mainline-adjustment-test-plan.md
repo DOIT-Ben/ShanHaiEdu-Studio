@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / A-01 complete / A-02 production candidate / 119 of 121 focused tests passing`
+状态：`Accepted / A-01 complete / A-02 production candidate / 126 of 134 focused tests passing`
 
 关联计划：`docs\stages\local-real-v1-mainline-adjustment-plan.md`
 
@@ -33,11 +33,12 @@
 | A-11a | 课程锚点边界 | 锚点只有一个最小回接；不会因目标受众是小学生而强制儿童主角、教室场景或课堂活动；全程教材化/课堂化稳定阻塞并产生CriticReport |
 | A-11b | 锚点自主返修 | Main Agent读取锚点CriticReport后自主Replan、换创意机制或请求HumanGate；外部Codex介入次数为0 |
 | A-11c | 独立Critic与不过度约束 | `delivery_critic.review`通过只形成后续Guard的必要语义前置；仍须可信生产Executor绑定、PlanGuard、HumanGate和QualityDecision才允许真实媒体调用。儿童主角或教室场景有独立创意理由时可以通过；受众年龄强绑定或依赖课堂教学任务才能成立的复刻必须阻塞 |
+| A-11d | 成片后二次产品内审查 | `delivery_critic.review(domain="video", stage="video_final_review")`读取实际MP4、字幕/转写、采样帧、音轨和时间线证据；创意或锚点漂移定位到`shotId`/时间范围，Main Agent自主定点返修，外部Codex介入次数为0 |
 | A-12 | 视频Provider前置 | Concept Selection和HumanGate未通过时，真实视频任务提交次数为0 |
 | A-13 | 两用户隔离 | 两账号同时操作不同项目，消息、强度、action、job、artifact和反馈不串线 |
 | A-14 | 双任务并发 | 不同项目可以并发；同项目只有一个有效写者；失败恢复不重复付费提交 |
 | A-15 | 产品内真实E2E | 从教师UI启动，产品Main Agent完成计划、工具、审查和最终包；若质量不通过则自主定点返修，不为证明返修而故意制造昂贵失败；运行中外部Codex只观察，成包后才黑盒审核 |
-| A-15a | 外部验收归因 | 外部验收发现的问题能回溯到Agent计划、Tool合同、Prompt、Critic Rubric、HumanGate或Quality Gate；修复责任层后只做必要的定点复验，不由外部手工补包 |
+| A-15a | 外部验收归因 | 外部验收发现的问题能回溯到Agent计划、Tool合同、Prompt、Critic Rubric、HumanGate或Quality Gate；只读`ExternalAcceptanceReport`绑定包版本/digest、Rubric、finding locator、责任层、严重度和回归用例；修复责任层后只做必要的定点复验，不由外部手工补包 |
 | A-15b | 课程锚点成包黑盒审核 | 外部验收者在成包后检查：脱离教材仍可理解、去掉唯一回接仍值得看、不是教材/PPT/课堂活动复刻、不因小学生受众强制儿童或教室、全片只有一个最小回接且不泄露答案 |
 | A-16 | 发布恢复 | 共享卷重启、release回滚、备份恢复和公开注册关闭复核通过 |
 
@@ -53,6 +54,6 @@
 
 每个阶段closeout记录：提交SHA、测试命令和计数、真实请求/浏览器/状态证据、失败和回退点、仍由外部Codex介入的动作。只要仍有关键编排动作依赖外部Codex，V1-9不得开始。V1-9首次完整真实全链路验收集中执行；若失败，先完成责任归因和定点修复，再决定是否需要局部或整包复验，禁止无归因地反复烧真实Provider。
 
-V1-2已有未提交生产候选；2026-07-13 03:15最新专项测试为119/121，两个红灯均为默认数据库授权未拒绝审批状态自相矛盾的review target。证据充分性、blocking finding优先级、通用Critic领域隔离、签名review target与typed locator绑定、failed/inconclusive报告完整性、损坏JSON和不过度约束正例已经进入通过项；closeout前仍须复核最终diff，并继续证明actor/project/IntentEpoch/Artifact版本、digest与审批状态一致性边界。
+V1-2已有未提交生产候选；2026-07-13 03:58最新扩大专项为126/134，8个红测均位于`agent-tool-router.test.ts`：3个Executor伪造Router权威顶层字段未拒绝，2个课程锚点返修报告缺finding或把责任指向下游阶段未拒绝，3个通用Critic输入/输出或混合locator逃逸签名review target未拒绝。默认数据库授权19/19、视频课程锚点Gate及其否定语义/正向allowlist用例已转绿；`npx tsc --noEmit --pretty false`为exit 0。closeout前必须关闭上述8项并复核actor/project/IntentEpoch/Artifact版本、digest、审批状态和签名目标集合边界。
 
 V1-2 closeout只允许声明“Agent Tool合同、Router硬门、默认授权边界和注入Executor测试就绪”。生产Critic Executor、Main Agent真实调用、CriticReport持久化及基于Observation的同轮Replan必须在V1-3/V1-7另行取证；这些证据成立前，不得将合同就绪升级为“产品智能体已经自主完成课程锚点审查”。
