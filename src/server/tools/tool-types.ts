@@ -4,7 +4,7 @@ import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { AgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
 import type { ValidationReport } from "@/server/quality/quality-types";
 
-export type ToolAdapterKind = "internal_capability" | "provider" | "package" | "mcp";
+export type ToolAdapterKind = "internal_capability" | "agent" | "provider" | "package" | "mcp";
 
 export type ToolSideEffectLevel = "none" | "artifact_write" | "external_call" | "file_write" | "package_write";
 

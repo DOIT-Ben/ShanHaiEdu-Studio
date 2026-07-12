@@ -1,4 +1,5 @@
 import type { JsonSchemaObject, OpenAiFunctionToolSchema, ToolDefinition } from "./tool-types";
+import type { AgentToolDefinition } from "./agent-tool-types";
 
 const unsafeDescriptionPattern = /provider|storage|runtimeKind|debug|token|API_KEY|SECRET|local path/i;
 
@@ -12,14 +13,15 @@ function assertSafeOpenAiToolSchema(schema: OpenAiFunctionToolSchema, toolId: st
   }
 }
 
-export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition): OpenAiFunctionToolSchema {
-  if (!tool.implemented) {
+export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition | AgentToolDefinition): OpenAiFunctionToolSchema {
+  const agentTool = isAgentToolDefinition(tool);
+  if (agentTool ? !tool.contractReady : !tool.implemented) {
     throw new Error(`Tool is not implemented: ${tool.id}`);
   }
 
   const schema: OpenAiFunctionToolSchema = {
     type: "function",
-    name: tool.id,
+    name: agentTool ? tool.transportName : tool.id,
     description: tool.description,
     parameters: cloneJsonSchema(tool.inputSchema),
     strict: true,
@@ -28,4 +30,8 @@ export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition): OpenAi
   assertSafeOpenAiToolSchema(schema, tool.id);
 
   return schema;
+}
+
+function isAgentToolDefinition(tool: ToolDefinition | AgentToolDefinition): tool is AgentToolDefinition {
+  return "contractReady" in tool && "transportName" in tool;
 }
