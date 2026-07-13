@@ -19,6 +19,10 @@ test("V1 container deployment keeps one non-root process and external shared dat
   for (const dependency of ["ffmpeg", "libreoffice-impress", "poppler-utils", "curl", "fonts-noto-cjk", "tini"]) {
     assert.match(dockerfile, new RegExp(`\\b${dependency}\\b`));
   }
+  assert.match(dockerfile, /ARG DEBIAN_MIRROR_URL/);
+  assert.match(dockerfile, /ARG DEBIAN_SECURITY_MIRROR_URL/);
+  assert.match(dockerfile, /DEBIAN_MIRROR_URL.+deb\.debian\.org\/debian/s);
+  assert.match(dockerfile, /DEBIAN_SECURITY_MIRROR_URL.+deb\.debian\.org\/debian-security/s);
   assert.match(dockerfile, /ARG NEXT_PUBLIC_SHANHAI_AUTH_MODE=password/);
   assert.match(dockerfile, /ARG NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED=0/);
   assert.match(dockerfile, /npm run preflight:container-runtime/);
@@ -39,6 +43,8 @@ test("V1 container deployment keeps one non-root process and external shared dat
   assert.match(compose, /SHANHAI_TRUST_PROXY:\s*"1"/);
   assert.match(compose, /SHANHAI_PUBLIC_REGISTRATION_ENABLED:\s*"0"/);
   assert.match(compose, /NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED:\s*"0"/);
+  assert.match(compose, /DEBIAN_MIRROR_URL:\s*\$\{SHANHAI_DEBIAN_MIRROR_URL:-\}/);
+  assert.match(compose, /DEBIAN_SECURITY_MIRROR_URL:\s*\$\{SHANHAI_DEBIAN_SECURITY_MIRROR_URL:-\}/);
   assert.match(compose, /DATABASE_URL:\s*file:\/srv\/shanhai\/data\/production\.db/);
   assert.match(compose, /ARTIFACT_STORAGE_ROOT:\s*\/srv\/shanhai\/artifacts/);
   assert.match(compose, /SHANHAI_SHARED_DATA_ROOT:\?[^}]+/);

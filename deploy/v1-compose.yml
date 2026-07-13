@@ -5,6 +5,8 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
+        DEBIAN_MIRROR_URL: ${SHANHAI_DEBIAN_MIRROR_URL:-}
+        DEBIAN_SECURITY_MIRROR_URL: ${SHANHAI_DEBIAN_SECURITY_MIRROR_URL:-}
         NEXT_PUBLIC_SHANHAI_AUTH_MODE: password
         NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0"
     container_name: shanhai-edu-studio-v1-staging
