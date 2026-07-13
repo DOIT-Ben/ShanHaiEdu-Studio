@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
 
 if (process.env.SHANHAI_DEPLOY_DEMO_PREFLIGHT_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -15,31 +16,47 @@ const reportMarkdownPath = path.join(root, "test-results", "deploy-demo-prefligh
 const serverEntry = path.join(root, ".next", "standalone", "server.js");
 const port = process.env.DEPLOY_DEMO_PORT ?? String(await findAvailablePort());
 const baseUrl = `http://127.0.0.1:${port}`;
+const sharedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "shanhai-deploy-demo-shared-"));
+const databasePath = path.join(sharedRoot, "data", "production.db");
+const artifactRoot = path.join(sharedRoot, "artifacts");
+fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+fs.mkdirSync(artifactRoot);
 const commandEnv = {
   ...process.env,
-  DATABASE_URL: normalizeDatabaseUrlForStandalone(process.env.DATABASE_URL),
+  SHANHAI_AUTH_MODE: "password",
+  NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
+  SHANHAI_TRUST_PROXY: "1",
+  SHANHAI_APP_INSTANCE_COUNT: "1",
+  SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+  NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
+  SHANHAI_BOOTSTRAP_ADMIN_EMAIL: "deploy_demo_admin",
+  SHANHAI_BOOTSTRAP_ADMIN_DISPLAY_NAME: "部署验收管理员",
+  SHANHAI_BOOTSTRAP_ADMIN_INITIAL_PASSWORD: randomBytes(24).toString("base64url"),
+  DATABASE_URL: `file:${databasePath}`,
+  ARTIFACT_STORAGE_ROOT: artifactRoot,
 };
 
 fs.rmSync(reportJsonPath, { force: true });
 fs.rmSync(reportMarkdownPath, { force: true });
 fs.mkdirSync(path.dirname(reportJsonPath), { recursive: true });
 
-await run("npm", ["run", "db:init"]);
-await run(process.execPath, ["scripts/bootstrap-admin.mjs"], { SHANHAI_BOOTSTRAP_ADMIN_CONFIRM: "CREATE_ADMIN" });
-await run("npm", ["run", "preflight:production"]);
-await run("npm", ["run", "build"]);
-
-if (!fs.existsSync(serverEntry)) {
-  throw new Error("deploy_demo_standalone_server_missing");
-}
-
-const server = startStandaloneServer();
+let server;
 try {
+  await run("npm", ["run", "db:init"], {}, { quiet: true });
+  await run(process.execPath, ["scripts/bootstrap-admin.mjs"], { SHANHAI_BOOTSTRAP_ADMIN_CONFIRM: "CREATE_ADMIN" }, { quiet: true });
+  await run("npm", ["run", "preflight:production"]);
+  await run("npm", ["run", "build"]);
+
+  if (!fs.existsSync(serverEntry)) {
+    throw new Error("deploy_demo_standalone_server_missing");
+  }
+
+  server = startStandaloneServer();
   const httpChecks = await waitForHttpSmoke();
   const report = {
     ok: httpChecks.every((item) => item.ok),
-    stage: "M42",
-    mode: "deploy-demo-readiness",
+    stage: "V1-10B",
+    mode: "isolated-standalone-rehearsal",
     baseUrl,
     server: ".next/standalone/server.js",
     checks: [
@@ -71,10 +88,11 @@ try {
     }),
   );
 } finally {
-  await stopServer(server);
+  if (server) await stopServer(server);
+  cleanupSharedRoot();
 }
 
-function run(command, args, envOverrides = {}) {
+function run(command, args, envOverrides = {}, options = {}) {
   return new Promise((resolve, reject) => {
     const isWindowsNpm = process.platform === "win32" && command === "npm";
     const executable = isWindowsNpm ? (process.env.ComSpec || "cmd.exe") : command;
@@ -82,9 +100,14 @@ function run(command, args, envOverrides = {}) {
     const child = spawn(executable, executableArgs, {
       cwd: root,
       env: { ...commandEnv, ...envOverrides },
-      stdio: "inherit",
+      stdio: options.quiet ? ["ignore", "pipe", "pipe"] : "inherit",
       shell: false,
     });
+
+    if (options.quiet) {
+      child.stdout.on("data", () => undefined);
+      child.stderr.on("data", () => undefined);
+    }
 
     child.on("error", reject);
     child.on("exit", (code) => {
@@ -95,11 +118,6 @@ function run(command, args, envOverrides = {}) {
       }
     });
   });
-}
-
-function normalizeDatabaseUrlForStandalone(databaseUrl) {
-  if (!databaseUrl) return databaseUrl;
-  return `file:${resolveSqliteFileUrl(databaseUrl, { baseDir: root })}`;
 }
 
 function startStandaloneServer() {
@@ -118,16 +136,35 @@ function startStandaloneServer() {
 
 async function waitForHttpSmoke() {
   await waitForServerReady();
-  const expectedProjectStatus = commandEnv.SHANHAI_AUTH_MODE?.trim().toLowerCase() === "local" ? 200 : 401;
   return [
+    await healthCheck("http-health", "/api/health", 200),
     await requestCheck("http-root", "/", 200, "Root page responds with HTTP 200."),
     await requestCheck(
       "http-project-list",
       "/api/workbench/projects",
-      expectedProjectStatus,
-      `Unauthenticated project API matches ${commandEnv.SHANHAI_AUTH_MODE ?? "password"} auth mode.`,
+      401,
+      "Unauthenticated project API is denied in password mode.",
+    ),
+    await requestCheck(
+      "http-registration",
+      "/api/auth/register",
+      403,
+      "Public registration is disabled.",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
     ),
   ];
+}
+
+async function healthCheck(id, pathname, expectedStatus) {
+  try {
+    const response = await fetch(`${baseUrl}${pathname}`);
+    const body = await response.json();
+    const ok = response.status === expectedStatus && body?.status === "ok" &&
+      body?.checks?.database === "ok" && body?.checks?.artifactStorage === "ok";
+    return check(id, ok, `Health readiness expectedStatus=${expectedStatus} status=${response.status}`);
+  } catch {
+    return check(id, false, "Health readiness request failed.");
+  }
 }
 
 async function waitForServerReady() {
@@ -146,9 +183,9 @@ async function waitForServerReady() {
   throw new Error(`deploy_demo_server_not_ready: ${lastError}`);
 }
 
-async function requestCheck(id, pathname, expectedStatus, detail) {
+async function requestCheck(id, pathname, expectedStatus, detail, options) {
   try {
-    const response = await fetch(`${baseUrl}${pathname}`);
+    const response = await fetch(`${baseUrl}${pathname}`, options);
     return check(id, response.status === expectedStatus, `${detail} expectedStatus=${expectedStatus} status=${response.status}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -199,7 +236,7 @@ function check(id, ok, detail) {
 
 function renderMarkdownReport(report) {
   const checks = report.checks.map((item) => `- ${item.ok ? "PASS" : "FAIL"} ${item.id}: ${item.detail}`).join("\n");
-  return `# M42 部署演示准备报告
+  return `# V1-10B 隔离 Standalone 发布 Rehearsal 报告
 
 - 状态：${report.ok ? "通过" : "失败"}
 - 模式：${report.mode}
@@ -211,4 +248,13 @@ function renderMarkdownReport(report) {
 
 ${checks}
 `;
+}
+
+function cleanupSharedRoot() {
+  const resolved = path.resolve(sharedRoot);
+  const tempRoot = path.resolve(os.tmpdir());
+  if (path.dirname(resolved) !== tempRoot || !path.basename(resolved).startsWith("shanhai-deploy-demo-shared-")) {
+    throw new Error("deploy_demo_shared_cleanup_boundary_invalid");
+  }
+  fs.rmSync(sharedRoot, { recursive: true, force: true });
 }

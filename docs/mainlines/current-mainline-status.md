@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-8、V1-9A至V1-9F、V1-10A本地发布恢复合同已完成；下一阶段是在真实教师确认后继续V1-9产品内E2E，并在目标服务器关闭V1-10真实恢复门`。
+当前阶段：`V1-1至V1-8、V1-9A至V1-9F、V1-10A至V1-10B本地发布恢复合同已完成；下一阶段是在真实教师确认后继续V1-9产品内E2E，并在目标服务器关闭V1-10真实恢复门`。
 
 ## 2. 最近已完成阶段
 
@@ -29,6 +29,7 @@ V1 交付质量与邀请制上线
 | V1-9A至V1-9E | done | 真实时间线、成片审查证据、受控音字轨、版本一致最终包和30-90秒完整导入视频门禁已封板 |
 | V1-9F Main Agent runtime recovery | done | 定位并修复 Critic function-tool locator Schema 的 Provider兼容问题；真实UI已形成19步计划并停在合法需求确认门 |
 | V1-10A release topology and recovery | local contract done / target pending | 单实例SQLite预检、脱敏健康检查、离线备份/校验/新目录恢复和runbook完成；未替代目标服务器重启、回滚与恢复 |
+| V1-10B isolated standalone rehearsal | local rehearsal done / target pending | 隔离SQLite与Artifact根完成schema、管理员、production preflight、build和standalone 200/401/403检查；临时数据与进程均已清理，未替代目标服务器验收 |
 | M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放统一等待V1-9产品内E2E和V1-10发布门 |
 | M70 frontend workbench polish | done | 首次欢迎态、附件拖放/截图粘贴、文件状态、工具菜单、假入口清理和桌面/390px 响应式验收已完成 |
 | M71A project lifecycle and feedback polish | done | 反馈选中态、轻量问候、项目重命名、归档、回收站、恢复、生命周期写入门禁与受控回退已完成；不含永久删除 |
