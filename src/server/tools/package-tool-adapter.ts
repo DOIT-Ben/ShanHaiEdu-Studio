@@ -21,6 +21,8 @@ import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualit
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
 import { assembleVideoTimeline } from "@/server/video-quality/video-timeline-assembler";
+import { generateMiniMaxVideoNarration, type VideoNarrationProviderResult } from "@/server/video-generation/video-narration-provider";
+import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
 export type PackageArtifactRef = {
   kind: string;
@@ -47,6 +49,7 @@ export type PackageToolAdapterInput = {
     sampleSet: PptKeySampleSet;
     sampleApproval: PptSampleApproval;
   }) => Promise<PptFullDeckCandidate>;
+  runVideoNarration?: (input: { script: VideoNarrationScript }) => Promise<VideoNarrationProviderResult>;
 };
 
 const ZIP_MIME = "application/zip";
@@ -238,10 +241,15 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
   }
 
   const clipInputs = segments.map((artifact) => buildTimelineClipInput(artifact));
-  const assembly = assembleVideoTimeline({ projectId: input.projectId, clips: clipInputs });
-  const sourceArtifactIds = assembly.timeline.entries.map((entry) => entry.sourceArtifactId);
+  const scriptArtifact = requireArtifact(input, "video_script_generate");
+  const narrationScript = scriptArtifact.structuredContent.videoNarrationScript as VideoNarrationScript | undefined;
+  if (!narrationScript || !validateVideoNarrationScript(narrationScript).valid) throw new Error("video_narration_script_missing");
+  const narration = await (input.runVideoNarration ?? ((value) => generateMiniMaxVideoNarration(value)))({ script: narrationScript });
+  const assembly = assembleVideoTimeline({ projectId: input.projectId, clips: clipInputs, narration });
+  if (!assembly.transcript || !assembly.audioTrack) throw new Error("video_final_review_tracks_missing");
+  const sourceArtifactIds = [...assembly.timeline.entries.map((entry) => entry.sourceArtifactId), scriptArtifact.id];
   const artifactTruth = buildArtifactTruth(input.tool, "concat_only_assemble");
-  const qualityGate = { passed: true, gates: ["ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_transcript_and_final_review"] } satisfies ToolQualityGateResult;
+  const qualityGate = { passed: true, gates: ["ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "provider_audio_replaced", "controlled_audio_verified", "subtitle_timing_verified", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_video_final_review"] } satisfies ToolQualityGateResult;
 
   return {
     status: "succeeded",
@@ -272,6 +280,8 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
           finalVideo: assembly.finalVideo,
           timeline: assembly.timeline,
           sampledFrames: assembly.sampledFrames,
+          transcript: assembly.transcript,
+          audioTrack: assembly.audioTrack,
         },
         shotProbeEvidence: assembly.shotProbes,
         normalizedClipManifest: assembly.normalizedClips,

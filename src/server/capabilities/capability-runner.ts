@@ -4,6 +4,7 @@ import { validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-va
 import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
 import type { CapabilityId, CapabilityRunResult, SaveArtifactDraft } from "./types";
 import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
 export type AgentRuntimeCapabilityInput = {
   runtime: AgentRuntime;
@@ -111,6 +112,12 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
         retryable: true,
         errorCategory: "validation",
       };
+    }
+  }
+  if (input.capabilityId === "video_script_generate") {
+    const script = result.artifactDraft.structuredContent?.videoNarrationScript;
+    if (!script || typeof script !== "object" || Array.isArray(script) || !validateVideoNarrationScript(script as VideoNarrationScript).valid) {
+      return { status: "failed", userMessage: "视频脚本缺少可执行的受控旁白内容，请重新生成脚本。", retryable: true, errorCategory: "validation" };
     }
   }
 

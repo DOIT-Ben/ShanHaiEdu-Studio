@@ -3,6 +3,7 @@ import { normalizeCapabilityRunResult, runCapabilityWithAgentRuntime } from "@/s
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { createStoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { createVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
 describe("M54-B CapabilityRunner contract", () => {
   it("keeps failed tool results failed and user-readable", () => {
@@ -171,6 +172,14 @@ describe("M54-B CapabilityRunner contract", () => {
     expect(invalid).toMatchObject({ status: "failed", errorCategory: "validation" });
   });
 
+  it("requires a validated controlled narration script", async () => {
+    const script = createVideoNarrationScript({ schemaVersion: "video-narration-script.v1", language: "zh-CN", voiceId: "Chinese (Mandarin)_Gentleman", text: "装置为什么会连续变化？带着这个问题回到课堂。", courseAnchor: "回到课堂问题", answerDisclosureBoundary: "不解释答案" });
+    const valid = await runCapabilityWithAgentRuntime({ runtime: videoScriptRuntime({ videoNarrationScript: script }), projectId: "project-video", capabilityId: "video_script_generate", userMessage: "生成脚本", projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["视频"] } });
+    expect(valid).toMatchObject({ status: "succeeded", artifactDraft: { structuredContent: { videoNarrationScript: script } } });
+    const invalid = await runCapabilityWithAgentRuntime({ runtime: videoScriptRuntime(undefined), projectId: "project-video", capabilityId: "video_script_generate", userMessage: "生成脚本", projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["视频"] } });
+    expect(invalid).toMatchObject({ status: "failed", errorCategory: "validation" });
+  });
+
   it("fails external capabilities instead of returning placeholder success from the text runtime", async () => {
     const runtime: AgentRuntime = {
       async run() {
@@ -213,6 +222,14 @@ function storyboardRuntime(structuredContent: Record<string, unknown> | undefine
         artifactDraft: { nodeKey: "storyboard_generate", kind: "storyboard_generate", title: "视频分镜", summary: "三镜头独立创意。", markdown: "# 视频分镜", contentType: "text/markdown", generationMode: "model_generated", isReadyForTeacherReview: true, structuredContent },
         nextSuggestedAction: { type: "review_artifact", label: "查看分镜" },
       };
+    },
+  };
+}
+
+function videoScriptRuntime(structuredContent: Record<string, unknown> | undefined): AgentRuntime {
+  return {
+    async run(input) {
+      return { status: "succeeded", run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "succeeded" }, assistantMessage: { title: "视频脚本已生成", body: "请检查。" }, artifactDraft: { nodeKey: "video_script_generate", kind: "video_script_generate", title: "视频脚本", summary: "受控旁白。", markdown: "# 视频脚本", contentType: "text/markdown", generationMode: "model_generated", isReadyForTeacherReview: true, structuredContent }, nextSuggestedAction: { type: "review_artifact", label: "查看脚本" } };
     },
   };
 }

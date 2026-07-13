@@ -54,11 +54,19 @@ export type VideoTimelineAssembly = {
     entries: Array<{ shotId: string; ordinal: number; startMs: number; endMs: number; sourceArtifactId: string; normalizedClipSha256: string }>;
   };
   sampledFrames: Array<{ shotId: string; atMs: number; storageRef: string; sha256: string }>;
+  transcript?: { trackId: "caption-main"; storageRef: string; sha256: string; cueCount: number; format: "srt"; source: { model: string; voiceId: string; scriptDigest: string } };
+  audioTrack?: { trackId: "audio-main"; storageRef: string; sha256: string; codec: string; sampleRate: number; channels: number };
 };
 
 export function assembleVideoTimeline(input: {
   projectId: string;
   clips: VideoTimelineClipInput[];
+  narration?: {
+    audioBuffer: Buffer;
+    transcriptBuffer: Buffer;
+    cues: Array<{ text: string; startMs: number; endMs: number }>;
+    providerEvidence: { model: string; voiceId: string; scriptDigest: string; reportedDurationMs: number | null };
+  };
   env?: NodeJS.ProcessEnv;
 }): VideoTimelineAssembly {
   const clips = validateAndSortClips(input.clips);
@@ -86,8 +94,13 @@ export function assembleVideoTimeline(input: {
 
     const concatList = path.join(workDir, "concat.txt");
     writeFileSync(concatList, normalized.map((item) => `file '${escapeConcatPath(item.outputPath)}'`).join("\n"), "utf8");
-    const finalPath = path.join(workDir, "final.mp4");
-    run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", "-movflags", "+faststart", "-y", finalPath], "video_timeline_concat_failed");
+    const concatPath = path.join(workDir, "concat.mp4");
+    run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", "-movflags", "+faststart", "-y", concatPath], "video_timeline_concat_failed");
+    const concatProbe = probeMedia(ffprobe, concatPath);
+    const controlledTracks = input.narration
+      ? applyControlledNarration({ ffmpeg, ffprobe, workDir, concatPath, videoDurationMs: concatProbe.durationMs, narration: input.narration, projectId: input.projectId, env: input.env })
+      : null;
+    const finalPath = controlledTracks?.finalPath ?? concatPath;
     run(ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", finalPath, "-f", "null", "-"], "video_timeline_decode_failed");
     const finalProbe = probeMedia(ffprobe, finalPath);
     if (!finalProbe.audio) throw new Error("video_timeline_final_audio_missing");
@@ -130,10 +143,59 @@ export function assembleVideoTimeline(input: {
       },
       timeline: { timelineId: `timeline-${sha256(Buffer.from(JSON.stringify(timelineSeed))).slice(0, 16)}`, shotIds: entries.map((entry) => entry.shotId), durationMs: finalProbe.durationMs, entries },
       sampledFrames,
+      ...(controlledTracks ? { transcript: controlledTracks.transcript, audioTrack: controlledTracks.audioTrack } : {}),
     };
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }
+}
+
+function applyControlledNarration(input: {
+  ffmpeg: string;
+  ffprobe: string;
+  workDir: string;
+  concatPath: string;
+  videoDurationMs: number;
+  narration: NonNullable<Parameters<typeof assembleVideoTimeline>[0]["narration"]>;
+  projectId: string;
+  env?: NodeJS.ProcessEnv;
+}) {
+  if (input.narration.audioBuffer.length < 512 || input.narration.transcriptBuffer.length < 20 || input.narration.cues.length === 0) throw new Error("video_narration_evidence_invalid");
+  const transcriptText = input.narration.transcriptBuffer.toString("utf8");
+  let previousEnd = 0;
+  for (const cue of input.narration.cues) {
+    if (!cue.text.trim() || !transcriptText.includes(cue.text.trim()) || cue.startMs < previousEnd || cue.endMs <= cue.startMs || cue.endMs > input.videoDurationMs) throw new Error("video_narration_cue_out_of_range");
+    previousEnd = cue.endMs;
+  }
+  const narrationPath = path.join(input.workDir, "narration.mp3");
+  writeFileSync(narrationPath, input.narration.audioBuffer);
+  const narrationDurationMs = probeFormatDuration(input.ffprobe, narrationPath);
+  if (narrationDurationMs > input.videoDurationMs + 100) throw new Error("video_narration_longer_than_video");
+  if (input.narration.providerEvidence.reportedDurationMs && Math.abs(input.narration.providerEvidence.reportedDurationMs - narrationDurationMs) > 500) throw new Error("video_narration_duration_evidence_mismatch");
+
+  const finalPath = path.join(input.workDir, "final-controlled-audio.mp4");
+  const durationSeconds = (input.videoDurationMs / 1000).toFixed(3);
+  run(input.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", input.concatPath, "-i", narrationPath, "-filter_complex", "[1:a]apad[narration]", "-map", "0:v:0", "-map", "[narration]", "-c:v", "copy", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-t", durationSeconds, "-movflags", "+faststart", "-y", finalPath], "video_narration_mux_failed");
+
+  const audioPath = path.join(input.workDir, "final-audio.m4a");
+  run(input.ffmpeg, ["-hide_banner", "-loglevel", "error", "-i", finalPath, "-vn", "-c:a", "copy", "-y", audioPath], "video_narration_audio_extract_failed");
+  const audioBuffer = readFileSync(audioPath);
+  const audioStored = writeLocalArtifact({ category: "video-artifacts", fileName: `${safeSegment(input.projectId)}-audio-${randomUUID()}.m4a`, buffer: audioBuffer, env: input.env });
+  const transcriptStored = writeLocalArtifact({ category: "video-artifacts", fileName: `${safeSegment(input.projectId)}-captions-${randomUUID()}.srt`, buffer: input.narration.transcriptBuffer, env: input.env });
+  const finalProbe = probeMedia(input.ffprobe, finalPath);
+  if (!finalProbe.audio || finalProbe.audio.codec !== "aac" || finalProbe.audio.sampleRate !== 48000 || finalProbe.audio.channels !== 2) throw new Error("video_narration_final_audio_invalid");
+  return {
+    finalPath,
+    transcript: { trackId: "caption-main" as const, storageRef: transcriptStored.localOutput, sha256: sha256(input.narration.transcriptBuffer), cueCount: input.narration.cues.length, format: "srt" as const, source: { model: input.narration.providerEvidence.model, voiceId: input.narration.providerEvidence.voiceId, scriptDigest: input.narration.providerEvidence.scriptDigest } },
+    audioTrack: { trackId: "audio-main" as const, storageRef: audioStored.localOutput, sha256: sha256(audioBuffer), codec: finalProbe.audio.codec, sampleRate: finalProbe.audio.sampleRate, channels: finalProbe.audio.channels },
+  };
+}
+
+function probeFormatDuration(ffprobe: string, filePath: string) {
+  const result = run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath], "video_narration_probe_failed");
+  const durationMs = Math.round(Number(result.stdout.trim()) * 1000);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error("video_narration_duration_invalid");
+  return durationMs;
 }
 
 function validateAndSortClips(clips: VideoTimelineClipInput[]) {

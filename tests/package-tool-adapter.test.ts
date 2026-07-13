@@ -16,6 +16,7 @@ import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
 import { buildPptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
+import { createVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
 function artifact(kind: ArtifactRecord["kind"], id: string, overrides: Partial<ArtifactRecord> = {}): ArtifactRecord {
   return {
@@ -55,6 +56,15 @@ function realMp4Buffer(color: string, withAudio: boolean) {
   args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-shortest", "-y", output);
   const result = spawnSync(ffmpeg, args, { encoding: "utf8", windowsHide: true });
   if (result.status !== 0) throw new Error(`test_ffmpeg_fixture_failed:${result.stderr}`);
+  try { return readFileSync(output); } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+function realMp3Buffer(durationSeconds = 0.8) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-real-mp3-"));
+  const output = path.join(root, "narration.mp3");
+  const ffmpeg = process.env.FFMPEG_PATH || "D:\\Soft\\ffmpeg-7.1.1-essentials_build\\bin\\ffmpeg.exe";
+  const result = spawnSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `sine=frequency=660:sample_rate=48000:duration=${durationSeconds}`, "-ac", "2", "-b:a", "128k", "-y", output], { encoding: "utf8", windowsHide: true });
+  if (result.status !== 0) throw new Error(`test_ffmpeg_audio_fixture_failed:${result.stderr}`);
   try { return readFileSync(output); } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -274,6 +284,10 @@ describe("M68 PackageToolAdapter", () => {
           structuredContent: { storage: { videoAsset: { fileName: "s2.mp4", localOutput: second.localOutput, mime: "video/mp4", sha256: createHash("sha256").update(secondBuffer).digest("hex"), requestEvidence: { shotId: "shot_02", references: [] } } } },
         }),
       ];
+      const narrationScript = createVideoNarrationScript({ schemaVersion: "video-narration-script.v1", language: "zh-CN", voiceId: "Chinese (Mandarin)_Gentleman", text: "装置为什么连续发生变化？带着这个问题回到课堂。", courseAnchor: "带着问题回到课堂", answerDisclosureBoundary: "不解释答案" });
+      const scriptArtifact = artifact("video_script_generate", "script-1", { structuredContent: { videoNarrationScript: narrationScript } });
+      const audioBuffer = realMp3Buffer();
+      const transcriptBuffer = Buffer.from("1\n00:00:00,000 --> 00:00:00,750\n装置为什么连续发生变化？", "utf8");
 
       const result = await executePackageTool({
         tool: getToolDefinition("concat_only_assemble"),
@@ -281,8 +295,10 @@ describe("M68 PackageToolAdapter", () => {
         artifactRefs: [
           { kind: "video_segment_generate", artifactId: "segment-1" },
           { kind: "video_segment_generate", artifactId: "segment-2" },
+          { kind: "video_script_generate", artifactId: "script-1" },
         ],
-        resolvedArtifacts: segments,
+        resolvedArtifacts: [...segments, scriptArtifact],
+        runVideoNarration: async () => ({ audioBuffer, transcriptBuffer, cues: [{ text: "装置为什么连续发生变化？", startMs: 0, endMs: 750 }], providerEvidence: { model: "speech-test", voiceId: narrationScript.voiceId, scriptDigest: narrationScript.scriptDigest, reportedDurationMs: 800 } }),
       });
 
       expect(result).toMatchObject({
@@ -296,18 +312,20 @@ describe("M68 PackageToolAdapter", () => {
             storage: {
               videoAsset: {
                 generationMode: "ffmpeg_timeline_assembled",
-                sourceArtifactIds: ["segment-1", "segment-2"],
+                sourceArtifactIds: ["segment-1", "segment-2", "script-1"],
               },
             },
             videoFinalReviewEvidence: {
               finalVideo: { fullyDecoded: true, audio: { codec: "aac" } },
               timeline: { shotIds: ["shot_01", "shot_02"], entries: [{ shotId: "shot_01" }, { shotId: "shot_02" }] },
               sampledFrames: [{ shotId: "shot_01" }, { shotId: "shot_02" }],
+              transcript: { trackId: "caption-main", format: "srt", cueCount: 1 },
+              audioTrack: { trackId: "audio-main", codec: "aac", sampleRate: 48000, channels: 2 },
             },
           },
         },
         artifactTruth: { created: true, persisted: true, placeholder: false, producedArtifactKind: "concat_only_assemble" },
-        qualityGate: { passed: true, gates: expect.arrayContaining(["ffprobe_shots_verified", "ffmpeg_timeline_assembled", "final_video_fully_decoded", "sampled_frames_created"]) },
+        qualityGate: { passed: true, gates: expect.arrayContaining(["ffprobe_shots_verified", "ffmpeg_timeline_assembled", "provider_audio_replaced", "controlled_audio_verified", "subtitle_timing_verified"]) },
       });
       expect(result.status).toBe("succeeded");
       if (result.status === "succeeded") {
@@ -315,11 +333,17 @@ describe("M68 PackageToolAdapter", () => {
         const absolutePath = resolveLocalArtifactOutput(output.videoAsset?.localOutput ?? "");
         expect(absolutePath && existsSync(absolutePath)).toBe(true);
         expect(readFileSync(absolutePath!).length).toBeGreaterThan(1024);
-        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).not.toHaveProperty("transcript");
-        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).not.toHaveProperty("audioTrack");
+        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).toHaveProperty("transcript.sha256");
+        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).toHaveProperty("audioTrack.sha256");
+        const evidence = result.artifactDraft.structuredContent?.videoFinalReviewEvidence as { transcript: { storageRef: string; sha256: string }; audioTrack: { storageRef: string; sha256: string } };
+        for (const track of [evidence.transcript, evidence.audioTrack]) {
+          const trackPath = resolveLocalArtifactOutput(track.storageRef);
+          expect(trackPath && existsSync(trackPath)).toBe(true);
+          expect(createHash("sha256").update(readFileSync(trackPath!)).digest("hex")).toBe(track.sha256);
+        }
       }
     });
-  });
+  }, 20_000);
 
   it("rejects video timeline assembly when a segment has no persisted shot binding", async () => {
     await withArtifactStorage(async () => {

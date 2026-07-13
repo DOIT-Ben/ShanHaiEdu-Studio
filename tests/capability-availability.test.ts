@@ -97,7 +97,10 @@ describe("CapabilityAvailability", () => {
   });
 
   it("does not mark package capabilities with blocked fallback as available by default", () => {
-    const entry = entryFor("concat_only_assemble", [approvedArtifactFor("video_segment_generate")]);
+    const entry = entryFor("concat_only_assemble", [
+      approvedArtifactFor("video_segment_generate"),
+      approvedArtifactFor("video_script_generate"),
+    ]);
 
     expect(entry.status).toBe("blocked");
     expect(entry.reasonForUser.toLowerCase()).not.toMatch(/provider|schema|storage|debug|local path|token/);

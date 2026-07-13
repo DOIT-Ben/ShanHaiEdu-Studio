@@ -409,8 +409,14 @@ describe("M64-D ToolRouter Core", () => {
       {
         capabilityId: "concat_only_assemble",
         projectId: "project-a",
-        artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-a" }],
-        resolvedArtifacts: [resolvedArtifact("video_segment_generate", "segment-a")],
+        artifactRefs: [
+          { kind: "video_segment_generate", artifactId: "segment-a" },
+          { kind: "video_script_generate", artifactId: "script-a" },
+        ],
+        resolvedArtifacts: [
+          resolvedArtifact("video_segment_generate", "segment-a"),
+          resolvedArtifact("video_script_generate", "script-a"),
+        ],
       },
       { packageExecutor },
     );
@@ -419,8 +425,14 @@ describe("M64-D ToolRouter Core", () => {
     expect(packageExecutor.mock.calls[0][0]).toMatchObject({
       tool: { id: "concat_only_assemble", adapterKind: "package", capabilityId: "concat_only_assemble" },
       projectId: "project-a",
-      artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-a" }],
-      resolvedArtifacts: [resolvedArtifact("video_segment_generate", "segment-a")],
+      artifactRefs: [
+        { kind: "video_segment_generate", artifactId: "segment-a" },
+        { kind: "video_script_generate", artifactId: "script-a" },
+      ],
+      resolvedArtifacts: [
+        resolvedArtifact("video_segment_generate", "segment-a"),
+        resolvedArtifact("video_script_generate", "script-a"),
+      ],
     });
     expect(result).toMatchObject({
       status: "succeeded",
@@ -446,7 +458,7 @@ describe("M64-D ToolRouter Core", () => {
       status: "needs_input",
       toolId: "concat_only_assemble",
       capabilityId: "concat_only_assemble",
-      missingInputs: ["video_segment_generate"],
+      missingInputs: ["video_segment_generate", "video_script_generate"],
       artifactCreated: false,
     });
   });

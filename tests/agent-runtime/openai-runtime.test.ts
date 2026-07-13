@@ -9,6 +9,7 @@ import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
 import { expectSucceeded } from "./test-helpers";
 import { validPptDesignPackage } from "../support/ppt-quality-fixture";
 import { createStoryboardManifest } from "../../src/server/video-quality/video-production-contract";
+import { createVideoNarrationScript } from "../../src/server/video-quality/video-narration-contract";
 
 function input(): AgentRuntimeInput {
   return {
@@ -54,6 +55,10 @@ function storyboardInput(): AgentRuntimeInput {
   return { ...input(), task: "storyboard_generate", userMessage: "请生成独立创意导入视频分镜。", approvedArtifacts: [{ nodeKey: "video_script_generate", title: "机械谜题", summary: "独立短片在结尾回到课程问题。", markdown: "## 视频脚本\n机械装置发生三次变化。" }] };
 }
 
+function videoScriptInput(): AgentRuntimeInput {
+  return { ...input(), task: "video_script_generate", userMessage: "请生成受控旁白脚本。", approvedArtifacts: [{ nodeKey: "creative_theme_generate", title: "机械谜题", summary: "独立短片只在结尾回接课程。", markdown: "## 一句话故事\n机械装置发生异常变化。" }] };
+}
+
 function validStoryboardManifest() {
   return createStoryboardManifest({
     schemaVersion: "video-storyboard.v1",
@@ -64,6 +69,19 @@ function validStoryboardManifest() {
 }
 
 describe("OpenAIRuntime", () => {
+  it("computes and transports a controlled narration script", async () => {
+    const semantic = { schemaVersion: "video-narration-script.v1" as const, language: "zh-CN" as const, voiceId: "Chinese (Mandarin)_Gentleman", text: "装置为什么会连续发生变化？带着这个问题回到课堂。", courseAnchor: "带着问题回到课堂", answerDisclosureBoundary: "不解释答案" };
+    const expected = createVideoNarrationScript(semantic);
+    const client = { responses: { create: async () => ({ output_text: structuredVideoScriptOutput(semantic) }) } };
+    const result = expectSucceeded(await new OpenAIRuntime({ client, model: "gpt-test" }).run(videoScriptInput()));
+    expect(result.artifactDraft.structuredContent).toEqual({ videoNarrationScript: expected });
+  });
+
+  it("rejects a video script without controlled narration data", async () => {
+    const client = { responses: { create: async () => ({ output_text: structuredVideoScriptOutput(null) }) } };
+    await expect(new OpenAIRuntime({ client, model: "gpt-test" }).run(videoScriptInput())).resolves.toMatchObject({ status: "failed" });
+  });
+
   it("transports a validated video storyboard manifest as executable structured content", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const manifest = validStoryboardManifest();
@@ -589,6 +607,14 @@ function structuredStoryboardOutput(manifest: ReturnType<typeof validStoryboardM
       structuredContentJson: manifest ? JSON.stringify({ videoStoryboardManifest: manifest }) : null,
     },
     nextSuggestedAction: { label: "查看并确认视频分镜" },
+  });
+}
+
+function structuredVideoScriptOutput(script: Omit<ReturnType<typeof createVideoNarrationScript>, "scriptDigest"> | null): string {
+  return JSON.stringify({
+    assistantMessage: { title: "视频脚本已生成", body: "已形成受控旁白。" },
+    artifactDraft: { title: "机械谜题视频脚本", summary: "独立悬念与唯一课程回接。", markdown: ["## 视频脚本", "机械装置连续变化。", "## 旁白或字幕", "提出疑问。", "## 每镜头时长", "三镜头各 6 秒。", "## 课堂边界约束", "不解释答案。", "## 课堂落点", "只在结尾回到课堂问题。", "## 自检清单", "独立创意与课程边界已检查。"].join("\n"), structuredContentJson: script ? JSON.stringify({ videoNarrationScript: script }) : null },
+    nextSuggestedAction: { label: "查看并确认视频脚本" },
   });
 }
 

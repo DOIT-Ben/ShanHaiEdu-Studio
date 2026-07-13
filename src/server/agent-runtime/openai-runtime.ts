@@ -15,6 +15,7 @@ import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { validatePptDesignPackage } from "@/server/ppt-quality/ppt-design-validator";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { createStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { createVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
 type OpenAIResponsePayload = GptProtocolRequest & {
   instructions: string;
@@ -155,6 +156,7 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, reasoningEf
       "如果是 PPT 设计稿，必须输出逐页四层 PPT 设计稿，并逐页明确底图、元素、文字、排版。每页还必须有独立的学习动作、面向学生的结论式标题、原创视觉事件、AI 场景/素材职责和可编辑数学职责；不得使用“第N页”“本页解决的问题”或重复空教室作为占位描述。",
       "如果任务是 ppt_design，还必须把完整 ppt-design-package.v1 作为 JSON 字符串写入 artifactDraft.structuredContentJson。",
       "如果任务是 storyboard_generate，还必须把完整 video-storyboard.v1 作为 videoStoryboardManifest 写入 artifactDraft.structuredContentJson；参考资产此时只声明需求，不得伪造尚未生成的文件哈希。其他任务写 null。",
+      "如果任务是 video_script_generate，还必须把受控中文旁白作为 videoNarrationScript 写入 artifactDraft.structuredContentJson；旁白只能制造悬念并完成唯一课程回接，不得提前解释答案。",
       "artifactDraft.markdown 必须包含任务必备字段，并以 ## 自检清单 结尾。",
       "返回内容必须严格符合指定 JSON 结构。",
     ].join("\n"),
@@ -230,6 +232,7 @@ function parseStructuredContent(
   if (structuredContentJson === null || structuredContentJson === undefined) {
     if (task === "ppt_design") throw new Error("PPT design package is required");
     if (task === "storyboard_generate") throw new Error("Video storyboard manifest is required");
+    if (task === "video_script_generate") throw new Error("Video narration script is required");
     return undefined;
   }
 
@@ -241,6 +244,12 @@ function parseStructuredContent(
     const { manifestDigest: _untrustedDigest, ...semantic } = manifest as unknown as StoryboardManifest;
     const validatedManifest = createStoryboardManifest(semantic);
     return { ...parsed, videoStoryboardManifest: validatedManifest };
+  }
+  if (task === "video_script_generate") {
+    const script = parsed.videoNarrationScript;
+    if (!isRecord(script)) throw new Error("Video narration script is required");
+    const { scriptDigest: _untrustedDigest, ...semantic } = script as unknown as VideoNarrationScript;
+    return { ...parsed, videoNarrationScript: createVideoNarrationScript(semantic) };
   }
   if (task !== "ppt_design") return parsed;
 
@@ -256,6 +265,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function structuredContentContractFor(task: AgentRuntimeTask): Record<string, unknown> | null {
+  if (task === "video_script_generate") {
+    return {
+      field: "artifactDraft.structuredContentJson",
+      encoding: "JSON string",
+      root: "videoNarrationScript",
+      schemaVersion: "video-narration-script.v1",
+      requiredFields: ["schemaVersion", "language=zh-CN", "voiceId", "text", "courseAnchor", "answerDisclosureBoundary"],
+      invariants: ["text is 10-500 Chinese characters", "one minimal course return only", "no answer disclosure", "do not calculate scriptDigest; the product computes it"],
+    };
+  }
   if (task === "storyboard_generate") {
     return {
       field: "artifactDraft.structuredContentJson",

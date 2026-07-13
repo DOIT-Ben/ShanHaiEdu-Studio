@@ -287,7 +287,7 @@ const toolDefinitions: ToolDefinition[] = [
     label: "只拼接最终导入视频",
     description: "只按分镜顺序拼接已通过校验的片段，不重排、不加转场、不加滤镜、不重写内容。",
     capabilityId: "concat_only_assemble",
-    requiredArtifactKinds: ["video_segment_generate"],
+    requiredArtifactKinds: ["video_segment_generate", "video_script_generate"],
     producedArtifactKind: "concat_only_assemble",
   }),
   packageTool({
