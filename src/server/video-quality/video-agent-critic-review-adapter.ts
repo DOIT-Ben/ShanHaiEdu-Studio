@@ -90,11 +90,20 @@ function parseFindings(value: unknown, artifact: ArtifactRecord, stage: "course_
 
 function assertFinalEvidence(artifact: ArtifactRecord) {
   const evidence = artifact.structuredContent.videoFinalReviewEvidence;
-  if (!isRecord(evidence) || !isRecord(evidence.finalVideo) || !isRecord(evidence.timeline) || !Array.isArray(evidence.sampledFrames) || evidence.sampledFrames.length === 0 || !isRecord(evidence.transcript) || !isRecord(evidence.audioTrack)) {
+  if (!isRecord(evidence) || !isRecord(evidence.storyboard) || !isRecord(evidence.finalVideo) || !isRecord(evidence.timeline) || !Array.isArray(evidence.sampledFrames) || evidence.sampledFrames.length === 0 || !isRecord(evidence.transcript) || !isRecord(evidence.audioTrack)) {
     throw new Error("video_final_review_evidence_incomplete");
   }
   const shotIds = Array.isArray(evidence.timeline.shotIds) ? evidence.timeline.shotIds : [];
   if (!shotIds.length || shotIds.some((shotId) => typeof shotId !== "string" || !/^shot_[a-z0-9_-]+$/i.test(shotId))) throw new Error("video_final_review_timeline_invalid");
+  const storyboardShotIds = Array.isArray(evidence.storyboard.shotIds) ? evidence.storyboard.shotIds : [];
+  const targetDuration = isRecord(evidence.storyboard.targetDurationRange) ? evidence.storyboard.targetDurationRange : null;
+  if (storyboardShotIds.length !== shotIds.length || storyboardShotIds.some((shotId, index) => shotId !== shotIds[index]) ||
+      typeof evidence.storyboard.manifestDigest !== "string" || !/^[a-f0-9]{64}$/i.test(evidence.storyboard.manifestDigest) ||
+      !targetDuration || typeof targetDuration.minSeconds !== "number" || typeof targetDuration.maxSeconds !== "number" ||
+      typeof evidence.finalVideo.durationMs !== "number" || evidence.finalVideo.durationMs < targetDuration.minSeconds * 1000 - Math.max(1000, shotIds.length * 250) ||
+      evidence.finalVideo.durationMs > targetDuration.maxSeconds * 1000 + Math.max(1000, shotIds.length * 250)) {
+    throw new Error("video_final_review_storyboard_binding_invalid");
+  }
   for (const value of [evidence.finalVideo.sha256, evidence.transcript.sha256, evidence.audioTrack.sha256]) {
     if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) throw new Error("video_final_review_evidence_digest_invalid");
   }

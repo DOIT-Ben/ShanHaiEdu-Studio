@@ -22,6 +22,7 @@ import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harnes
 import { assembleVideoTimeline } from "@/server/video-quality/video-timeline-assembler";
 import { generateMiniMaxVideoNarration, type VideoNarrationProviderResult } from "@/server/video-generation/video-narration-provider";
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
+import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 
 export type PackageArtifactRef = {
   kind: string;
@@ -240,16 +241,22 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
     throw new Error("missing_video_segments");
   }
 
-  const clipInputs = segments.map((artifact) => buildTimelineClipInput(artifact));
+  const storyboardArtifact = requireArtifact(input, "storyboard_generate");
+  const storyboardManifest = storyboardArtifact.structuredContent.videoStoryboardManifest as StoryboardManifest | undefined;
+  if (!storyboardManifest || !validateStoryboardManifest(storyboardManifest).valid || storyboardManifest.intent.productionPath !== "video_full_intro") {
+    throw new Error("video_storyboard_final_assembly_invalid");
+  }
+  const clipInputs = resolveStoryboardClipInputs(segments, storyboardManifest);
   const scriptArtifact = requireArtifact(input, "video_script_generate");
   const narrationScript = scriptArtifact.structuredContent.videoNarrationScript as VideoNarrationScript | undefined;
   if (!narrationScript || !validateVideoNarrationScript(narrationScript).valid) throw new Error("video_narration_script_missing");
   const narration = await (input.runVideoNarration ?? ((value) => generateMiniMaxVideoNarration(value)))({ script: narrationScript });
   const assembly = assembleVideoTimeline({ projectId: input.projectId, clips: clipInputs, narration });
   if (!assembly.transcript || !assembly.audioTrack) throw new Error("video_final_review_tracks_missing");
-  const sourceArtifactIds = [...assembly.timeline.entries.map((entry) => entry.sourceArtifactId), scriptArtifact.id];
+  assertFullIntroDuration(assembly.finalVideo.durationMs, storyboardManifest);
+  const sourceArtifactIds = [...assembly.timeline.entries.map((entry) => entry.sourceArtifactId), storyboardArtifact.id, scriptArtifact.id];
   const artifactTruth = buildArtifactTruth(input.tool, "concat_only_assemble");
-  const qualityGate = { passed: true, gates: ["ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "provider_audio_replaced", "controlled_audio_verified", "subtitle_timing_verified", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_video_final_review"] } satisfies ToolQualityGateResult;
+  const qualityGate = { passed: true, gates: ["storyboard_shot_coverage_verified", "full_intro_duration_verified", "ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "provider_audio_replaced", "controlled_audio_verified", "subtitle_timing_verified", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_video_final_review"] } satisfies ToolQualityGateResult;
 
   return {
     status: "succeeded",
@@ -277,6 +284,13 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
           },
         },
         videoFinalReviewEvidence: {
+          storyboard: {
+            artifactId: storyboardArtifact.id,
+            artifactVersion: storyboardArtifact.version,
+            manifestDigest: storyboardManifest.manifestDigest,
+            targetDurationRange: { ...storyboardManifest.intent.targetDurationRange },
+            shotIds: storyboardManifest.shots.map((shot) => shot.shotId),
+          },
           finalVideo: assembly.finalVideo,
           timeline: assembly.timeline,
           sampledFrames: assembly.sampledFrames,
@@ -291,7 +305,7 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
     },
     artifactTruth,
     qualityGate,
-    assistantSummary: "真实导入视频已完成 FFmpeg 时间线组装和技术校验；字幕或转写证据尚未形成，暂不能批准成片。",
+    assistantSummary: "真实导入视频已覆盖全部分镜，并完成目标时长、受控音轨、字幕和 FFmpeg 时间线校验，等待成片独立审查。",
     budgetEvent: buildBudgetEvent(input.tool, "succeeded", "tool_succeeded"),
   };
 }
@@ -449,14 +463,37 @@ function resolveRepairPageIds(input: PackageToolAdapterInput, candidatePageIds: 
   return pageIds;
 }
 
-function buildTimelineClipInput(artifact: ArtifactRecord) {
+function resolveStoryboardClipInputs(segments: ArtifactRecord[], manifest: StoryboardManifest) {
+  const byShotId = new Map<string, ArtifactRecord>();
+  for (const artifact of segments) {
+    const shotId = readSegmentShotId(artifact);
+    if (byShotId.has(shotId)) throw new Error(`video_segment_shot_duplicate:${shotId}`);
+    byShotId.set(shotId, artifact);
+  }
+  const expectedShotIds = new Set(manifest.shots.map((shot) => shot.shotId));
+  if (segments.length !== manifest.shots.length || [...byShotId.keys()].some((shotId) => !expectedShotIds.has(shotId))) {
+    throw new Error("video_storyboard_shot_coverage_mismatch");
+  }
+  return manifest.shots.map((shot) => {
+    const artifact = byShotId.get(shot.shotId);
+    if (!artifact) throw new Error(`video_storyboard_shot_missing:${shot.shotId}`);
+    return buildTimelineClipInput(artifact, shot.ordinal);
+  });
+}
+
+function readSegmentShotId(artifact: ArtifactRecord): string {
   const storage = isRecord(artifact.structuredContent.storage) ? artifact.structuredContent.storage : null;
   const videoAsset = storage && isRecord(storage.videoAsset) ? storage.videoAsset : null;
   const requestEvidence = videoAsset && isRecord(videoAsset.requestEvidence) ? videoAsset.requestEvidence : null;
   const shotId = requestEvidence?.shotId;
   if (typeof shotId !== "string" || !/^shot_[a-z0-9_-]+$/i.test(shotId)) throw new Error("video_segment_shot_binding_missing");
-  const match = shotId.match(/(\d+)$/);
-  if (!match) throw new Error("video_segment_shot_ordinal_missing");
+  return shotId;
+}
+
+function buildTimelineClipInput(artifact: ArtifactRecord, ordinal: number) {
+  const storage = isRecord(artifact.structuredContent.storage) ? artifact.structuredContent.storage : null;
+  const videoAsset = storage && isRecord(storage.videoAsset) ? storage.videoAsset : null;
+  const shotId = readSegmentShotId(artifact);
   const localOutput = typeof videoAsset?.localOutput === "string" ? videoAsset.localOutput : "";
   const sourcePath = resolveLocalArtifactOutput(localOutput);
   if (!sourcePath) throw new Error("video_segment_storage_invalid");
@@ -464,7 +501,15 @@ function buildTimelineClipInput(artifact: ArtifactRecord) {
   const storedDigest = typeof videoAsset?.sha256 === "string" ? videoAsset.sha256.toLowerCase() : "";
   const actualDigest = createHash("sha256").update(buffer).digest("hex");
   if (storedDigest && storedDigest !== actualDigest) throw new Error("video_segment_digest_mismatch");
-  return { shotId, ordinal: Number(match[1]), sourceArtifactId: artifact.id, sourcePath, sourceSha256: actualDigest };
+  return { shotId, ordinal, sourceArtifactId: artifact.id, sourcePath, sourceSha256: actualDigest };
+}
+
+function assertFullIntroDuration(durationMs: number, manifest: StoryboardManifest): void {
+  const target = manifest.intent.targetDurationRange;
+  const toleranceMs = Math.max(1000, manifest.shots.length * 250);
+  if (durationMs < target.minSeconds * 1000 - toleranceMs || durationMs > target.maxSeconds * 1000 + toleranceMs) {
+    throw new Error("video_final_duration_out_of_target");
+  }
 }
 
 function buildArtifactTruth(tool: ToolDefinition, fallbackKind: string): ToolArtifactTruth {

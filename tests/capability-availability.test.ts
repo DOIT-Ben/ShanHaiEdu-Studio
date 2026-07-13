@@ -99,6 +99,7 @@ describe("CapabilityAvailability", () => {
   it("does not mark package capabilities with blocked fallback as available by default", () => {
     const entry = entryFor("concat_only_assemble", [
       approvedArtifactFor("video_segment_generate"),
+      approvedArtifactFor("storyboard_generate"),
       approvedArtifactFor("video_script_generate"),
     ]);
 

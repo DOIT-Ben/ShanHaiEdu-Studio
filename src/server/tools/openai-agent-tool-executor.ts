@@ -136,7 +136,7 @@ function instructionsFor(definition: AgentToolDefinition, envelope: AgentToolInv
       common.push("课程锚点审查必须逐项输出六个且仅六个hardGateResults：independent_understandability、standalone_viewing_value、not_textbook_or_ppt_retelling、exactly_one_minimal_course_anchor、audience_not_story_world_constraint、no_answer_disclosure。每项必须引用实际证据；失败finding定位当前创意Artifact并返回可执行最小修复。 ");
     }
     if (envelope.arguments.domain === "video" && envelope.arguments.stage === "video_final_review") {
-      common.push("成片审查必须读取实际MP4、时间线、采样帧、字幕或转写和音轨证据，并逐项输出九个且仅九个hardGateResults：independent_understandability、standalone_viewing_value、not_textbook_or_ppt_retelling、exactly_one_minimal_course_anchor、audience_not_story_world_constraint、no_answer_disclosure、shot_timeline_continuity、caption_transcript_integrity、audio_track_integrity。失败finding只能定位当前成片内的shot、frame_range、track或timeline。 ");
+      common.push("成片审查必须读取实际MP4、时间线、采样帧、字幕或转写和音轨证据，并逐项输出十个且仅十个hardGateResults：independent_understandability、standalone_viewing_value、not_textbook_or_ppt_retelling、exactly_one_minimal_course_anchor、audience_not_story_world_constraint、no_answer_disclosure、shot_timeline_continuity、narrative_completeness_and_pacing、caption_transcript_integrity、audio_track_integrity。narrative_completeness_and_pacing必须检查钩子、目标/阻碍、可见变化、信息密度、结尾悬念和节奏是否构成完整可观看短片；仅时长达标不能自动通过。失败finding只能定位当前成片内的shot、frame_range、track或timeline。 ");
     }
   }
   return common.join("\n");

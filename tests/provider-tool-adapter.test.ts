@@ -98,8 +98,8 @@ function assetBriefArtifact(overrides: Partial<ArtifactRecord> = {}) {
 function videoArtifacts() {
   const manifest = createStoryboardManifest({
     schemaVersion: "video-storyboard.v1",
-    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾的一次课堂提问", classroomReturnQuestion: "这个变化意味着什么？", answerDisclosureBoundary: "不提前解释课程答案" },
-    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进独立悬念", mainSubject: "机械装置", subjectAction: "逐步发生变化", cameraMotion: "缓慢推进", continuityKeys: ["同一装置", "冷暖对比"], startFrameIntent: "承接上一状态", endFrameIntent: "留下下一变化", referencePolicy: "none" as const, referenceAssetIds: [], textPolicy: "post_production_only" as const, modelPrompt: `镜头 ${ordinal}：机械装置发生可见变化`, negativePrompt: "不要课堂讲解，不要答案文字", retakeVariables: ["cameraMotion", "subjectAction"] })),
+    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", targetDurationRange: { minSeconds: 30, maxSeconds: 60 }, courseAnchor: "结尾的一次课堂提问", classroomReturnQuestion: "这个变化意味着什么？", answerDisclosureBoundary: "不提前解释课程答案" },
+    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, sceneFunction: "推进独立悬念", mainSubject: "机械装置", subjectAction: "逐步发生变化", cameraMotion: "缓慢推进", continuityKeys: ["同一装置", "冷暖对比"], startFrameIntent: "承接上一状态", endFrameIntent: "留下下一变化", referencePolicy: "none" as const, referenceAssetIds: [], textPolicy: "post_production_only" as const, modelPrompt: `镜头 ${ordinal}：机械装置发生可见变化`, negativePrompt: "不要课堂讲解，不要答案文字", retakeVariables: ["cameraMotion", "subjectAction"] })),
     references: [],
   });
   return [
@@ -907,7 +907,7 @@ describe("M64-C ProviderToolAdapter", () => {
             sha256: "video-sha256",
             videoValid: true,
             mime: "video/mp4",
-            requestEvidence: { shotId: "shot_01", references: [] },
+            requestEvidence: { shotId: "shot_01", durationSeconds: 10, references: [] },
           };
         },
       });
@@ -920,7 +920,7 @@ describe("M64-C ProviderToolAdapter", () => {
           expect.objectContaining({ id: "artifact-assets-a", kind: "asset_image_generate", status: "approved", version: 7, isApproved: true }),
         ]),
         taskLifecycle: generationTaskLifecycle,
-        shot: { shotId: "shot_01", prompt: expect.stringContaining("机械装置"), referenceImageUrls: [], referenceEvidence: [] },
+        shot: { shotId: "shot_01", durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, durationSeconds: 10, prompt: expect.stringContaining("机械装置"), referenceImageUrls: [], referenceEvidence: [] },
       });
       expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(resolvedArtifacts[0]);
       expect((calledWith as { upstreamArtifacts: ArtifactRecord[] }).upstreamArtifacts).toEqual([resolvedArtifacts[1], resolvedArtifacts[2]]);
@@ -944,7 +944,7 @@ describe("M64-C ProviderToolAdapter", () => {
                 generationMode: "video_generated",
                 sourceArtifactId: "artifact-video-plan-a",
                 sourceArtifactIds: ["artifact-video-plan-a", "artifact-storyboard-a", "artifact-assets-a"],
-                requestEvidence: { shotId: "shot_01", references: [] },
+                requestEvidence: { shotId: "shot_01", durationSeconds: 10, references: [] },
               },
             },
             artifactTruth: {
@@ -1083,8 +1083,8 @@ describe("M64-C ProviderToolAdapter", () => {
         const sha256 = createHash("sha256").update(image).digest("hex");
         const manifest = createStoryboardManifest({
           schemaVersion: "video-storyboard.v1",
-          intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾一次提问", classroomReturnQuestion: "发生了什么？", answerDisclosureBoundary: "不解释答案" },
-          shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进悬念", mainSubject: "机械装置", subjectAction: "改变状态", cameraMotion: "缓慢推进", continuityKeys: ["同一装置"], startFrameIntent: "承接前态", endFrameIntent: "留下疑问", referencePolicy: ordinal === 1 ? "required" as const : "none" as const, referenceAssetIds: ordinal === 1 ? ["asset_main"] : [], textPolicy: "post_production_only" as const, modelPrompt: `机械装置镜头 ${ordinal}`, negativePrompt: "不要答案", retakeVariables: ["subjectAction"] })),
+          intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", targetDurationRange: { minSeconds: 30, maxSeconds: 60 }, courseAnchor: "结尾一次提问", classroomReturnQuestion: "发生了什么？", answerDisclosureBoundary: "不解释答案" },
+          shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, sceneFunction: "推进悬念", mainSubject: "机械装置", subjectAction: "改变状态", cameraMotion: "缓慢推进", continuityKeys: ["同一装置"], startFrameIntent: "承接前态", endFrameIntent: "留下疑问", referencePolicy: ordinal === 1 ? "required" as const : "none" as const, referenceAssetIds: ordinal === 1 ? ["asset_main"] : [], textPolicy: "post_production_only" as const, modelPrompt: `机械装置镜头 ${ordinal}`, negativePrompt: "不要答案", retakeVariables: ["subjectAction"] })),
           references: [{ assetId: "asset_main", assetDomain: "video", applicableShotIds: ["shot_01"], purpose: "装置连续性" }],
         });
         const artifacts = videoArtifacts();
@@ -1098,10 +1098,10 @@ describe("M64-C ProviderToolAdapter", () => {
           runVideo: async (input) => {
             selectedShot = (input as { shot?: unknown }).shot;
             const shot = (input as { shot: { shotId: string; referenceEvidence: unknown[] } }).shot;
-            return { fileName: "shot.mp4", localOutput: ".tmp/video-artifacts/shot.mp4", bytes: 4096, sha256: "video-sha256", videoValid: true, mime: "video/mp4", requestEvidence: { shotId: shot.shotId, references: shot.referenceEvidence as never[] } };
+            return { fileName: "shot.mp4", localOutput: ".tmp/video-artifacts/shot.mp4", bytes: 4096, sha256: "video-sha256", videoValid: true, mime: "video/mp4", requestEvidence: { shotId: shot.shotId, durationSeconds: 10, references: shot.referenceEvidence as never[] } };
           },
         });
-        expect(selectedShot).toMatchObject({ shotId: "shot_01", referenceImageUrls: ["https://files.example/reference.png"], referenceEvidence: [{ assetId: "asset_main", localSha256: sha256, shotId: "shot_01" }] });
+        expect(selectedShot).toMatchObject({ shotId: "shot_01", durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, durationSeconds: 10, referenceImageUrls: ["https://files.example/reference.png"], referenceEvidence: [{ assetId: "asset_main", localSha256: sha256, shotId: "shot_01" }] });
         expect(result).toMatchObject({ status: "succeeded", artifactDraft: { structuredContent: { storage: { videoAsset: { requestEvidence: { shotId: "shot_01", references: [{ localSha256: sha256 }] } } } } } });
       } finally {
         vi.unstubAllGlobals();

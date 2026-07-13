@@ -411,10 +411,12 @@ describe("M64-D ToolRouter Core", () => {
         projectId: "project-a",
         artifactRefs: [
           { kind: "video_segment_generate", artifactId: "segment-a" },
+          { kind: "storyboard_generate", artifactId: "storyboard-a" },
           { kind: "video_script_generate", artifactId: "script-a" },
         ],
         resolvedArtifacts: [
           resolvedArtifact("video_segment_generate", "segment-a"),
+          resolvedArtifact("storyboard_generate", "storyboard-a"),
           resolvedArtifact("video_script_generate", "script-a"),
         ],
       },
@@ -427,10 +429,12 @@ describe("M64-D ToolRouter Core", () => {
       projectId: "project-a",
       artifactRefs: [
         { kind: "video_segment_generate", artifactId: "segment-a" },
+        { kind: "storyboard_generate", artifactId: "storyboard-a" },
         { kind: "video_script_generate", artifactId: "script-a" },
       ],
       resolvedArtifacts: [
         resolvedArtifact("video_segment_generate", "segment-a"),
+        resolvedArtifact("storyboard_generate", "storyboard-a"),
         resolvedArtifact("video_script_generate", "script-a"),
       ],
     });
@@ -458,7 +462,7 @@ describe("M64-D ToolRouter Core", () => {
       status: "needs_input",
       toolId: "concat_only_assemble",
       capabilityId: "concat_only_assemble",
-      missingInputs: ["video_segment_generate", "video_script_generate"],
+      missingInputs: ["video_segment_generate", "storyboard_generate", "video_script_generate"],
       artifactCreated: false,
     });
   });

@@ -18,7 +18,7 @@ import {
 } from "@/server/video-generation/video-generation-run";
 import { resolveEvolinkShotReferences } from "@/server/video-generation/evolink-reference-upload";
 import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
-import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { resolveStoryboardShotDurations, validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
@@ -262,8 +262,10 @@ async function resolveDefaultVideoShotRequest(input: {
   if (!validation.valid) throw new Error(`video_storyboard_manifest_invalid:${validation.issues.map((issue) => issue.code).join(",")}`);
   const shot = manifest.shots.find((candidate) => candidate.shotId === shotIds[0]);
   if (!shot) throw new Error("video_provider_shot_out_of_range");
+  const durationSeconds = resolveStoryboardShotDurations(manifest).get(shot.shotId);
+  if (!durationSeconds) throw new Error("video_provider_shot_duration_missing");
   const prompt = `${shot.modelPrompt.trim()}\n\nNegative constraints: ${shot.negativePrompt.trim()}`;
-  if (shot.referencePolicy === "none") return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt });
+  if (shot.referencePolicy === "none") return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt, durationTargetRange: shot.durationTargetRange, durationSeconds });
   if (shot.referenceAssetIds.length !== 1) throw new Error("video_provider_reference_count_unsupported");
 
   const reference = manifest.references.find((candidate) => candidate.assetId === shot.referenceAssetIds[0]);
@@ -288,7 +290,7 @@ async function resolveDefaultVideoShotRequest(input: {
       localPath,
     }],
   });
-  return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt, referenceEvidence });
+  return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt, durationTargetRange: shot.durationTargetRange, durationSeconds, referenceEvidence });
 }
 
 function buildImageSuccessResult(

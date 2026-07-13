@@ -41,7 +41,7 @@ test("M60 registers the complete video workflow node and capability chain", () =
   assert.match(registrySource, /id: "storyboard_generate"[\s\S]*upstreamCapabilities: \["video_script_generate"\]/);
   assert.match(registrySource, /id: "asset_image_generate"[\s\S]*upstreamCapabilities: \["asset_brief_generate"\]/);
   assert.match(registrySource, /id: "video_segment_generate"[\s\S]*upstreamCapabilities: \["video_segment_plan", "storyboard_generate", "asset_image_generate"\]/);
-  assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*upstreamCapabilities: \["video_segment_generate", "video_script_generate"\]/);
+  assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*upstreamCapabilities: \["video_segment_generate", "storyboard_generate", "video_script_generate"\]/);
 });
 
 test("M60 runtime guidance requires structured video pre-artifacts before segment generation", () => {

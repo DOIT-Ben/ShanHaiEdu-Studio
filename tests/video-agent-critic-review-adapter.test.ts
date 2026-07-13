@@ -135,6 +135,7 @@ function creativeArtifact(): ArtifactRecord {
 function finalVideoArtifact(): ArtifactRecord {
   return artifact("concat_only_assemble", {
     videoFinalReviewEvidence: {
+      storyboard: { artifactId: "storyboard-a", artifactVersion: 1, manifestDigest: "e".repeat(64), targetDurationRange: { minSeconds: 30, maxSeconds: 60 }, shotIds: ["shot_01", "shot_02", "shot_03"] },
       finalVideo: { storageRef: "video/final.mp4", sha256: "a".repeat(64), durationMs: 42000 },
       timeline: { timelineId: "timeline-a", shotIds: ["shot_01", "shot_02", "shot_03"], durationMs: 42000 },
       sampledFrames: [{ shotId: "shot_01", storageRef: "frames/shot_01.png", sha256: "b".repeat(64) }],

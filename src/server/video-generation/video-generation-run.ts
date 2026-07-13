@@ -24,6 +24,7 @@ export type VideoGenerationResult = {
   mime: "video/mp4";
   requestEvidence?: {
     shotId: string;
+    durationSeconds: number;
     references: EvolinkReferenceUploadEvidence[];
   };
 };
@@ -69,6 +70,7 @@ export async function generateVideoFromArtifact(input: {
 }): Promise<VideoGenerationResult> {
   assertVideoProviderPreconditions(input);
   const config = readConfig(process.env);
+  const requestedDurationSeconds = input.shot?.durationSeconds ?? config.duration;
   const completedPayload = await executeRecoverableVideoTask({
     providerTaskId: input.taskLifecycle?.providerTaskId,
     submit: async () => extractTaskId(await submitVideoTask(config, input)),
@@ -96,7 +98,7 @@ export async function generateVideoFromArtifact(input: {
     sha256: createHash("sha256").update(videoBuffer).digest("hex"),
     videoValid: true,
     mime: "video/mp4",
-    ...(input.shot ? { requestEvidence: { shotId: input.shot.shotId, references: input.shot.referenceEvidence } } : {}),
+    ...(input.shot ? { requestEvidence: { shotId: input.shot.shotId, durationSeconds: requestedDurationSeconds, references: input.shot.referenceEvidence } } : {}),
   };
 }
 
@@ -181,6 +183,8 @@ export function assertVideoProviderPreconditions(input: {
 export type ResolvedShotVideoRequest = {
   shotId: string;
   prompt: string;
+  durationTargetRange: { minSeconds: number; maxSeconds: number };
+  durationSeconds: number;
   referenceImageUrls: string[];
   referenceEvidence: EvolinkReferenceUploadEvidence[];
 };
@@ -188,11 +192,16 @@ export type ResolvedShotVideoRequest = {
 export function buildResolvedShotVideoRequest(input: {
   shotId: string;
   prompt: string;
+  durationTargetRange: { minSeconds: number; maxSeconds: number };
+  durationSeconds: number;
   referenceEvidence?: EvolinkReferenceUploadEvidence[];
 }): ResolvedShotVideoRequest {
   const shotId = input.shotId.trim();
   const prompt = input.prompt.trim();
-  if (!/^shot_[a-z0-9_-]+$/i.test(shotId) || !prompt) throw new Error("video_shot_request_invalid");
+  if (!/^shot_[a-z0-9_-]+$/i.test(shotId) || !prompt || !isProviderDurationRange(input.durationTargetRange) ||
+      !Number.isInteger(input.durationSeconds) || input.durationSeconds < input.durationTargetRange.minSeconds || input.durationSeconds > input.durationTargetRange.maxSeconds) {
+    throw new Error("video_shot_request_invalid");
+  }
   const referenceEvidence = input.referenceEvidence ?? [];
   for (const evidence of referenceEvidence) {
     if (evidence.shotId !== shotId) throw new Error("video_reference_evidence_shot_mismatch");
@@ -203,6 +212,8 @@ export function buildResolvedShotVideoRequest(input: {
   return {
     shotId,
     prompt,
+    durationTargetRange: { ...input.durationTargetRange },
+    durationSeconds: input.durationSeconds,
     referenceImageUrls: referenceEvidence.map((evidence) => evidence.uploadedUrl),
     referenceEvidence,
   };
@@ -239,7 +250,14 @@ export function buildShotVideoRequestBody(
   shot: ResolvedShotVideoRequest,
 ) {
   if (!/^shot_[a-z0-9_-]+$/i.test(shot.shotId) || !shot.prompt.trim()) throw new Error("video_shot_request_invalid");
-  return buildVideoRequestBody(config, shot.prompt, shot.referenceImageUrls);
+  return buildVideoRequestBody({ ...config, duration: shot.durationSeconds }, shot.prompt, shot.referenceImageUrls);
+}
+
+function isProviderDurationRange(range: { minSeconds: number; maxSeconds: number }): boolean {
+  return Number.isInteger(range?.minSeconds) && Number.isInteger(range?.maxSeconds) &&
+    range.minSeconds >= EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE.durationSeconds.min &&
+    range.maxSeconds <= EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE.durationSeconds.max &&
+    range.maxSeconds >= range.minSeconds;
 }
 
 function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {

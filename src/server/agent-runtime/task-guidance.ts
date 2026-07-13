@@ -54,8 +54,8 @@ export const taskGuidance: Record<AgentRuntimeTask, RuntimeTaskGuidance> = {
   },
   storyboard_generate: {
     label: "导入视频分镜",
-    requiredFields: ["分镜 ID", "每镜头时长", "镜头目标", "场景", "画面动作", "镜头运动", "旁白或字幕", "角色、道具、场景资产", "关键帧要求", "连贯性说明"],
-    checklist: ["每个分镜是否有时长和画面动作。", "是否写清资产和关键帧要求。", "分镜之间是否有连贯性说明。"],
+    requiredFields: ["目标总时长", "分镜 ID", "每镜头时长", "镜头目标", "场景", "画面动作", "镜头运动", "旁白或字幕", "角色、道具、场景资产", "关键帧要求", "连贯性说明"],
+    checklist: ["Full Intro 的目标总时长是否在 30-90 秒内，且镜头时长总和完整覆盖目标。", "每个分镜是否只有一个明确叙事功能、时长和可见动作。", "是否写清资产和关键帧要求。", "分镜之间是否形成钩子、目标、阻碍、变化和结尾悬念。"],
   },
   asset_brief_generate: {
     label: "视频资产说明",

@@ -8,6 +8,7 @@ export const videoFinalReviewHardGateIds = [
   "audience_not_story_world_constraint",
   "no_answer_disclosure",
   "shot_timeline_continuity",
+  "narrative_completeness_and_pacing",
   "caption_transcript_integrity",
   "audio_track_integrity",
 ] as const;

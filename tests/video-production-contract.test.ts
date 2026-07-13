@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createStoryboardManifest, validateStoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { createStoryboardManifest, resolveStoryboardShotDurations, validateStoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { buildResolvedShotVideoRequest, buildShotVideoRequestBody } from "@/server/video-generation/video-generation-run";
 import { buildVideoShotGenerationJobs } from "@/server/video-quality/video-shot-job-planner";
 
 function validManifest() {
   return createStoryboardManifest({
     schemaVersion: "video-storyboard.v1",
-    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "百分数与生活情境", classroomReturnQuestion: "这些标记表示什么", answerDisclosureBoundary: "不得提前解释百分数定义" },
-    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 10 }, sceneFunction: "制造观察", mainSubject: "生活物品", subjectAction: "出现并变化", cameraMotion: "缓慢推进", continuityKeys: ["明亮教室"], startFrameIntent: "观察开始", endFrameIntent: "提出问题", referencePolicy: ordinal === 1 ? "required" as const : "none" as const, referenceAssetIds: ordinal === 1 ? ["asset_character"] : [], textPolicy: "post_production_only" as const, modelPrompt: "无文字画面", negativePrompt: "不要文字答案", retakeVariables: ["cameraMotion"] })),
+    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", targetDurationRange: { minSeconds: 30, maxSeconds: 60 }, courseAnchor: "百分数与生活情境", classroomReturnQuestion: "这些标记表示什么", answerDisclosureBoundary: "不得提前解释百分数定义" },
+    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_${ordinal}`, ordinal, durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, sceneFunction: "制造观察", mainSubject: "生活物品", subjectAction: "出现并变化", cameraMotion: "缓慢推进", continuityKeys: ["明亮教室"], startFrameIntent: "观察开始", endFrameIntent: "提出问题", referencePolicy: ordinal === 1 ? "required" as const : "none" as const, referenceAssetIds: ordinal === 1 ? ["asset_character"] : [], textPolicy: "post_production_only" as const, modelPrompt: "无文字画面", negativePrompt: "不要文字答案", retakeVariables: ["cameraMotion"] })),
     references: [{ assetId: "asset_character", assetDomain: "video", sha256: "a".repeat(64), applicableShotIds: ["shot_1"], purpose: "角色连续性" }],
   });
 }
@@ -27,19 +27,34 @@ describe("V1 Stage 4A video production contract", () => {
     expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["full_intro_minimum_three_shots", "required_reference_missing", "manifest_digest_invalid"]));
   });
 
+  it("blocks a Full Intro whose shot durations cannot cover its target duration", () => {
+    const value = validManifest();
+    value.intent.targetDurationRange = { minSeconds: 50, maxSeconds: 60 };
+    value.shots = value.shots.map((shot) => ({ ...shot, durationTargetRange: { minSeconds: 10, maxSeconds: 15 } }));
+    expect(validateStoryboardManifest(value).issues.map((issue) => issue.code)).toContain("full_intro_shot_duration_coverage_invalid");
+  });
+
+  it("allocates only enough per-shot duration to reach the Full Intro minimum", () => {
+    const value = validManifest();
+    value.intent.targetDurationRange = { minSeconds: 45, maxSeconds: 60 };
+    const { manifestDigest: _digest, ...semantic } = value;
+    const resealed = createStoryboardManifest(semantic);
+    expect([...resolveStoryboardShotDurations(resealed).values()]).toEqual([20, 15, 10]);
+  });
+
   it("keeps resolved shot reference URLs in the Evolink provider request", () => {
-    const shot = buildResolvedShotVideoRequest({ shotId: "shot_1", prompt: "角色观察生活情境", referenceEvidence: [{
+    const shot = buildResolvedShotVideoRequest({ shotId: "shot_1", prompt: "角色观察生活情境", durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, durationSeconds: 10, referenceEvidence: [{
       shotId: "shot_1", assetId: "asset_character", assetDomain: "video", purpose: "角色连续性",
       localSha256: "a".repeat(64), uploadFileId: "file_character", uploadedUrl: "https://trusted.example/character.png",
       downloadUrl: null, expiresAt: null,
     }] });
     const body = buildShotVideoRequestBody({ channel: "evolink", model: "video", size: "1280x720", duration: 6, quality: "480p", mode: "normal", aspectRatio: "16:9" }, shot);
-    expect(body).toMatchObject({ prompt: "角色观察生活情境", image_urls: ["https://trusted.example/character.png"] });
+    expect(body).toMatchObject({ prompt: "角色观察生活情境", duration: 10, image_urls: ["https://trusted.example/character.png"] });
     expect(shot.referenceEvidence[0]).toMatchObject({ assetId: "asset_character", localSha256: "a".repeat(64), shotId: "shot_1" });
   });
 
   it("rejects reference evidence bound to a different shot", () => {
-    expect(() => buildResolvedShotVideoRequest({ shotId: "shot_1", prompt: "角色观察生活情境", referenceEvidence: [{
+    expect(() => buildResolvedShotVideoRequest({ shotId: "shot_1", prompt: "角色观察生活情境", durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, durationSeconds: 10, referenceEvidence: [{
       shotId: "shot_2", assetId: "asset_character", assetDomain: "video", purpose: "角色连续性",
       localSha256: "a".repeat(64), uploadFileId: "file_character", uploadedUrl: "https://trusted.example/character.png",
       downloadUrl: null, expiresAt: null,

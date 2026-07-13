@@ -289,7 +289,7 @@ describe("ToolRegistry", () => {
       adapterKind: "package",
       capabilityId: "concat_only_assemble",
       implemented: true,
-      requiredArtifactKinds: ["video_segment_generate", "video_script_generate"],
+      requiredArtifactKinds: ["video_segment_generate", "storyboard_generate", "video_script_generate"],
       producedArtifactKind: "concat_only_assemble",
     });
   });
