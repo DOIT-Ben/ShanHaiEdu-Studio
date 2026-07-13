@@ -42,7 +42,7 @@ npm run build
 npm run preflight:production
 ```
 
-`preflight:production` 必须全部为 `ok=true`，至少证明：密码认证、可信代理、公开注册关闭、单实例拓扑、release 外数据库、真实管理员、release 外 Artifact 根和四类 Provider 配置存在。
+`preflight:production` 必须全部为 `ok=true`，至少证明：密码认证、可信代理、公开注册关闭、单实例拓扑、release 外数据库、真实管理员、release 外 Artifact 根，以及 Main Agent、PPT、图片、视频和 TTS 五类 Provider 配置存在。
 
 ## 4. 离线备份
 

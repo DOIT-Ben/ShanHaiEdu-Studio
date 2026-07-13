@@ -64,6 +64,7 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
     checkCozePptProvider(env),
     checkImageProvider(env),
     checkVideoProvider(env),
+    checkTtsProvider(env),
   ];
 
   return {
@@ -286,6 +287,15 @@ function checkVideoProvider(env) {
     message: missing.length === 0 ? "Video provider env is present." : "Video provider env is missing.",
     missing,
     source: hasOcto ? "octo" : hasNewApi ? "newapi" : "missing",
+  });
+}
+
+function checkTtsProvider(env) {
+  const hasKey = Boolean(env.MINIMAX_TTS_API_KEY?.trim() || env.MINIMAX_API_KEY?.trim());
+  return buildCheck("provider-tts", hasKey, {
+    message: hasKey ? "MiniMax TTS provider env is present." : "MiniMax TTS provider env is missing.",
+    missing: hasKey ? [] : ["MINIMAX_TTS_API_KEY"],
+    source: "minimax_tts",
   });
 }
 

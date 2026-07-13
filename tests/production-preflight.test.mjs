@@ -61,6 +61,7 @@ test("production preflight passes with complete local production env without lea
       OCTO_API_KEY: "test-video-key-do-not-print",
       OCTO_BASE_URL: "https://video-private.invalid/v1",
       VIDEO_MODEL: "test-video-model",
+      MINIMAX_TTS_API_KEY: "test-tts-key-do-not-print",
     },
   });
   const serialized = JSON.stringify(result);
@@ -75,6 +76,7 @@ test("production preflight passes with complete local production env without lea
   assert.doesNotMatch(serialized, /image-private\.invalid/);
   assert.doesNotMatch(serialized, /test-video-key-do-not-print/);
   assert.doesNotMatch(serialized, /video-private\.invalid/);
+  assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
 });
 
 test("production preflight accepts the same image defaults and Evolink aliases as the runtime", async () => {
@@ -98,6 +100,35 @@ test("production preflight accepts the same image defaults and Evolink aliases a
   assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "free");
   assert.equal(result.checks.find((check) => check.id === "provider-video")?.source, "evolink");
   assert.doesNotMatch(serialized, /test-evolink-key-do-not-print/);
+});
+
+test("production preflight requires MiniMax TTS using the same key aliases as the runtime", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const storageRoot = makeExternalStorageRoot();
+  const primaryEnv = completeEnv(storageRoot);
+  delete primaryEnv.MINIMAX_API_KEY;
+  Object.assign(primaryEnv, {
+    MINIMAX_TTS_API_KEY: "test-tts-key-do-not-print",
+    MINIMAX_TTS_BASE_URL: "https://tts-private.invalid",
+  });
+
+  const primaryResult = await runProductionPreflight({ cwd, env: primaryEnv });
+  const primaryCheck = primaryResult.checks.find((check) => check.id === "provider-tts");
+  const serialized = JSON.stringify(primaryResult);
+  assert.equal(primaryCheck?.ok, true);
+  assert.equal(primaryCheck?.source, "minimax_tts");
+  assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
+  assert.doesNotMatch(serialized, /tts-private\.invalid/);
+
+  const missingEnv = completeEnv(storageRoot);
+  delete missingEnv.MINIMAX_API_KEY;
+  delete missingEnv.MINIMAX_TTS_API_KEY;
+  const missingResult = await runProductionPreflight({ cwd, env: missingEnv });
+  const missingCheck = missingResult.checks.find((check) => check.id === "provider-tts");
+  assert.equal(missingResult.ok, false);
+  assert.equal(missingCheck?.ok, false);
+  assert.deepEqual(missingCheck?.missing, ["MINIMAX_TTS_API_KEY"]);
 });
 
 test("production preflight detects missing standalone output and package script", async () => {
@@ -277,6 +308,7 @@ function completeEnv(storageRoot, { databasePath = makeAuthDatabase({ admin: tru
     OCTO_API_KEY: "test-video-key-do-not-print",
     OCTO_BASE_URL: "https://video-private.invalid/v1",
     VIDEO_MODEL: "test-video-model",
+    MINIMAX_API_KEY: "test-tts-key-do-not-print",
   };
 }
 
