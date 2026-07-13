@@ -76,6 +76,20 @@ npm run release:data:verify -- --backup <BACKUP_DIRECTORY>
 4. `npm run preflight:production` 通过后启动唯一应用进程。
 5. 先检查本机，再切反向代理：
 
+目标服务器容器切换统一使用 `deploy/switch-v1-container.sh`，不得再并行运行手工回退计时器和第二个纠正流程。脚本使用 `flock` 对同一常驻容器互斥；候选镜像预检发生在停止旧容器之前，随后在一个事务内完成停止、改名、启动、Docker Health 与 HTTP 健康检查，失败时恢复旧代码容器但继续挂载当前共享数据。
+
+```bash
+bash deploy/switch-v1-container.sh \
+  --container <CURRENT_CONTAINER_NAME> \
+  --image <IMMUTABLE_IMAGE_TAG> \
+  --env-file <EXTERNAL_ENV_FILE> \
+  --data-root <EXTERNAL_SQLITE_DIRECTORY> \
+  --artifact-root <EXTERNAL_ARTIFACT_DIRECTORY> \
+  --host-port <LOOPBACK_PORT>
+```
+
+切换成功必须同时满足 Docker Health=`healthy` 与 `/api/health` HTTP 200。脚本固定使用非 root、`cap-drop ALL`、`no-new-privileges`、loopback 端口与 release 外共享卷；输出只包含脱敏状态和回退容器名，不打印 env 内容、共享路径、密钥或容器日志。成功后旧容器保持停止态，作为代码回退点。
+
 ```text
 GET http://127.0.0.1:<port>/api/health
 ```
@@ -86,7 +100,7 @@ GET http://127.0.0.1:<port>/api/health
 {"status":"ok","checks":{"database":"ok","artifactStorage":"ok"}}
 ```
 
-该接口不检查 Provider，也不返回路径、SQL、账号、密钥或异常堆栈。任一数据依赖不可用时返回503。随后验证未认证业务API为401、公开注册为403，并用受控教师账号完成登录、项目读取、反馈读取和一个无媒体写操作。
+该接口不检查 Provider，也不返回路径、SQL、账号、密钥或异常堆栈。任一数据依赖不可用时返回503。随后按具体路由合同验证未认证业务 API：认证入口通常为401，采用资源隐藏语义的项目接口可以返回404；公开注册必须为403。再用受控教师账号完成登录、项目读取、反馈读取和一个无媒体写操作。
 
 ## 6. 代码 Release 回滚
 
