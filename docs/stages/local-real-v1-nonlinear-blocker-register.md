@@ -24,19 +24,22 @@
 
 - 事实：本地生产预检正确拒绝缺少生产反代、关闭公开注册和绝对生产数据库的配置。
 - 已验证：本地数据库初始化、管理员准备、artifact storage 可写、构建、全量测试、恢复和浏览器只读门检。
-- 未通过：目标服务器共享卷重启、release 回滚、备份恢复与公网注册关闭复核。
+- 已通过：目标服务器单容器运行时、release 外共享 SQLite/Artifact 挂载、localhost-only staging、容器重启持久性和公开注册 API=403。
+- 未通过：release 回滚、备份恢复、公网 nginx/HTTPS 切流后的注册关闭复核与教师签收。
 - 当前可推进：不依赖服务器权限且不调用真实媒体Provider的V1-2至V1-8编排、隔离和恢复任务。
 - 回收条件：获得目标服务器操作窗口后，在真实发布环境执行 runbook 并保存脱敏结果。
 
 ### 2026-07-13 V1-10C 回收进展
 
+- 状态：`closed / target localhost staging verified`
 - 已知事实：目标服务器宿主机Node 16.9与定制Node 20.13均低于Prisma 7.8的Node 20.19/22.12门槛；Docker 26.1与Compose 2.27可用，单容器单Node进程是当前可行运行时。
-- 已完成：新增Node 22容器、FFmpeg/LibreOffice/Poppler/中文字体运行时、非root单实例Compose、release外bind mount和Linux curl Executor；本地Node 268/268、Vitest 842/842、TypeScript与14页构建通过。
+- 已完成：新增Node 22容器、FFmpeg/LibreOffice/Poppler/中文字体运行时、非root单实例Compose、release外bind mount和Linux curl Executor；本地Node 268/268、Vitest 842/842、TypeScript与14页构建通过；目标服务器精确提交`75bf141`镜像构建和localhost-only staging通过。
 - 失败点一：Docker直连Debian源约26KB/s，297MB系统依赖预计耗时数小时，主动停止。
 - 失败点二：host network加服务器本地代理后297MB在2分52秒下载完成，但4个Debian包被代理返回502，`apt-get` exit 100。
-- 影响范围：目标服务器尚未形成V1镜像或容器，V1-10C不能closeout；V1-9本地产品HumanGate、P0审计和非服务器任务不受影响。
-- 保护证据：无残留build/apt进程、无半成品镜像、无staging容器、3210未监听；nginx校验、根站、3001和3010既有服务保持原状。
-- 恢复入口：使用已测速通过的腾讯Debian镜像完成同一精确提交`aed4d55`的镜像构建；不得再重复官方直连或当前代理路径。
+- 关闭证据：镜像运行时预检通过；`better-sqlite3`可加载；`python3/make/g++`已从最终镜像移除；容器healthy、health=200、未认证项目=401、注册=403、用户1000:1000、端口仅`127.0.0.1:3210`。
+- 持久性证据：容器重启后数据库与Artifact探针哈希保持一致，SQLite integrity=ok，既有管理员记录仍存在。
+- 保护证据：nginx配置校验通过，根站与3001仍为200，3010仍监听，单staging容器运行；未切公网流量。
+- 后续入口：V1-10继续执行release回滚、备份恢复和正式切流门；不得把本次localhost staging称为公网上线。
 
 
 ## B-04 中年级教材权威输入

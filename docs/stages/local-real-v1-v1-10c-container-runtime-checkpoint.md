@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`implementation verified / remote build blocked`
+状态：`closed / superseded by closeout`
 
 ## 1. 已完成
 
@@ -27,15 +27,15 @@
 - archive哈希在目标服务器复核一致，新release与shared-staging目录创建成功；release内`.env`数量为0，shared-staging归属容器UID/GID。
 - Compose配置校验通过，未修改nginx、80、443、3010、3001或现有服务。
 
-## 4. 两轮构建失败
+## 4. 历史构建失败
 
 1. 官方源直连：索引下载约26KB/s，预计系统依赖下载耗时数小时，停止该路径。
 2. host network加本地代理：297MB在2分52秒下载完成，但4个包返回502，`apt-get` exit 100。
 
 失败后确认：无build/apt进程、无目标镜像、无staging容器、3210未监听；nginx校验通过，原根站与3001仍为200，3010仍监听。
 
-## 5. 恢复入口
+## 5. 恢复结果
 
-下一次只使用已测速通过的腾讯Debian镜像恢复构建，不再重复上述两条路径。镜像成功后依次执行：隔离DB初始化、容器runtime preflight、启动、health 200、项目API 401、注册API 403、重启持久性和既有端口复核。
+已使用腾讯 Debian 镜像恢复并完成精确提交 `75bf141` 的构建。镜像 ID、运行时门禁、重启持久性与既有服务保护证据已转入 `local-real-v1-v1-10c-container-runtime-closeout.md`。
 
-本检查点不表示V1-10C完成，不表示公网发布、Provider可用、release回滚、备份恢复或教师签收通过。
+本检查点保留为失败路径与恢复依据，不再代表当前状态。V1-10C 已完成，但不表示公网发布、Provider 可用、release 回滚、备份恢复或教师签收通过。

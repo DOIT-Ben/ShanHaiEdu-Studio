@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`implementation done / remote image build blocked`
+状态：`done / target localhost staging verified`
 
 ## 1. 背景
 
@@ -64,3 +64,9 @@ V1 仍固定单应用实例、单 Prisma singleton 与 SQLite。V1-10C 采用单
 - Compose 配置证明单实例、非 root、localhost-only、password、trusted proxy、注册关闭和 release 外 bind mount。
 - 隔离容器 `/api/health`=200，未认证项目 API=401，注册 API=403。
 - 容器停止/重启后 SQLite 与 Artifact 探针保持可用；现有远端服务与端口不变。
+
+## 7. 完成结论
+
+2026-07-13 已使用精确提交 `75bf141` 在目标服务器完成镜像构建与 localhost-only staging 验证。最终镜像内 Node、媒体/文档工具、中文字体与 `better-sqlite3` 均可用，临时构建工具已清除；容器重启后 SQLite 完整性、管理员记录与 Artifact 探针保持可用。详细证据见 `local-real-v1-v1-10c-container-runtime-closeout.md`。
+
+本阶段完成不表示公网发布。release 回滚、备份恢复、nginx/HTTPS 切流、真实教师签收仍属于 V1-10 后续发布门。
