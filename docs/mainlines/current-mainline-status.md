@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-8、V1-9A至V1-9F、V1-10A至V1-10F已完成；目标服务器localhost staging、代码回滚/前滚、全新目录恢复、最小运行镜像、五类Provider配置和Main Agent Responses连通均已通过，下一阶段是在真实教师确认后继续V1-9产品内E2E，并关闭正式公网切流与教师签收门`。
+当前阶段：`V1-1至V1-8、V1-9A至V1-9G、V1-10A至V1-10F已完成；目标服务器localhost staging、代码回滚/前滚、全新目录恢复、最小运行镜像、五类Provider配置、Main Agent Responses连通和最终包真实Runtime来源门均已通过，下一阶段是在真实教师确认后继续V1-9产品内E2E，并关闭正式公网切流与教师签收门`。
 
 ## 2. 最近已完成阶段
 
@@ -28,6 +28,7 @@ V1 交付质量与邀请制上线
 | Agent workflow closure | implementation done / V1-9 real E2E pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与package resolved Artifact门禁已完成；不在前段追加真实Provider smoke |
 | V1-9A至V1-9E | done | 真实时间线、成片审查证据、受控音字轨、版本一致最终包和30-90秒完整导入视频门禁已封板 |
 | V1-9F Main Agent runtime recovery | done | 定位并修复 Critic function-tool locator Schema 的 Provider兼容问题；真实UI已形成19步计划并停在合法需求确认门 |
+| V1-9G final package runtime lineage | done / localhost staging verified | 四类语义源必须为真实OpenAI Runtime产物才能进入最终ZIP；精确提交`ea84cd2`、生产预检15/15、重启和数据摘要不变均通过；未调用真实媒体、未切公网流量 |
 | V1-10A release topology and recovery | done / target evidence closed by V1-10C至V1-10F | 单实例SQLite预检、脱敏健康检查、离线备份/校验/新目录恢复和runbook完成；目标服务器证据已在后续阶段关闭 |
 | V1-10B isolated standalone rehearsal | done / target evidence closed by V1-10C至V1-10F | 隔离SQLite与Artifact根完成schema、管理员、production preflight、build和standalone 200/401/403检查；目标服务器证据已在后续阶段关闭 |
 | V1-10C target container runtime | done / localhost staging verified | 精确提交`75bf141`目标服务器镜像构建、非root单容器、共享SQLite/Artifact、重启持久性、200/401/403及既有服务保护均通过；未切公网流量 |
@@ -77,6 +78,7 @@ V1 交付质量与邀请制上线
 - 2026-07-13 V1-6最终封板证据：专项7文件71/71；TypeScript exit 0；Node 259/259；完整Vitest通过；生产构建exit 0并生成13个静态页面；`npm test`隔离SQLite初始化与持久化测试通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
 - 2026-07-13 V1-7最终封板证据：专项10文件150/150；TypeScript exit 0；Node 259/259；完整Vitest随`npm test`正常完成；生产构建exit 0并生成13个静态页面；隔离SQLite初始化与视频审查持久化通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
 - 2026-07-13 V1-8最终封板证据：专项7文件43/43、双用户综合1/1；TypeScript exit 0；Node 259/259；完整Vitest随`npm test`正常完成；生产构建exit 0并生成13个静态页面；隔离SQLite与WAL实测通过；`git diff --check` exit 0。目标部署限定单Node进程/单Prisma singleton；未调用真实媒体Provider。
+- 2026-07-13 V1-9G最终封板证据：四类语义源真实Runtime门专项23/23；Node 271/271；Vitest 119文件849/849；生产构建14/14页面；目标服务器精确镜像生产预检15/15、Docker healthy、重启、SQLite integrity、管理员和数据摘要复验通过。未调用真实媒体Provider、未切公网流量。
 - 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
 
