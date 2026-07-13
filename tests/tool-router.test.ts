@@ -479,6 +479,28 @@ describe("M64-D ToolRouter Core", () => {
     });
   });
 
+  it("passes structured page ids to the page repair package tool", async () => {
+    const packageExecutor = vi.fn(async ({ tool }) => successResult(tool));
+    const artifacts = [
+      resolvedArtifact("pptx_artifact", "deck-a"),
+      resolvedArtifact("ppt_design_draft", "design-a"),
+      resolvedArtifact("image_prompts", "assets-a"),
+    ];
+
+    await routeToolCall({
+      capabilityId: "ppt_page_repair",
+      projectId: "project-a",
+      userInstruction: "请按审查意见局部返修。",
+      toolInput: { pageIds: ["page_06", "page_02"] },
+      artifactRefs: artifacts.map((artifact) => ({ kind: artifact.kind, artifactId: artifact.id })),
+      resolvedArtifacts: artifacts,
+    }, { packageExecutor });
+
+    expect(packageExecutor).toHaveBeenCalledWith(expect.objectContaining({
+      toolInput: { pageIds: ["page_06", "page_02"] },
+    }));
+  });
+
   it("does not let approvedArtifacts satisfy provider required artifactRefs", async () => {
     const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));
 

@@ -916,6 +916,7 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     projectId: input.project.id,
     project: input.project,
     userInstruction,
+    toolInput: toolPlan.inputDraft,
     runtime: input.runtime,
     projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
     approvedArtifacts,

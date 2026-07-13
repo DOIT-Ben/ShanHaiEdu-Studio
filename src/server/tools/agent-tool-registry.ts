@@ -289,6 +289,7 @@ function criticFindingSchema() {
       responsibleStage: { type: "string", minLength: 1 },
       minimalFix: { type: "string", minLength: 1 },
       invalidatesDownstream: { type: "boolean" },
+      dimensionId: { type: ["string", "null"], enum: ["design", "visual", "provenance", "readability", null] },
     },
     required: [
       "findingId",

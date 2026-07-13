@@ -30,6 +30,7 @@ export type PackageToolAdapterInput = {
   tool: ToolDefinition;
   projectId: string;
   userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
   artifactRefs: PackageArtifactRef[];
   resolvedArtifacts?: ArtifactRecord[];
   sourceMessageId?: string;
@@ -78,8 +79,6 @@ export async function executePackageTool(input: PackageToolAdapterInput): Promis
 }
 
 async function executePptPageRepair(input: PackageToolAdapterInput): Promise<ToolExecutionResult> {
-  const pageIds = parseRepairPageIds(input.userInstruction);
-  if (!pageIds.length) throw new Error("ppt_page_repair_page_id_required");
   const previous = findRepairableArtifact(input, "pptx_artifact");
   const design = requireArtifact(input, "ppt_design_draft");
   const assets = findResolvedArtifacts(input, "image_prompts").find((artifact) => isRecord(artifact.structuredContent.pptAssetRequestBatch) && isRecord(artifact.structuredContent.pptAssetManifest) && isRecord(artifact.structuredContent.pptKeySampleSet) && isRecord(artifact.structuredContent.pptSampleApproval));
@@ -90,6 +89,7 @@ async function executePptPageRepair(input: PackageToolAdapterInput): Promise<Too
   const sampleSet = assets?.structuredContent.pptKeySampleSet as PptKeySampleSet | undefined;
   const sampleApproval = assets?.structuredContent.pptSampleApproval as PptSampleApproval | undefined;
   if (!previous || !previousCandidate || !validatePptFullDeckCandidate(previousCandidate) || !designPackage || !requestBatch || !manifest || !sampleSet || !sampleApproval) throw new Error("ppt_page_repair_inputs_incomplete");
+  const pageIds = resolveRepairPageIds(input, previousCandidate.pageIds);
   const repaired = await repairPptFullDeckPages({ previousCandidate, repairedPageIds: pageIds, designPackage, requestBatch, manifest, sampleSet, sampleApproval });
   const candidate = buildPptFullDeckCandidate({ designPackage, requestBatch, manifest, sampleSet, sampleApproval, composition: repaired.composition, renderEvidence: repaired.renderEvidence });
   const artifactTruth = buildArtifactTruth(input.tool, "pptx_artifact");
@@ -401,6 +401,26 @@ function findRepairableArtifact(input: PackageToolAdapterInput, kind: string): A
 
 function parseRepairPageIds(value: string | null | undefined): string[] {
   return [...new Set([...((value ?? "").matchAll(/第\s*(\d{1,2})\s*页/g))].map((match) => `page_${match[1].padStart(2, "0")}`))].sort();
+}
+
+function resolveRepairPageIds(input: PackageToolAdapterInput, candidatePageIds: string[]): string[] {
+  const hasStructuredPageIds = input.toolInput && Object.prototype.hasOwnProperty.call(input.toolInput, "pageIds");
+  const rawPageIds = hasStructuredPageIds ? input.toolInput?.pageIds : undefined;
+  if (hasStructuredPageIds && (!Array.isArray(rawPageIds) || rawPageIds.length === 0)) {
+    throw new Error("ppt_page_repair_page_id_required");
+  }
+
+  const pageIds = hasStructuredPageIds
+    ? [...new Set((rawPageIds as unknown[]).map((pageId) => {
+        if (typeof pageId !== "string" || !/^page_\d{2}$/.test(pageId)) throw new Error("ppt_page_repair_page_id_invalid");
+        return pageId;
+      }))].sort()
+    : parseRepairPageIds(input.userInstruction);
+  if (!pageIds.length) throw new Error("ppt_page_repair_page_id_required");
+
+  const candidatePages = new Set(candidatePageIds);
+  if (pageIds.some((pageId) => !candidatePages.has(pageId))) throw new Error("ppt_page_repair_page_id_out_of_range");
+  return pageIds;
 }
 
 function compareArtifactsForConcat(left: ArtifactRecord, right: ArtifactRecord) {

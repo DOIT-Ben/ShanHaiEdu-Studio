@@ -18,6 +18,7 @@ export type ToolRouterInput = {
   capabilityId?: string;
   projectId: string;
   userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
   artifactRefs?: ProviderArtifactRef[];
   resolvedArtifacts?: ArtifactRecord[];
   runtime?: AgentRuntime;
@@ -148,6 +149,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       tool,
       projectId: input.projectId,
       userInstruction: input.userInstruction,
+      toolInput: input.toolInput,
       artifactRefs: input.artifactRefs ?? [],
       resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
