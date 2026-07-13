@@ -148,7 +148,7 @@ function isPlainObject(value: unknown): value is Metadata {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isToolObservation(value: unknown): value is ToolObservation {
+export function isToolObservation(value: unknown): value is ToolObservation {
   if (!isPlainObject(value)) {
     return false;
   }

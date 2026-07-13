@@ -22,6 +22,7 @@ describe("V1-2 Agent Tool invocation envelope", () => {
   it("binds tool, actor, project, epoch, message, arguments and artifact versions", () => {
     const envelope = createAgentToolInvocationEnvelope(baseInput());
 
+    expect(envelope.reviewTargetRef).toBeNull();
     expect(envelope.inputHash).toMatch(/^[a-f0-9]{64}$/);
     expect(envelope.actionDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(hasValidAgentToolInvocationEnvelope(envelope)).toBe(true);
@@ -41,6 +42,21 @@ describe("V1-2 Agent Tool invocation envelope", () => {
   it("detects artifact version tampering", () => {
     const envelope = createAgentToolInvocationEnvelope(baseInput());
     envelope.approvedArtifactRefs[0]!.version = 2;
+
+    expect(hasValidAgentToolInvocationEnvelope(envelope)).toBe(false);
+  });
+
+  it("binds an independent review target into the invocation signature", () => {
+    const envelope = createAgentToolInvocationEnvelope({
+      ...baseInput(),
+      reviewTargetRef: {
+        artifactId: "creative-anchor-a",
+        kind: "creative_theme_generate",
+        version: 2,
+        digest: "c".repeat(64),
+      },
+    });
+    envelope.reviewTargetRef!.version = 3;
 
     expect(hasValidAgentToolInvocationEnvelope(envelope)).toBe(false);
   });

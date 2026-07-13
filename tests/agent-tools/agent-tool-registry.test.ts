@@ -6,6 +6,7 @@ import {
   listAgentToolDefinitions,
 } from "@/server/tools/agent-tool-registry";
 import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
+import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
 
 const canonicalIds = [
   "ppt_director.plan_or_repair",
@@ -64,13 +65,66 @@ describe("V1-2 Agent Tool registry", () => {
 
   it("requires video independence gates and critic hard gates in structured outputs", () => {
     const videoOutput = getAgentToolDefinition("video_director.plan_or_repair").outputSchema;
+    const criticInput = getAgentToolDefinition("delivery_critic.review").inputSchema;
     const criticOutput = getAgentToolDefinition("delivery_critic.review").outputSchema;
+
+    expect(new Set(criticInput.required)).toEqual(new Set(Object.keys(criticInput.properties ?? {})));
 
     expect(videoOutput.required).toEqual(expect.arrayContaining([
       "independentFilmChecks",
       "storyWorld",
       "courseAnchor",
     ]));
-    expect(criticOutput.required).toContain("hardGateResults");
+    const courseAnchor = (videoOutput.properties as Record<string, any>).courseAnchor;
+    expect(courseAnchor.required).toEqual(expect.arrayContaining([
+      "anchorTrigger",
+      "handoffMoment",
+      "classroomReturnQuestion",
+      "doNotExplain",
+      "anchorCount",
+    ]));
+
+    expect(criticOutput.required).toEqual(expect.arrayContaining([
+      "hardGateResults",
+      "targetLocators",
+      "findings",
+      "responsibleStage",
+      "minimalFix",
+      "inconclusiveReasons",
+    ]));
+    const routerOwnedFields = [
+      "policyOutcome",
+      "reviewBinding",
+      "productionEligible",
+      "executorSource",
+      "forbiddenNextToolIntents",
+      "criticProfileId",
+      "criticInvocationId",
+      "rubricRef",
+    ];
+    for (const field of routerOwnedFields) {
+      expect(criticOutput.required).not.toContain(field);
+      expect(criticOutput.properties).not.toHaveProperty(field);
+    }
+    const hardGateItem = (criticOutput.properties as Record<string, any>).hardGateResults.items;
+    expect(hardGateItem.properties.gateId).toMatchObject({ type: "string", minLength: 1 });
+    expect(hardGateItem.properties.gateId).not.toHaveProperty("enum");
+    expect(hardGateItem.required).toContain("findingIds");
+    expect((criticOutput.properties as Record<string, any>).hardGateResults).not.toHaveProperty("maxItems");
+    expect((criticInput.properties as Record<string, any>).targetLocators).toMatchObject({ minItems: 1 });
+    expect((criticInput.properties as Record<string, any>).targetLocators.items.oneOf).toHaveLength(9);
+    expect((criticOutput.properties as Record<string, any>).targetLocators.items.oneOf).toHaveLength(9);
+    const locatorVariants = (criticOutput.properties as Record<string, any>).targetLocators.items.oneOf;
+    const artifactLocator = locatorVariants.find((variant: any) => variant.properties.kind.const === "artifact");
+    const frameRangeLocator = locatorVariants.find((variant: any) => variant.properties.kind.const === "frame_range");
+    expect(artifactLocator.required).toEqual(expect.arrayContaining(["artifactKind", "artifactId"]));
+    expect(frameRangeLocator.required).toEqual(expect.arrayContaining([
+      "parentArtifactId",
+      "parentShotId",
+      "timeRangeMs",
+      "frameRefs",
+    ]));
+    expect((criticOutput.properties as Record<string, any>).minimalFix).toMatchObject({ minLength: 1 });
+    expect(videoCourseAnchorHardGateIds).toHaveLength(6);
   });
 });

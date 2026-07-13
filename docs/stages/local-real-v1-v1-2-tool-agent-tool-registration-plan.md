@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`production candidate under review / 126 of 134 focused tests passing`
+状态：`completed / see V1-2 closeout`
 
 关联审计：`docs\stages\local-real-v1-v1-1-orchestration-attribution-audit.md`
 
@@ -163,14 +163,14 @@ requestedAt
 
 ## 10. 2026-07-13实现检查点
 
-Registry、OpenAI Schema投影、统一调用信封、独立Router、Main Agent白名单、课程锚点独立Critic候选、结构化返修和默认授权候选已经形成，但V1-2仍未达到退出标准。2026-07-13 03:58当前扩大专项为126/134；正式closeout前必须关闭并复核：
+Registry、OpenAI Schema投影、统一调用信封、独立Router、Main Agent白名单、课程锚点独立Critic候选、结构化返修和默认授权候选已经形成，但V1-2仍未达到退出标准。2026-07-13 03:58扩大专项为126/134；此后针对8项失败的修复候选已写入但尚未重新测试。正式closeout前必须验证并复核：
 
 1. 默认数据库授权19/19、课程锚点Gate 36/36已经转绿；必须保留脏审批fail-closed、前置Tool正向白名单、否定语义正例和`minimalFix`非空Schema，不得为修其他红灯回退。
-2. Router按状态白名单重建Executor结果；`qualityDecision`、`teacherApproved`、`humanGateApproval`或其他未声明顶层字段不得透传。
-3. 所有Critic输入、输出和finding locator必须完全属于签名review target；不能只要求“至少一个”匹配，混入任一其他Artifact立即拒绝。
-4. `rework_required/blocked`必须携带finding、非空最小修复和允许的上游责任阶段；结构不完整时返回`agent_tool_output_invalid`。
+2. 当前Router结果白名单重建候选必须经新鲜测试证明：`qualityDecision`、`teacherApproved`、`humanGateApproval`或其他未声明顶层字段不得透传。
+3. 当前Critic目标绑定候选必须经新鲜测试证明：所有输入、输出和finding locator完全属于签名review target，混入任一其他Artifact立即拒绝。
+4. 当前返修结构候选必须经新鲜测试证明：`rework_required/blocked`携带finding、非空最小修复和允许的上游责任阶段；结构不完整时返回`agent_tool_output_invalid`。
 5. 保留“儿童主角但创意独立”“教室仅在最终回接”“教室服务独立叙事而非教学活动”正例及否定语义，防止规则过度约束模型能力。
 6. 注入Executor永远保持`unverified_injected`与`productionEligible=false`；六门通过只满足后续Guard前置，不代表媒体授权或产品运行时闭环。
 7. 完成专项测试、全量测试、生产构建、SQLite连续初始化、`git diff --check`和独立diff审查，再形成V1-2 closeout；closeout后仍保持`executorReady=false`、`mainAgentExecutable=false`，可信Executor、租约下二次复核、调用重放门和Main Agent接线进入V1-3/V1-7。
 
-详细事实与续接入口：`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`。
+最终收尾：`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-closeout.md`。本计划中的实现检查点保留为历史过程证据。

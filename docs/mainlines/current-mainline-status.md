@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1编排归因审计已完成；V1-2已有未提交生产候选，专项测试126/134，先关闭Router结果权威字段、签名审查目标集合绑定和可执行返修报告共8个红灯，再完成全量封板并进入V1-3`。
+当前阶段：`V1-1编排归因审计与V1-2 Tool/Agent Tool合同封板已完成；下一阶段是V1-3 Main Agent同轮受控ReAct，先写计划与测试定义，再接生产Executor和Dispatcher`。
 
 ## 2. 最近已完成阶段
 
@@ -48,7 +48,7 @@ V1 交付质量与邀请制上线
 | V1 Stage 5 | one passed / one package invalidated | 低年级ZIP文件结构和哈希通过，但因核心视频不合格撤销完整交付资格；尚无真实教师签收 |
 | V1 Stage 6 local gates | done / external gates pending | M67 7 通过/1 设计跳过；接管基线Node 259/259、Vitest 659/659、构建、SQLite 双初始化通过；故障合同 90/90 通过 |
 | V1-1 orchestration attribution | done | 已证明当前为模型首步选择加固定DeliveryPlan续步，不是Main Agent同轮多Tool ReAct |
-| V1-2 Tool/Agent Tool registration | production candidate under review / 126 of 134 | 独立Critic、结构化返修和默认授权候选已形成；审批状态19/19与课程锚点Gate 36/36已通过，当前8个Router合同红灯未关闭，尚未closeout且未接生产Executor |
+| V1-2 Tool/Agent Tool registration | done | Agent Tool专项140/140、全量Node 259/259、Vitest 763/763、构建、SQLite双初始化和diff审查通过；三个Agent Tool仍不接生产Executor |
 
 ## 2.1 v1 与接管基线
 
@@ -56,7 +56,7 @@ V1 交付质量与邀请制上线
 - annotated tag：`v1`，仍指向上述提交，未移动、未重写。
 - V1上线前接管提交：`c85c49f65d0fb6a438c06dba76e5e81ad271dbbc`；annotated tag：`v1.1.0-alpha`。该标识表示执行安全、合同质量、PPT链路和规划已形成，产品内Main Agent编排、视频创意门、双用户并发和发布门待完成。
 - V1-1/V1-2工作发生在接管标签之后；进入新会话必须重新核对`main`与`origin/main`及工作树，历史`v1`与`v1.1.0-alpha`均不移动、不重写。
-- 2026-07-13早期检查点的Node、Vitest和生产构建绿色证据均早于当前扩展红测，不能描述当前工作树为全绿。03:58扩大专项执行8个文件，7通过、1失败；134项中126通过、8失败，全部位于`agent-tool-router.test.ts`。04:02默认数据库授权19/19通过；课程锚点Gate 36/36通过；`npx tsc --noEmit --pretty false`为exit 0；`.tmp`隔离SQLite同库连续初始化2/2 exit 0；`git diff --check`为exit 0且只有LF/CRLF提示。当前候选尚未重新执行全量`npm test`与`npm run build`。
+- 2026-07-13 V1-2最终封板证据：Agent Tool专项8文件140/140；TypeScript exit 0；Node 259/259；Vitest 103文件763/763；生产构建exit 0并生成13个静态页面；`.tmp`隔离SQLite同库连续初始化2/2；`git diff --check` exit 0。构建保留3条既有动态文件模式性能警告。
 - 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
 
@@ -80,8 +80,8 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. V1-2正式封板：保留当前未提交候选和已转绿的审批/课程锚点Gate，关闭Executor结果顶层权威字段封闭、所有Critic locator对签名review target的集合绑定，以及返修报告finding与上游责任阶段完整性红灯，再形成closeout；此前仍不接生产Executor。
-2. V1-3完成Main Agent同轮Observe/Replan和固定DeliveryPlan降级；V1-2未封板前不得提前宣称Main Agent已能自主协调。
+1. V1-3完成Main Agent同轮Observe/Replan、可信Agent Tool Executor、统一Dispatcher和固定DeliveryPlan显式降级。
+2. 后续阶段完成自然语言打断、PPT/视频产品内编排、课程锚点前置与成片后Critic、双用户隔离和恢复。
 3. 仅在V1-1至V1-8通过后执行一次产品内真实PPT/视频/最终包E2E；外部Codex在成包后黑盒审核并将问题归因到责任层。
 4. 完成目标服务器恢复、公开注册关闭复核和真实教师签收后开放邀请制V1。
 
@@ -90,17 +90,17 @@ V1 交付质量与邀请制上线
 用户已经批准继续推进 V1 交付质量主线。PPT、图片、视频和最终包的底层生产链已经有真实证据，下一阶段不再由外部Codex重复制作交付包，而是验证产品内部Main Agent的协调能力。当前唯一恢复点：
 
 ```text
-V1-2：实现检查点后的正式封板
+V1-3：Main Agent同轮受控ReAct
 ```
 
 推荐拆分：
 
-1. 直接复用V1-1归因矩阵，不重新审计已经关闭的阶段。
-2. 以现有测试和独立审查结论为不可放宽的验收合同，关闭当前8个Router红灯，并对审批状态、前置Tool正向白名单、否定语义正例、证据充分性、领域隔离、签名目标集合、typed locator和失败报告完整性做最终diff复核。
-3. 课程锚点由产品内`delivery_critic.review`独立审查；Director或Main Agent自评不得解锁真实媒体Tool。
+1. 读取V1-2 closeout并复用已封板的Registry、Schema、Router和授权边界。
+2. 先写V1-3计划与测试计划，再实现统一Dispatcher、可信Executor和同轮Observation/Replan。
+3. 固定DeliveryPlan只作为显式降级，注入Executor和外部人工编排均不计入产品能力。
 4. 前段使用确定性夹具、失败注入和状态证据验证编排，避免频繁调用真实图片/视频Provider。
 5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
-6. 保持既有`v1`和`v1.1.0-alpha`标签不动；最终邀请制发布使用新的不可变发布标识。
+6. 保持既有`v1`、`v1.1.0-alpha`和`v1.1.0-alpha.1`标签不动；最终邀请制发布使用新的不可变发布标识。
 
 当前明确未关闭的上线门：V1-2 Agent Tool正式封板、Main Agent同轮受控ReAct、HumanGate与自然语言打断、四档生成强度、PPT/视频产品内闭环、课程锚点独立Critic审查、双用户并发、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
 

@@ -81,7 +81,7 @@ describe("runtime output quality", () => {
   });
 
   it("sends task-level guidance to OpenAI runtime requests", () => {
-    const request = buildOpenAIResponseRequest(makeInput("lesson_plan"), "gpt-test");
+    const request = buildOpenAIResponseRequest(makeInput("lesson_plan"));
     const payload = JSON.stringify(request);
 
     expect(payload).toContain("自检清单");

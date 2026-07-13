@@ -11,6 +11,15 @@ export function validateJsonSchemaValue(value: unknown, schema: JsonSchemaObject
 function validateValue(value: unknown, schemaValue: unknown, path: string, issues: string[]) {
   if (!isRecord(schemaValue)) return;
   const schema = schemaValue as Record<string, unknown>;
+  if (Array.isArray(schema.oneOf)) {
+    const matchCount = schema.oneOf.filter((candidateSchema) => {
+      const candidateIssues: string[] = [];
+      validateValue(value, candidateSchema, path, candidateIssues);
+      return candidateIssues.length === 0;
+    }).length;
+    if (matchCount !== 1) issues.push(`${path}:oneOf`);
+    return;
+  }
   if (!matchesType(value, schema.type)) {
     issues.push(`${path}:type`);
     return;
@@ -25,6 +34,7 @@ function validateValue(value: unknown, schemaValue: unknown, path: string, issue
 
   if (Array.isArray(value)) {
     if (typeof schema.minItems === "number" && value.length < schema.minItems) issues.push(`${path}:minItems`);
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) issues.push(`${path}:maxItems`);
     if (schema.uniqueItems === true && new Set(value.map((entry) => JSON.stringify(entry))).size !== value.length) issues.push(`${path}:uniqueItems`);
     value.forEach((entry, index) => validateValue(entry, schema.items, `${path}[${index}]`, issues));
   }

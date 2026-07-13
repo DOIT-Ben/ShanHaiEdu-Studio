@@ -21,7 +21,13 @@ export type TargetLocator =
       timeRangeMs?: { start: number; end: number };
     }
   | { kind: "timeline"; timelineId: string; parentArtifactId: string; timeRangeMs: { start: number; end: number } }
-  | { kind: "frame_range"; parentShotId: string; timeRangeMs: { start: number; end: number }; frameRefs: string[] };
+  | {
+      kind: "frame_range";
+      parentArtifactId: string;
+      parentShotId: string;
+      timeRangeMs: { start: number; end: number };
+      frameRefs: string[];
+    };
 
 export type ValidationTarget = {
   kind: "artifact" | "artifact_draft" | "tool_execution";

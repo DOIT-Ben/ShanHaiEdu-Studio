@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`production candidate under review / 126 of 134 focused tests passing`
+状态：`completed / 140 of 140 focused tests passing`
 
 关联计划：`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-plan.md`
 
@@ -57,10 +57,11 @@
 
 ## 4. 阶段验证
 
-生产候选已写入工作树。2026-07-13 03:58新鲜执行`npx vitest run tests/agent-tools tests/tool-registry.test.ts tests/tool-router.test.ts --maxWorkers=1`：8个文件中1失败、7通过，134项中126通过、8失败，全部位于`agent-tool-router.test.ts`。红灯为3个Executor权威字段伪造、2个不可执行返修报告和3个签名目标集合逃逸；默认数据库授权19/19与课程锚点Gate 36/36已经转绿。不得通过删除用例、放宽断言或回退测试获得绿色。关闭当前8项后依次执行：
+生产候选已写入工作树。2026-07-13 03:58最后一次执行`npx vitest run tests/agent-tools tests/tool-registry.test.ts tests/tool-router.test.ts --maxWorkers=1`：8个文件中1失败、7通过，134项中126通过、8失败，全部位于`agent-tool-router.test.ts`。失败为3个Executor权威字段伪造、2个不可执行返修报告和3个签名目标集合逃逸；默认数据库授权19/19与课程锚点Gate 36/36已经转绿。此后针对8项失败的修复候选已经写入，但尚未重新测试。不得通过删除用例、放宽断言或回退测试获得绿色。现在依次执行：
 
 ```text
 npx vitest run tests/agent-tools tests/tool-registry.test.ts tests/tool-router.test.ts
+npx tsc --noEmit --pretty false
 npm test
 npm run build
 git diff --check
@@ -105,3 +106,7 @@ try {
 - 审查目标的`approval`与`isApproved`必须语义一致；任一脏状态组合稳定fail-closed且Executor调用为0。
 
 这些补测通过并形成closeout前，旧检查点绿测不得被解释为“课程锚点智能体审查闭环已完成”。V1-2 closeout也只证明合同、Router硬门、默认授权边界和注入Executor测试成立；生产Critic Executor、Main Agent调用、CriticReport持久化和真实Observation/Replan证据仍分别属于V1-3与V1-7，届时通过前不得宣称产品运行时闭环。
+
+## 6. 最终结果
+
+2026-07-13按本计划完成封板：Agent Tool专项8文件140/140，TypeScript exit 0，Node 259/259，Vitest 103文件763/763，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。详细证据见`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-closeout.md`。

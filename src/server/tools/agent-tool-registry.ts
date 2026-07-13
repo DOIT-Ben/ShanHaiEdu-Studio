@@ -116,19 +116,23 @@ function createCriticInputSchema(): JsonSchemaObject {
       stage: { type: "string" },
       targetLocators: {
         type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            kind: { type: "string" },
-            id: { type: "string" },
-          },
-          required: ["kind", "id"],
-        },
+        items: targetLocatorSchema(),
+        minItems: 1,
       },
       reviewFocus: { type: ["string", "null"] },
+      courseAnchorRef: artifactVersionRefSchema(true),
+      rubricRef: rubricRefSchema(true),
+      generatorInvocationId: { type: ["string", "null"], minLength: 1 },
     },
-    required: ["domain", "stage", "targetLocators", "reviewFocus"],
+    required: [
+      "domain",
+      "stage",
+      "targetLocators",
+      "reviewFocus",
+      "courseAnchorRef",
+      "rubricRef",
+      "generatorInvocationId",
+    ],
   };
 }
 
@@ -178,10 +182,13 @@ function createVideoDirectorOutputSchema(): JsonSchemaObject {
         type: "object",
         additionalProperties: false,
         properties: {
+          anchorTrigger: { type: "string", minLength: 1 },
           handoffMoment: { type: "string", minLength: 1 },
           classroomReturnQuestion: { type: "string", minLength: 1 },
+          doNotExplain: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+          anchorCount: { type: "integer", const: 1 },
         },
-        required: ["handoffMoment", "classroomReturnQuestion"],
+        required: ["anchorTrigger", "handoffMoment", "classroomReturnQuestion", "doNotExplain", "anchorCount"],
       },
     },
     required: [...commonDirectorOutputRequired(), "verdict", "independentFilmChecks", "storyWorld", "courseAnchor"],
@@ -210,26 +217,153 @@ function createCriticOutputSchema(): JsonSchemaObject {
     properties: {
       recommendation: { type: "string", enum: ["pass", "rework_required", "blocked", "inconclusive"] },
       summary: { type: "string" },
-      findings: { type: "array", items: { type: "string" } },
-      targetLocators: { type: "array", items: { type: "string" } },
-      responsibleStage: { type: "string" },
-      minimalFix: { type: "string" },
+      findings: { type: "array", items: criticFindingSchema() },
+      targetLocators: { type: "array", items: targetLocatorSchema(), minItems: 1 },
+      responsibleStage: { type: "string", minLength: 1 },
+      minimalFix: { type: "string", minLength: 1 },
+      inconclusiveReasons: { type: "array", items: { type: "string", minLength: 1 } },
       hardGateResults: {
         type: "array",
         items: {
           type: "object",
           additionalProperties: false,
           properties: {
-            gateId: { type: "string" },
+            gateId: { type: "string", minLength: 1 },
             status: { type: "string", enum: ["passed", "failed", "inconclusive"] },
-            evidenceRefs: { type: "array", items: { type: "string" } },
-            rationale: { type: "string" },
+            evidenceRefs: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+            rationale: { type: "string", minLength: 1 },
+            findingIds: { type: "array", items: { type: "string", minLength: 1 } },
           },
-          required: ["gateId", "status", "evidenceRefs", "rationale"],
+          required: ["gateId", "status", "evidenceRefs", "rationale", "findingIds"],
         },
       },
     },
-    required: ["recommendation", "summary", "findings", "targetLocators", "responsibleStage", "minimalFix", "hardGateResults"],
+    required: [
+      "recommendation",
+      "summary",
+      "findings",
+      "targetLocators",
+      "responsibleStage",
+      "minimalFix",
+      "inconclusiveReasons",
+      "hardGateResults",
+    ],
+  };
+}
+
+function artifactVersionRefSchema(nullable = false) {
+  return {
+    type: nullable ? ["object", "null"] : "object",
+    additionalProperties: false,
+    properties: {
+      artifactId: { type: "string", minLength: 1 },
+      version: { type: "integer" },
+      digest: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+    },
+    required: ["artifactId", "version", "digest"],
+  };
+}
+
+function rubricRefSchema(nullable = false) {
+  return {
+    type: nullable ? ["object", "null"] : "object",
+    additionalProperties: false,
+    properties: {
+      id: { type: "string", minLength: 1 },
+      version: { type: "string", minLength: 1 },
+      digest: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+    },
+    required: ["id", "version", "digest"],
+  };
+}
+
+function criticFindingSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      findingId: { type: "string", minLength: 1 },
+      severity: { type: "string", enum: ["blocker", "major", "minor"] },
+      locator: targetLocatorSchema(),
+      evidenceRefs: { type: "array", items: { type: "string", minLength: 1 } },
+      responsibleStage: { type: "string", minLength: 1 },
+      minimalFix: { type: "string", minLength: 1 },
+      invalidatesDownstream: { type: "boolean" },
+    },
+    required: [
+      "findingId",
+      "severity",
+      "locator",
+      "evidenceRefs",
+      "responsibleStage",
+      "minimalFix",
+      "invalidatesDownstream",
+    ],
+  };
+}
+
+function targetLocatorSchema() {
+  return {
+    oneOf: [
+      locatorVariant("artifact", {
+        artifactKind: { type: "string", minLength: 1 },
+        artifactId: { type: "string", minLength: 1 },
+      }, ["artifactKind", "artifactId"]),
+      locatorVariant("input", { artifactKind: { type: "string", minLength: 1 } }, ["artifactKind"]),
+      locatorVariant("tool", { toolId: { type: "string", minLength: 1 } }, ["toolId"]),
+      locatorVariant("page", {
+        pageId: { type: "string", minLength: 1 },
+        parentArtifactId: { type: "string", minLength: 1 },
+      }, ["pageId", "parentArtifactId"]),
+      locatorVariant("asset", {
+        assetId: { type: "string", minLength: 1 },
+        parentArtifactId: { type: "string", minLength: 1 },
+        ownerUnitId: { type: "string", minLength: 1 },
+      }, ["assetId", "parentArtifactId"]),
+      locatorVariant("shot", {
+        shotId: { type: "string", minLength: 1 },
+        parentArtifactId: { type: "string", minLength: 1 },
+      }, ["shotId", "parentArtifactId"]),
+      locatorVariant("track", {
+        trackId: { type: "string", minLength: 1 },
+        trackType: { type: "string", enum: ["narration", "caption", "overlay", "music", "effects"] },
+        parentArtifactId: { type: "string", minLength: 1 },
+        timeRangeMs: timeRangeSchema(),
+      }, ["trackId", "trackType", "parentArtifactId"]),
+      locatorVariant("timeline", {
+        timelineId: { type: "string", minLength: 1 },
+        parentArtifactId: { type: "string", minLength: 1 },
+        timeRangeMs: timeRangeSchema(),
+      }, ["timelineId", "parentArtifactId", "timeRangeMs"]),
+      locatorVariant("frame_range", {
+        parentArtifactId: { type: "string", minLength: 1 },
+        parentShotId: { type: "string", minLength: 1 },
+        timeRangeMs: timeRangeSchema(),
+        frameRefs: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+      }, ["parentArtifactId", "parentShotId", "timeRangeMs", "frameRefs"]),
+    ],
+  };
+}
+
+function locatorVariant(
+  kind: string,
+  properties: Record<string, unknown>,
+  required: string[],
+) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: { kind: { const: kind }, ...properties },
+    required: ["kind", ...required],
+  };
+}
+
+function timeRangeSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: { start: { type: "number" }, end: { type: "number" } },
+    required: ["start", "end"],
   };
 }
 

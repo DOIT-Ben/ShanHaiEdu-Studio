@@ -11,6 +11,7 @@ export type AgentToolInvocationEnvelope = {
   projectId: string;
   intentEpoch: number;
   sourceMessageId: string;
+  reviewTargetRef: AgentToolReviewTargetRef | null;
   approvedArtifactRefs: AgentToolApprovedArtifactRef[];
   arguments: Record<string, unknown>;
   inputHash: string;
@@ -18,17 +19,23 @@ export type AgentToolInvocationEnvelope = {
   requestedAt: string;
 };
 
-export type AgentToolApprovedArtifactRef = {
+export type AgentToolArtifactRef = {
   artifactId: string;
   kind: string;
   version: number;
   digest: string;
 };
 
+export type AgentToolApprovedArtifactRef = AgentToolArtifactRef;
+export type AgentToolReviewTargetRef = AgentToolArtifactRef;
+
 export type CreateAgentToolInvocationEnvelopeInput = Omit<
   AgentToolInvocationEnvelope,
-  "schemaVersion" | "inputHash" | "actionDigest" | "requestedAt"
-> & { requestedAt?: string };
+  "schemaVersion" | "inputHash" | "actionDigest" | "requestedAt" | "reviewTargetRef"
+> & {
+  requestedAt?: string;
+  reviewTargetRef?: AgentToolReviewTargetRef | null;
+};
 
 export function createAgentToolInvocationEnvelope(
   input: CreateAgentToolInvocationEnvelopeInput,
@@ -103,6 +110,7 @@ function normalizeSemanticInput(
     projectId,
     intentEpoch: input.intentEpoch,
     sourceMessageId,
+    reviewTargetRef: normalizeReviewTargetRef(input.reviewTargetRef),
     approvedArtifactRefs: normalizeApprovedArtifactRefs(input.approvedArtifactRefs),
     arguments: structuredClone(input.arguments),
     requestedAt: normalizeRequestedAt(input.requestedAt),
@@ -111,13 +119,21 @@ function normalizeSemanticInput(
 
 function normalizeApprovedArtifactRefs(value: AgentToolApprovedArtifactRef[] | undefined): AgentToolApprovedArtifactRef[] {
   if (!Array.isArray(value)) throw new Error("Agent Tool approvedArtifactRefs are required.");
-  return value.map((ref) => {
-    const artifactId = requireText(ref.artifactId, "approvedArtifactRefs.artifactId");
-    const kind = requireText(ref.kind, "approvedArtifactRefs.kind");
-    if (!Number.isInteger(ref.version) || ref.version < 1) throw new Error("Agent Tool artifact version is invalid.");
-    if (!/^[a-f0-9]{64}$/i.test(ref.digest)) throw new Error("Agent Tool artifact digest is invalid.");
-    return { artifactId, kind, version: ref.version, digest: ref.digest.toLowerCase() };
-  }).sort((a, b) => `${a.artifactId}:${a.version}:${a.kind}`.localeCompare(`${b.artifactId}:${b.version}:${b.kind}`));
+  return value
+    .map((ref) => normalizeArtifactRef(ref, "approvedArtifactRefs"))
+    .sort((a, b) => `${a.artifactId}:${a.version}:${a.kind}`.localeCompare(`${b.artifactId}:${b.version}:${b.kind}`));
+}
+
+function normalizeReviewTargetRef(value: AgentToolReviewTargetRef | null | undefined): AgentToolReviewTargetRef | null {
+  return value == null ? null : normalizeArtifactRef(value, "reviewTargetRef");
+}
+
+function normalizeArtifactRef(value: AgentToolArtifactRef, field: string): AgentToolArtifactRef {
+  const artifactId = requireText(value.artifactId, `${field}.artifactId`);
+  const kind = requireText(value.kind, `${field}.kind`);
+  if (!Number.isInteger(value.version) || value.version < 1) throw new Error(`Agent Tool ${field} version is invalid.`);
+  if (!/^[a-f0-9]{64}$/i.test(value.digest)) throw new Error(`Agent Tool ${field} digest is invalid.`);
+  return { artifactId, kind, version: value.version, digest: value.digest.toLowerCase() };
 }
 
 function normalizeRequestedAt(value: string | undefined) {

@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / A-01 complete / A-02 production candidate / 126 of 134 focused tests passing`
+状态：`Accepted / A-01 to A-03 complete / A-04 next`
 
 关联计划：`docs\stages\local-real-v1-mainline-adjustment-plan.md`
 
@@ -54,6 +54,6 @@
 
 每个阶段closeout记录：提交SHA、测试命令和计数、真实请求/浏览器/状态证据、失败和回退点、仍由外部Codex介入的动作。只要仍有关键编排动作依赖外部Codex，V1-9不得开始。V1-9首次完整真实全链路验收集中执行；若失败，先完成责任归因和定点修复，再决定是否需要局部或整包复验，禁止无归因地反复烧真实Provider。
 
-V1-2已有未提交生产候选；2026-07-13 03:58最新扩大专项为126/134，8个红测均位于`agent-tool-router.test.ts`：3个Executor伪造Router权威顶层字段未拒绝，2个课程锚点返修报告缺finding或把责任指向下游阶段未拒绝，3个通用Critic输入/输出或混合locator逃逸签名review target未拒绝。默认数据库授权19/19、视频课程锚点Gate及其否定语义/正向allowlist用例已转绿；`npx tsc --noEmit --pretty false`为exit 0。closeout前必须关闭上述8项并复核actor/project/IntentEpoch/Artifact版本、digest、审批状态和签名目标集合边界。
+V1-2已经完成：Agent Tool专项8文件140/140，TypeScript exit 0，Node 259/259，Vitest 103文件763/763，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。Executor权威字段、课程锚点返修报告和通用Critic签名目标集合三组历史红灯均已关闭；详细证据见V1-2 closeout。
 
 V1-2 closeout只允许声明“Agent Tool合同、Router硬门、默认授权边界和注入Executor测试就绪”。生产Critic Executor、Main Agent真实调用、CriticReport持久化及基于Observation的同轮Replan必须在V1-3/V1-7另行取证；这些证据成立前，不得将合同就绪升级为“产品智能体已经自主完成课程锚点审查”。

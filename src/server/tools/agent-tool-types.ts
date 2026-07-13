@@ -1,4 +1,5 @@
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
+import type { AgentToolReviewTargetRef } from "./agent-tool-invocation";
 import type { JsonSchemaObject, ToolDefinition } from "./tool-types";
 
 export const agentToolIds = [
@@ -55,6 +56,40 @@ export type AgentToolExecutionSucceededResult = {
   artifactCreated: false;
 };
 
+export type AgentToolReviewBinding = {
+  projectId: string;
+  intentEpoch: number;
+  sourceMessageId: string;
+  invocationId: string;
+  agentProfileId: AgentToolProfileId;
+  executorSource: "unverified_injected";
+  productionEligible: false;
+  reviewTargetRef: AgentToolReviewTargetRef;
+  rubricRef: { id: string; version: string; digest: string };
+  generatorInvocationId: string;
+  inputHash: string;
+  actionDigest: string;
+};
+
+export type AgentToolPolicyOutcome = {
+  gateId: "video_director_candidate" | "video_course_anchor_critic";
+  passed: boolean;
+  eligibleForDownstreamGuard: boolean;
+  reviewOutcome:
+    | "candidate_ready_for_critic"
+    | "eligible_for_downstream_guard"
+    | "rework_required"
+    | "blocked"
+    | "inconclusive";
+  reasonCodes: string[];
+  forbiddenNextToolIntents: string[];
+  reviewBinding?: AgentToolReviewBinding;
+};
+
+export type AgentToolRoutedSucceededResult = AgentToolExecutionSucceededResult & {
+  policyOutcome?: AgentToolPolicyOutcome;
+};
+
 export type AgentToolExecutionFailedResult = {
   status: "needs_input" | "failed" | "inconclusive";
   toolId: AgentToolId;
@@ -66,7 +101,19 @@ export type AgentToolExecutionFailedResult = {
 
 export type AgentToolExecutionResult = AgentToolExecutionSucceededResult | AgentToolExecutionFailedResult;
 
+export type AgentToolRoutedExecutionResult = AgentToolRoutedSucceededResult | AgentToolExecutionFailedResult;
+
 export type AgentToolExecutor<TInvocation = unknown> = (
   invocation: TInvocation,
   definition: AgentToolDefinition,
 ) => Promise<AgentToolExecutionResult>;
+
+export function isAgentToolResultEligibleForProductionGuard(result: {
+  status: string;
+  policyOutcome?: AgentToolPolicyOutcome;
+}): boolean {
+  return result.status === "succeeded" &&
+    result.policyOutcome?.passed === true &&
+    result.policyOutcome.eligibleForDownstreamGuard === true &&
+    Boolean(result.policyOutcome.reviewBinding?.productionEligible);
+}

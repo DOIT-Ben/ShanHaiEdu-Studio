@@ -59,6 +59,7 @@
 - 已证明：PPT工作流方法能够产出高质量结果；真实图片、视频、TTS、字幕和打包工具链可用；外部编排下的页级返修与失败镜头恢复有效。
 - 未证明：产品Main Agent会自主形成计划、选择正确Tool、执行ReAct、触发HumanGate与Quality Gate、处理中途自然语言改道、持久化状态并从失败点恢复。
 - 因此不得把本验收包称为“产品智能体端到端能力验证”。后续停止重复真实资产生产，先验证产品内编排机制。
+- 能力归因的独立复盘见：[外部编排成功不能作为产品Main Agent能力证据](2026-07-13-external-orchestration-is-not-agent-evidence.md)。
 
 ## 根因
 
@@ -123,7 +124,7 @@ PPT路径成功
 
 | 预防动作 | 责任载体 | 验收条件 | 状态 |
 |---|---|---|---|
-| 独立短片六硬门 | Director候选预检；独立`delivery_critic.review(stage="course_anchor")`权威裁决 | 六硬门全部通过才可进入后续Guard，否则返修或阻塞 | V1-2合同候选已形成；当前Router仍有8个合同红灯，生产Executor和Main Agent接线待V1-3/V1-7 |
+| 独立短片六硬门 | Director候选预检；独立`delivery_critic.review(stage="course_anchor")`权威裁决 | 六硬门全部通过才可进入后续Guard，否则返修或阻塞 | V1-2合同与Router硬门已封板；生产Executor和Main Agent接线待V1-3/V1-7 |
 | 多机制候选探索 | `04-video-creative-director.md` | 仅在无可用创意或需要发散时启用；候选跨不同故事机制，数量受决策难度和预算约束 | Prompt方法已落实；按当前决策暂停真实重跑 |
 | 锚点字段收窄 | CourseAnchor合同 | 全片只有一个handoff moment，并记录trigger、doNotExplain、version与digest | V1-2合同候选及纵深测试已落实；生产持久化待V1-3/V1-7 |
 | 创意维度硬门 | `delivery_critic.review(stage="course_anchor")` | 六硬门任一failed/inconclusive即返工并阻塞媒体Tool | Prompt与注入执行测试已落实；生产Critic运行时待V1-3/V1-7验证 |
@@ -135,4 +136,4 @@ PPT路径成功
 
 - 文档验证：检查文件存在、索引链接、UTF-8开头和关键规则可检索。
 - 残余风险：当前60秒视频仍是不合格方向的技术产物，只能保留为反例和Provider证据，不得继续作为正式交付视频。
-- 下一步：停止本案例的真实资产生成。先按`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md`关闭当前8个Router合同红灯，完成V1-2全量验证与正式closeout；随后在V1-3/V1-7把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan、`video_final_review`和持久化恢复合同。产品内部编排、前置与成片后课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核并生成只读`ExternalAcceptanceReport`，按问题责任层推动下一轮优化。
+- 下一步：停止本案例的真实资产生成。V1-2合同与Router硬门已经封板；随后在V1-3/V1-7把已验证方法映射回产品内部的Main Agent、Tool、PlanGuard、HumanGate、Quality Gate、Observation/Replan、`video_final_review`和持久化恢复合同。产品内部编排、前置与成片后课程锚点审查、双用户隔离和恢复证据成立后，在V1-9执行一次产品内真实Provider端到端验收；外部Codex只在成包后进行黑盒审核并生成只读`ExternalAcceptanceReport`，按问题责任层推动下一轮优化。
