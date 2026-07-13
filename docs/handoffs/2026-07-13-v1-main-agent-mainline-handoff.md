@@ -1,155 +1,114 @@
-# ShanHaiEdu V1 Main Agent主线开发交接
+# ShanHaiEdu V1 Main Agent 主线开发交接
 
 更新时间：2026-07-13
 
-状态：`V1-5 closed / ready to plan V1-6 PPT orchestration`
+状态：`V1-9R0 next / real Provider E2E paused / public cutover paused`
 
 ## 1. 交接结论
 
-V1-5已经完成专项、全量、构建、SQLite、真实浏览器和diff审查并形成closeout。下一对话直接进入V1-6 PPT产品内编排计划与测试定义；不得重新执行V1-1至V1-5，也不得让外部Codex代替产品Main Agent批准样张或决定返修。
+下一阶段不是让教师继续点击旧 HumanGate，也不是直接执行 V1-9 真实整包。唯一下一主线是：
 
-当前目标不是再让外部Codex制作一套PPT或视频，而是把已经证明可行的交付工艺变成产品内部Main Agent能够自主规划、调用、审查、打断恢复和返修的能力。
+```text
+V1-9R Main Agent自主编排与HumanGate恢复
+```
 
-## 2. 产品与三层设计
+最新真实对话已经证明：Main Agent能够理解教师的“投篮命中率”目标，但完整结构化输入在内部 Tool 边界丢失；22个Capability全部逐Tool确认；执行确认与产物批准混用；业务Tool不能进入Main Agent连续ReAct；Tool成功后服务端又统一停回确认；Runtime失败会静默生成deterministic草稿。38条消息最终形成8个重复requirement spec，没有教案、PPT或视频。
 
-ShanHaiEdu是面向教师、百依百顺但受事实与安全门禁约束的公开课制作助手。它不是固定单向流水线，也不是由外部Codex代做成品的包装层。
+因此 V1-4 重标为“底层安全合同完成 / 产品验收失败 / P0 reopen”。V1-3、V1-6、V1-7保留组件和领域合同，但重新验收产品内连续自主编排；V1-5重开强度贯穿和状态同步。V1-8、V1-9A-G、V1-10A-G的独立底座证据保留，不重新开发。
 
-| 设计层 | 决定什么 | V1要求 |
-|---|---|---|
-| 智能体架构 | 谁观察、规划、调用Tool、Replan、持久化和恢复 | 产品Main Agent执行受控`Observe -> Plan -> Guard -> Act -> Observe -> Replan`；专业Agent Tool负责领域规划与审查 |
-| 交付质量架构 | 哪些事实与质量门必须通过 | Validator管文件/页数/hash/血缘，Critic管语义与效果，HumanGate管教师授权，QualityDecision与FinalDeliveryGate决定能否继续 |
-| PPT/视频生产工艺 | 每个专业节点如何产出高质量内容 | PPT按大纲、逐页四层设计、样张、全量生图、可编辑组装、渲染审查、页级返修；视频按独立创意、最小课程锚点、Beat、ShotSpec、专属资产、逐镜头生成、审查、镜头级返修与真实合成 |
+## 2. V1 最终目标
 
-这些专业工艺应封装为高层业务Tool、Agent Tool、Contract、Rubric与内部子工件，不得把每个细节都上升为顶层固定DAG。教师可随时用自然语言暂停、改大纲、换方向或局部返修，Main Agent依据当前WorldState只补最小必要前置。
+在两名受邀教师范围内，使产品 Main Agent 从一句自然语言需求建立稳定 `TaskBrief`，自主规划并连续调用 PPT、视频和最终包业务 Tool；标准授权范围内的可逆内部步骤自动推进，只在真实费用、不可逆影响、外发/权限或无法推断的用户选择处触发 HumanGate。
 
-## 3. 责任边界
+完成证据：本次失败对话回归通过、无重复确认、无 deterministic 成果冒充、两用户完全隔离、全量测试/构建/桌面/390px通过；产品 UI 独立生成同一版本的结构化教案、真实可编辑PPTX、课堂视觉图、30-90秒完整MP4、`ClassroomRunSpec`和manifest/hash一致ZIP；外部黑盒P0=0、候选教师签收、原子切流与切流后复核通过。
 
-| 责任 | 产品内部 | 外部Codex |
-|---|---|---|
-| 理解教师意图、选择下一动作、Replan | Main Agent | 不代做 |
-| PPT/视频专业规划 | PPT/Video Director Agent Tool | 只实现合同、Prompt和接线 |
-| 课程锚点和交付效果审查 | 独立`delivery_critic.review` | 不在运行中选案、批准或返修 |
-| 文件真实性、权限、血缘、预算 | 服务端Validator/Guard/Repository | 实现并审计证据 |
-| 教师授权 | 真实HumanGate | 不把模拟批准写成教师签收 |
-| 阶段末真实整包 | 产品Main Agent独立生成 | 成包后黑盒审核并归因，不在运行中补链 |
+## 3. 产品与架构边界
 
-如果Main Agent协调失败，先归因到WorldState、上下文、Tool可发现性、合同、Observation质量、Prompt、Rubric、预算或停止条件，再修对应责任层。禁止让外部Codex接管业务决策来掩盖产品缺陷。
+ShanHaiEdu是面向教师、尽量顺从教师目标但受事实与真实风险边界约束的公开课制作助手。它不是固定单向流水线，也不是逐节点审批工作台。
 
-协调失败按下列顺序处理，不允许直接以外部人工编排兜底：
+```text
+Main Agent：理解、计划、选择Tool、Observe、Replan
+Director/Critic：专业规划与独立审查
+ActionPolicy/Guard：权限、预算、幂等、版本和副作用
+HumanGate：真实选择与真实风险
+Validator/Quality Gate：交付事实与质量
+```
 
-| 失败信号 | 首查责任层 | 修复后的最低证据 |
-|---|---|---|
-| 不会选择或看不到正确Tool | Tool Registry、白名单、Tool描述与输入合同 | Main Agent在同一WorldState下自主选择合法Tool |
-| Critic已给出报告但不会返修 | CriticReport、Observation序列化、上下文和Replan Prompt | Main Agent定位责任阶段并改变下一动作 |
-| 重复同一失败或无限循环 | 步骤/费用/重试预算、停止条件、IntentEpoch | 达到预算后暂停或请求HumanGate，不重复付费提交 |
-| 只有外部脚本介入后才能继续 | 产品内编排或持久化缺口 | 把介入动作转成Agent/Tool/Guard测试；外部介入次数回到0 |
+明确请求“做一个PPT/视频/完整材料包”就是对该目标范围内、标准预算内、可逆内部动作的任务级授权。需求整理、大纲、逐页设计、样张、Critic和定点返修默认自动推进；教师明确要求“先给我看样张”时才建立该检查点。
 
-## 4. 课程锚点不可退让规则
+HumanGate只保留：不可推断且实质改变结果的选择、超任务预算、最高强度、扩大交付范围、外发发布、权限变化、覆盖删除和最终发布签收。模型不能自行决定权限，但HumanGate也不能决定模型是否可以思考和完成普通工作。
 
-课程锚点只是已经成立的独立短片与课程任务之间的唯一最小回接，不是全片世界观，也不是“小学课堂视频”的角色和场景模板。
+## 4. 必须落地的最小合同
 
-产品内独立Critic必须检查：
+| 合同 | 作用 |
+|---|---|
+| `TaskBrief` | 保存完整目标、交付物、教材、约束、排除项、质量和IntentEpoch；控制消息不得覆盖 |
+| `IntentGrant` | 保存任务级授权范围、标准费用上限、强度、外部副作用和教师要求的检查点 |
+| `WorkingPlan` | 动态步骤、依赖、revision、预算和停止条件；不是固定DAG |
+| `ExecutionEnvelope` | 把actor/project/task、TaskBrief digest、IntentEpoch、plan revision、强度、授权和幂等键传给Tool |
+| `ToolObservation` | 保存结果/错误、artifact refs、Runtime来源、费用、可重试性和定位信息 |
+| `PendingDecision` | 统一按钮和自然语言确认，绑定唯一任务、intent、plan、版本和过期条件 |
 
-1. 不懂教材和学科背景仍能理解短片发生了什么。
-2. 去掉最后课程回接，短片仍有目标、阻碍、变化和观看价值。
-3. 不是教材复刻、PPT动态版，且不是脱离教师讲解或课堂教学任务便无法成立的活动脚本/录像。
-4. 全片只有一个最小课程回接。
-5. “面向小学生”只约束可理解性、安全性和节奏，不把受众年龄扩张成人物或场景的必需条件。
-6. 明确`doNotExplain`，不提前泄露答案或替代教师讲解。
+确定性验证、Critic审查、下游可用和教师签收必须分开。教师未签收不能让已通过内部质量门的草稿永久无法作为下游草稿输入；教师签收也不能替代Validator或Critic。
 
-儿童主角有独立创意理由时可以通过。教室只用于最终交接是明确正例，但并非唯一允许情形；教室服务独立叙事且不依赖课堂教学时也可以通过。
+## 5. 执行阶段
 
-任一硬门失败或证据不足，真实图片、视频、拼接和最终包Tool调用次数必须为0。Main Agent必须消费CriticReport中的责任阶段与最小修复，自主换创意机制、定点Replan或请求HumanGate。六门通过也只是后续Guard的必要语义前置，不独立授权真实媒体调用。
-
-### 4.1 三层审查不可混淆
-
-| 时点 | 审查主体 | 允许动作 | 禁止替代 |
+| 阶段 | 目标 | 退出标准 | 估算 |
 |---|---|---|---|
-| 真实媒体调用前 | 产品内独立`delivery_critic.review(stage="course_anchor")` | 审查课程锚点、阻塞、输出结构化返修依据；Main Agent自主Replan | 外部Codex选案、批准锚点、改脚本或决定返修范围 |
-| 真实MP4组装后 | 产品内独立`delivery_critic.review(stage="video_final_review")` | 读取成片、字幕/转写、采样帧、音轨和时间线，检查锚点/创意漂移并定位shot/时间范围 | 只凭前置概念报告或外部人工观看替代产品内成片门禁 |
-| V1-9产品内成包后 | 外部Codex/独立验收者 | 黑盒审核PPT、视频、锚点、版本一致性和课堂可用性，形成只读`ExternalAcceptanceReport`并把问题归因到责任层 | 在任务运行中补链，或把外部修好的包记成产品能力 |
+| V1-9R0 | 真实失败基线与旧测试纠偏 | 一句话PPT、继续、改道、风险门和无假fallback测试先红 | 0.5天 |
+| V1-9R1 | TaskBrief/IntentGrant与输入贯穿 | Tool永远收到完整目标；改道使旧意图失效 | 0.5-1天 |
+| V1-9R2 | ActionPolicy与HumanGate分级 | 内部节点零例行打断；真实风险仍阻断 | 1天 |
+| V1-9R3 | 业务Tool连续ReAct | Main Agent自主完成PPT安全链并能定点返修 | 1-1.5天 |
+| V1-9R4 | 真实失败与关键UI | 无假fallback；Markdown、历史成果、强度、窄屏和状态关闭 | 0.5-1天 |
+| V1-9R5 | 产品黑盒与双用户回归 | 两项目并行；一句话PPT与自然语言改道全链通过 | 0.5-1天 |
+| V1-9 | 唯一真实产品E2E | 完整整包、版本一致、外部黑盒P0=0 | 1-2天 |
+| V1-10 | 候选签收与发布 | 教师签收、原子切流、注册关闭和生产复核 | 0.5-1天 |
 
-前两者是产品内部能力门禁，第三者是局外验收。三者都必须存在，但证据不得互相替代。
+V1-9R工程候选为4-6个集中开发日；两人邀请制V1总工期为6-10个自然日。Provider、外部审核或教师签收等待不计入工程工时；真实成片新增P0时增加1-2天。前两天应得到“一句话发起、无需反复确认、自动推进到可信PPT候选”的确定性候选版。
 
-## 5. 当前真实状态
+## 6. 下一执行任务
 
-- 工程：`E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main`
-- 分支：`main`
-- 当前基线：V1-2本地提交为`6dc795c`；V1-3独立本地提交待本次封板完成后生成。`origin/main`仍为`36d9d8f`；历史标签`v1`、`v1.1.0-alpha`与`v1.1.0-alpha.1`不可移动。
-- V1-1：已完成编排归因审计和closeout。
-- V1-2：Registry、调用信封、Router、Main Agent白名单、独立课程锚点Critic、结构化返修与默认授权已经正式closeout；三个Agent Tool仍不接生产Executor。
-- 排除文档收口，当前未提交V1-2代码/测试候选共有14个文件：8个生产/合同文件、5个既有测试文件和1个未跟踪默认授权测试。它们属于用户工作树，不得删除、回退、覆盖或通过放宽断言使其伪绿。
-- V1-2最终专项：8个测试文件、140/140通过；TypeScript exit 0。
-- 已通过专项纵深测试：默认数据库授权19/19、课程锚点Gate 36/36、前置Tool正向白名单、否定语义正例、`minimalFix`非空Schema、证据充分性和blocking finding优先级。closeout前仍须复核最终diff，不能只凭单项测试宣称合同封板。
-- V1-2全量封板：Node 259/259、Vitest 103个文件763/763、生产构建exit 0、`.tmp`隔离SQLite连续初始化2/2、`git diff --check` exit 0；人工审查确认合法业务返修、结构错误、locator范围和非成功Observation边界符合计划。
-- V1-3：Agent Tool生产Executor/Main Agent接线、同轮只读Agent Tool ReAct、业务Tool结果后Replan和固定DeliveryPlan显式降级已经封板。
-- V1-4：HumanGate与自然语言打断、暂停恢复、旧action防重放、IntentEpoch隔离和PPT页级影响报告已经封板。
-- 尚未实现：V1-6至V1-10各阶段；共享运行时和四档强度不替代V1-6/V1-7领域闭环。
-- 既有PPT、图片、视频和最终包证明交付工艺与底层技术链可行；低年级视频课程锚点方向失败，整包只保留为工艺、Provider和负例证据。
+下一任务固定为V1-9R0，不先改生产代码：
 
-详细收尾证据：`docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-closeout.md`。
+1. 从真实项目提取脱敏fixture，覆盖投篮命中率、继续、确定、重复requirement spec和60秒失败。
+2. 在既有conversation、control resolver、Main Agent loop、HumanGate和capability测试中先增加红测试。
+3. 找出并改写把“确认开始 -> 继续下一步 -> 再继续”固化为成功的旧断言。
+4. 红测试稳定后进入V1-9R1；V1-9R5通过前不执行新的真实图片、视频或整包Provider任务。
 
-## 6. 下一对话读取顺序
+专项计划：
+
+```text
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-plan.md
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md
+```
+
+## 7. 新会话读取顺序
 
 1. `AGENTS.md`
 2. `docs\README.md`
 3. `docs\product\current-requirements-baseline.md`
-4. `docs\product\requirements-backlog.md`
+4. `docs\product\requirements-backlog.md`中的RQ-038
 5. `docs\mainlines\current-mainline-status.md`
-6. `docs\stages\local-real-v1-mainline-adjustment-plan.md`
-7. `docs\stages\local-real-v1-mainline-adjustment-test-plan.md`
-8. `docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-closeout.md`
-9. `docs\stages\local-real-v1-v1-5-generation-intensity-closeout.md`
+6. V1-9R plan与test plan
+7. `docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-closeout.md`，仅作历史合同证据
+8. `docs\stages\local-real-v1-v1-9g-final-package-runtime-lineage-closeout.md`
+9. `docs\stages\local-real-v1-v1-10g-atomic-container-switch-closeout.md`
 
-不得重新执行V1-1，不得从旧Stage 6“三套真实任务”路线恢复。
+开始前必须重新核对`git status --short --branch`、`git log -1`和`origin/main...main`。当前工作树另有V1.1/V1.2/V1.5/V2.0需求与研究文档在途，除非另行授权，不得把它们混入V1-9R代码提交，也不得删除或回退。
 
-## 7. 下一对话唯一目标
+## 8. 外部Codex边界
 
-```text
-完成V1-6 PPT产品内编排闭环：
-先形成阶段计划与测试计划，
-再让产品Main Agent自主完成逐页四层设计、样张、全量、组装、审查和页级返修，
-保证外部Codex不介入包内编排。
-```
+- 外部Codex负责工程实现、测试、证据审计和产品成包后的黑盒审核。
+- 外部Codex不得在运行中选择样张、视频创意、课程锚点、下一Tool或返修范围，也不得模拟真实教师签收。
+- Main Agent失败时，必须归因到TaskBrief、Tool可发现性、合同、Observation、ActionPolicy、Prompt、Rubric、预算或停止条件，再修对应责任层；不允许外部人工接管业务链掩盖缺陷。
+- 本主线不绑定开发方法类Skill，禁止`superpowers:*`；可以使用PPT、视频、图片、浏览器和业务质量类功能性能力，但不能把外部能力结果记为产品Main Agent证据。
+- V1不迁移LangGraph、Vercel AI SDK或其他Agent框架。框架选型不解决错误的授权和数据语义，待V1真实上线后再单独评估。
 
-执行顺序：
+## 9. 禁止事项
 
-1. 读取V1-4 closeout和本交接，不回退已经封板的HumanGate、IntentEpoch与影响分析合同。
-2. 先写V1-5阶段计划与测试计划，冻结四档显示名、模型映射、默认档、升级信号和确认边界。
-3. 默认使用标准档；教师侧只显示强度，不显示模型名、reasoning effort或Provider。
-4. 复杂任务只能建议升级，用户确认后从下一次调用生效；拒绝后同问题不循环提示。
-5. 最高档不能首次自动建议，进入前必须独立提示积分消耗更快并再次确认。
-6. 强度快照绑定project、IntentEpoch和任务，不影响已提交Provider任务，不跨项目串线。
-7. V1-5专项和全量门禁关闭前，不进入PPT/视频真实Provider验证。
-
-### 7.1 V1-5已完成边界
-
-V1-5已经满足以下边界，V1-6必须继续继承：
-
-1. 强度选择必须有服务端权威快照，并进入Main Agent与Agent Tool模型配置选择。
-2. 四档模型映射只存在服务端配置，教师响应和页面不泄露底层名称。
-3. 升级建议由可审计复杂度/失败信号触发，不允许模型自行无痕升级。
-4. 升级action复用HumanGate与IntentEpoch边界；用户确认后下一次调用生效。
-5. 两个项目的强度、升级提示和积分趋势必须隔离，为V1-8双用户并发保留边界。
-
-## 8. 真实验证策略
-
-- V1-1至V1-8使用确定性夹具、失败注入、Provider adapter测试和持久化状态证据，避免频繁烧真实媒体。
-- 只有产品内编排、HumanGate、Quality Gate、双用户隔离和恢复门全部通过后，V1-9才从产品界面执行一次真实PPTX、MP4和最终包E2E。
-- V1-9运行期间外部Codex只观察，不选案、不批锚点、不批样张、不决定返修。
-- 真实MP4组装后先由产品内`video_final_review`检查成片漂移并由Main Agent自主返修；该门通过后才能进入最终包。
-- 成包后由外部Codex按PPT、视频、课程锚点、版本一致性和课堂可用性Rubric做黑盒审核；输出只读`ExternalAcceptanceReport`，发现问题先归因到责任层，再做必要定点复验，不无归因重复整包。
-
-## 9. 工具与Skill边界
-
-- 本主线不绑定任何开发方法类Skill，禁止`superpowers:*`。
-- 可以按任务需要使用与PPT、视频、图片、文档、浏览器或业务质量直接相关的功能性Skill，但它们不能替代产品Main Agent运行时能力证据。
-- 不把LangGraph、Vercel AI SDK或其他框架迁移作为V1上线前置；先把当前架构的职责和证据闭环做实。
-
-## 10. 禁止事项
-
-- V1-6开发期间继续不调用真实媒体Provider，不制作新验收包。
-- 不移动历史标签，不擅自push、部署或发布。
-- 不把mock、Fake Executor、deterministic fallback或外部Codex决策记为产品能力。
-- 不提前开发双用户并发或V1-9真实E2E。
-- 不因局部卡点停止整条主线；连续两轮无新证据时记录事实、失败点、已尝试动作和恢复入口，只转向不依赖该阻塞且不跨越阶段硬前置的任务。
+- 不让教师“再确认一次”来绕过当前P0。
+- 不通过增加更多Prompt限制压缩模型能力。
+- 不将每个内部节点封装成必须人工批准的固定DAG。
+- 不让deterministic、placeholder或degraded产物进入真实完成态。
+- 不移动历史标签，不跳过V1-9R5直接运行真实整包或公网切流。
+- 连续两轮不同排障路径仍无新证据时，记录事实、失败点、已尝试动作和恢复入口，转向不依赖该阻塞的同阶段任务，不重复等价尝试。

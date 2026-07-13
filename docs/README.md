@@ -29,6 +29,8 @@ docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 docs\handoffs\2026-07-13-v1-main-agent-mainline-handoff.md
 docs\stages\local-real-v1-mainline-adjustment-plan.md
 docs\stages\local-real-v1-mainline-adjustment-test-plan.md
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-plan.md
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md
 docs\stages\local-real-v1-v1-1-orchestration-attribution-audit.md
 docs\stages\local-real-v1-v1-1-orchestration-attribution-closeout.md
 docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-plan.md

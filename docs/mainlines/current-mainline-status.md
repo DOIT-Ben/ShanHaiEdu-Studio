@@ -1,6 +1,6 @@
 # Local Real MVP 当前主线状态
 
-更新时间：2026-07-13（V1 产品内编排主线推进）
+更新时间：2026-07-13（V1-9R Main Agent自主编排与HumanGate恢复）
 
 ## 1. 当前主线
 
@@ -12,7 +12,9 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-8、V1-9A至V1-9G、V1-10A至V1-10G已完成；目标服务器localhost staging、原子容器切换、代码回滚/前滚、全新目录恢复、最小运行镜像、五类Provider配置、Main Agent Responses连通和最终包真实Runtime来源门均已通过，下一阶段是在真实教师确认后继续V1-9产品内E2E，并关闭正式公网切流与教师签收门`。
+当前阶段：`V1-9R0 next`。V1-9A至V1-9G的媒体/Runtime/最终包前置硬化和V1-10A至V1-10G的部署/恢复底座继续保留；但最新真实对话证明Main Agent自主编排与HumanGate产品体验不通过，V1-9真实Provider E2E、正式公网切流和教师签收全部暂停，必须先关闭V1-9R0至V1-9R5。
+
+最新状态纠偏：V1-4只可表述为“底层安全合同完成 / 产品验收失败 / P0 reopen”；V1-3、V1-6、V1-7的组件与领域合同保留，但业务Tool连续自主调用重新验收；V1-5的强度贯穿和UI同步按P1重开。不能再要求教师多点一次确认来继续旧路线。
 
 ## 2. 最近已完成阶段
 
@@ -27,7 +29,7 @@ V1 交付质量与邀请制上线
 | M67 feedback center | implementation done / rollout pending | 工程实现、本地E2E及目标服务器重启、回滚和备份恢复均已完成；正式公网反馈写入复核等待V1-9与切流阶段 |
 | Agent workflow closure | implementation done / V1-9 real E2E pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与package resolved Artifact门禁已完成；不在前段追加真实Provider smoke |
 | V1-9A至V1-9E | done | 真实时间线、成片审查证据、受控音字轨、版本一致最终包和30-90秒完整导入视频门禁已封板 |
-| V1-9F Main Agent runtime recovery | done | 定位并修复 Critic function-tool locator Schema 的 Provider兼容问题；真实UI已形成19步计划并停在合法需求确认门 |
+| V1-9F Main Agent runtime recovery | component fix done / product acceptance failed later | Critic Schema兼容问题已修；后续38条真实对话证明19步计划停留不是合法完成，而是任务语义丢失与重复确认的P0证据 |
 | V1-9G final package runtime lineage | done / localhost staging verified | 四类语义源必须为真实OpenAI Runtime产物才能进入最终ZIP；精确提交`ea84cd2`、生产预检15/15、重启和数据摘要不变均通过；未调用真实媒体、未切公网流量 |
 | V1-10A release topology and recovery | done / target evidence closed by V1-10C至V1-10F | 单实例SQLite预检、脱敏健康检查、离线备份/校验/新目录恢复和runbook完成；目标服务器证据已在后续阶段关闭 |
 | V1-10B isolated standalone rehearsal | done / target evidence closed by V1-10C至V1-10F | 隔离SQLite与Artifact根完成schema、管理员、production preflight、build和standalone 200/401/403检查；目标服务器证据已在后续阶段关闭 |
@@ -59,12 +61,13 @@ V1 交付质量与邀请制上线
 | V1 Stage 6 local gates | done / external gates pending | M67 7 通过/1 设计跳过；接管基线Node 259/259、Vitest 659/659、构建、SQLite 双初始化通过；故障合同 90/90 通过 |
 | V1-1 orchestration attribution | done | 已证明当前为模型首步选择加固定DeliveryPlan续步，不是Main Agent同轮多Tool ReAct |
 | V1-2 Tool/Agent Tool registration | done | Agent Tool专项140/140、全量Node 259/259、Vitest 763/763、构建、SQLite双初始化和diff审查通过；三个Agent Tool仍不接生产Executor |
-| V1-3 Main Agent controlled ReAct | done | 三个只读Agent Tool、严格Schema Executor、Report/Observation持久化、业务Tool结果后Main Agent Replan、Queue身份/fence透传与固定链显式降级已封板；专项197/197 |
-| V1-4 HumanGate and interruption | done | 按钮/自由输入统一授权、暂停恢复、取消改道、旧action防重放、IntentEpoch隔离、多计划消歧和PPT页级影响报告已封板；专项96/96 |
-| V1-5 generation intensity | done | 项目级四档强度、任务快照、Main Agent/Agent Tool路由、受控升级建议、极致确认和响应式slider已封板；专项52/52 |
-| V1-6 PPT internal orchestration | done | PPT Critic正式审查持久化、HumanGate批准边界、结构化页级返修和Main Agent编排已封板；专项71/71，未调用真实媒体Provider |
-| V1-7 video internal orchestration | done | 课程锚点六硬门、成片九项审查、双HumanGate、实际证据门和结构化镜头返修输入已封板；专项150/150，未调用真实媒体Provider |
-| V1-8 two-user concurrency | done for single-process V1 topology | 双password actor、双项目、强度/租约/job/taskId/shot/预算/产物隔离和恢复已封板；多Prisma client并行写限制转V1-10拓扑门 |
+| V1-3 Main Agent controlled ReAct | component contracts done / product revalidation open | 三个只读Agent Tool与Observation合同保留；业务Tool未进入连续循环，Tool后又被强制停回确认，转V1-9R3重验 |
+| V1-4 HumanGate and interruption | contract tests done / product failed / P0 reopen | 防重放、IntentEpoch和影响分析保留；22个Capability逐Tool确认、执行确认与产物批准混用，转V1-9R1/R2纠偏 |
+| V1-5 generation intensity | contract done / P1 reopen | 四档与升级边界保留；服务端快照、Runtime贯穿、409回权威状态和UI同步转V1-9R1/R4复验 |
+| V1-6 PPT internal orchestration | domain contracts done / integration revalidation open | PPT Critic与页级返修合同保留；Main Agent自主连续编排转V1-9R3/R5重验 |
+| V1-7 video internal orchestration | domain contracts done / integration revalidation open | 课程锚点与成片Critic合同保留；Main Agent自主连续编排转V1-9R3/R5重验 |
+| V1-8 two-user concurrency | done for single-process V1 topology / regression required | 双用户底座保留；V1-9R新增TaskBrief、授权、decision和费用状态后必须重新验证不串线 |
+| V1-9R autonomy and HumanGate recovery | next / blocks release | 先关闭真实失败基线、任务语义与授权、ActionPolicy、业务Tool连续ReAct、真实失败、关键UI和双用户黑盒，再恢复唯一真实整包 |
 
 ## 2.1 v1 与接管基线
 
@@ -79,6 +82,7 @@ V1 交付质量与邀请制上线
 - 2026-07-13 V1-6最终封板证据：专项7文件71/71；TypeScript exit 0；Node 259/259；完整Vitest通过；生产构建exit 0并生成13个静态页面；`npm test`隔离SQLite初始化与持久化测试通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
 - 2026-07-13 V1-7最终封板证据：专项10文件150/150；TypeScript exit 0；Node 259/259；完整Vitest随`npm test`正常完成；生产构建exit 0并生成13个静态页面；隔离SQLite初始化与视频审查持久化通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
 - 2026-07-13 V1-8最终封板证据：专项7文件43/43、双用户综合1/1；TypeScript exit 0；Node 259/259；完整Vitest随`npm test`正常完成；生产构建exit 0并生成13个静态页面；隔离SQLite与WAL实测通过；`git diff --check` exit 0。目标部署限定单Node进程/单Prisma singleton；未调用真实媒体Provider。
+- 2026-07-13 最新产品纠偏证据：真实项目38条消息连续形成8个`requirement_spec`，均未批准且未推进教案/PPT/视频；完整`inputDraft`在内部Tool边界丢失；22个Capability全部逐Tool确认；业务Tool不能进入Main Agent内循环；Tool成功后强制回到确认；8个产物全部为`deterministic_draft`。因此V1-3/V1-4/V1-6/V1-7的历史测试计数只保留为合同证据，不再支持“产品自主编排已完成”的结论。
 - 2026-07-13 V1-9G最终封板证据：四类语义源真实Runtime门专项23/23；Node 271/271；Vitest 119文件849/849；生产构建14/14页面；目标服务器精确镜像生产预检15/15、Docker healthy、重启、SQLite integrity、管理员和数据摘要复验通过。未调用真实媒体Provider、未切公网流量。
 - 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
@@ -103,29 +107,29 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. 真实教师关闭当前需求确认HumanGate；外部Codex不代替确认、样张选择、课程锚点或返修决策。
-2. V1-9执行一次产品内真实PPT、视频和最终包E2E，并补齐真实TTS、字幕和成片证据采集。
-3. 产品内成包后由外部Codex黑盒审核并将问题归因到责任层。
-4. E2E通过后执行正式公网切流、公开注册关闭复核和真实教师签收，再开放邀请制V1。
+1. V1-9R0：把本次38条真实失败对话转成脱敏红测试，废止“逐节点继续/批准”作为成功行为。
+2. V1-9R1/R2：贯通`TaskBrief + IntentGrant`，统一`PendingDecision`，用ActionPolicy把HumanGate收缩到真实风险与真实选择。
+3. V1-9R3：让Main Agent发现并连续调用白名单业务Tool，Tool后自动Observe/Replan，不再统一停回确认。
+4. V1-9R4/R5：禁止假fallback成功，关闭Markdown/历史成果/强度/窄屏问题，完成一句话任务和双用户黑盒回归。
+5. V1-9：只执行一次产品内真实整包，外部Codex成包后黑盒审核；V1-10先完成候选教师签收，再原子切流并复核注册关闭和生产关键路径。
 
 ## 4. 下一阶段建议
 
-用户已经批准继续推进 V1 交付质量主线。PPT、图片、视频和最终包的底层生产链已经有真实证据，下一阶段不再由外部Codex重复制作交付包，而是验证产品内部Main Agent的协调能力。当前唯一恢复点：
+当前唯一恢复点：
 
 ```text
-V1-9：产品内真实E2E
+V1-9R0：真实失败基线与旧验收语义纠偏
 ```
 
-推荐拆分：
+执行顺序：
 
-1. 读取V1-6、V1-7、V1-8 closeout，冻结一次真实E2E的课程、目标页数、视频Full Intro和最终包验收口径。
-2. 先关闭FFmpeg/ffprobe真实时间线、五类成片证据和最终包版本一致性缺口，不能直接运行旧Buffer.concat路径。
-3. 从产品界面由Main Agent独立启动；外部Codex不选样张、不选视频创意、不批准、不决定返修。
-4. 产品内PPT Critic、课程锚点Critic、成片Critic和HumanGate全部留下证据后才成包。
-5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
-6. 保持既有`v1`、`v1.1.0-alpha`和`v1.1.0-alpha.1`标签不动；最终邀请制发布使用新的不可变发布标识。
+1. 从真实项目提取脱敏fixture，稳定复现“理解正确、Tool输入丢失、重复requirement spec、60秒失败和deterministic草稿”。
+2. 先写一句话PPT、继续、改道、风险HumanGate和无假fallback红测试，并识别与新产品目标冲突的旧断言。
+3. 红测试成立后，按V1-9R1至R5顺序修改控制面；不靠增加Prompt限制或让教师再确认一次规避根因。
+4. V1-9R5通过并形成恢复closeout前不调用新的真实整包Provider；V1-9运行中外部Codex介入编排次数必须为0。
+5. 保持既有`v1`、`v1.1.0-alpha`和其他历史标签不动；最终邀请制发布使用新的不可变标识。
 
-当前明确未关闭的上线门：真实教师继续当前需求确认、PPT/视频产品内闭环、课程锚点独立Critic审查、产品内真实E2E、正式公网切流后的公开注册关闭复核和至少一名真实教师签收。目标服务器运行、回滚、恢复、最小镜像、Provider配置和Main Agent连通门已经关闭；两用户隔离与单进程并发已由V1-8封板。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
+当前明确未关闭的上线门：Main Agent业务Tool连续自主调用、任务级授权、HumanGate职责分级、控制消息不丢任务、真实失败恢复、关键UI误导、受影响的双用户隔离和产品内真实E2E。真实E2E与外部黑盒审核P0=0后，先由至少一名真实教师在候选环境签收，再执行原子公网切流；切流后复核公开注册关闭、生产健康和教师关键路径。目标服务器运行、回滚、恢复、最小镜像和Provider配置底座已经关闭，只做受影响回归。
 
 V1 Agent 与交付质量设计、Contracts、Prompts 和实验依据已经迁入项目，统一入口：
 
@@ -138,6 +142,8 @@ docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 ```text
 docs\stages\local-real-v1-mainline-adjustment-plan.md
 docs\stages\local-real-v1-mainline-adjustment-test-plan.md
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-plan.md
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md
 docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md
 docs\stages\local-real-v1-v1-3-main-agent-controlled-react-closeout.md
 docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-closeout.md

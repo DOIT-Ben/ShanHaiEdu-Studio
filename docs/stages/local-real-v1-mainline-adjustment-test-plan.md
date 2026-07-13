@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / A-01 to A-06 complete / A-07 next`
+状态：`Accepted / V1-9R recovery next / V1-9 real E2E paused`
 
 关联计划：`docs\stages\local-real-v1-mainline-adjustment-plan.md`
 
@@ -10,6 +10,7 @@
 
 - 自动化只证明覆盖范围；产品内编排必须从真实Main Agent请求、Tool调用、Observation和持久化状态证明。
 - 外部Codex选择节点、模拟批准或手工返修的产物不得作为Main Agent能力证据。
+- 最新38条真实对话已经推翻A-04至A-06“产品体验完成”的旧结论；旧自动化只保留为合同层历史证据，V1-9R必须按真实行为重新验收。
 - V1-1至V1-8未通过前，不执行新的完整真实Provider交付任务。
 - V1-1至V1-8优先使用确定性夹具、受控失败注入和Provider adapter验证编排；不得用频繁生图、视频或整包生成掩盖Agent协调缺陷。
 - V1-9真实任务中，外部Codex只能观察和在成包后黑盒验收，不得在运行中选案、改计划、批准锚点、批准样张或决定返修范围。
@@ -21,20 +22,20 @@
 |---|---|---|
 | A-01 | 编排归因 | `passed`：每个PPT/视频节点已标明真实决策主体；现有固定链和缺失Agent Tool未被记为Main Agent完成 |
 | A-02 | Tool注册 | Main Agent可发现且只能调用白名单高层工具；裸Provider/数据库/状态提升不可见 |
-| A-03 | Tool合同 | 缺字段、错项目、错版本、错血缘、未批准输入稳定拒绝并产生类型化Observation |
-| A-04 | Observation/Replan | Tool失败或质量不通过后，Main Agent改变计划或定点返修；精确重复失败触发预算停止 |
-| A-05 | HumanGate | 缺少匹配actionId时高成本或不可逆动作零调用；拒绝、过期和改道后旧action失效 |
-| A-06 | 自然语言打断 | 样张阶段修改叙事大纲后只失效受影响下游，保留历史且不提升迟到结果 |
+| A-03 | Tool合同 | 缺字段、错项目、错版本、错血缘或超出`IntentGrant`稳定拒绝并产生类型化Observation；标准任务内合法输入不因缺人工批准而拒绝 |
+| A-04 | Observation/Replan | Tool失败或质量不通过后，Main Agent改变计划或定点返修；成功后可继续下一合法业务Tool；精确重复失败触发预算停止 |
+| A-05 | HumanGate | 标准任务内可逆内部节点零例行确认；超预算、最高强度、外发、权限和破坏性动作缺匹配decision时零调用；拒绝、过期和改道后旧action失效 |
+| A-06 | 自然语言打断 | “继续/确定”不覆盖TaskBrief；样张阶段修改叙事大纲后只失效受影响下游，保留历史且不提升迟到结果 |
 | A-07 | 强度默认 | RQ-027实施后新任务默认“标准”并映射Terra Medium，教师侧不出现模型名 |
 | A-08 | 强度升级 | 持续失败只产生一次受控建议；用户确认后下一次调用升级，拒绝后不循环打扰 |
 | A-09 | 极致档 | Sol High不能首次自动建议；进入前提示更快积分消耗并要求独立二次确认 |
-| A-10 | PPT内部闭环 | Main Agent自主推进到样张并等待教师，批准后全量生产；质量问题只返修目标页 |
+| A-10 | PPT内部闭环 | Main Agent自主完成逐页设计、样张内部审查、全量生产和页级返修；教师明确要求“先看样张”时才暂停，质量问题只返修目标页 |
 | A-11 | 视频创意门 | 产品内`delivery_critic.review`执行六硬门：独立可理解、独立观看价值、非教材/PPT复刻、唯一最小锚点、受众不限制故事世界、不泄露答案；任一失败或inconclusive即停止 |
 | A-11a | 课程锚点边界 | 锚点只有一个最小回接；不会因目标受众是小学生而强制儿童主角、教室场景或课堂活动；全程教材化/课堂化稳定阻塞并产生CriticReport |
 | A-11b | 锚点自主返修 | Main Agent读取锚点CriticReport后自主Replan、换创意机制或请求HumanGate；外部Codex介入次数为0 |
-| A-11c | 独立Critic与不过度约束 | `delivery_critic.review`通过只形成后续Guard的必要语义前置；仍须可信生产Executor绑定、PlanGuard、HumanGate和QualityDecision才允许真实媒体调用。儿童主角或教室场景有独立创意理由时可以通过；受众年龄强绑定或依赖课堂教学任务才能成立的复刻必须阻塞 |
+| A-11c | 独立Critic与不过度约束 | `delivery_critic.review`通过只形成后续Guard的必要语义前置；仍须可信生产Executor绑定、PlanGuard、任务级IntentGrant、ActionPolicy和QualityDecision才允许真实媒体调用，只有超出授权时才进入HumanGate。儿童主角或教室场景有独立创意理由时可以通过；受众年龄强绑定或依赖课堂教学任务才能成立的复刻必须阻塞 |
 | A-11d | 成片后二次产品内审查 | `delivery_critic.review(domain="video", stage="video_final_review")`读取实际MP4、字幕/转写、采样帧、音轨和时间线证据；创意或锚点漂移定位到`shotId`/时间范围，Main Agent自主定点返修，外部Codex介入次数为0 |
-| A-12 | 视频Provider前置 | Concept Selection和HumanGate未通过时，真实视频任务提交次数为0 |
+| A-12 | 视频Provider前置 | 课程锚点Critic、ActionPolicy或任务级费用授权未通过时，真实视频任务提交次数为0；教师明确请求标准视频且处于授权预算内时不逐镜头确认 |
 | A-13 | 两用户隔离 | 两账号同时操作不同项目，消息、强度、action、job、artifact和反馈不串线 |
 | A-14 | 双任务并发 | 不同项目可以并发；同项目只有一个有效写者；失败恢复不重复付费提交 |
 | A-15 | 产品内真实E2E | 从教师UI启动，产品Main Agent完成计划、工具、审查和最终包；若质量不通过则自主定点返修，不为证明返修而故意制造昂贵失败；运行中外部Codex只观察，成包后才黑盒审核 |
@@ -52,12 +53,22 @@
 
 ## 4. 完成记录
 
-每个阶段closeout记录：提交SHA、测试命令和计数、真实请求/浏览器/状态证据、失败和回退点、仍由外部Codex介入的动作。只要仍有关键编排动作依赖外部Codex，V1-9不得开始。V1-9首次完整真实全链路验收集中执行；若失败，先完成责任归因和定点修复，再决定是否需要局部或整包复验，禁止无归因地反复烧真实Provider。
+每个阶段closeout记录：提交SHA、测试命令和计数、真实请求/浏览器/状态证据、失败和回退点、仍由外部Codex介入的动作。只要仍有关键编排动作依赖外部Codex，V1-9不得开始。当前先执行V1-9R；其R0至R5全部通过并形成独立closeout后，V1-9才执行首次完整真实全链路验收；V1-10再单独关闭候选教师签收、公网切流和切流后复核。若失败，先完成责任归因和定点修复，再决定局部或整包复验，禁止无归因地反复烧真实Provider。
 
 V1-2已经完成：Agent Tool专项8文件140/140，TypeScript exit 0，Node 259/259，Vitest 103文件763/763，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。Executor权威字段、课程锚点返修报告和通用Critic签名目标集合三组历史红灯均已关闭；详细证据见V1-2 closeout。
 
 V1-2 closeout只允许声明“Agent Tool合同、Router硬门、默认授权边界和注入Executor测试就绪”。生产Critic Executor、Main Agent真实调用、CriticReport持久化及基于Observation的同轮Replan必须在V1-3/V1-7另行取证；这些证据成立前，不得将合同就绪升级为“产品智能体已经自主完成课程锚点审查”。
 
-V1-3已经完成：专项15文件197/197，TypeScript exit 0，Node 259/259，完整Vitest随`npm test` exit 0，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。A-04的共享Observation/Replan运行时已关闭；PPT和视频领域语义、课程锚点Critic与成片复核仍分别等待V1-6/V1-7。
+V1-3历史合同验证已经完成：专项15文件197/197，TypeScript exit 0，Node 259/259，完整Vitest随`npm test` exit 0，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。最新产品验收证明其只读Agent Tool与单步Replan不能代表业务Tool连续ReAct，A-04产品行为在V1-9R重新打开。
 
-V1-4已经完成：专项7文件96/96，TypeScript exit 0，Node 259/259，完整Vitest exit 0，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。A-05/A-06的HumanGate、自然语言打断、旧action防重放、IntentEpoch隔离和结构化影响报告已经关闭；视频领域局部影响仍等待V1-7。
+V1-4历史合同验证已经完成：专项7文件96/96，TypeScript exit 0，Node 259/259，完整Vitest exit 0，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。旧action防重放、IntentEpoch隔离和影响报告仍保留；但逐Tool确认、执行确认与产物批准混用及控制消息丢任务导致A-05/A-06产品验收失败，按P0在V1-9R重新打开。
+
+## 5. 当前恢复专项
+
+V1-9R的P0、UI、双用户和真实收尾用例统一定义在：
+
+```text
+docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md
+```
+
+恢复顺序固定为：真实失败红测试 -> TaskBrief/IntentGrant贯穿 -> ActionPolicy/HumanGate分级 -> 业务Tool连续ReAct -> 失败与关键UI -> 双用户产品回归 -> 唯一一次真实整包。不得为了让旧测试继续通过而保留逐节点确认语义，也不得在恢复门未关闭时把真实教师再次点击确认当成解决方案。
