@@ -5,6 +5,7 @@ import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capa
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentState, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { createDeterministicMainConversationAgent, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
+import { runMainAgentControlledReActLoop } from "./main-agent-controlled-react-loop";
 
 type OpenAIMainConversationAgentOptions = {
   client: OpenAIResponsesClient;
@@ -71,8 +72,12 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
     }
 
     try {
-      const response = await createOpenAIResponsesGptAdapter({ client: this.client, model: this.model }).createResponse(buildMainAgentRequest(input, this.reasoningEffort));
-      return normalizeModelTurn(parseMainAgentOutput(response.assistantText), input);
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
+      const request = buildMainAgentRequest(input, this.reasoningEffort);
+      const assistantText = input.agentToolLoop?.tools.length
+        ? await runMainAgentToolLoop(adapter, request, input.agentToolLoop)
+        : (await adapter.createResponse(request)).assistantText;
+      return normalizeModelTurn(parseMainAgentOutput(assistantText), input);
     } catch {
       return {
         assistantMessage: {
@@ -190,6 +195,9 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       "如果 contextPackage.summaryValidation.status=failed，不要使用 sessionSummary 作事实依据，只使用最近消息、节点状态和 artifact 状态。",
       "如果收到 agentWorldState，它是当前项目事实状态；trustedInputs 才能作为下游可信输入，draftArtifacts 只能作为待教师确认内容。",
       "如果收到 capabilityAvailability，不要把 provider_unavailable 或 needs_approved_inputs 的能力当成可立即执行；对教师只说自然语言，不输出 status、capabilityId、provider、runtimeKind 等工程词。",
+      "你可以调用提供的只读专业Agent Tool获取规划或审查意见。Agent Tool不会创建文件或批准业务操作；收到结果后必须继续判断，不要照抄工具结论。",
+      "需要真实生成或写入产物时，最终仍通过toolPlan提出一个业务能力并等待服务端HumanGate；不得在只读Agent Tool循环中直接调用媒体或打包能力。",
+      "如果专业Agent Tool返回返修、阻塞或证据不足，结合finding和最小修复改计划、定点返修或请求教师，不要原样重复调用。",
       "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
       "不要输出工程词、底层字段名、schema、provider、node_id、storage、debug、local path 或密钥。",
       "返回内容必须严格符合 JSON 结构。",
@@ -202,6 +210,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       agentWorldState: input.conversationContext?.agentWorldState ?? null,
       capabilityAvailability: input.conversationContext?.capabilityAvailability ?? [],
       conversationContext: input.conversationContext ?? {},
+      replanDirective: input.replanDirective ?? null,
       availableArtifactKinds: input.availableArtifactKinds,
       availableCapabilities: getCapabilityDefinitions().map((capability) => ({
         id: capability.id,
@@ -227,6 +236,23 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       },
     },
   };
+}
+
+async function runMainAgentToolLoop(
+  adapter: ReturnType<typeof createOpenAIResponsesGptAdapter>,
+  request: ReturnType<typeof buildMainAgentRequest>,
+  options: NonNullable<MainConversationAgentInput["agentToolLoop"]>,
+) {
+  const result = await runMainAgentControlledReActLoop({
+    adapter,
+    request,
+    tools: options.tools,
+    allowedToolNames: options.allowedToolNames,
+    dispatch: options.dispatch,
+    maxToolRounds: options.maxToolRounds,
+  });
+  if (result.status !== "completed") throw new Error(`Main Agent ReAct loop stopped: ${result.reason}`);
+  return result.assistantText;
 }
 
 function parseMainAgentOutput(outputText: string | undefined): StructuredMainAgentOutput {

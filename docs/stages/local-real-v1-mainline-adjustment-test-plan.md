@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / A-01 to A-03 complete / A-04 next`
+状态：`Accepted / A-01 to A-04 complete / A-05 next`
 
 关联计划：`docs\stages\local-real-v1-mainline-adjustment-plan.md`
 
@@ -57,3 +57,5 @@
 V1-2已经完成：Agent Tool专项8文件140/140，TypeScript exit 0，Node 259/259，Vitest 103文件763/763，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。Executor权威字段、课程锚点返修报告和通用Critic签名目标集合三组历史红灯均已关闭；详细证据见V1-2 closeout。
 
 V1-2 closeout只允许声明“Agent Tool合同、Router硬门、默认授权边界和注入Executor测试就绪”。生产Critic Executor、Main Agent真实调用、CriticReport持久化及基于Observation的同轮Replan必须在V1-3/V1-7另行取证；这些证据成立前，不得将合同就绪升级为“产品智能体已经自主完成课程锚点审查”。
+
+V1-3已经完成：专项15文件197/197，TypeScript exit 0，Node 259/259，完整Vitest随`npm test` exit 0，生产构建exit 0，隔离SQLite连续初始化2/2，`git diff --check` exit 0。A-04的共享Observation/Replan运行时已关闭；PPT和视频领域语义、课程锚点Critic与成片复核仍分别等待V1-6/V1-7。

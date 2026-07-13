@@ -4,9 +4,11 @@ import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factor
 import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
 import { normalizeXiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
+import { createAgentToolExecutorFromEnv } from "@/server/tools/openai-agent-tool-executor";
 
 const runtime = createAgentRuntimeFromEnv();
 const mainAgent = createMainConversationAgentFromEnv();
+const agentToolExecutor = createAgentToolExecutorFromEnv();
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -50,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (shouldAutoDrainConversationQueue()) {
-        void drainProjectConversationQueue(projectId, { service, runtime, agent: mainAgent }).catch(() => null);
+        void drainProjectConversationQueue(projectId, { service, runtime, agent: mainAgent, agentToolExecutor }).catch(() => null);
       }
 
       return NextResponse.json({ message, job }, { status: 202 });

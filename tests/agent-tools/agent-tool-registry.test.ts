@@ -34,9 +34,9 @@ describe("V1-2 Agent Tool registry", () => {
         sideEffectLevel: "none",
         requiresHumanGate: false,
         contractReady: true,
-        executorReady: false,
-        mainAgentExecutable: false,
-        implemented: false,
+        executorReady: true,
+        mainAgentExecutable: true,
+        implemented: true,
         modelVisible: true,
       });
       expect(tool.producedArtifactKind).toBeUndefined();

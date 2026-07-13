@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMainConversationAgentFromEnv, OpenAIMainConversationAgent, resolveMainAgentTimeoutMs } from "@/server/conversation/model-main-conversation-agent";
 import { createDeterministicMainConversationAgent } from "@/server/conversation/main-conversation-agent";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
@@ -487,6 +487,75 @@ describe("M55-C model-first main conversation agent", () => {
     expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "45000" })).toBe(45_000);
     expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "1000" })).toBe(60_000);
     expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "not-a-number" })).toBe(60_000);
+  });
+
+  it("uses a read-only Agent Tool and replans in the same model turn", async () => {
+    const finalOutput = {
+      assistantMessage: { title: null, body: "课件规划已核对，下一步请确认关键样张。" },
+      state: "awaiting_confirmation",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "ppt_key_samples",
+        reasonForUser: "我可以按规划组装关键样张。",
+        missingInputs: [],
+        nextSuggestedCapabilities: ["ppt_full_assets"],
+        requiresConfirmation: true,
+        inputDraft: { teacherGoal: "完成关键样张", notes: null },
+      },
+      deliveryPlan: null,
+    };
+    const payloads: Record<string, any>[] = [];
+    const responses = [
+      {
+        output_text: "",
+        output: [{
+          id: "item-1",
+          type: "function_call",
+          call_id: "call-1",
+          name: "ppt_director_plan_or_repair",
+          arguments: JSON.stringify({ goal: "规划课件", stage: "sample_plan", targetPageIds: [], focus: null }),
+        }],
+      },
+      { output_text: JSON.stringify(finalOutput), output: [] },
+    ];
+    const client = {
+      responses: {
+        async create(payload: Record<string, unknown>) {
+          payloads.push(payload);
+          return responses[payloads.length - 1];
+        },
+      },
+    } as OpenAIResponsesClient;
+    const dispatch = vi.fn(async () => ({
+      status: "succeeded" as const,
+      modelOutput: { decision: "plan", nextToolIntents: ["assemble_ppt_key_samples"] },
+      observationId: "observation-1",
+    }));
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "继续完善PPT",
+      availableArtifactKinds: ["ppt_design_draft"],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "ppt_director_plan_or_repair" }],
+        allowedToolNames: ["ppt_director_plan_or_repair"],
+        dispatch,
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(payloads).toHaveLength(2);
+    expect(payloads[1].input).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "function_call_output", call_id: "call-1" }),
+    ]));
+    expect(turn).toMatchObject({
+      state: "awaiting_confirmation",
+      toolPlan: { capabilityId: "ppt_key_samples" },
+      shouldRunToolNow: false,
+      runtimeKind: "openai",
+    });
   });
 });
 

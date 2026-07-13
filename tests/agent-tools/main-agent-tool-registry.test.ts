@@ -24,7 +24,7 @@ const expectedAgentTools = [
   "delivery_critic.review",
 ];
 
-describe("V1-2 Main Agent visible tool registry", () => {
+describe("V1-3 Main Agent visible tool registry", () => {
   it("exposes only approved high-level business and Agent Tools", () => {
     const definitions = listMainAgentToolDefinitions();
 
@@ -42,8 +42,8 @@ describe("V1-2 Main Agent visible tool registry", () => {
     expect(ids).not.toContain("artifact_promote");
   });
 
-  it("keeps contract-ready Agent Tools out of the production executable surface until V1-3", () => {
-    expect(listMainAgentExecutableToolDefinitions().map((tool) => tool.id)).toEqual(expectedBusinessTools);
+  it("exposes only the three controlled read-only Agent Tools plus approved business Tools", () => {
+    expect(listMainAgentExecutableToolDefinitions().map((tool) => tool.id)).toEqual([...expectedAgentTools, ...expectedBusinessTools]);
   });
 
   it("resolves only canonical ids or registered transport names", () => {

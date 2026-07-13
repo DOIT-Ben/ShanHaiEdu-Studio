@@ -2,6 +2,7 @@ import type { CapabilityToolPlan } from "@/server/capabilities/types";
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import type { AgentObservation, RunCheckpoint } from "@/server/conversation/react-control";
+import type { PersistedAgentToolReport } from "@/server/tools/agent-tool-report";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -76,6 +77,11 @@ export type AgentWorldStateObservation = Pick<
   | "createdAt"
 >;
 
+export type AgentWorldStateAgentToolReport = Pick<
+  PersistedAgentToolReport,
+  "reportId" | "reportDigest" | "intentEpoch" | "invocationId" | "toolId" | "status" | "assistantSummary" | "structuredOutput" | "policyOutcome" | "createdAt"
+>;
+
 export type AgentWorldState = {
   project: Pick<ProjectRecord, "id" | "title" | "grade" | "subject" | "textbookVersion" | "lessonTopic" | "status">;
   currentNodeKey: WorkflowNodeKey;
@@ -85,6 +91,7 @@ export type AgentWorldState = {
   failedJobs: AgentWorldStateFailedJob[];
   toolObservations: AgentWorldStateToolObservation[];
   agentObservations: AgentWorldStateObservation[];
+  agentToolReports?: AgentWorldStateAgentToolReport[];
   runCheckpoint: RunCheckpoint | null;
   pendingPlan: AgentWorldStatePendingPlan | null;
   nextRisks: AgentWorldStateRisk[];
@@ -107,6 +114,7 @@ export type BuildAgentWorldStateInput = {
   } | null;
   toolObservations?: ToolObservation[];
   agentObservations?: AgentObservation[];
+  agentToolReports?: PersistedAgentToolReport[];
   runCheckpoint?: RunCheckpoint | null;
 };
 
@@ -172,6 +180,21 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
       .filter((observation) => observation.projectId === input.project.id)
       .slice(-12)
       .map(toWorldStateObservation),
+    agentToolReports: (input.agentToolReports ?? [])
+      .filter((report) => report.projectId === input.project.id && report.intentEpoch === (input.project.intentEpoch ?? 0))
+      .slice(-8)
+      .map((report) => ({
+        reportId: report.reportId,
+        reportDigest: report.reportDigest,
+        intentEpoch: report.intentEpoch,
+        invocationId: report.invocationId,
+        toolId: report.toolId,
+        status: report.status,
+        assistantSummary: report.assistantSummary,
+        structuredOutput: report.structuredOutput,
+        policyOutcome: report.policyOutcome,
+        createdAt: report.createdAt,
+      })),
     runCheckpoint: input.runCheckpoint?.projectId === input.project.id ? input.runCheckpoint : null,
     pendingPlan: input.pendingPlan ? toPendingPlan(input.pendingPlan) : null,
     nextRisks: [...staleRisks, ...blockedItems],

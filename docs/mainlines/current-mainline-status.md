@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1编排归因审计与V1-2 Tool/Agent Tool合同封板已完成；下一阶段是V1-3 Main Agent同轮受控ReAct，先写计划与测试定义，再接生产Executor和Dispatcher`。
+当前阶段：`V1-1至V1-3已完成；下一阶段是V1-4 HumanGate与自然语言打断，先冻结意图合同和影响分析，再实现旧action与迟到结果隔离`。
 
 ## 2. 最近已完成阶段
 
@@ -49,14 +49,16 @@ V1 交付质量与邀请制上线
 | V1 Stage 6 local gates | done / external gates pending | M67 7 通过/1 设计跳过；接管基线Node 259/259、Vitest 659/659、构建、SQLite 双初始化通过；故障合同 90/90 通过 |
 | V1-1 orchestration attribution | done | 已证明当前为模型首步选择加固定DeliveryPlan续步，不是Main Agent同轮多Tool ReAct |
 | V1-2 Tool/Agent Tool registration | done | Agent Tool专项140/140、全量Node 259/259、Vitest 763/763、构建、SQLite双初始化和diff审查通过；三个Agent Tool仍不接生产Executor |
+| V1-3 Main Agent controlled ReAct | done | 三个只读Agent Tool、严格Schema Executor、Report/Observation持久化、业务Tool结果后Main Agent Replan、Queue身份/fence透传与固定链显式降级已封板；专项197/197 |
 
 ## 2.1 v1 与接管基线
 
 - 候选提交：`fffdfb3b050782208bb6e288d3e324ba44a4c659`。
 - annotated tag：`v1`，仍指向上述提交，未移动、未重写。
 - V1上线前接管提交：`c85c49f65d0fb6a438c06dba76e5e81ad271dbbc`；annotated tag：`v1.1.0-alpha`。该标识表示执行安全、合同质量、PPT链路和规划已形成，产品内Main Agent编排、视频创意门、双用户并发和发布门待完成。
-- V1-1/V1-2工作发生在接管标签之后；进入新会话必须重新核对`main`与`origin/main`及工作树，历史`v1`与`v1.1.0-alpha`均不移动、不重写。
+- V1-1至V1-3工作发生在接管标签之后；进入新会话必须重新核对`main`与`origin/main`及工作树，历史`v1`、`v1.1.0-alpha`与`v1.1.0-alpha.1`均不移动、不重写。
 - 2026-07-13 V1-2最终封板证据：Agent Tool专项8文件140/140；TypeScript exit 0；Node 259/259；Vitest 103文件763/763；生产构建exit 0并生成13个静态页面；`.tmp`隔离SQLite同库连续初始化2/2；`git diff --check` exit 0。构建保留3条既有动态文件模式性能警告。
+- 2026-07-13 V1-3最终封板证据：专项15文件197/197；TypeScript exit 0；Node 259/259；完整Vitest随`npm test` exit 0；生产构建exit 0并生成13个静态页面；`.tmp\v1-3-init.db`同库连续初始化2/2；`git diff --check` exit 0。未调用真实媒体Provider。
 - 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
 
@@ -80,8 +82,8 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. V1-3完成Main Agent同轮Observe/Replan、可信Agent Tool Executor、统一Dispatcher和固定DeliveryPlan显式降级。
-2. 后续阶段完成自然语言打断、PPT/视频产品内编排、课程锚点前置与成片后Critic、双用户隔离和恢复。
+1. V1-4完成HumanGate与自然语言确认、拒绝、暂停、取消、改道、改大纲和局部返修。
+2. 后续阶段完成四档强度、PPT/视频产品内编排、课程锚点前置与成片后Critic、双用户隔离和恢复。
 3. 仅在V1-1至V1-8通过后执行一次产品内真实PPT/视频/最终包E2E；外部Codex在成包后黑盒审核并将问题归因到责任层。
 4. 完成目标服务器恢复、公开注册关闭复核和真实教师签收后开放邀请制V1。
 
@@ -90,19 +92,19 @@ V1 交付质量与邀请制上线
 用户已经批准继续推进 V1 交付质量主线。PPT、图片、视频和最终包的底层生产链已经有真实证据，下一阶段不再由外部Codex重复制作交付包，而是验证产品内部Main Agent的协调能力。当前唯一恢复点：
 
 ```text
-V1-3：Main Agent同轮受控ReAct
+V1-4：HumanGate与自然语言打断
 ```
 
 推荐拆分：
 
-1. 读取V1-2 closeout并复用已封板的Registry、Schema、Router和授权边界。
-2. 先写V1-3计划与测试计划，再实现统一Dispatcher、可信Executor和同轮Observation/Replan。
-3. 固定DeliveryPlan只作为显式降级，注入Executor和外部人工编排均不计入产品能力。
+1. 读取V1-3 closeout并复用已封板的ReAct、Observation、HumanGate与IntentEpoch边界。
+2. 先写V1-4计划与测试计划，冻结自然语言意图分类、歧义处理和影响分析合同。
+3. 验证修改大纲、暂停、取消和改道会使旧action失效，迟到结果不能污染新分支。
 4. 前段使用确定性夹具、失败注入和状态证据验证编排，避免频繁调用真实图片/视频Provider。
 5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
 6. 保持既有`v1`、`v1.1.0-alpha`和`v1.1.0-alpha.1`标签不动；最终邀请制发布使用新的不可变发布标识。
 
-当前明确未关闭的上线门：V1-2 Agent Tool正式封板、Main Agent同轮受控ReAct、HumanGate与自然语言打断、四档生成强度、PPT/视频产品内闭环、课程锚点独立Critic审查、双用户并发、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
+当前明确未关闭的上线门：HumanGate与自然语言打断、四档生成强度、PPT/视频产品内闭环、课程锚点独立Critic审查、双用户并发、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
 
 V1 Agent 与交付质量设计、Contracts、Prompts 和实验依据已经迁入项目，统一入口：
 
@@ -116,6 +118,7 @@ docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 docs\stages\local-real-v1-mainline-adjustment-plan.md
 docs\stages\local-real-v1-mainline-adjustment-test-plan.md
 docs\stages\local-real-v1-v1-2-tool-agent-tool-registration-checkpoint.md
+docs\stages\local-real-v1-v1-3-main-agent-controlled-react-closeout.md
 docs\handoffs\2026-07-13-v1-main-agent-mainline-handoff.md
 ```
 

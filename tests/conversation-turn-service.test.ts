@@ -55,6 +55,94 @@ const fullDeliveryCapabilityIds = [
 const firstStepStatuses = ["succeeded", "awaiting_confirmation", ...Array(fullDeliveryCapabilityIds.length - 2).fill("pending")];
 
 describe("M54-B3 ConversationTurnService route contract", () => {
+  it("lets the OpenAI Main Agent observe a successful business Tool result and choose the next action", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-3 success replan", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const requirement = await service.saveArtifact(project.id, {
+      nodeKey: "requirement_spec",
+      kind: "requirement_spec",
+      title: "需求规格",
+      status: "needs_review",
+      summary: "已确认需求",
+      markdownContent: "# 需求规格",
+    });
+    await service.approveArtifact(project.id, requirement.id);
+    const runtime = new DeterministicRuntime();
+    const run = vi.spyOn(runtime, "run");
+    const inputs: MainConversationAgentInput[] = [];
+    const agent = {
+      async respond(input: MainConversationAgentInput) {
+        inputs.push(input);
+        return inputs.length === 1
+          ? { ...buildAgentToolTurn("lesson_plan", "lesson_plan"), toolPlan: { ...buildAgentToolTurn("lesson_plan", "lesson_plan").toolPlan, requiresConfirmation: false }, runtimeKind: "openai" as const }
+          : { ...buildAgentToolTurn("requirement_spec", "requirement_spec"), runtimeKind: "openai" as const };
+      },
+    };
+    const turnService = createConversationTurnService({ service, runtime, agent });
+
+    const body = await turnService.createTurn(project.id, { role: "teacher", content: "继续完善这套公开课" });
+    const messages = await service.getMessages(project.id);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1].replanDirective).toMatchObject({ reason: "tool_succeeded", previousActionKey: "lesson_plan:lesson_plan" });
+    expect(inputs[1].conversationContext?.agentWorldState).toMatchObject({
+      draftArtifacts: [expect.objectContaining({ kind: "lesson_plan" })],
+      agentObservations: [expect.objectContaining({ actionKey: "lesson_plan:lesson_plan", status: "succeeded" })],
+    });
+    expect(body.agentTurn).toMatchObject({
+      state: "awaiting_confirmation",
+      shouldRunToolNow: false,
+      toolPlan: { capabilityId: "requirement_spec", requiresConfirmation: true },
+    });
+    expect(body.assistantMessage?.metadata).toMatchObject({
+      orchestrationMode: "main_agent_observe_replan",
+      pendingDeliveryPlan: { status: "pending", toolPlan: { capabilityId: "requirement_spec" } },
+    });
+    expect(messages.filter((message) => message.metadata.orchestrationMode === "main_agent_observe_replan")).toHaveLength(2);
+  });
+
+  it("lets the OpenAI Main Agent change course after a failed business Tool result", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-3 failure replan", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const runtime: AgentRuntime = {
+      async run(input) {
+        return {
+          status: "failed",
+          run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "failed" },
+          assistantMessage: { title: "暂未完成", body: "这一步暂时没有完成，可以调整后继续。" },
+          nextSuggestedAction: { type: "retry", label: "稍后重试" },
+        };
+      },
+    };
+    const inputs: MainConversationAgentInput[] = [];
+    const agent = {
+      async respond(input: MainConversationAgentInput) {
+        inputs.push(input);
+        if (inputs.length === 1) return { ...buildAgentToolTurn("requirement_spec", "requirement_spec"), toolPlan: { ...buildAgentToolTurn("requirement_spec", "requirement_spec").toolPlan, requiresConfirmation: false }, runtimeKind: "openai" as const };
+        return {
+          assistantMessage: { body: "这一步没有完成。我先暂停执行，请补充你最看重的课堂目标。" },
+          state: "needs_input" as const,
+          quickReplies: [],
+          recommendedOptions: [],
+          shouldRunToolNow: false,
+          runtimeKind: "openai" as const,
+        };
+      },
+    };
+    const turnService = createConversationTurnService({ service, runtime, agent });
+
+    const body = await turnService.createTurn(project.id, { role: "teacher", content: "先整理需求" });
+
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1].replanDirective).toMatchObject({ reason: "tool_failed", previousActionKey: "requirement_spec:requirement_spec" });
+    expect(inputs[1].conversationContext?.agentWorldState?.agentObservations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ actionKey: "requirement_spec:requirement_spec", status: "failed" }),
+    ]));
+    expect(body.agentTurn).toMatchObject({ state: "needs_input", shouldRunToolNow: false });
+    expect(body.assistantMessage?.metadata.pendingDeliveryPlan).toBeUndefined();
+  });
+
   it("passes AgentWorldState and capability availability into the main agent context", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M62 世界状态项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });

@@ -4,6 +4,8 @@ import type { MainConversationAgent } from "@/server/conversation/main-conversat
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ConversationTurnJobRecord } from "@/server/workbench/types";
 import type { ExecutionIdentitySnapshot, ProjectExecutionFence } from "@/server/workbench/types";
+import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
+import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { randomUUID } from "node:crypto";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
@@ -19,6 +21,7 @@ export type ConversationTurnJobExecutor = (input: {
   projectId: string;
   job: ConversationTurnJobRecord;
   service: WorkbenchService;
+  fence: ProjectExecutionFence;
 }) => Promise<ConversationTurnJobExecutorResult>;
 
 export type DrainProjectConversationQueueOptions = {
@@ -28,6 +31,7 @@ export type DrainProjectConversationQueueOptions = {
   executor?: ConversationTurnJobExecutor;
   workerId?: string;
   leaseMs?: number;
+  agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
 };
 
 export type DrainProjectConversationQueueResult = {
@@ -81,7 +85,7 @@ export async function drainProjectConversationQueue(
         identity: readJobExecutionIdentity(job),
       });
       try {
-        const execution = await executor({ projectId, job, service: executionService });
+        const execution = await executor({ projectId, job, service: executionService, fence });
         await options.service.renewProjectExecutionLease({ ...fence, leaseMs });
         if (execution.status === "blocked") {
           const completed = await executionService.finishConversationTurnJob(projectId, job.id, {
@@ -148,8 +152,15 @@ function createDefaultExecutor(options: DrainProjectConversationQueueOptions): C
   if (!options.runtime) {
     throw new Error("Conversation turn queue drain requires an AgentRuntime when no executor is provided.");
   }
-  return async ({ projectId, job, service }) => {
-    const turnService = createConversationTurnService({ service, runtime: options.runtime!, agent: options.agent });
+  return async ({ projectId, job, service, fence }) => {
+    const turnService = createConversationTurnService({
+      service,
+      runtime: options.runtime!,
+      agent: options.agent,
+      agentToolExecutor: options.agentToolExecutor,
+      executionIdentity: readJobExecutionIdentity(job),
+      executionFence: fence,
+    });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {
       throw new ConversationTurnJobFailure({

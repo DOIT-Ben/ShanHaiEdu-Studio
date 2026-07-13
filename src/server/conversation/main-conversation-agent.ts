@@ -4,6 +4,7 @@ import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capabili
 import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
+import type { MainAgentReActDispatchResult } from "@/server/conversation/main-agent-controlled-react-loop";
 
 export type MainConversationAgentInput = {
   userMessage: string;
@@ -25,6 +26,17 @@ export type MainConversationAgentInput = {
       toolPlan: CapabilityToolPlan;
       deliveryPlan?: DeliveryPlan;
     };
+  };
+  agentToolLoop?: {
+    tools: unknown[];
+    allowedToolNames: readonly string[];
+    dispatch: (call: { callId: string; toolName: string; arguments: Record<string, unknown> }) => Promise<MainAgentReActDispatchResult>;
+    maxToolRounds?: number;
+  };
+  replanDirective?: {
+    reason: "tool_succeeded" | "tool_failed" | "quality_rework";
+    previousActionKey: string;
+    observationIds: string[];
   };
 };
 

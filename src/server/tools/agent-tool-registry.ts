@@ -82,13 +82,13 @@ function createAgentToolDefinition(input: {
     sideEffectLevel: "none",
     requiredArtifactKinds: [],
     failurePolicy: readOnlyFailurePolicy,
-    implemented: false,
+    implemented: true,
     executionSideEffectLevel: "none",
     resultPersistencePolicy: "report_artifact",
     persistenceSideEffectLevel: "artifact_write",
     contractReady: true,
-    executorReady: false,
-    mainAgentExecutable: false,
+    executorReady: true,
+    mainAgentExecutable: true,
     modelVisible: true,
   };
 }

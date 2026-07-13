@@ -4,6 +4,8 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
+import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { createWorkbenchService } from "../service";
 
 describe("Local Real MVP M60 conversation turn queue", () => {
@@ -348,6 +350,59 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
     expect(snapshot.turnJobs[0]).toMatchObject({ status: "succeeded", assistantMessageId: assistantMessages[0].id });
     expect(assistantMessages[0].content).toContain("小酷");
+  });
+
+  it("passes the queued actor identity and active fence into the Main Agent Agent Tool loop", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "V1-3 queued Agent Tool identity" });
+    const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "请先规划PPT样张" });
+    await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
+    let invocation: AgentToolInvocationEnvelope | undefined;
+    const agentToolExecutor = async (envelope: AgentToolInvocationEnvelope) => {
+      invocation = envelope;
+      return {
+        status: "succeeded" as const,
+        toolId: "ppt_director.plan_or_repair" as const,
+        invocationId: envelope.invocationId,
+        structuredOutput: { decision: "plan", targetLocators: [] },
+        assistantSummary: "已完成样张规划。",
+        artifactCreated: false as const,
+      };
+    };
+    const agent = {
+      async respond(input: MainConversationAgentInput) {
+        expect(input.agentToolLoop).toBeDefined();
+        await input.agentToolLoop!.dispatch({
+          callId: "queued-call",
+          toolName: "ppt_director_plan_or_repair",
+          arguments: { goal: "规划样张", stage: "sample_plan", targetPageIds: [], focus: null },
+        });
+        return {
+          assistantMessage: { body: "我已经核对样张规划，下一步等你确认。" },
+          state: "chatting" as const,
+          quickReplies: [],
+          recommendedOptions: [],
+          shouldRunToolNow: false,
+          runtimeKind: "openai" as const,
+        };
+      },
+    };
+
+    const result = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new DeterministicRuntime(),
+      agent,
+      agentToolExecutor,
+      workerId: "v1-3-worker",
+    });
+
+    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(invocation).toMatchObject({
+      projectId: project.id,
+      identity: { actorUserId: "local-test-user", actorAuthMode: "local", authSessionId: null },
+      sourceMessageId: teacherMessage.id,
+    });
+    expect(invocation?.intentEpoch).toBe(project.intentEpoch ?? 0);
   });
 });
 

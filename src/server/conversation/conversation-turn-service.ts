@@ -26,8 +26,12 @@ import { getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/t
 import { isVerifiedProviderToolSuccess, type ToolExecutionResult } from "@/server/tools/tool-types";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
-import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
+import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ExecutionIdentitySnapshot, ProjectExecutionFence, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
+import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
+import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
+import { readAgentToolReportsFromMessages } from "@/server/tools/agent-tool-report";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
+import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
@@ -74,6 +78,9 @@ export type ConversationTurnServiceOptions = {
   runtime: AgentRuntime;
   agent?: MainConversationAgent;
   toolRouter?: typeof routeToolCall;
+  agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
+  executionIdentity?: ExecutionIdentitySnapshot;
+  executionFence?: ProjectExecutionFence;
 };
 
 export function createConversationTurnService(options: ConversationTurnServiceOptions) {
@@ -106,6 +113,9 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         reference,
         confirmedActionId: input.confirmedActionId,
         triggerMessage: message,
+        agentToolExecutor: options.agentToolExecutor,
+        executionIdentity: options.executionIdentity,
+        executionFence: options.executionFence,
       });
     },
 
@@ -126,6 +136,9 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         reference: "",
         confirmedActionId: typeof message.metadata.confirmedActionId === "string" ? message.metadata.confirmedActionId : undefined,
         triggerMessage: message,
+        agentToolExecutor: options.agentToolExecutor,
+        executionIdentity: options.executionIdentity,
+        executionFence: options.executionFence,
       });
     },
   };
@@ -141,6 +154,9 @@ async function executeTeacherMessageTurn(input: {
   reference: string;
   confirmedActionId?: string;
   triggerMessage: ConversationMessageRecord;
+  agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
+  executionIdentity?: ExecutionIdentitySnapshot;
+  executionFence?: ProjectExecutionFence;
 }): Promise<MessageTurnResponse> {
   const teacherContent = input.teacherContent;
   const reference = input.reference;
@@ -156,6 +172,7 @@ async function executeTeacherMessageTurn(input: {
   const pendingPlan = findPendingDeliveryPlan(messages);
   const toolObservations = readActiveToolObservationsFromMessages(messages);
   const agentObservations = readAgentObservationsFromMessages(messages);
+  const agentToolReports = readAgentToolReportsFromMessages(messages);
   const runCheckpoint = readLatestRunCheckpointFromMessages(messages);
   const budgetEvents = readAgentHarnessBudgetEventsFromMessages(messages);
   const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
@@ -174,6 +191,7 @@ async function executeTeacherMessageTurn(input: {
     pendingPlan,
     toolObservations,
     agentObservations,
+    agentToolReports,
     runCheckpoint,
   });
 
@@ -183,6 +201,15 @@ async function executeTeacherMessageTurn(input: {
     availableArtifactKinds,
     projectContext: toMainAgentProjectContext(project),
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
+    agentToolLoop: createMainAgentToolLoopOptions({
+      service: input.service,
+      project,
+      triggerMessage: input.triggerMessage,
+      artifacts,
+      identity: input.executionIdentity,
+      fence: input.executionFence,
+      executor: input.agentToolExecutor,
+    }),
   }), capabilityAvailability);
   const controlResolution = resolveConversationControl({
     userMessage: teacherContent,
@@ -245,6 +272,10 @@ async function executeTeacherMessageTurn(input: {
       confirmedActionId: effectiveConfirmedActionId,
       triggerMessage: input.triggerMessage,
       generationUserMessage: pendingPlan?.teacherRequest ?? teacherContent,
+      agent: input.agent,
+      agentToolExecutor: input.agentToolExecutor,
+      executionIdentity: input.executionIdentity,
+      executionFence: input.executionFence,
     });
   }
   const assistantMetadata = mergeMessageMetadata(
@@ -297,6 +328,10 @@ async function runPlannedArtifact(input: {
   triggerMessage: ConversationMessageRecord;
   generationUserMessage: string;
   confirmedActionId?: string;
+  agent: MainConversationAgent;
+  agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
+  executionIdentity?: ExecutionIdentitySnapshot;
+  executionFence?: ProjectExecutionFence;
 }): Promise<MessageTurnResponse> {
   const generationUserMessage = input.generationUserMessage;
   const plannedTurn = input.plannedTurn;
@@ -572,23 +607,38 @@ async function runPlannedArtifact(input: {
       shouldRunToolNow: false,
       artifactRefs: [],
     };
+    const failureObservation = createAgentObservationFromToolObservation({
+      projectId: input.project.id,
+      actionKey,
+      inputHash: actionInputHash,
+      observation,
+      status: result.status === "needs_input" ? "needs_input" : "failed",
+      reasonCodes: [
+        observation.kind,
+        ...(result.status === "failed" ? [result.errorCategory] : []),
+      ],
+    });
+    const failureMetadata = {
+      ...appendToolObservationMetadata(undefined, observation),
+      ...appendAgentObservationMetadata(undefined, failureObservation),
+      agentHarnessBudgetEvent: budgetEvent,
+    };
+    if (plannedTurn.runtimeKind === "openai") {
+      return replanAfterBusinessToolResult({
+        input,
+        reason: "tool_failed",
+        actionKey,
+        observationIds: [failureObservation.observationId],
+        resultMetadata: failureMetadata,
+        result,
+      });
+    }
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: observation.teacherSafeSummary,
       metadata: {
-        ...appendToolObservationMetadata(undefined, observation),
-        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
-          projectId: input.project.id,
-          actionKey,
-          inputHash: actionInputHash,
-          observation,
-          status: result.status === "needs_input" ? "needs_input" : "failed",
-          reasonCodes: [
-            observation.kind,
-            ...(result.status === "failed" ? [result.errorCategory] : []),
-          ],
-        })),
-        agentHarnessBudgetEvent: budgetEvent,
+        ...failureMetadata,
+        orchestrationMode: "fixed_delivery_plan_fallback",
       },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
@@ -603,6 +653,29 @@ async function runPlannedArtifact(input: {
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
   });
+  const successObservation = createSucceededAgentObservation({
+    projectId: input.project.id,
+    actionKey,
+    inputHash: actionInputHash,
+    capabilityId: plannedTurn.toolPlan.capabilityId,
+    artifactKind: artifact.kind,
+    artifactId: artifact.id,
+  });
+  const successMetadata = mergeMessageMetadata(
+    createToolSucceededBudgetMetadata(plannedTurn.toolPlan),
+    clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, successObservation)),
+  );
+  if (plannedTurn.runtimeKind === "openai") {
+    return replanAfterBusinessToolResult({
+      input,
+      reason: "tool_succeeded",
+      actionKey,
+      observationIds: [successObservation.observationId],
+      resultMetadata: successMetadata ?? {},
+      artifact,
+      result,
+    });
+  }
   const advancedDeliveryPlan = plannedTurn.deliveryPlan
     ? advanceDeliveryPlan(plannedTurn.deliveryPlan, plannedTurn.toolPlan.capabilityId)
     : null;
@@ -655,6 +728,7 @@ async function runPlannedArtifact(input: {
         artifactKind: artifact.kind,
         artifactId: artifact.id,
       }))),
+      { orchestrationMode: "fixed_delivery_plan_fallback" },
     ),
   });
 
@@ -815,24 +889,39 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
       shouldRunToolNow: false,
       artifactRefs: [],
     };
+    const failureObservation = createAgentObservationFromToolObservation({
+      projectId: input.project.id,
+      actionKey,
+      inputHash: actionInputHash,
+      observation: result.observation,
+      validationReport: result.validationReport,
+      status: result.status === "needs_input" ? "needs_input" : "failed",
+      reasonCodes: [
+        result.observation.kind,
+        ...("errorCategory" in result && result.errorCategory ? [result.errorCategory] : []),
+      ],
+    });
+    const failureMetadata = {
+      ...appendToolObservationMetadata(undefined, result.observation),
+      ...appendAgentObservationMetadata(undefined, failureObservation),
+      agentHarnessBudgetEvent: budgetEvent,
+    };
+    if (plannedTurn.runtimeKind === "openai") {
+      return replanAfterBusinessToolResult({
+        input,
+        reason: "tool_failed",
+        actionKey,
+        observationIds: [failureObservation.observationId],
+        resultMetadata: failureMetadata,
+        result,
+      });
+    }
     const assistantMessage = await input.service.addMessage(input.project.id, {
       role: "assistant",
       content: result.observation.teacherSafeSummary,
       metadata: {
-        ...appendToolObservationMetadata(undefined, result.observation),
-        ...appendAgentObservationMetadata(undefined, createAgentObservationFromToolObservation({
-          projectId: input.project.id,
-          actionKey,
-          inputHash: actionInputHash,
-          observation: result.observation,
-          validationReport: result.validationReport,
-          status: result.status === "needs_input" ? "needs_input" : "failed",
-          reasonCodes: [
-            result.observation.kind,
-            ...("errorCategory" in result && result.errorCategory ? [result.errorCategory] : []),
-          ],
-        })),
-        agentHarnessBudgetEvent: budgetEvent,
+        ...failureMetadata,
+        orchestrationMode: "fixed_delivery_plan_fallback",
       },
     });
     return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
@@ -854,6 +943,30 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   const artifact = jobId
     ? (await input.service.commitGenerationResult(input.project.id, jobId, artifactInput)).artifact
     : await input.service.saveArtifact(input.project.id, artifactInput);
+  const successObservation = createSucceededAgentObservation({
+    projectId: input.project.id,
+    actionKey,
+    inputHash: actionInputHash,
+    capabilityId: toolPlan.capabilityId,
+    artifactKind: artifact.kind,
+    artifactId: artifact.id,
+    validationReport: result.validationReport,
+  });
+  const successMetadata = mergeMessageMetadata(
+    createToolRouterBudgetMetadata(result, toolPlan),
+    clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, successObservation)),
+  );
+  if (plannedTurn.runtimeKind === "openai") {
+    return replanAfterBusinessToolResult({
+      input,
+      reason: "tool_succeeded",
+      actionKey,
+      observationIds: [successObservation.observationId],
+      resultMetadata: successMetadata ?? {},
+      artifact,
+      result,
+    });
+  }
   const advancedDeliveryPlan = plannedTurn.deliveryPlan
     ? advanceDeliveryPlan(plannedTurn.deliveryPlan, toolPlan.capabilityId)
     : null;
@@ -907,6 +1020,7 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
         artifactId: artifact.id,
         validationReport: result.validationReport,
       }))),
+      { orchestrationMode: "fixed_delivery_plan_fallback" },
     ),
   });
 
@@ -916,6 +1030,100 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     agentTurn: succeededTurn,
     artifact,
     result,
+  };
+}
+
+async function replanAfterBusinessToolResult(input: {
+  input: Parameters<typeof runPlannedArtifact>[0];
+  reason: "tool_succeeded" | "tool_failed" | "quality_rework";
+  actionKey: string;
+  observationIds: string[];
+  resultMetadata: Record<string, unknown>;
+  artifact?: ArtifactRecord;
+  result?: unknown;
+}): Promise<MessageTurnResponse> {
+  const turnInput = input.input;
+  if (turnInput.pendingPlan) {
+    await updatePendingPlanStatus(turnInput.service, turnInput.project.id, turnInput.pendingPlan, "confirmed");
+  }
+  await turnInput.service.updateMessageMetadata(turnInput.project.id, turnInput.triggerMessage.id, mergeMessageMetadata(
+    turnInput.triggerMessage.metadata,
+    input.resultMetadata,
+    { orchestrationMode: "main_agent_observe_replan" },
+  ) ?? {});
+
+  const project = await turnInput.service.getProject(turnInput.project.id);
+  const messages = await turnInput.service.getMessages(turnInput.project.id);
+  const refreshedTriggerMessage = messages.find((message) => message.id === turnInput.triggerMessage.id) ?? turnInput.triggerMessage;
+  const workflowNodes = await turnInput.service.getNodes(turnInput.project.id);
+  const artifacts = await turnInput.service.getArtifacts(turnInput.project.id);
+  const generationJobs = await turnInput.service.getGenerationJobs(turnInput.project.id);
+  const turnJobs = await turnInput.service.getConversationTurnJobs(turnInput.project.id);
+  const pendingPlan = findPendingDeliveryPlan(messages);
+  const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
+  const capabilityAvailability = buildCapabilityAvailability({
+    capabilityDefinitions: getCapabilityDefinitions(),
+    artifacts,
+    providerAvailability: resolveRuntimeProviderAvailability(),
+  });
+  const agentWorldState = buildAgentWorldState({
+    project,
+    workflowNodes,
+    artifacts,
+    generationJobs,
+    turnJobs,
+    contextPackage,
+    pendingPlan,
+    toolObservations: readActiveToolObservationsFromMessages(messages),
+    agentObservations: readAgentObservationsFromMessages(messages),
+    agentToolReports: readAgentToolReportsFromMessages(messages),
+    runCheckpoint: readLatestRunCheckpointFromMessages(messages),
+  });
+  const replanned = applyCapabilityAvailabilityToTurn(await turnInput.agent.respond({
+    userMessage: turnInput.generationUserMessage,
+    responseStyle: turnInput.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
+    availableArtifactKinds: artifacts.map((artifact) => artifact.kind),
+    projectContext: toMainAgentProjectContext(project),
+    conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
+    agentToolLoop: createMainAgentToolLoopOptions({
+      service: turnInput.service,
+      project,
+      triggerMessage: refreshedTriggerMessage,
+      artifacts,
+      identity: turnInput.executionIdentity,
+      fence: turnInput.executionFence,
+      executor: turnInput.agentToolExecutor,
+    }),
+    replanDirective: {
+      reason: input.reason,
+      previousActionKey: input.actionKey,
+      observationIds: input.observationIds,
+    },
+  }), capabilityAvailability);
+  const guardedReplan = replanned.toolPlan && replanned.shouldRunToolNow
+    ? {
+        ...replanned,
+        state: "awaiting_confirmation" as const,
+        toolPlan: { ...replanned.toolPlan, requiresConfirmation: true },
+        shouldRunToolNow: false,
+      }
+    : replanned;
+  const assistantMessage = await addAssistantMessageWithPendingActionId(turnInput.service, turnInput.project.id, {
+    role: "assistant",
+    content: formatAssistantContent(guardedReplan.assistantMessage),
+    artifactRefs: input.artifact ? [input.artifact.id] : [],
+    metadata: mergeMessageMetadata(
+      createPendingDeliveryPlanMetadata(guardedReplan, turnInput.generationUserMessage),
+      { orchestrationMode: "main_agent_observe_replan", previousActionKey: input.actionKey },
+    ),
+  });
+
+  return {
+    message: turnInput.triggerMessage,
+    assistantMessage,
+    agentTurn: { ...guardedReplan, artifactRefs: input.artifact ? [input.artifact.id] : guardedReplan.artifactRefs },
+    artifact: input.artifact,
+    result: input.result,
   };
 }
 
