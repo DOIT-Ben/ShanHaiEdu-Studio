@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-8、V1-9A至V1-9F、V1-10A至V1-10E已完成；目标服务器localhost staging、代码回滚/前滚、全新目录恢复、最小运行镜像、四类Provider配置和Main Agent Responses连通均已通过，下一阶段是在真实教师确认后继续V1-9产品内E2E，并关闭正式公网切流与教师签收门`。
+当前阶段：`V1-1至V1-8、V1-9A至V1-9F、V1-10A至V1-10F已完成；目标服务器localhost staging、代码回滚/前滚、全新目录恢复、最小运行镜像、五类Provider配置和Main Agent Responses连通均已通过，下一阶段是在真实教师确认后继续V1-9产品内E2E，并关闭正式公网切流与教师签收门`。
 
 ## 2. 最近已完成阶段
 
@@ -24,15 +24,16 @@ V1 交付质量与邀请制上线
 | M64-R | done | 17/17 工具注册一致性；PPTX、图片、视频统一经 ToolRouter；resolved Artifact 与 Artifact Truth Gate |
 | M65 | done | OpenAI Responses native function_call 协议闭环与 OpenAIRuntime 可选接线 |
 | M66-R runtime loop | done | OpenAIRuntime native tool loop 已通过显式开关接入生产 Runtime Factory；首批只暴露 internal tools，provider 工具仍后置 |
-| M67 feedback center | implementation done / rollout pending | 工程实现与本地 E2E 已完成；真实服务器重启、回滚和备份恢复门禁待关闭 |
+| M67 feedback center | implementation done / rollout pending | 工程实现、本地E2E及目标服务器重启、回滚和备份恢复均已完成；正式公网反馈写入复核等待V1-9与切流阶段 |
 | Agent workflow closure | implementation done / V1-9 real E2E pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与package resolved Artifact门禁已完成；不在前段追加真实Provider smoke |
 | V1-9A至V1-9E | done | 真实时间线、成片审查证据、受控音字轨、版本一致最终包和30-90秒完整导入视频门禁已封板 |
 | V1-9F Main Agent runtime recovery | done | 定位并修复 Critic function-tool locator Schema 的 Provider兼容问题；真实UI已形成19步计划并停在合法需求确认门 |
-| V1-10A release topology and recovery | done / target evidence closed by V1-10C至V1-10E | 单实例SQLite预检、脱敏健康检查、离线备份/校验/新目录恢复和runbook完成；目标服务器证据已在后续阶段关闭 |
-| V1-10B isolated standalone rehearsal | done / target evidence closed by V1-10C至V1-10E | 隔离SQLite与Artifact根完成schema、管理员、production preflight、build和standalone 200/401/403检查；目标服务器证据已在后续阶段关闭 |
+| V1-10A release topology and recovery | done / target evidence closed by V1-10C至V1-10F | 单实例SQLite预检、脱敏健康检查、离线备份/校验/新目录恢复和runbook完成；目标服务器证据已在后续阶段关闭 |
+| V1-10B isolated standalone rehearsal | done / target evidence closed by V1-10C至V1-10F | 隔离SQLite与Artifact根完成schema、管理员、production preflight、build和standalone 200/401/403检查；目标服务器证据已在后续阶段关闭 |
 | V1-10C target container runtime | done / localhost staging verified | 精确提交`75bf141`目标服务器镜像构建、非root单容器、共享SQLite/Artifact、重启持久性、200/401/403及既有服务保护均通过；未切公网流量 |
 | V1-10D target rollback and recovery | done / localhost rehearsal verified | 代码回滚/前滚、停写backup/verify、全新目录restore、独立恢复容器及WAL错误挂载fail-closed均通过；staging已升级精确提交`c7533ef`，未切公网流量 |
 | V1-10E minimal runtime and Provider readiness | done / localhost staging verified | 精确提交`3d6bf0a`最小镜像、生产预检14/14、四类Provider配置、Main Agent Responses 200、重启和数据哈希不变均通过；未调用真实媒体、未切公网流量 |
+| V1-10F TTS Provider readiness | done / localhost staging verified | 关闭TTS缺失但预检全绿的P0；精确提交`098e651`、生产预检15/15、TTS配置、重启和数据哈希不变均通过；未调用真实媒体、未切公网流量 |
 | M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放统一等待V1-9产品内E2E和V1-10发布门 |
 | M70 frontend workbench polish | done | 首次欢迎态、附件拖放/截图粘贴、文件状态、工具菜单、假入口清理和桌面/390px 响应式验收已完成 |
 | M71A project lifecycle and feedback polish | done | 反馈选中态、轻量问候、项目重命名、归档、回收站、恢复、生命周期写入门禁与受控回退已完成；不含永久删除 |
@@ -99,8 +100,8 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. V1-9执行一次产品内真实PPT、视频和最终包E2E，并补齐真实成片证据采集。
-2. 真实教师关闭当前需求确认HumanGate；外部Codex不代替确认、样张选择、课程锚点或返修决策。
+1. 真实教师关闭当前需求确认HumanGate；外部Codex不代替确认、样张选择、课程锚点或返修决策。
+2. V1-9执行一次产品内真实PPT、视频和最终包E2E，并补齐真实TTS、字幕和成片证据采集。
 3. 产品内成包后由外部Codex黑盒审核并将问题归因到责任层。
 4. E2E通过后执行正式公网切流、公开注册关闭复核和真实教师签收，再开放邀请制V1。
 
