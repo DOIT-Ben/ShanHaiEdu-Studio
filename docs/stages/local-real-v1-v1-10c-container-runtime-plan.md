@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`accepted / in_progress`
+状态：`implementation done / remote image build blocked`
 
 ## 1. 背景
 

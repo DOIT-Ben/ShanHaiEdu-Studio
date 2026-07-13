@@ -28,6 +28,17 @@
 - 当前可推进：不依赖服务器权限且不调用真实媒体Provider的V1-2至V1-8编排、隔离和恢复任务。
 - 回收条件：获得目标服务器操作窗口后，在真实发布环境执行 runbook 并保存脱敏结果。
 
+### 2026-07-13 V1-10C 回收进展
+
+- 已知事实：目标服务器宿主机Node 16.9与定制Node 20.13均低于Prisma 7.8的Node 20.19/22.12门槛；Docker 26.1与Compose 2.27可用，单容器单Node进程是当前可行运行时。
+- 已完成：新增Node 22容器、FFmpeg/LibreOffice/Poppler/中文字体运行时、非root单实例Compose、release外bind mount和Linux curl Executor；本地Node 268/268、Vitest 842/842、TypeScript与14页构建通过。
+- 失败点一：Docker直连Debian源约26KB/s，297MB系统依赖预计耗时数小时，主动停止。
+- 失败点二：host network加服务器本地代理后297MB在2分52秒下载完成，但4个Debian包被代理返回502，`apt-get` exit 100。
+- 影响范围：目标服务器尚未形成V1镜像或容器，V1-10C不能closeout；V1-9本地产品HumanGate、P0审计和非服务器任务不受影响。
+- 保护证据：无残留build/apt进程、无半成品镜像、无staging容器、3210未监听；nginx校验、根站、3001和3010既有服务保持原状。
+- 恢复入口：使用已测速通过的腾讯Debian镜像完成同一精确提交`aed4d55`的镜像构建；不得再重复官方直连或当前代理路径。
+
+
 ## B-04 中年级教材权威输入
 
 - 状态：`partially closed / low-grade closed / middle-grade active`
