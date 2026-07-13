@@ -43,6 +43,7 @@ export function prepareVersionedFinalPackageInput(input: {
 } {
   const artifacts = Object.values(input.artifacts);
   assertApprovedProjectArtifacts(input.projectId, artifacts);
+  assertModelGeneratedSemanticSources(input.artifacts);
 
   const pptPackage = requirePptFinalEligibility(input.artifacts.pptx);
   const narration = requireNarrationScript(input.artifacts.narrationScript);
@@ -133,6 +134,15 @@ function assertApprovedProjectArtifacts(projectId: string, artifacts: ArtifactRe
   if (artifacts.some((artifact) => artifact.projectId !== projectId)) throw new Error("final_package_cross_project_artifact");
   if (artifacts.some((artifact) => artifact.status !== "approved" || artifact.isApproved !== true)) throw new Error("final_package_artifact_not_approved");
   if (new Set(artifacts.map((artifact) => artifact.id)).size !== artifacts.length) throw new Error("final_package_source_artifact_duplicate");
+}
+
+function assertModelGeneratedSemanticSources(artifacts: FinalPackageSourceArtifacts): void {
+  for (const artifact of [artifacts.requirement, artifacts.lessonPlan, artifacts.pptDesign, artifacts.narrationScript]) {
+    const source = artifact.structuredContent;
+    if (source.generationMode !== "model_generated" || source.providerStatus !== "real" || source.runtimeKind !== "openai") {
+      throw new Error(`final_package_semantic_source_not_model_generated:${artifact.kind}`);
+    }
+  }
 }
 
 function requirePptFinalEligibility(artifact: ArtifactRecord): PptFullDeckPackage {

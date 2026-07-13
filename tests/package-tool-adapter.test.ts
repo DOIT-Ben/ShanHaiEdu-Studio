@@ -38,6 +38,15 @@ function artifact(kind: ArtifactRecord["kind"], id: string, overrides: Partial<A
   };
 }
 
+function modelGeneratedStructuredContent(structuredContent: Record<string, unknown> = {}) {
+  return {
+    ...structuredContent,
+    generationMode: "model_generated",
+    providerStatus: "real",
+    runtimeKind: "openai",
+  };
+}
+
 function mp4Buffer(label: string) {
   return Buffer.concat([
     Buffer.from([0, 0, 0, 24]),
@@ -176,9 +185,9 @@ async function versionedFinalPackageFixture() {
   const narrationScript = createVideoNarrationScript({ schemaVersion: "video-narration-script.v1", language: "zh-CN", voiceId: "Chinese (Mandarin)_Gentleman", text: "装置为什么会连续变化？带着这个问题回到课堂。", courseAnchor: "带着这个问题回到课堂", answerDisclosureBoundary: "不解释答案" });
   const videoReviewDigest = "e".repeat(64);
   const artifacts = [
-    artifact("requirement_spec", "req"),
-    artifact("lesson_plan", "lesson", { markdownContent: "# 公开课教案\n\n完整课堂教学设计。" }),
-    artifact("ppt_design_draft", "design"),
+    artifact("requirement_spec", "req", { structuredContent: modelGeneratedStructuredContent() }),
+    artifact("lesson_plan", "lesson", { markdownContent: "# 公开课教案\n\n完整课堂教学设计。", structuredContent: modelGeneratedStructuredContent() }),
+    artifact("ppt_design_draft", "design", { structuredContent: modelGeneratedStructuredContent() }),
     artifact("pptx_artifact", "pptx", { structuredContent: {
       pptFullDeckCandidate: candidate,
       pptFullDeckPackage: pptPackage,
@@ -193,7 +202,7 @@ async function versionedFinalPackageFixture() {
       },
     } }),
     artifact("image_prompts", "image", { structuredContent: { storage: { imageAsset: { fileName: "visual.png", localOutput: imageStored.localOutput, sha256: imageSha256, mime: "image/png" } } } }),
-    artifact("video_script_generate", "script", { structuredContent: { videoNarrationScript: narrationScript } }),
+    artifact("video_script_generate", "script", { structuredContent: modelGeneratedStructuredContent({ videoNarrationScript: narrationScript }) }),
     artifact("concat_only_assemble", "video", { structuredContent: {
       storage: { videoAsset: { fileName: "intro.mp4", localOutput: videoStored.localOutput, sha256: videoSha256, mime: "video/mp4" } },
       videoFinalReviewEvidence: {
@@ -565,6 +574,53 @@ describe("M68 PackageToolAdapter", () => {
         const zip = await JSZip.loadAsync(readFileSync(packagePath));
         expect(Object.keys(zip.files)).toEqual(expect.arrayContaining(["manifest.json", "classroom-run-spec.json", "lesson-plan.md", "lesson-slides.pptx", "lesson-slides.pdf", "visual.png", "intro-video.mp4"]));
       }
+    });
+  });
+
+  it.each(["requirement_spec", "lesson_plan", "ppt_design_draft", "video_script_generate"] as const)(
+    "blocks final packaging when %s came from deterministic fallback",
+    async (kind) => {
+      await withArtifactStorage(async () => {
+        const fixture = await versionedFinalPackageFixture();
+        const source = fixture.artifacts.find((item) => item.kind === kind)!;
+        source.structuredContent.generationMode = "deterministic_draft";
+        source.structuredContent.providerStatus = "deterministic_draft";
+        source.structuredContent.runtimeKind = "deterministic";
+
+        const result = await executePackageTool({
+          tool: getToolDefinition("create_final_package"),
+          projectId: "project-a",
+          artifactRefs: fixture.artifacts.map((item) => ({ kind: item.kind, artifactId: item.id })),
+          resolvedArtifacts: fixture.artifacts,
+          toolInput: { classroomRunSpecDraft: fixture.classroomRunSpecDraft },
+          finalPackageInspectors: fixture.inspectors,
+        });
+
+        expect(result).toMatchObject({ status: "failed", artifactCreated: false, errorCategory: "quality_gate_failed" });
+      });
+    },
+  );
+
+  it.each([
+    ["missing generation mode", (source: Record<string, unknown>) => { delete source.generationMode; }],
+    ["non-real provider status", (source: Record<string, unknown>) => { source.providerStatus = "degraded"; }],
+    ["non-OpenAI runtime", (source: Record<string, unknown>) => { source.runtimeKind = "deterministic"; }],
+  ] as const)("blocks final packaging with %s semantic lineage", async (_label, mutate) => {
+    await withArtifactStorage(async () => {
+      const fixture = await versionedFinalPackageFixture();
+      const source = fixture.artifacts.find((item) => item.kind === "lesson_plan")!;
+      mutate(source.structuredContent);
+
+      const result = await executePackageTool({
+        tool: getToolDefinition("create_final_package"),
+        projectId: "project-a",
+        artifactRefs: fixture.artifacts.map((item) => ({ kind: item.kind, artifactId: item.id })),
+        resolvedArtifacts: fixture.artifacts,
+        toolInput: { classroomRunSpecDraft: fixture.classroomRunSpecDraft },
+        finalPackageInspectors: fixture.inspectors,
+      });
+
+      expect(result).toMatchObject({ status: "failed", artifactCreated: false, errorCategory: "quality_gate_failed" });
     });
   });
 
