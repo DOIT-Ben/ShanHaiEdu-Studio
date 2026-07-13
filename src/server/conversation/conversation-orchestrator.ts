@@ -44,7 +44,7 @@ export type ConversationDecision = {
 
 type OpenAIConversationResponsePayload = {
   model: string;
-  reasoning: { effort: "low" | "medium" | "high" };
+  reasoning: { effort: "low" | "medium" | "high" | "xhigh" };
   instructions: string;
   input: string;
   text: {
@@ -74,14 +74,14 @@ export type ConversationOrchestrator = {
 type OpenAIConversationOrchestratorOptions = {
   client: OpenAIConversationClient;
   model: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   fallback: ConversationOrchestrator;
 };
 
 export class OpenAIConversationOrchestrator implements ConversationOrchestrator {
   private readonly client: OpenAIConversationClient;
   private readonly model: string;
-  private readonly reasoningEffort: "low" | "medium" | "high";
+  private readonly reasoningEffort: "low" | "medium" | "high" | "xhigh";
   private readonly fallback: ConversationOrchestrator;
 
   constructor(options: OpenAIConversationOrchestratorOptions) {
@@ -167,7 +167,7 @@ export function createDeterministicConversationOrchestrator(): ConversationOrche
   };
 }
 
-export function buildOpenAIConversationRequest(input: ConversationInput, model: string, reasoningEffort: "low" | "medium" | "high" = "high"): OpenAIConversationResponsePayload {
+export function buildOpenAIConversationRequest(input: ConversationInput, model: string, reasoningEffort: "low" | "medium" | "high" | "xhigh" = "high"): OpenAIConversationResponsePayload {
   return {
     model,
     reasoning: { effort: reasoningEffort },

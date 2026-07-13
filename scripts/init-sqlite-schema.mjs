@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS "Project" (
   "deletedAt" DATETIME,
   "lifecycleVersion" INTEGER NOT NULL DEFAULT 0,
   "intentEpoch" INTEGER NOT NULL DEFAULT 0,
+  "generationIntensity" TEXT NOT NULL DEFAULT 'standard',
+  "intensityVersion" INTEGER NOT NULL DEFAULT 0,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "Project_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "LocalUser" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -283,6 +285,8 @@ CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
   "actorAuthMode" TEXT,
   "authSessionId" TEXT,
   "fencingToken" INTEGER,
+  "generationIntensity" TEXT NOT NULL DEFAULT 'standard',
+  "intensityVersion" INTEGER NOT NULL DEFAULT 0,
   "lockedBy" TEXT,
   "lockedUntil" DATETIME,
   "errorCode" TEXT,
@@ -415,11 +419,15 @@ ensureColumn(db, "Project", "archivedAt", 'ALTER TABLE "Project" ADD COLUMN "arc
 ensureColumn(db, "Project", "deletedAt", 'ALTER TABLE "Project" ADD COLUMN "deletedAt" DATETIME');
 ensureColumn(db, "Project", "lifecycleVersion", 'ALTER TABLE "Project" ADD COLUMN "lifecycleVersion" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "Project", "intentEpoch", 'ALTER TABLE "Project" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');
+ensureColumn(db, "Project", "generationIntensity", 'ALTER TABLE "Project" ADD COLUMN "generationIntensity" TEXT NOT NULL DEFAULT \'standard\'');
+ensureColumn(db, "Project", "intensityVersion", 'ALTER TABLE "Project" ADD COLUMN "intensityVersion" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
 ensureColumn(db, "ConversationTurnJob", "actorUserId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorUserId" TEXT');
 ensureColumn(db, "ConversationTurnJob", "actorAuthMode", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorAuthMode" TEXT');
 ensureColumn(db, "ConversationTurnJob", "authSessionId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "authSessionId" TEXT');
 ensureColumn(db, "ConversationTurnJob", "fencingToken", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "fencingToken" INTEGER');
+ensureColumn(db, "ConversationTurnJob", "generationIntensity", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "generationIntensity" TEXT NOT NULL DEFAULT \'standard\'');
+ensureColumn(db, "ConversationTurnJob", "intensityVersion", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "intensityVersion" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "GenerationJob", "runInputSnapshotId", 'ALTER TABLE "GenerationJob" ADD COLUMN "runInputSnapshotId" TEXT');
 ensureColumn(db, "GenerationJob", "unitId", 'ALTER TABLE "GenerationJob" ADD COLUMN "unitId" TEXT');
 ensureColumn(db, "GenerationJob", "intentEpoch", 'ALTER TABLE "GenerationJob" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
-import type { ArtifactItem, ChatMessage, ConversationTurnJob, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, ConversationTurnJob, GenerationIntensity, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
@@ -62,6 +62,11 @@ export function useWorkbenchController() {
   const composerSubmittingRef = useRef(false);
   const messageIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
   const composerNoticeTimer = useRef<number | null>(null);
+  const intensityVersionRef = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    if (activeProject) intensityVersionRef.current.set(activeProject.id, activeProject.intensityVersion ?? 0);
+  }, [activeProject]);
 
   const clearActiveProject = useCallback(() => {
     setActiveProjectId("");
@@ -324,6 +329,20 @@ export function useWorkbenchController() {
     }
   }
 
+  async function updateGenerationIntensity(intensity: GenerationIntensity, confirmationActionId?: string) {
+    if (!activeProject) throw new Error("No active project.");
+    const result = await dataSource.updateGenerationIntensity(
+      activeProject.id,
+      intensity,
+      intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0,
+      confirmationActionId,
+    );
+    intensityVersionRef.current.set(result.project.id, result.project.intensityVersion ?? 0);
+    setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
+    if (!result.confirmationRequired) setNotice(`生成强度已调整为${intensity === "standard" ? "标准" : intensity === "enhanced" ? "增强" : intensity === "deep" ? "深度" : "极致"}，从下一条任务开始生效。`);
+    return result;
+  }
+
   function updateInput(value: string) {
     setPendingConfirmationActionId(null);
     setInput(value);
@@ -497,6 +516,7 @@ export function useWorkbenchController() {
     selectProject,
     openProjectView,
     mutateProjectLifecycle,
+    updateGenerationIntensity,
     createProject,
     retryActiveProject: () => (activeProjectId ? loadProject(activeProjectId) : undefined),
     sidebarCollapsed,

@@ -376,11 +376,13 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(assistantMessages[0].content).toContain("小酷");
   });
 
-  it("passes the queued actor identity and active fence into the Main Agent Agent Tool loop", async () => {
+  it("passes queued identity, fence and frozen generation intensity into the Main Agent Agent Tool loop", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "V1-3 queued Agent Tool identity" });
+    const enhancedProject = await service.updateProjectGenerationIntensity(project.id, { intensity: "enhanced", expectedVersion: 0 });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "请先规划PPT样张" });
     await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
+    await service.updateProjectGenerationIntensity(project.id, { intensity: "deep", expectedVersion: enhancedProject.intensityVersion ?? 1 });
     let invocation: AgentToolInvocationEnvelope | undefined;
     const agentToolExecutor = async (envelope: AgentToolInvocationEnvelope) => {
       invocation = envelope;
@@ -395,6 +397,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     };
     const agent = {
       async respond(input: MainConversationAgentInput) {
+        expect(input.generationIntensity).toBe("enhanced");
         expect(input.agentToolLoop).toBeDefined();
         await input.agentToolLoop!.dispatch({
           callId: "queued-call",
@@ -425,6 +428,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       projectId: project.id,
       identity: { actorUserId: "local-test-user", actorAuthMode: "local", authSessionId: null },
       sourceMessageId: teacherMessage.id,
+      generationIntensity: "enhanced",
     });
     expect(invocation?.intentEpoch).toBe(project.intentEpoch ?? 0);
   });

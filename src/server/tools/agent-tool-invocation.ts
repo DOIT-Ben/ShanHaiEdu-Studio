@@ -1,5 +1,6 @@
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import type { ExecutionIdentitySnapshot } from "@/server/workbench/types";
+import { normalizeGenerationIntensity, type GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 
 export const AGENT_TOOL_INVOCATION_SCHEMA_VERSION = "agent-tool-invocation.v1" as const;
 
@@ -11,6 +12,7 @@ export type AgentToolInvocationEnvelope = {
   projectId: string;
   intentEpoch: number;
   sourceMessageId: string;
+  generationIntensity: GenerationIntensity;
   reviewTargetRef: AgentToolReviewTargetRef | null;
   approvedArtifactRefs: AgentToolApprovedArtifactRef[];
   arguments: Record<string, unknown>;
@@ -31,10 +33,11 @@ export type AgentToolReviewTargetRef = AgentToolArtifactRef;
 
 export type CreateAgentToolInvocationEnvelopeInput = Omit<
   AgentToolInvocationEnvelope,
-  "schemaVersion" | "inputHash" | "actionDigest" | "requestedAt" | "reviewTargetRef"
+  "schemaVersion" | "inputHash" | "actionDigest" | "requestedAt" | "reviewTargetRef" | "generationIntensity"
 > & {
   requestedAt?: string;
   reviewTargetRef?: AgentToolReviewTargetRef | null;
+  generationIntensity?: GenerationIntensity;
 };
 
 export function createAgentToolInvocationEnvelope(
@@ -110,6 +113,7 @@ function normalizeSemanticInput(
     projectId,
     intentEpoch: input.intentEpoch,
     sourceMessageId,
+    generationIntensity: normalizeGenerationIntensity(input.generationIntensity),
     reviewTargetRef: normalizeReviewTargetRef(input.reviewTargetRef),
     approvedArtifactRefs: normalizeApprovedArtifactRefs(input.approvedArtifactRefs),
     arguments: structuredClone(input.arguments),

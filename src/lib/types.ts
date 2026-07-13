@@ -39,6 +39,8 @@ export type ProjectLifecycleMutation = {
   title?: string;
 };
 
+export type GenerationIntensity = "standard" | "enhanced" | "deep" | "extreme";
+
 export type ProjectItem = {
   id: string;
   title: string;
@@ -50,6 +52,9 @@ export type ProjectItem = {
   lifecycleVersion: number;
   archivedAt: string | null;
   deletedAt: string | null;
+  generationIntensity?: GenerationIntensity;
+  intensityVersion?: number;
+  generationIntensitySuggestion?: { target: GenerationIntensity; reason: string; signature: string } | null;
 };
 
 export type ArtifactActionState = {
@@ -193,6 +198,7 @@ export type WorkbenchDataSource = {
   listProjects: (view?: ProjectLifecycleState) => Promise<ProjectItem[]>;
   createProject: () => Promise<WorkbenchSnapshot>;
   mutateProjectLifecycle: (projectId: string, mutation: ProjectLifecycleMutation) => Promise<{ changed: boolean; project: ProjectItem }>;
+  updateGenerationIntensity: (projectId: string, intensity: GenerationIntensity, expectedVersion: number, confirmationActionId?: string) => Promise<{ project: ProjectItem; confirmationRequired?: boolean; actionId?: string }>;
   getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
   sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
   setMessageReaction?: (projectId: string, messageId: string, value: ChatMessage["reaction"] | null) => Promise<WorkbenchSnapshot>;

@@ -160,6 +160,7 @@ function createDefaultExecutor(options: DrainProjectConversationQueueOptions): C
       agentToolExecutor: options.agentToolExecutor,
       executionIdentity: readJobExecutionIdentity(job),
       executionFence: fence,
+      generationIntensityOverride: job.generationIntensity,
     });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {

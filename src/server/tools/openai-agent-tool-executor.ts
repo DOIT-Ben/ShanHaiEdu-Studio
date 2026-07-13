@@ -5,6 +5,7 @@ import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-re
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 import { prisma } from "@/server/db/client";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
+import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
 
 import type { AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import type { AgentToolDefinition, AgentToolExecutor } from "./agent-tool-types";
@@ -28,20 +29,21 @@ export type AgentToolContextLoader = (
 export type OpenAIAgentToolExecutorOptions = {
   client: OpenAIResponsesClient;
   model: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   loadContext?: AgentToolContextLoader;
 };
 
 export function createOpenAIAgentToolExecutor(options: OpenAIAgentToolExecutorOptions): AgentToolExecutor<AgentToolInvocationEnvelope> {
-  const adapter = createOpenAIResponsesGptAdapter({ client: options.client, model: options.model });
   const loadContext = options.loadContext ?? loadAgentToolContext;
   const reasoningEffort = options.reasoningEffort ?? "high";
 
   return async (envelope, definition) => {
     try {
+      const strategy = resolveGenerationIntensityStrategy(envelope.generationIntensity);
+      const adapter = createOpenAIResponsesGptAdapter({ client: options.client, model: strategy.model ?? options.model });
       const artifacts = await loadContext(envelope);
       const response = await adapter.createResponse({
-        reasoning: { effort: reasoningEffort },
+        reasoning: { effort: strategy.reasoningEffort ?? reasoningEffort },
         instructions: instructionsFor(definition),
         input: JSON.stringify({
           goal: envelope.arguments,

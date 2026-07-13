@@ -57,6 +57,7 @@ export function createMainAgentToolLoopOptions(
           projectId: input.project.id,
           intentEpoch: input.project.intentEpoch ?? 0,
           sourceMessageId: input.triggerMessage.id,
+          generationIntensity: input.project.generationIntensity,
           approvedArtifactRefs: input.artifacts.filter(isApprovedArtifact).map(toArtifactRef),
           reviewTargetRef,
         },

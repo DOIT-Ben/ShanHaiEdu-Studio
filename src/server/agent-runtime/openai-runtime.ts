@@ -53,7 +53,7 @@ export type OpenAIRuntimeNativeToolLoopResolver = (
 export type OpenAIRuntimeOptions = {
   client: OpenAIResponsesClient;
   model: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 };
 
@@ -77,7 +77,7 @@ type StructuredRuntimeOutput = {
 export class OpenAIRuntime implements AgentRuntime {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
-  private readonly reasoningEffort: "low" | "medium" | "high";
+  private readonly reasoningEffort: "low" | "medium" | "high" | "xhigh";
   private readonly nativeToolLoop?: OpenAIRuntimeNativeToolLoopOptions | OpenAIRuntimeNativeToolLoopResolver;
 
   constructor(options: OpenAIRuntimeOptions) {
@@ -141,7 +141,7 @@ function resolveNativeToolLoop(
   return nativeToolLoop;
 }
 
-export function buildOpenAIResponseRequest(input: AgentRuntimeInput, reasoningEffort: "low" | "medium" | "high" = "high"): OpenAIResponsePayload {
+export function buildOpenAIResponseRequest(input: AgentRuntimeInput, reasoningEffort: "low" | "medium" | "high" | "xhigh" = "high"): OpenAIResponsePayload {
   return {
     reasoning: { effort: reasoningEffort },
     instructions: [

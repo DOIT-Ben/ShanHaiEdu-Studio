@@ -517,9 +517,22 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async updateProjectGenerationIntensity(projectId: string, input: { intensity: string; expectedVersion: number }) {
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        const updated = await tx.project.updateMany({
+          where: { id: projectId, intensityVersion: input.expectedVersion },
+          data: { generationIntensity: input.intensity, intensityVersion: { increment: 1 } },
+        });
+        if (updated.count !== 1) throw new Error("Project generation intensity version conflict.");
+        return tx.project.findUniqueOrThrow({ where: { id: projectId } });
+      });
+    },
+
     async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput) {
       return client.$transaction(async (tx) => {
         await assertActiveProjectForWrite(tx, projectId);
+        const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { generationIntensity: true, intensityVersion: true } });
         const teacherMessage = await tx.conversationMessage.findFirst({
           where: { id: input.teacherMessageId, projectId, role: "teacher" },
         });
@@ -545,6 +558,8 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             actorUserId: input.executionIdentity?.actorUserId,
             actorAuthMode: input.executionIdentity?.actorAuthMode,
             authSessionId: input.executionIdentity?.authSessionId,
+            generationIntensity: project.generationIntensity,
+            intensityVersion: project.intensityVersion,
           },
         });
       });
@@ -575,6 +590,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       try {
         return await client.$transaction(async (tx) => {
           await assertActiveProjectForWrite(tx, projectId);
+          const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { generationIntensity: true, intensityVersion: true } });
           const message = await tx.conversationMessage.create({
             data: {
               projectId,
@@ -596,6 +612,8 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               actorUserId: input.executionIdentity?.actorUserId,
               actorAuthMode: input.executionIdentity?.actorAuthMode,
               authSessionId: input.executionIdentity?.authSessionId,
+              generationIntensity: project.generationIntensity,
+              intensityVersion: project.intensityVersion,
             },
           });
 

@@ -25,6 +25,9 @@ export type BackendProjectRecord = {
   lifecycleVersion?: number;
   archivedAt?: string | null;
   deletedAt?: string | null;
+  generationIntensity?: ProjectItem["generationIntensity"];
+  intensityVersion?: number;
+  generationIntensitySuggestion?: ProjectItem["generationIntensitySuggestion"];
   createdAt: string;
   updatedAt: string;
 };
@@ -170,6 +173,9 @@ function mapBackendProject(project: BackendProjectRecord): ProjectItem {
     lifecycleVersion: typeof project.lifecycleVersion === "number" && Number.isInteger(project.lifecycleVersion) ? project.lifecycleVersion : 0,
     archivedAt: project.archivedAt ?? null,
     deletedAt: project.deletedAt ?? null,
+    generationIntensity: project.generationIntensity ?? "standard",
+    intensityVersion: typeof project.intensityVersion === "number" ? project.intensityVersion : 0,
+    generationIntensitySuggestion: project.generationIntensitySuggestion ?? null,
   };
 }
 

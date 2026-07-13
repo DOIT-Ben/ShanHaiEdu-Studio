@@ -1,5 +1,6 @@
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import type { ExecutionIdentitySnapshot } from "@/server/workbench/types";
+import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 
 import { createAgentToolInvocationEnvelope, type AgentToolArtifactRef, type AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import { routeAgentToolCall, type AgentToolAuthorizationDatabase, type AgentToolRouterResult } from "./agent-tool-router";
@@ -13,6 +14,7 @@ export type MainAgentToolServerContext = {
   projectId: string;
   intentEpoch: number;
   sourceMessageId: string;
+  generationIntensity?: GenerationIntensity;
   approvedArtifactRefs: AgentToolArtifactRef[];
   reviewTargetRef?: AgentToolArtifactRef | null;
 };
@@ -75,6 +77,7 @@ export async function dispatchMainAgentToolCall(
       projectId: request.serverContext.projectId,
       intentEpoch: request.serverContext.intentEpoch,
       sourceMessageId: request.serverContext.sourceMessageId,
+      generationIntensity: request.serverContext.generationIntensity ?? "standard",
       reviewTargetRef: request.serverContext.reviewTargetRef ?? null,
       approvedArtifactRefs: request.serverContext.approvedArtifactRefs,
       arguments: structuredClone(request.arguments),

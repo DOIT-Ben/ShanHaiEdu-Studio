@@ -40,6 +40,9 @@ docs\stages\local-real-v1-v1-3-main-agent-controlled-react-closeout.md
 docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-plan.md
 docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-test-plan.md
 docs\stages\local-real-v1-v1-4-human-gate-natural-language-interruption-closeout.md
+docs\stages\local-real-v1-v1-5-generation-intensity-plan.md
+docs\stages\local-real-v1-v1-5-generation-intensity-test-plan.md
+docs\stages\local-real-v1-v1-5-generation-intensity-closeout.md
 ```
 
 `local-real-v1-quality-release-*`、Stage 0R 至 Stage 6 以及旧真实交付包文档只保留为历史实现和证据来源。它们不得覆盖当前主线，也不得触发新的真实图片、视频或整包生成；真实媒体整包验证统一延后到 V1-9。

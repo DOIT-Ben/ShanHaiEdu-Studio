@@ -37,6 +37,7 @@ import type {
   UpsertVideoShotsInput,
   VideoShotRecord,
 } from "./types";
+import { deriveGenerationIntensitySuggestion, normalizeGenerationIntensity, type GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot, WorkflowNode } from "@/generated/prisma/client";
 import { sealPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
 import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleCandidate, PptKeySampleSet } from "@/server/ppt-quality/ppt-asset-types";
@@ -378,6 +379,15 @@ export function createWorkbenchService(
       return project.intentEpoch;
     },
 
+    async updateProjectGenerationIntensity(projectId: string, input: { intensity: GenerationIntensity; expectedVersion: number }) {
+      await ensureProjectAccess(projectId, "write");
+      const project = await repository.updateProjectGenerationIntensity(projectId, {
+        intensity: normalizeGenerationIntensity(input.intensity),
+        expectedVersion: input.expectedVersion,
+      });
+      return mapProject(project);
+    },
+
     async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput): Promise<ConversationTurnJobRecord> {
       await ensureProjectAccess(projectId, "write");
       const job = await repository.enqueueConversationTurn(projectId, { ...input, executionIdentity });
@@ -456,15 +466,22 @@ export function createWorkbenchService(
       ]);
       const reactionsByMessageId = new Map(reactions.map((reaction) => [reaction.messageId, reaction.value]));
 
+      const mappedProject = mapProject(project);
+      const mappedTurnJobs = turnJobs.map(mapConversationTurnJob);
+      mappedProject.generationIntensitySuggestion = deriveGenerationIntensitySuggestion({
+        current: mappedProject.generationIntensity ?? "standard",
+        intentEpoch: mappedProject.intentEpoch ?? 0,
+        recentJobs: mappedTurnJobs,
+      });
       return {
-        project: mapProject(project),
+        project: mappedProject,
         messages: messages.map((message) => mapMessage(message, reactionsByMessageId.get(message.id))),
         nodes: nodes.map(mapNode),
         artifacts: artifacts.map(mapArtifact),
         agentRuns: agentRuns.map(mapAgentRun),
         generationJobs: generationJobs.map(mapGenerationJob),
         videoShots: videoShots.map(mapVideoShot),
-        turnJobs: turnJobs.map(mapConversationTurnJob),
+        turnJobs: mappedTurnJobs,
       };
     },
 
@@ -543,6 +560,8 @@ function mapProject(project: Project): ProjectRecord {
     lifecycleState: getProjectLifecycleState(project),
     lifecycleVersion: project.lifecycleVersion,
     intentEpoch: project.intentEpoch,
+    generationIntensity: normalizeGenerationIntensity(project.generationIntensity),
+    intensityVersion: project.intensityVersion,
     archivedAt: project.archivedAt?.toISOString() ?? null,
     deletedAt: project.deletedAt?.toISOString() ?? null,
     createdAt: project.createdAt.toISOString(),
@@ -661,6 +680,8 @@ function mapConversationTurnJob(job: ConversationTurnJob): ConversationTurnJobRe
     actorAuthMode: job.actorAuthMode,
     authSessionId: job.authSessionId,
     fencingToken: job.fencingToken,
+    generationIntensity: normalizeGenerationIntensity(job.generationIntensity),
+    intensityVersion: job.intensityVersion,
     lockedBy: job.lockedBy,
     lockedUntil: job.lockedUntil?.toISOString() ?? null,
     errorCode: job.errorCode,

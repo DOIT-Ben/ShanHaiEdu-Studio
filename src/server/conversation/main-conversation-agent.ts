@@ -5,10 +5,12 @@ import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 import type { MainAgentReActDispatchResult } from "@/server/conversation/main-agent-controlled-react-loop";
+import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 
 export type MainConversationAgentInput = {
   userMessage: string;
   responseStyle?: XiaoKuResponseStyle;
+  generationIntensity?: GenerationIntensity;
   availableArtifactKinds: string[];
   projectContext?: {
     grade?: string | null;

@@ -52,6 +52,13 @@ export type ProjectRecord = {
   lifecycleState: ProjectLifecycleState;
   lifecycleVersion: number;
   intentEpoch?: number;
+  generationIntensity?: import("@/server/generation-intensity/generation-intensity-policy").GenerationIntensity;
+  intensityVersion?: number;
+  generationIntensitySuggestion?: {
+    target: import("@/server/generation-intensity/generation-intensity-policy").GenerationIntensity;
+    reason: string;
+    signature: string;
+  } | null;
   archivedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -187,6 +194,8 @@ export type ConversationTurnJobRecord = {
   actorAuthMode: string | null;
   authSessionId: string | null;
   fencingToken: number | null;
+  generationIntensity?: import("@/server/generation-intensity/generation-intensity-policy").GenerationIntensity;
+  intensityVersion?: number;
   lockedBy: string | null;
   lockedUntil: string | null;
   errorCode: string | null;

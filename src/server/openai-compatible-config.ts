@@ -14,10 +14,10 @@ export type OpenAICompatibleEnv = Record<string, string | undefined> & {
   AGENT_BRAIN_FALLBACK_MODEL?: string;
 };
 
-export type OpenAIReasoningEffort = "low" | "medium" | "high";
+export type OpenAIReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export const DEFAULT_MAIN_AGENT_MODEL = "gpt-5.6-terra";
-export const DEFAULT_MAIN_AGENT_REASONING_EFFORT: OpenAIReasoningEffort = "high";
+export const DEFAULT_MAIN_AGENT_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 export type OpenAICompatibleCredentialSource =
   | "openai_env"

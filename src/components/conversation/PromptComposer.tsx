@@ -13,7 +13,6 @@ import {
   type ComposerAttachmentCard,
 } from "@/components/conversation/composer/composer-contracts";
 import { useAutoResizeTextarea } from "@/components/conversation/composer/useAutoResizeTextarea";
-import { xiaokuResponseStyleLabel, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 
 type PromptComposerProps = {
   value: string;
@@ -26,7 +25,8 @@ type PromptComposerProps = {
   onAttachFile: (fileName: string, text: string) => void;
   onAttachFileError: (message: string) => void;
   onSend: () => void;
-  responseStyle: XiaoKuResponseStyle;
+  generationIntensityLabel: string;
+  onOpenSettings?: () => void;
 };
 
 const maxAttachmentCharacters = 12000;
@@ -43,7 +43,8 @@ export function PromptComposer({
   onAttachFile,
   onAttachFileError,
   onSend,
-  responseStyle,
+  generationIntensityLabel,
+  onOpenSettings,
 }: PromptComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -293,19 +294,19 @@ export function PromptComposer({
             <div className="flex shrink-0 items-center gap-1.5">
               <Popover>
                 <PopoverTrigger asChild>
-                  <button type="button" aria-label="选择模型" className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-foreground transition hover:bg-[#f0f1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]/45">
+                  <button type="button" aria-label="选择生成强度" className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-foreground transition hover:bg-[#f0f1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]/45">
                     <Sparkles className="h-3.5 w-3.5 text-[#367d6d]" />
-                    <span>小酷 · {xiaokuResponseStyleLabel(responseStyle)}</span>
+                    <span>生成强度 · {generationIntensityLabel}</span>
                     <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-60 rounded-xl p-2">
-                  <div className="px-2.5 pb-2 pt-1 text-xs font-medium text-muted-foreground">可选模型</div>
-                  <MenuItem disabled className="disabled:opacity-100" icon={<Sparkles className="h-4 w-4 text-[#367d6d]" />}>
-                        <span className="flex-1">小酷 · {xiaokuResponseStyleLabel(responseStyle)}</span>
+                  <div className="px-2.5 pb-2 pt-1 text-xs font-medium text-muted-foreground">生成强度</div>
+                  <MenuItem onClick={onOpenSettings} icon={<Sparkles className="h-4 w-4 text-[#367d6d]" />}>
+                    <span className="flex-1">{generationIntensityLabel}</span>
                     <span className="text-xs text-muted-foreground">当前</span>
                   </MenuItem>
-                  <div className="mt-1 px-2.5 py-2 text-xs text-muted-foreground">更多模型即将提供</div>
+                  <div className="mt-1 px-2.5 py-2 text-xs leading-5 text-muted-foreground">强度越大，积分消耗越快。</div>
                 </PopoverContent>
               </Popover>
               <button

@@ -26,6 +26,8 @@ model Project {
   deletedAt             DateTime?
   lifecycleVersion      Int                    @default(0)
   intentEpoch           Int                    @default(0)
+  generationIntensity   String                 @default("standard")
+  intensityVersion      Int                    @default(0)
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   owner                 LocalUser?             @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
@@ -483,6 +485,8 @@ model ConversationTurnJob {
   actorAuthMode      String?
   authSessionId      String?
   fencingToken       Int?
+  generationIntensity String   @default("standard")
+  intensityVersion   Int       @default(0)
   lockedBy           String?
   lockedUntil        DateTime?
   errorCode          String?

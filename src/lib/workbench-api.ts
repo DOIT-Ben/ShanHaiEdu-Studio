@@ -2,7 +2,7 @@ import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as s
 import { getWorkbenchCsrfToken, isWorkbenchCsrfRequired } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, GenerationIntensity, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -172,6 +172,18 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         const project = normalizeProjects({ projects: [result.project] })[0];
         if (!project) throw new WorkbenchApiError("Lifecycle response project could not be normalized.");
         return { changed: result.changed === true, project };
+      });
+    },
+    updateGenerationIntensity(projectId, intensity, expectedVersion, confirmationActionId) {
+      return request<unknown>(`/api/workbench/projects/${projectId}/generation-intensity`, {
+        method: "PATCH",
+        body: JSON.stringify({ intensity, expectedVersion, ...(confirmationActionId ? { confirmationActionId } : {}) }),
+      }).then((value) => {
+        const result = value as { project?: BackendProjectRecord; confirmationRequired?: boolean; actionId?: string };
+        if (!result.project?.id) throw new WorkbenchApiError("Generation intensity response did not include a project.");
+        const project = normalizeProjects({ projects: [result.project] })[0];
+        if (!project) throw new WorkbenchApiError("Generation intensity project could not be normalized.");
+        return { project, ...(result.confirmationRequired ? { confirmationRequired: true, actionId: result.actionId } : {}) };
       });
     },
   };
@@ -383,6 +395,16 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       project.updatedAt = "刚刚";
       project.meta = "刚刚";
       return { changed: true, project: clone(project) };
+    },
+    async updateGenerationIntensity(projectId: string, intensity: GenerationIntensity, expectedVersion: number, confirmationActionId?: string) {
+      const project = projectById(projectId);
+      if ((project.intensityVersion ?? 0) !== expectedVersion) throw new WorkbenchApiError("Generation intensity version conflict.", "生成强度已变化，请刷新后再操作。", 409);
+      if (intensity === "extreme" && !confirmationActionId) {
+        return { project: clone(project), confirmationRequired: true, actionId: `intensity:${encodeURIComponent(projectId)}:${expectedVersion}:extreme` };
+      }
+      project.generationIntensity = intensity;
+      project.intensityVersion = expectedVersion + 1;
+      return { project: clone(project) };
     },
     async sendMessage(projectId, body, reference) {
       const current = ensureSnapshot(projectId);

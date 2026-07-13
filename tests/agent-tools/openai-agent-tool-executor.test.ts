@@ -55,23 +55,41 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
     expect(result).not.toHaveProperty("structuredOutput");
   });
 
+  it("uses the queued intensity snapshot for the professional Agent Tool", async () => {
+    let payload: Record<string, unknown> | undefined;
+    const client = { responses: { async create(input: Record<string, unknown>) {
+      payload = input;
+      return { output_text: JSON.stringify(validPptDirectorOutput()) };
+    } } } as OpenAIResponsesClient;
+    const executor = createOpenAIAgentToolExecutor({ client, model: "fallback", loadContext: async () => [] });
+    const envelope = createAgentToolInvocationEnvelope({ ...directorEnvelopeInput(), generationIntensity: "deep" });
+
+    await executor(envelope, getAgentToolDefinition(envelope.toolId));
+
+    expect(payload).toMatchObject({ model: "gpt-5.6-terra", reasoning: { effort: "xhigh" } });
+  });
+
   it("does not create a production executor without a configured model channel", () => {
     expect(createAgentToolExecutorFromEnv({})).toBeUndefined();
   });
 });
 
 function directorEnvelope() {
-  return createAgentToolInvocationEnvelope({
+  return createAgentToolInvocationEnvelope(directorEnvelopeInput());
+}
+
+function directorEnvelopeInput() {
+  return {
     invocationId: "invocation-executor-1",
     toolId: "ppt_director.plan_or_repair",
-    identity: { actorUserId: "teacher-1", actorAuthMode: "password", authSessionId: "session-1" },
+    identity: { actorUserId: "teacher-1", actorAuthMode: "password" as const, authSessionId: "session-1" },
     projectId: "project-1",
     intentEpoch: 1,
     sourceMessageId: "message-1",
     reviewTargetRef: null,
     approvedArtifactRefs: [],
     arguments: { goal: "规划课件", stage: "page_design", targetPageIds: [], focus: null },
-  });
+  };
 }
 
 function validPptDirectorOutput() {

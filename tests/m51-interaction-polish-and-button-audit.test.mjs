@@ -81,8 +81,9 @@ test("Project sidebar exposes real archive and recycle-bin actions while collabo
   assert.doesNotMatch(topbarSource, /<Button[\s\S]*\{savedLabel\}[\s\S]*<\/Button>/);
   assert.match(composerSource, /data-composer-surface/);
   assert.match(composerSource, /aria-label="添加选项"/);
-  assert.match(composerSource, /aria-label="选择模型"/);
-  assert.match(composerSource, /可选模型/);
+  assert.match(composerSource, /aria-label="选择生成强度"/);
+  assert.match(composerSource, /生成强度/);
+  assert.doesNotMatch(composerSource, /可选模型|更多模型即将提供/);
   assert.doesNotMatch(composerSource, /aria-label="工具和资料"|aria-label="重新生成"/);
   assert.doesNotMatch(detailSource, /完整缩略图预览稍后开放|缩略预览/);
   assert.doesNotMatch(detailSource, /<button[\s\S]*来源对话[\s\S]*<\/button>/);

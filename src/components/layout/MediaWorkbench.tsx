@@ -243,8 +243,11 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
       <XiaoKuSettingsDialog
         open={xiaokuSettingsOpen}
         value={controller.xiaokuResponseStyle}
+        generationIntensity={controller.activeProject?.generationIntensity ?? "standard"}
+        generationIntensitySuggestion={controller.activeProject?.generationIntensitySuggestion ?? null}
         onOpenChange={setXiaoKuSettingsOpen}
         onChange={controller.setXiaoKuResponseStyle}
+        onGenerationIntensityChange={controller.updateGenerationIntensity}
       />
       <AdminUserManagementDialog open={userManagementOpen} currentUserId={currentUser?.id} onOpenChange={setUserManagementOpen} />
       <ProjectMembersDialog open={membersOpen} projectId={controller.activeProjectId} currentUser={currentUser} onOpenChange={setMembersOpen} />

@@ -6,11 +6,13 @@ import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentState, Ma
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { createDeterministicMainConversationAgent, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
 import { runMainAgentControlledReActLoop } from "./main-agent-controlled-react-loop";
+import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
+import type { OpenAIReasoningEffort } from "@/server/openai-compatible-config";
 
 type OpenAIMainConversationAgentOptions = {
   client: OpenAIResponsesClient;
   model: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: OpenAIReasoningEffort;
 };
 
 type StructuredMainAgentOutput = {
@@ -58,7 +60,7 @@ const minimumMainAgentTimeoutMs = 10_000;
 export class OpenAIMainConversationAgent implements MainConversationAgent {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
-  private readonly reasoningEffort: "low" | "medium" | "high";
+  private readonly reasoningEffort: OpenAIReasoningEffort;
 
   constructor(options: OpenAIMainConversationAgentOptions) {
     this.client = options.client;
@@ -72,8 +74,9 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
     }
 
     try {
-      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
-      const request = buildMainAgentRequest(input, this.reasoningEffort);
+      const strategy = input.generationIntensity ? resolveGenerationIntensityStrategy(input.generationIntensity) : null;
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: strategy?.model ?? this.model });
+      const request = buildMainAgentRequest(input, strategy?.reasoningEffort ?? this.reasoningEffort);
       const assistantText = input.agentToolLoop?.tools.length
         ? await runMainAgentToolLoop(adapter, request, input.agentToolLoop)
         : (await adapter.createResponse(request)).assistantText;
@@ -174,7 +177,7 @@ function unavailableTurnFromPlan(input: { toolPlan: CapabilityToolPlan; status: 
   };
 }
 
-function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffort: "low" | "medium" | "high" = "high") {
+function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffort: OpenAIReasoningEffort = "medium") {
   return {
     reasoning: { effort: reasoningEffort },
     instructions: [

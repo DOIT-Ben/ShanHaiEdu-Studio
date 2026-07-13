@@ -35,6 +35,7 @@ import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { readAgentToolReportsFromMessages } from "@/server/tools/agent-tool-report";
 import { createDeterministicMainConversationAgent, type MainConversationAgent } from "./main-conversation-agent";
 import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
+import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
@@ -84,6 +85,7 @@ export type ConversationTurnServiceOptions = {
   agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
   executionIdentity?: ExecutionIdentitySnapshot;
   executionFence?: ProjectExecutionFence;
+  generationIntensityOverride?: GenerationIntensity;
 };
 
 export function createConversationTurnService(options: ConversationTurnServiceOptions) {
@@ -119,6 +121,7 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         agentToolExecutor: options.agentToolExecutor,
         executionIdentity: options.executionIdentity,
         executionFence: options.executionFence,
+        generationIntensityOverride: options.generationIntensityOverride,
       });
     },
 
@@ -142,6 +145,7 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         agentToolExecutor: options.agentToolExecutor,
         executionIdentity: options.executionIdentity,
         executionFence: options.executionFence,
+        generationIntensityOverride: options.generationIntensityOverride,
       });
     },
   };
@@ -160,11 +164,15 @@ async function executeTeacherMessageTurn(input: {
   agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
   executionIdentity?: ExecutionIdentitySnapshot;
   executionFence?: ProjectExecutionFence;
+  generationIntensityOverride?: GenerationIntensity;
 }): Promise<MessageTurnResponse> {
   const teacherContent = input.teacherContent;
   const reference = input.reference;
 
-  const project = await input.service.getProject(input.projectId);
+  const storedProject = await input.service.getProject(input.projectId);
+  const project = input.generationIntensityOverride
+    ? { ...storedProject, generationIntensity: input.generationIntensityOverride }
+    : storedProject;
   const messages = await input.service.getMessages(input.projectId);
   const workflowNodes = await input.service.getNodes(input.projectId);
   const artifacts = await input.service.getArtifacts(input.projectId);
@@ -227,6 +235,7 @@ async function executeTeacherMessageTurn(input: {
   const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
     userMessage: teacherContent,
     responseStyle: input.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
+    generationIntensity: project.generationIntensity,
     availableArtifactKinds,
     projectContext: toMainAgentProjectContext(project),
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
@@ -1143,6 +1152,7 @@ async function replanAfterBusinessToolResult(input: {
   const replanned = applyCapabilityAvailabilityToTurn(await turnInput.agent.respond({
     userMessage: turnInput.generationUserMessage,
     responseStyle: turnInput.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
+    generationIntensity: project.generationIntensity,
     availableArtifactKinds: artifacts.map((artifact) => artifact.kind),
     projectContext: toMainAgentProjectContext(project),
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),

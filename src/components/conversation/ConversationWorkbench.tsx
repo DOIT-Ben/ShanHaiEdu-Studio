@@ -12,6 +12,7 @@ import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 import { deriveWorkbenchStageIndex, type WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
 import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
+import { generationIntensityLabel } from "@/lib/generation-intensity";
 
 type ConversationWorkbenchProps = {
   project: ProjectItem | null;
@@ -154,7 +155,8 @@ export function ConversationWorkbench({
         onAttachFile={onAttachFile}
         onAttachFileError={onAttachFileError}
         onSend={onSend}
-        responseStyle={xiaokuResponseStyle}
+        generationIntensityLabel={generationIntensityLabel(project?.generationIntensity)}
+        onOpenSettings={onOpenXiaoKuSettings}
       />
     </main>
   );
