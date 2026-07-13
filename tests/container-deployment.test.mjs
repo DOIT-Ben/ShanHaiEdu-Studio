@@ -15,14 +15,18 @@ test("V1 container deployment keeps one non-root process and external shared dat
   }
 
   const dockerfile = readFileSync(dockerfilePath, "utf8");
-  assert.match(dockerfile, /^FROM node:22-bookworm-slim/m);
+  assert.match(dockerfile, /^FROM node:22-bookworm-slim AS builder$/m);
+  assert.match(dockerfile, /^FROM node:22-bookworm-slim AS runtime$/m);
+  const runtimeStage = dockerfile.slice(dockerfile.indexOf("FROM node:22-bookworm-slim AS runtime"));
   for (const dependency of ["ffmpeg", "libreoffice-impress", "poppler-utils", "curl", "fonts-noto-cjk", "tini"]) {
     assert.match(dockerfile, new RegExp(`\\b${dependency}\\b`));
   }
   for (const buildDependency of ["python3", "make", "g++"]) {
     assert.match(dockerfile, new RegExp(`^\\s*${escapeRegExp(buildDependency)}\\s*\\\\?$`, "m"));
   }
-  assert.match(dockerfile, /apt-get purge -y --auto-remove python3 make g\+\+/);
+  for (const buildDependency of ["python3", "make", "g++"]) {
+    assert.doesNotMatch(runtimeStage, new RegExp(`^\\s*${escapeRegExp(buildDependency)}\\s*\\\\?$`, "m"));
+  }
   assert.match(dockerfile, /ARG DEBIAN_MIRROR_URL/);
   assert.match(dockerfile, /ARG DEBIAN_SECURITY_MIRROR_URL/);
   assert.match(dockerfile, /DEBIAN_MIRROR_URL.+deb\.debian\.org\/debian/s);
@@ -30,8 +34,16 @@ test("V1 container deployment keeps one non-root process and external shared dat
   assert.match(dockerfile, /ARG NEXT_PUBLIC_SHANHAI_AUTH_MODE=password/);
   assert.match(dockerfile, /ARG NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED=0/);
   assert.match(dockerfile, /npm run preflight:container-runtime/);
+  assert.match(runtimeStage, /COPY --from=builder --chown=node:node \/app\/\.next\/standalone \.\//);
+  assert.match(runtimeStage, /COPY --from=builder --chown=node:node \/app\/public \.\/public/);
+  assert.match(runtimeStage, /COPY --from=builder --chown=node:node \/app\/\.next\/static \.\/\.next\/static/);
+  assert.match(runtimeStage, /scripts\/release-data-recovery\.mjs/);
+  assert.match(runtimeStage, /scripts\/production-preflight\.mjs/);
+  assert.match(runtimeStage, /scripts\/init-sqlite-schema\.mjs/);
+  assert.match(runtimeStage, /scripts\/bootstrap-admin\.mjs/);
+  assert.doesNotMatch(runtimeStage, /COPY --chown=node:node \. \./);
   assert.match(dockerfile, /^USER node$/m);
-  assert.match(dockerfile, /tini.+node.+\.next\/standalone\/server\.js/s);
+  assert.match(dockerfile, /tini.+node.+server\.js/s);
   assert.doesNotMatch(dockerfile, /COPY\s+\.env/i);
 
   const ignore = readFileSync(ignorePath, "utf8");
