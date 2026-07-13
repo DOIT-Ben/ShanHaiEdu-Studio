@@ -1206,7 +1206,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         markdownContent: "# 分镜视频计划",
       });
       await service.approveArtifact(project.id, segmentPlan.id);
-      const actionId = await seedPendingPlan(service, project.id, "video_segment_generate", "video_segment_generate");
+      const actionId = await seedPendingPlan(service, project.id, "video_segment_generate", "video_segment_generate", { shotIds: ["shot_01"] });
       let capturedRouterInput: Parameters<typeof routeToolCall>[0] | undefined;
       const toolRouter = vi.fn(async (input: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => {
         capturedRouterInput = input;
@@ -1244,7 +1244,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         service,
         runtime: new DeterministicRuntime(),
         toolRouter,
-        agent: { async respond() { return buildAgentToolTurn("video_segment_generate", "video_segment_generate"); } },
+        agent: { async respond() { return buildAgentToolTurn("video_segment_generate", "video_segment_generate", { shotIds: ["shot_01"] }); } },
       });
 
       const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成分镜视频片段", confirmedActionId: actionId });
@@ -1256,6 +1256,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         capabilityId: "video_segment_generate",
         projectId: project.id,
         sourceMessageId: body.message.id,
+        toolInput: { shotIds: ["shot_01"] },
         artifactRefs: expect.arrayContaining([
           expect.objectContaining({ artifactId: storyboard.id, kind: "storyboard_generate" }),
           expect.objectContaining({ artifactId: assetImages.id, kind: "asset_image_generate" }),
@@ -1273,6 +1274,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         expect.objectContaining({
           kind: "video",
           sourceArtifactId: segmentPlan.id,
+          unitId: "shot_01",
           status: "succeeded",
           resultArtifactId: body.artifact!.id,
           errorMessage: null,
@@ -1993,6 +1995,7 @@ async function seedPendingPlan(
   projectId: string,
   capabilityId: CapabilityId,
   expectedArtifactKind: string,
+  inputDraft: Record<string, unknown> = {},
 ) {
   const assistantMessage = await service.addMessage(projectId, {
     role: "assistant",
@@ -2001,7 +2004,7 @@ async function seedPendingPlan(
       pendingDeliveryPlan: {
         status: "pending",
         teacherRequest: "测试请求",
-        toolPlan: buildAgentToolTurn(capabilityId, expectedArtifactKind).toolPlan,
+        toolPlan: buildAgentToolTurn(capabilityId, expectedArtifactKind, inputDraft).toolPlan,
         runtimeKind: "deterministic",
       },
     },
@@ -2028,7 +2031,7 @@ function pendingDeliveryPlanOf(message?: { metadata: Record<string, unknown> }) 
   };
 }
 
-function buildAgentToolTurn(capabilityId: CapabilityId, expectedArtifactKind: string) {
+function buildAgentToolTurn(capabilityId: CapabilityId, expectedArtifactKind: string, inputDraft: Record<string, unknown> = {}) {
   return {
     assistantMessage: { body: "我现在执行这一步。" },
     state: "running_tool" as const,
@@ -2039,7 +2042,7 @@ function buildAgentToolTurn(capabilityId: CapabilityId, expectedArtifactKind: st
       capabilityId,
       reasonForUser: "我可以继续处理这一步。",
       internalReason: "test",
-      inputDraft: {},
+      inputDraft,
       missingInputs: [],
       upstreamPlan: [],
       nextSuggestedCapabilities: [],

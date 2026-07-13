@@ -67,6 +67,24 @@ function artifactInputSchema(requiredArtifactKinds: string[]): JsonSchemaObject 
   };
 }
 
+function videoSegmentInputSchema(): JsonSchemaObject {
+  const schema = artifactInputSchema(["video_segment_plan", "storyboard_generate", "asset_image_generate"]);
+  return {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      shotIds: {
+        type: "array",
+        minItems: 1,
+        maxItems: 1,
+        uniqueItems: true,
+        items: { type: "string", pattern: "^shot_[A-Za-z0-9_-]+$" },
+      },
+    },
+    required: [...(schema.required ?? []), "shotIds"],
+  };
+}
+
 function artifactOutputSchema(producedArtifactKind: string): JsonSchemaObject {
   return {
     type: "object",
@@ -375,7 +393,7 @@ const toolDefinitions: ToolDefinition[] = [
     adapterKind: "provider",
     capabilityId: "video_segment_generate",
     providerToolId: "video_segment_generate.generate",
-    inputSchema: artifactInputSchema(["video_segment_plan", "storyboard_generate", "asset_image_generate"]),
+    inputSchema: videoSegmentInputSchema(),
     outputSchema: artifactOutputSchema("video_segment_generate"),
     requiresHumanGate: true,
     sideEffectLevel: "external_call",

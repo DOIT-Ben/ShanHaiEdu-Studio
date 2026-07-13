@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { ImageGenerationResult } from "@/server/image-generation/image-generation-run";
 import { executeProviderTool, type ProviderToolAdapterInput } from "@/server/tools/provider-tool-adapter";
 import { getToolDefinition, getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
@@ -7,6 +11,8 @@ import { VideoTaskPersistenceUnknownError, type VideoGenerationResult } from "@/
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
+import { createStoryboardManifest } from "@/server/video-quality/video-production-contract";
+import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 
 const forbiddenSensitiveText = /token|providerMode|API|api[_-]?key|Bearer\s+\S+|C:\\|\\Users\\|local path|SECRET|credential/i;
 
@@ -90,9 +96,15 @@ function assetBriefArtifact(overrides: Partial<ArtifactRecord> = {}) {
 }
 
 function videoArtifacts() {
+  const manifest = createStoryboardManifest({
+    schemaVersion: "video-storyboard.v1",
+    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾的一次课堂提问", classroomReturnQuestion: "这个变化意味着什么？", answerDisclosureBoundary: "不提前解释课程答案" },
+    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进独立悬念", mainSubject: "机械装置", subjectAction: "逐步发生变化", cameraMotion: "缓慢推进", continuityKeys: ["同一装置", "冷暖对比"], startFrameIntent: "承接上一状态", endFrameIntent: "留下下一变化", referencePolicy: "none" as const, referenceAssetIds: [], textPolicy: "post_production_only" as const, modelPrompt: `镜头 ${ordinal}：机械装置发生可见变化`, negativePrompt: "不要课堂讲解，不要答案文字", retakeVariables: ["cameraMotion", "subjectAction"] })),
+    references: [],
+  });
   return [
     resolvedArtifact("video_segment_plan", "artifact-video-plan-a", { markdownContent: "S1：8 秒百分数悬念片段。" }),
-    resolvedArtifact("storyboard_generate", "artifact-storyboard-a", { markdownContent: "S1：超市折扣镜头。" }),
+    resolvedArtifact("storyboard_generate", "artifact-storyboard-a", { markdownContent: "S1：超市折扣镜头。", structuredContent: { videoStoryboardManifest: manifest } }),
     resolvedArtifact("asset_image_generate", "artifact-assets-a", { markdownContent: "参考图：scene-1.png。" }),
   ];
 }
@@ -852,6 +864,7 @@ describe("M64-C ProviderToolAdapter", () => {
         project: projectRecord(),
         artifactRefs: videoArtifactRefs(),
         resolvedArtifacts: videoArtifacts(),
+        toolInput: { shotIds: ["shot_01"] },
         runVideo: async () => {
           throw new VideoTaskPersistenceUnknownError();
         },
@@ -882,6 +895,7 @@ describe("M64-C ProviderToolAdapter", () => {
         userInstruction: "生成真实分镜视频",
         artifactRefs: videoArtifactRefs(),
         resolvedArtifacts,
+        toolInput: { shotIds: ["shot_01"] },
         sourceMessageId: "message-a",
         generationTaskLifecycle,
         runVideo: async (input) => {
@@ -906,6 +920,7 @@ describe("M64-C ProviderToolAdapter", () => {
           expect.objectContaining({ id: "artifact-assets-a", kind: "asset_image_generate", status: "approved", version: 7, isApproved: true }),
         ]),
         taskLifecycle: generationTaskLifecycle,
+        shot: { shotId: "shot_01", prompt: expect.stringContaining("机械装置"), referenceImageUrls: [], referenceEvidence: [] },
       });
       expect((calledWith as { artifact: ArtifactRecord }).artifact).toBe(resolvedArtifacts[0]);
       expect((calledWith as { upstreamArtifacts: ArtifactRecord[] }).upstreamArtifacts).toEqual([resolvedArtifacts[1], resolvedArtifacts[2]]);
@@ -972,6 +987,7 @@ describe("M64-C ProviderToolAdapter", () => {
           projectId: "project-a",
           artifactRefs: videoArtifactRefs().filter((artifact) => artifact.kind !== missingKind),
           resolvedArtifacts: videoArtifacts().filter((artifact) => artifact.kind !== missingKind),
+          toolInput: { shotIds: ["shot_01"] },
           runVideo: async () => {
             called = true;
             throw new Error("should_not_call_video_runner");
@@ -996,6 +1012,7 @@ describe("M64-C ProviderToolAdapter", () => {
         projectId: "project-a",
         artifactRefs: videoArtifactRefs(),
         resolvedArtifacts: videoArtifacts(),
+        toolInput: { shotIds: ["shot_01"] },
         runVideo: async () => {
           throw new Error("invalid_video_output");
         },
@@ -1019,6 +1036,7 @@ describe("M64-C ProviderToolAdapter", () => {
           projectId: "project-a",
           artifactRefs: videoArtifactRefs(),
           resolvedArtifacts: videoArtifacts(),
+          toolInput: { shotIds: ["shot_01"] },
           runVideo: async () => {
             throw new Error(`${failure} token=dummy API_KEY=dummy C:\\Users\\demo\\video.mp4 providerMode=evolink`);
           },
@@ -1036,6 +1054,60 @@ describe("M64-C ProviderToolAdapter", () => {
           expect(result.observation.teacherSafeSummary).not.toMatch(forbiddenSensitiveText);
           expect(result.observation.internalReasonSanitized).not.toMatch(forbiddenSensitiveText);
         }
+      }
+    });
+
+    it("blocks missing, multiple, and out-of-range shot selections before provider submit", async () => {
+      for (const shotIds of [undefined, ["shot_01", "shot_02"], ["shot_99"]]) {
+        let submits = 0;
+        const result = await executeFutureProviderTool({
+          tool: getToolDefinitionByCapabilityId("video_segment_generate"), projectId: "project-a",
+          artifactRefs: videoArtifactRefs(), resolvedArtifacts: videoArtifacts(),
+          ...(shotIds ? { toolInput: { shotIds } } : {}),
+          runVideo: async () => { submits += 1; throw new Error("must_not_submit"); },
+        });
+        expect(submits).toBe(0);
+        expect(result).toMatchObject({ status: "failed", errorCategory: "quality_gate_failed", observation: { kind: "quality_gate_failed" } });
+      }
+    });
+
+    it("uploads a real approved reference asset and binds the evidence to the selected shot", async () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-video-reference-"));
+      const previousRoot = process.env.ARTIFACT_STORAGE_ROOT;
+      const previousKey = process.env.EVOLINK_API_KEY;
+      process.env.ARTIFACT_STORAGE_ROOT = root;
+      process.env.EVOLINK_API_KEY = "test-only";
+      try {
+        const image = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(2048, 7)]);
+        const stored = writeLocalArtifact({ category: "image-artifacts", fileName: "reference.png", buffer: image });
+        const sha256 = createHash("sha256").update(image).digest("hex");
+        const manifest = createStoryboardManifest({
+          schemaVersion: "video-storyboard.v1",
+          intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾一次提问", classroomReturnQuestion: "发生了什么？", answerDisclosureBoundary: "不解释答案" },
+          shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进悬念", mainSubject: "机械装置", subjectAction: "改变状态", cameraMotion: "缓慢推进", continuityKeys: ["同一装置"], startFrameIntent: "承接前态", endFrameIntent: "留下疑问", referencePolicy: ordinal === 1 ? "required" as const : "none" as const, referenceAssetIds: ordinal === 1 ? ["asset_main"] : [], textPolicy: "post_production_only" as const, modelPrompt: `机械装置镜头 ${ordinal}`, negativePrompt: "不要答案", retakeVariables: ["subjectAction"] })),
+          references: [{ assetId: "asset_main", assetDomain: "video", applicableShotIds: ["shot_01"], purpose: "装置连续性" }],
+        });
+        const artifacts = videoArtifacts();
+        artifacts[1] = { ...artifacts[1], structuredContent: { videoStoryboardManifest: manifest } };
+        artifacts[2] = { ...artifacts[2], structuredContent: { storage: { imageAsset: { localOutput: stored.localOutput, sha256, mime: "image/png" } } } };
+        vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: { file_id: "file-1", file_url: "https://files.example/reference.png" } }), { status: 200, headers: { "content-type": "application/json" } })));
+        let selectedShot: unknown;
+        const result = await executeFutureProviderTool({
+          tool: getToolDefinitionByCapabilityId("video_segment_generate"), projectId: "project-a", toolInput: { shotIds: ["shot_01"] },
+          artifactRefs: videoArtifactRefs(), resolvedArtifacts: artifacts,
+          runVideo: async (input) => {
+            selectedShot = (input as { shot?: unknown }).shot;
+            const shot = (input as { shot: { shotId: string; referenceEvidence: unknown[] } }).shot;
+            return { fileName: "shot.mp4", localOutput: ".tmp/video-artifacts/shot.mp4", bytes: 4096, sha256: "video-sha256", videoValid: true, mime: "video/mp4", requestEvidence: { shotId: shot.shotId, references: shot.referenceEvidence as never[] } };
+          },
+        });
+        expect(selectedShot).toMatchObject({ shotId: "shot_01", referenceImageUrls: ["https://files.example/reference.png"], referenceEvidence: [{ assetId: "asset_main", localSha256: sha256, shotId: "shot_01" }] });
+        expect(result).toMatchObject({ status: "succeeded", artifactDraft: { structuredContent: { storage: { videoAsset: { requestEvidence: { shotId: "shot_01", references: [{ localSha256: sha256 }] } } } } } });
+      } finally {
+        vi.unstubAllGlobals();
+        if (previousRoot === undefined) delete process.env.ARTIFACT_STORAGE_ROOT; else process.env.ARTIFACT_STORAGE_ROOT = previousRoot;
+        if (previousKey === undefined) delete process.env.EVOLINK_API_KEY; else process.env.EVOLINK_API_KEY = previousKey;
+        rmSync(root, { recursive: true, force: true });
       }
     });
   });

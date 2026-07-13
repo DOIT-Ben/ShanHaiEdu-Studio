@@ -825,7 +825,10 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     : input.artifacts.filter(isApprovedArtifact);
   const artifactRefs = buildProviderArtifactRefs(executionArtifacts);
 
-  const generationJob = resolveProviderGenerationJob(toolPlan.capabilityId, input.artifacts);
+  const videoUnitId = toolPlan.capabilityId === "video_segment_generate" ? resolveSingleVideoShotId(toolPlan.inputDraft) : undefined;
+  const generationJob = toolPlan.capabilityId === "video_segment_generate" && !videoUnitId
+    ? null
+    : resolveProviderGenerationJob(toolPlan.capabilityId, input.artifacts);
   let jobId: string | null = null;
   let activeGenerationJob: Awaited<ReturnType<WorkbenchService["startGenerationJobForExecution"]>> | null = null;
   if (generationJob) {
@@ -833,9 +836,11 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
       kind: generationJob.kind,
       sourceArtifactId: generationJob.sourceArtifact.id,
       capabilityId: toolPlan.capabilityId,
+      ...(videoUnitId ? { unitId: videoUnitId } : {}),
       sourceArtifactIds: input.artifacts.filter(isApprovedArtifact).map((artifact) => artifact.id),
       inputSnapshot: {
         userInstruction,
+        toolInput: structuredClone(toolPlan.inputDraft),
         artifacts: input.artifacts.filter(isApprovedArtifact).map((artifact) => ({
           id: artifact.id,
           kind: artifact.kind,
@@ -1102,6 +1107,14 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     artifact,
     result,
   };
+}
+
+function resolveSingleVideoShotId(inputDraft: Record<string, unknown>): string | undefined {
+  const shotIds = inputDraft.shotIds;
+  if (!Array.isArray(shotIds) || shotIds.length !== 1 || typeof shotIds[0] !== "string" || !/^shot_[a-z0-9_-]+$/i.test(shotIds[0])) {
+    return undefined;
+  }
+  return shotIds[0];
 }
 
 async function replanAfterBusinessToolResult(input: {

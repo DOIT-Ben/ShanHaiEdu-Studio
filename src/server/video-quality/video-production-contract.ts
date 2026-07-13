@@ -33,7 +33,7 @@ export type ShotSpec = {
 export type ReferenceAsset = {
   assetId: string;
   assetDomain: "video";
-  sha256: string;
+  sha256?: string;
   applicableShotIds: string[];
   purpose: string;
 };
@@ -74,8 +74,15 @@ export function validateStoryboardManifest(value: StoryboardManifest): { valid: 
   }
   if (value.intent.productionPath === "video_full_intro" && value.shots.length < 3) issues.push({ code: "full_intro_minimum_three_shots" });
   for (const asset of value.references) {
-    if (asset.assetDomain !== "video" || !/^[a-f0-9]{64}$/i.test(asset.sha256)) issues.push({ code: "reference_asset_invalid", locator: asset.assetId });
+    if (!asset.assetId || !asset.purpose || asset.assetDomain !== "video" || (asset.sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(asset.sha256))) issues.push({ code: "reference_asset_invalid", locator: asset.assetId });
     if (!asset.applicableShotIds.length || asset.applicableShotIds.some((shotId) => !ids.has(shotId))) issues.push({ code: "reference_asset_shot_binding_invalid", locator: asset.assetId });
+  }
+  const referencesById = new Map(value.references.map((asset) => [asset.assetId, asset]));
+  for (const shot of value.shots) {
+    for (const assetId of shot.referenceAssetIds) {
+      const asset = referencesById.get(assetId);
+      if (!asset || !asset.applicableShotIds.includes(shot.shotId)) issues.push({ code: "shot_reference_asset_unresolved", locator: shot.shotId });
+    }
   }
   const { manifestDigest, ...semantic } = value;
   if (hashRunInput(semantic) !== manifestDigest) issues.push({ code: "manifest_digest_invalid" });

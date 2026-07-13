@@ -209,6 +209,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       "视频必须先让独立创意短片成立，再使用唯一最小课程锚点回接课程；小学生受众不等于儿童主角、教师、教室或课堂活动，不能从PPT逐页叙事直接反推视频。",
       "Video Director形成Concept Selection候选后，先调用delivery_critic_review，domain=video且stage=course_anchor；六个硬门任一失败或证据不足时不得提出图片、逐镜头视频、拼接或最终包业务计划。",
       "课程锚点Critic通过只形成审查证据，必须等待教师明确批准当前创意版本；只有审查通过且教师批准后，才可推进Beat、Storyboard、视频资产和逐镜头生成。",
+      "每次提出video_segment_generate都必须只指定一个镜头，并把唯一目标shotId放入inputDraft.shotIds；初次生成也要逐镜头分别计划，不得一次提交多个镜头或省略shotIds。",
       "完整视频候选必须调用delivery_critic_review，domain=video且stage=video_final_review；实际MP4、时间线、采样帧、字幕或转写、音轨证据不完整时不得猜测通过。",
       "成片finding定位shot或frame_range时，只提出video_segment_generate并把目标shotId放入inputDraft.shotIds；定位track或timeline时把trackIds或timeRanges放入inputDraft，只返修受影响单元，不重做整片。",
       "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",

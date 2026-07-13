@@ -14,6 +14,7 @@ import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { validatePptDesignPackage } from "@/server/ppt-quality/ppt-design-validator";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
+import { createStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 
 type OpenAIResponsePayload = GptProtocolRequest & {
   instructions: string;
@@ -152,7 +153,8 @@ export function buildOpenAIResponseRequest(input: AgentRuntimeInput, reasoningEf
       "如果是视频工作流任务，必须按知识锚点、创意主题、视频脚本、分镜、资产、每镜头时长、课堂边界约束逐步生成；缺分镜或资产图时不得调用视频生成服务。",
       "如果是最终视频组装，只允许只拼接：按分镜顺序拼接已校验片段，不重排、不加转场、不加滤镜、不重写内容。",
       "如果是 PPT 设计稿，必须输出逐页四层 PPT 设计稿，并逐页明确底图、元素、文字、排版。每页还必须有独立的学习动作、面向学生的结论式标题、原创视觉事件、AI 场景/素材职责和可编辑数学职责；不得使用“第N页”“本页解决的问题”或重复空教室作为占位描述。",
-      "如果任务是 ppt_design，还必须把完整 ppt-design-package.v1 作为 JSON 字符串写入 artifactDraft.structuredContentJson；其他任务写 null。",
+      "如果任务是 ppt_design，还必须把完整 ppt-design-package.v1 作为 JSON 字符串写入 artifactDraft.structuredContentJson。",
+      "如果任务是 storyboard_generate，还必须把完整 video-storyboard.v1 作为 videoStoryboardManifest 写入 artifactDraft.structuredContentJson；参考资产此时只声明需求，不得伪造尚未生成的文件哈希。其他任务写 null。",
       "artifactDraft.markdown 必须包含任务必备字段，并以 ## 自检清单 结尾。",
       "返回内容必须严格符合指定 JSON 结构。",
     ].join("\n"),
@@ -227,11 +229,19 @@ function parseStructuredContent(
 ): Record<string, unknown> | undefined {
   if (structuredContentJson === null || structuredContentJson === undefined) {
     if (task === "ppt_design") throw new Error("PPT design package is required");
+    if (task === "storyboard_generate") throw new Error("Video storyboard manifest is required");
     return undefined;
   }
 
   const parsed = JSON.parse(structuredContentJson) as unknown;
   if (!isRecord(parsed)) throw new Error("Structured artifact content must be an object");
+  if (task === "storyboard_generate") {
+    const manifest = parsed.videoStoryboardManifest;
+    if (!isRecord(manifest)) throw new Error("Video storyboard manifest is required");
+    const { manifestDigest: _untrustedDigest, ...semantic } = manifest as unknown as StoryboardManifest;
+    const validatedManifest = createStoryboardManifest(semantic);
+    return { ...parsed, videoStoryboardManifest: validatedManifest };
+  }
   if (task !== "ppt_design") return parsed;
 
   const packageValue = parsed.pptDesignPackage;
@@ -246,6 +256,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function structuredContentContractFor(task: AgentRuntimeTask): Record<string, unknown> | null {
+  if (task === "storyboard_generate") {
+    return {
+      field: "artifactDraft.structuredContentJson",
+      encoding: "JSON string",
+      root: "videoStoryboardManifest",
+      schemaVersion: "video-storyboard.v1",
+      requiredSections: ["intent", "shots", "references"],
+      shotRequiredFields: ["shotId", "ordinal", "durationTargetRange", "sceneFunction", "mainSubject", "subjectAction", "cameraMotion", "continuityKeys", "startFrameIntent", "endFrameIntent", "referencePolicy", "referenceAssetIds", "textPolicy", "modelPrompt", "negativePrompt", "retakeVariables"],
+      invariants: [
+        "full_intro requires at least three shots with continuous ordinals starting at 1",
+        "shotId uses shot_N or shot_name and is unique",
+        "courseAnchor is the single minimal return to the course, not the whole story world",
+        "references declare future video-domain asset needs and applicable shotIds; omit sha256 until a real file exists",
+        "do not calculate manifestDigest; the product contract computes and binds it after validation",
+      ],
+    };
+  }
   if (task !== "ppt_design") return null;
   return {
     field: "artifactDraft.structuredContentJson",

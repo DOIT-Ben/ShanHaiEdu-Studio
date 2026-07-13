@@ -135,12 +135,17 @@ describe("ToolRegistry", () => {
   });
 
   it("maps video segment generation to the video provider tool", () => {
-    expect(getToolDefinition("generate_video_segment")).toMatchObject({
+    const tool = getToolDefinition("generate_video_segment");
+    expect(tool).toMatchObject({
       adapterKind: "provider",
       capabilityId: "video_segment_generate",
       providerToolId: "video_segment_generate.generate",
       requiredArtifactKinds: ["video_segment_plan", "storyboard_generate", "asset_image_generate"],
       producedArtifactKind: "video_segment_generate",
+    });
+    expect(tool.inputSchema).toMatchObject({
+      required: expect.arrayContaining(["shotIds"]),
+      properties: { shotIds: { type: "array", minItems: 1, maxItems: 1, uniqueItems: true } },
     });
   });
 

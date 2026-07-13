@@ -8,6 +8,7 @@ import type { ToolRouterInput } from "../../src/server/tools/tool-router";
 import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
 import { expectSucceeded } from "./test-helpers";
 import { validPptDesignPackage } from "../support/ppt-quality-fixture";
+import { createStoryboardManifest } from "../../src/server/video-quality/video-production-contract";
 
 function input(): AgentRuntimeInput {
   return {
@@ -49,7 +50,37 @@ function pptDesignInput(): AgentRuntimeInput {
   };
 }
 
+function storyboardInput(): AgentRuntimeInput {
+  return { ...input(), task: "storyboard_generate", userMessage: "请生成独立创意导入视频分镜。", approvedArtifacts: [{ nodeKey: "video_script_generate", title: "机械谜题", summary: "独立短片在结尾回到课程问题。", markdown: "## 视频脚本\n机械装置发生三次变化。" }] };
+}
+
+function validStoryboardManifest() {
+  return createStoryboardManifest({
+    schemaVersion: "video-storyboard.v1",
+    intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾只出现一次课堂问题", classroomReturnQuestion: "这个变化意味着什么？", answerDisclosureBoundary: "不得解释课程答案" },
+    shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进独立悬念", mainSubject: "机械装置", subjectAction: "改变状态", cameraMotion: "缓慢推进", continuityKeys: ["同一装置"], startFrameIntent: "承接上一状态", endFrameIntent: "留下新疑问", referencePolicy: "none" as const, referenceAssetIds: [], textPolicy: "post_production_only" as const, modelPrompt: `机械装置镜头 ${ordinal}`, negativePrompt: "不要课堂讲解和答案", retakeVariables: ["subjectAction"] })),
+    references: [],
+  });
+}
+
 describe("OpenAIRuntime", () => {
+  it("transports a validated video storyboard manifest as executable structured content", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const manifest = validStoryboardManifest();
+    const client = { responses: { create: async (payload: Record<string, unknown>) => { calls.push(payload); return { output_text: structuredStoryboardOutput(manifest) }; } } };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    const result = expectSucceeded(await runtime.run(storyboardInput()));
+    expect(result.artifactDraft.structuredContent).toEqual({ videoStoryboardManifest: manifest });
+    expect(JSON.stringify(calls[0])).toContain("videoStoryboardManifest");
+    expect(JSON.stringify(calls[0])).toContain("single minimal return");
+  });
+
+  it("rejects storyboard output without a validated structured manifest", async () => {
+    const client = { responses: { create: async () => ({ output_text: structuredStoryboardOutput(null) }) } };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    await expect(runtime.run(storyboardInput())).resolves.toMatchObject({ status: "failed" });
+  });
+
   it("transports a validated PPT design package as structured artifact content", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const packageValue = validPptDesignPackage();
@@ -546,6 +577,18 @@ function structuredPptDesignOutput(packageValue: ReturnType<typeof validPptDesig
     nextSuggestedAction: {
       label: "查看并确认 PPT 设计包",
     },
+  });
+}
+
+function structuredStoryboardOutput(manifest: ReturnType<typeof validStoryboardManifest> | null): string {
+  return JSON.stringify({
+    assistantMessage: { title: "视频分镜已生成", body: "已形成三镜头独立创意分镜。" },
+    artifactDraft: {
+      title: "机械谜题导入视频分镜", summary: "三镜头推进独立悬念，只在结尾回到课程问题。",
+      markdown: ["## 分镜 ID", "shot_01 至 shot_03。", "## 每镜头时长", "每镜头 6-8 秒。", "## 镜头目标", "推进独立悬念。", "## 场景", "机械工作间。", "## 画面动作", "装置逐步变化。", "## 镜头运动", "缓慢推进。", "## 旁白或字幕", "后期仅保留疑问。", "## 角色、道具、场景资产", "同一机械装置。", "## 关键帧要求", "保持装置状态连续。", "## 连贯性说明", "首尾状态逐镜头承接。", "## 自检清单", "镜头、资产和唯一课程回接已检查。"].join("\n"),
+      structuredContentJson: manifest ? JSON.stringify({ videoStoryboardManifest: manifest }) : null,
+    },
+    nextSuggestedAction: { label: "查看并确认视频分镜" },
   });
 }
 

@@ -9,11 +9,16 @@ import { validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-valid
 import type { PptKeySampleSet, PptSampleApproval } from "@/server/ppt-quality/ppt-asset-types";
 import {
   assertVideoProviderPreconditions,
+  buildResolvedShotVideoRequest,
   generateVideoFromArtifact,
   VideoTaskPersistenceUnknownError,
+  type ResolvedShotVideoRequest,
   type VideoGenerationResult,
   type VideoGenerationTaskLifecycle,
 } from "@/server/video-generation/video-generation-run";
+import { resolveEvolinkShotReferences } from "@/server/video-generation/evolink-reference-upload";
+import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
+import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
@@ -35,7 +40,14 @@ export type RunVideoProvider = (input: {
   artifact: ArtifactRecord;
   upstreamArtifacts?: ArtifactRecord[];
   taskLifecycle?: VideoGenerationTaskLifecycle;
+  shot?: ResolvedShotVideoRequest;
 }) => Promise<VideoGenerationResult>;
+
+export type ResolveVideoShotProvider = (input: {
+  toolInput?: Record<string, unknown>;
+  storyboard: ArtifactRecord;
+  assetImages: ArtifactRecord;
+}) => Promise<ResolvedShotVideoRequest>;
 
 export type ProviderToolAdapterInput = {
   tool: ToolDefinition;
@@ -51,6 +63,7 @@ export type ProviderToolAdapterInput = {
   runImage?: RunImageProvider;
   runPptAssetBatch?: RunPptAssetBatchProvider;
   runVideo?: RunVideoProvider;
+  resolveVideoShot?: ResolveVideoShotProvider;
 };
 
 const COZE_PPT_PROVIDER = "coze_ppt";
@@ -215,16 +228,67 @@ async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: s
 
   try {
     assertVideoProviderPreconditions({ artifact, upstreamArtifacts });
+    const shot = await (input.resolveVideoShot ?? resolveDefaultVideoShotRequest)({
+      toolInput: input.toolInput,
+      storyboard,
+      assetImages,
+    });
     const result = await (input.runVideo ?? generateVideoFromArtifact)({
       project: input.project ?? buildProjectRecord(input.projectId),
       artifact,
       upstreamArtifacts,
       taskLifecycle: input.generationTaskLifecycle,
+      shot,
     });
     return buildVideoSuccessResult(input, capabilityId, [sourceArtifact.id, storyboard.id, assetImages.id], result);
   } catch (error) {
     return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "video"));
   }
+}
+
+async function resolveDefaultVideoShotRequest(input: {
+  toolInput?: Record<string, unknown>;
+  storyboard: ArtifactRecord;
+  assetImages: ArtifactRecord;
+}): Promise<ResolvedShotVideoRequest> {
+  const shotIds = input.toolInput?.shotIds;
+  if (!Array.isArray(shotIds) || shotIds.length !== 1 || typeof shotIds[0] !== "string" || !/^shot_[a-z0-9_-]+$/i.test(shotIds[0])) {
+    throw new Error("video_provider_single_shot_required");
+  }
+  const manifestValue = input.storyboard.structuredContent.videoStoryboardManifest;
+  if (!isRecord(manifestValue)) throw new Error("video_storyboard_manifest_missing");
+  const manifest = manifestValue as StoryboardManifest;
+  const validation = validateStoryboardManifest(manifest);
+  if (!validation.valid) throw new Error(`video_storyboard_manifest_invalid:${validation.issues.map((issue) => issue.code).join(",")}`);
+  const shot = manifest.shots.find((candidate) => candidate.shotId === shotIds[0]);
+  if (!shot) throw new Error("video_provider_shot_out_of_range");
+  const prompt = `${shot.modelPrompt.trim()}\n\nNegative constraints: ${shot.negativePrompt.trim()}`;
+  if (shot.referencePolicy === "none") return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt });
+  if (shot.referenceAssetIds.length !== 1) throw new Error("video_provider_reference_count_unsupported");
+
+  const reference = manifest.references.find((candidate) => candidate.assetId === shot.referenceAssetIds[0]);
+  if (!reference || !reference.applicableShotIds.includes(shot.shotId)) throw new Error("video_provider_reference_binding_invalid");
+  const storage = isRecord(input.assetImages.structuredContent.storage) ? input.assetImages.structuredContent.storage : null;
+  const imageAsset = storage && isRecord(storage.imageAsset) ? storage.imageAsset : null;
+  const localOutput = typeof imageAsset?.localOutput === "string" ? imageAsset.localOutput : "";
+  const localPath = resolveLocalArtifactOutput(localOutput);
+  const sha256 = typeof imageAsset?.sha256 === "string" ? imageAsset.sha256.toLowerCase() : "";
+  if (!localPath || !/^[a-f0-9]{64}$/i.test(sha256)) throw new Error("video_provider_reference_file_invalid");
+  const apiKey = process.env.EVOLINK_VIDEO_API_KEY?.trim() || process.env.EVOLINK_API_KEY?.trim() || "";
+  const referenceEvidence = await resolveEvolinkShotReferences({
+    shotId: shot.shotId,
+    apiKey,
+    filesBaseUrl: process.env.EVOLINK_FILES_BASE_URL?.trim(),
+    references: [{
+      assetId: reference.assetId,
+      assetDomain: "video",
+      sha256,
+      applicableShotIds: [...reference.applicableShotIds],
+      purpose: reference.purpose,
+      localPath,
+    }],
+  });
+  return buildResolvedShotVideoRequest({ shotId: shot.shotId, prompt, referenceEvidence });
 }
 
 function buildImageSuccessResult(
@@ -427,6 +491,21 @@ function classifyMediaFailure(
       status: "failed",
       kind: "quality_gate_failed",
       userMessage: "正式课件缺少可核验的教材依据，系统没有调用生成服务。",
+      internalReason,
+      retryable: false,
+      errorCategory: "quality_gate_failed",
+    };
+  }
+  if (media === "video" && (
+    internalReason.startsWith("video_provider_") ||
+    internalReason.startsWith("video_storyboard_manifest_")
+  )) {
+    return {
+      capabilityId,
+      provider,
+      status: "failed",
+      kind: "quality_gate_failed",
+      userMessage: "当前分镜或目标镜头没有通过执行校验，系统没有调用生成服务。",
       internalReason,
       retryable: false,
       errorCategory: "quality_gate_failed",
@@ -704,6 +783,10 @@ function findResolvedArtifact(input: ProviderToolAdapterInput, kind: string): Ar
     if (resolved) return resolved;
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function buildProjectRecord(projectId: string): ProjectRecord {

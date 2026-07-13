@@ -3,6 +3,7 @@ import { getCapabilityDefinition } from "./capability-registry";
 import { validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
 import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
 import type { CapabilityId, CapabilityRunResult, SaveArtifactDraft } from "./types";
+import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 
 export type AgentRuntimeCapabilityInput = {
   runtime: AgentRuntime;
@@ -96,6 +97,17 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       return {
         status: "failed",
         userMessage: designValidation.message,
+        retryable: true,
+        errorCategory: "validation",
+      };
+    }
+  }
+  if (input.capabilityId === "storyboard_generate") {
+    const manifest = result.artifactDraft.structuredContent?.videoStoryboardManifest;
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) || !validateStoryboardManifest(manifest as StoryboardManifest).valid) {
+      return {
+        status: "failed",
+        userMessage: "视频分镜缺少可执行的镜头与连续性信息，请重新生成分镜。",
         retryable: true,
         errorCategory: "validation",
       };

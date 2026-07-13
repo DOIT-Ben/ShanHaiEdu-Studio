@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeCapabilityRunResult, runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
+import { createStoryboardManifest } from "@/server/video-quality/video-production-contract";
 
 describe("M54-B CapabilityRunner contract", () => {
   it("keeps failed tool results failed and user-readable", () => {
@@ -156,6 +157,20 @@ describe("M54-B CapabilityRunner contract", () => {
     });
   });
 
+  it("requires and preserves an executable storyboard manifest", async () => {
+    const manifest = createStoryboardManifest({
+      schemaVersion: "video-storyboard.v1",
+      intent: { schemaVersion: "video-intent.v1", productionPath: "video_full_intro", videoMode: "full_intro", courseAnchor: "结尾一次提问", classroomReturnQuestion: "发生了什么？", answerDisclosureBoundary: "不解释答案" },
+      shots: [1, 2, 3].map((ordinal) => ({ shotId: `shot_0${ordinal}`, ordinal, durationTargetRange: { minSeconds: 6, maxSeconds: 8 }, sceneFunction: "推进悬念", mainSubject: "机械装置", subjectAction: "改变状态", cameraMotion: "缓慢推进", continuityKeys: ["同一装置"], startFrameIntent: "承接前态", endFrameIntent: "留下疑问", referencePolicy: "none" as const, referenceAssetIds: [], textPolicy: "post_production_only" as const, modelPrompt: `机械镜头 ${ordinal}`, negativePrompt: "不要答案", retakeVariables: ["subjectAction"] })),
+      references: [],
+    });
+    const runtime = storyboardRuntime({ videoStoryboardManifest: manifest });
+    const result = await runCapabilityWithAgentRuntime({ runtime, projectId: "project-video", capabilityId: "storyboard_generate", userMessage: "生成分镜", projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["视频"] } });
+    expect(result).toMatchObject({ status: "succeeded", artifactDraft: { structuredContent: { videoStoryboardManifest: manifest, capabilityId: "storyboard_generate" } } });
+    const invalid = await runCapabilityWithAgentRuntime({ runtime: storyboardRuntime(undefined), projectId: "project-video", capabilityId: "storyboard_generate", userMessage: "生成分镜", projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["视频"] } });
+    expect(invalid).toMatchObject({ status: "failed", errorCategory: "validation" });
+  });
+
   it("fails external capabilities instead of returning placeholder success from the text runtime", async () => {
     const runtime: AgentRuntime = {
       async run() {
@@ -187,6 +202,20 @@ describe("M54-B CapabilityRunner contract", () => {
     }
   });
 });
+
+function storyboardRuntime(structuredContent: Record<string, unknown> | undefined): AgentRuntime {
+  return {
+    async run(input) {
+      return {
+        status: "succeeded",
+        run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "succeeded" },
+        assistantMessage: { title: "视频分镜已生成", body: "请检查镜头。" },
+        artifactDraft: { nodeKey: "storyboard_generate", kind: "storyboard_generate", title: "视频分镜", summary: "三镜头独立创意。", markdown: "# 视频分镜", contentType: "text/markdown", generationMode: "model_generated", isReadyForTeacherReview: true, structuredContent },
+        nextSuggestedAction: { type: "review_artifact", label: "查看分镜" },
+      };
+    },
+  };
+}
 
 function validPptDesignMarkdown(): string {
   return [
