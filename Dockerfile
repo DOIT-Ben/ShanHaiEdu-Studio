@@ -1,0 +1,44 @@
+FROM node:22-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    fontconfig \
+    fonts-noto-cjk \
+    libreoffice-impress \
+    poppler-utils \
+    tini \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci
+
+COPY --chown=node:node . .
+
+ARG NEXT_PUBLIC_SHANHAI_AUTH_MODE=password
+ARG NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED=0
+ENV NEXT_PUBLIC_SHANHAI_AUTH_MODE=${NEXT_PUBLIC_SHANHAI_AUTH_MODE} \
+    NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED=${NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED}
+
+RUN npm run build \
+  && mkdir -p .next/standalone/.next \
+  && cp -R public .next/standalone/public \
+  && cp -R .next/static .next/standalone/.next/static \
+  && npm run preflight:container-runtime
+
+ENV NODE_ENV=production \
+    HOSTNAME=0.0.0.0 \
+    PORT=3210
+
+EXPOSE 3210
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", ".next/standalone/server.js"]

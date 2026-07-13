@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "preflight:production": "node scripts/production-preflight.mjs",
+    "preflight:container-runtime": "node scripts/container-runtime-preflight.mjs",
     "release:data:backup": "node scripts/release-data-recovery.mjs backup",
     "release:data:verify": "node scripts/release-data-recovery.mjs verify",
     "release:data:restore": "node scripts/release-data-recovery.mjs restore",

@@ -1,0 +1,48 @@
+services:
+  app:
+    image: ${SHANHAI_IMAGE_NAME:-shanhai-edu-studio:v1-10c}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SHANHAI_AUTH_MODE: password
+        NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0"
+    container_name: shanhai-edu-studio-v1-staging
+    user: "1000:1000"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SHANHAI_STAGING_PORT:-3210}:3210"
+    env_file:
+      - ${SHANHAI_ENV_FILE:?Set SHANHAI_ENV_FILE to an external production env file}
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3210"
+      DATABASE_URL: file:/srv/shanhai/data/production.db
+      ARTIFACT_STORAGE_ROOT: /srv/shanhai/artifacts
+      SHANHAI_APP_INSTANCE_COUNT: "1"
+      SHANHAI_AUTH_MODE: password
+      NEXT_PUBLIC_SHANHAI_AUTH_MODE: password
+      SHANHAI_TRUST_PROXY: "1"
+      SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0"
+      NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0"
+      SHANHAI_DB_INIT_SKIP_DOTENV: "1"
+      SHANHAI_PRODUCTION_PREFLIGHT_SKIP_DOTENV: "1"
+      PPT_ASSET_IMAGE_PROVIDER: curl
+    volumes:
+      - type: bind
+        source: ${SHANHAI_SHARED_DATA_ROOT:?Set SHANHAI_SHARED_DATA_ROOT outside the release}
+        target: /srv/shanhai/data
+      - type: bind
+        source: ${SHANHAI_SHARED_ARTIFACT_ROOT:?Set SHANHAI_SHARED_ARTIFACT_ROOT outside the release}
+        target: /srv/shanhai/artifacts
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3210/api/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
