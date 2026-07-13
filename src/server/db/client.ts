@@ -7,6 +7,7 @@ const globalForPrisma = globalThis as unknown as {
 
 const adapter = new PrismaBetterSqlite3({
   url: process.env.DATABASE_URL ?? "file:./dev.db",
+  timeout: 15_000,
 });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });

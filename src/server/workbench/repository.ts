@@ -14,7 +14,7 @@ import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { validatePptFullDeckPackage } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import type { PptFullDeckPackage } from "@/server/ppt-quality/ppt-production-types";
 import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
-import { assertActiveProjectForWrite } from "./project-lifecycle-service";
+import { assertActiveProjectForWrite, ProjectLifecycleError } from "./project-lifecycle-service";
 import type {
   AddMessageInput,
   CreateProjectInput,
@@ -518,15 +518,18 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
     },
 
     async updateProjectGenerationIntensity(projectId: string, input: { intensity: string; expectedVersion: number }) {
-      return client.$transaction(async (tx) => {
-        await assertActiveProjectForWrite(tx, projectId);
-        const updated = await tx.project.updateMany({
-          where: { id: projectId, intensityVersion: input.expectedVersion },
-          data: { generationIntensity: input.intensity, intensityVersion: { increment: 1 } },
-        });
-        if (updated.count !== 1) throw new Error("Project generation intensity version conflict.");
-        return tx.project.findUniqueOrThrow({ where: { id: projectId } });
+      const updated = await client.project.updateMany({
+        where: { id: projectId, archivedAt: null, deletedAt: null, intensityVersion: input.expectedVersion },
+        data: { generationIntensity: input.intensity, intensityVersion: { increment: 1 } },
       });
+      if (updated.count !== 1) {
+        const project = await client.project.findUnique({ where: { id: projectId }, select: { archivedAt: true, deletedAt: true } });
+        if (!project || project.archivedAt || project.deletedAt) {
+          throw new ProjectLifecycleError("project_lifecycle_conflict", 409, "该项目当前不可继续编辑。");
+        }
+        throw new Error("Project generation intensity version conflict.");
+      }
+      return client.project.findUniqueOrThrow({ where: { id: projectId } });
     },
 
     async enqueueConversationTurn(projectId: string, input: EnqueueConversationTurnInput) {

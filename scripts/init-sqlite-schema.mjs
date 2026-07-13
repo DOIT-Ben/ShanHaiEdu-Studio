@@ -15,6 +15,9 @@ const dbPath = resolveSqliteFileUrl(databaseUrl, { baseDir: root });
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
+db.pragma("journal_mode = WAL");
+db.pragma("synchronous = NORMAL");
+db.pragma("busy_timeout = 15000");
 db.pragma("foreign_keys = ON");
 db.exec(`
 CREATE TABLE IF NOT EXISTS "LocalUser" (
