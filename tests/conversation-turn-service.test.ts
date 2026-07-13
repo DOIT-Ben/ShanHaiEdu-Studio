@@ -3,7 +3,7 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { buildAgentHarnessBudgetEvent, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
-import { readAgentObservationsFromMessages, readLatestRunCheckpointFromMessages } from "@/server/conversation/react-control";
+import { appendAgentObservationMetadata, createAgentObservation, readAgentObservationsFromMessages, readLatestRunCheckpointFromMessages } from "@/server/conversation/react-control";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation, readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
@@ -441,6 +441,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const revised = await turnService.createTurn(project.id, {
       role: "teacher",
       content: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行",
+      confirmedActionId: oldActionId,
     });
     const messages = await service.getMessages(project.id);
     const oldPlanMessage = messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
@@ -461,6 +462,149 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     });
     expect(staleConfirmation.agentTurn).toMatchObject({ shouldRunToolNow: false });
     expect(staleConfirmation.artifact).toBeUndefined();
+  });
+
+  it("pauses an active offer and resumes it with a newly issued action", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-4 pause resume", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const oldActionId = await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: { async respond() { return { ...buildAgentToolTurn("ppt_outline", "ppt_draft"), state: "chatting", shouldRunToolNow: false }; } },
+    });
+
+    const paused = await turnService.createTurn(project.id, { role: "teacher", content: "先暂停这个任务，稍后再继续" });
+    let messages = await service.getMessages(project.id);
+    const pausedPlanMessage = messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
+
+    expect(paused.agentTurn).toMatchObject({ state: "chatting", shouldRunToolNow: false });
+    expect((await service.getProject(project.id)).intentEpoch).toBe(project.intentEpoch ?? 0);
+    expect(pendingDeliveryPlanOf(pausedPlanMessage).status).toBe("paused");
+    expect(readLatestRunCheckpointFromMessages(messages)).toMatchObject({ reason: "teacher_requested_pause", status: "paused" });
+
+    const resumed = await turnService.createTurn(project.id, { role: "teacher", content: "恢复刚才的任务" });
+    messages = await service.getMessages(project.id);
+    const newActionId = await getLatestPendingActionId(service, project.id);
+
+    expect(resumed.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
+    expect(newActionId).toBeTruthy();
+    expect(newActionId).not.toBe(oldActionId);
+    expect(pendingDeliveryPlanOf(messages.find((message) => pendingDeliveryPlanOf(message).actionId === newActionId)).teacherRequest).toBe("测试请求");
+    expect(pendingDeliveryPlanOf(messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId)).status).toBe("superseded");
+    expect(readLatestRunCheckpointFromMessages(messages)).toBeNull();
+  });
+
+  it("cancels an active offer, advances IntentEpoch, and rejects the old action", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-4 cancel", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const oldActionId = await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: { async respond() { return { ...buildAgentToolTurn("ppt_outline", "ppt_draft"), state: "chatting", shouldRunToolNow: false }; } },
+    });
+
+    const canceled = await turnService.createTurn(project.id, { role: "teacher", content: "取消当前任务" });
+    const messages = await service.getMessages(project.id);
+
+    expect(canceled.agentTurn).toMatchObject({ state: "chatting", shouldRunToolNow: false });
+    expect((await service.getProject(project.id)).intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
+    expect(pendingDeliveryPlanOf(messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId)).status).toBe("canceled");
+    expect(readLatestRunCheckpointFromMessages(messages)).toBeNull();
+
+    const stale = await turnService.createTurn(project.id, { role: "teacher", content: "确认开始", confirmedActionId: oldActionId });
+    expect(stale.agentTurn).toMatchObject({ shouldRunToolNow: false });
+    expect(stale.artifact).toBeUndefined();
+  });
+
+  it("asks one concrete question when multiple active offers make continuation ambiguous", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-4 ambiguity", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
+    await seedPendingPlan(service, project.id, "lesson_plan", "lesson_plan");
+    const agent = { respond: vi.fn(async () => ({ ...buildAgentToolTurn("ppt_outline", "ppt_draft"), shouldRunToolNow: false })) };
+    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime(), agent });
+
+    const body = await turnService.createTurn(project.id, { role: "teacher", content: "继续下一步" });
+
+    expect(agent.respond).not.toHaveBeenCalled();
+    expect(body.agentTurn).toMatchObject({ state: "collecting_inputs", shouldRunToolNow: false });
+    expect(body.assistantMessage?.content).toMatch(/公开课教案.*PPT 大纲|PPT 大纲.*公开课教案/);
+    expect(body.assistantMessage?.content.match(/？/g)).toHaveLength(1);
+    expect(body.artifact).toBeUndefined();
+  });
+
+  it("keeps superseded failures in history but removes them from the current IntentEpoch WorldState", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-4 old failure isolation", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const oldFailure = createAgentObservation({
+      projectId: project.id,
+      source: "tool",
+      status: "failed",
+      actionKey: "ppt_outline:ppt_draft",
+      inputHash: "old-input",
+      reasonCodes: ["old_branch_failure"],
+      reportRefs: [],
+      targetLocators: [],
+      responsibleStage: "ppt_outline",
+      minimalNextAction: "repair_upstream",
+      teacherSafeSummary: "旧分支失败。",
+    });
+    await service.addMessage(project.id, { role: "assistant", content: "旧分支失败。", metadata: appendAgentObservationMetadata(undefined, oldFailure) });
+    await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
+    const inputs: MainConversationAgentInput[] = [];
+    const agent = {
+      async respond(input: MainConversationAgentInput) {
+        inputs.push(input);
+        return { assistantMessage: { body: "收到。" }, state: "chatting" as const, quickReplies: [], recommendedOptions: [], shouldRunToolNow: false, runtimeKind: "openai" as const };
+      },
+    };
+    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime(), agent });
+
+    await turnService.createTurn(project.id, { role: "teacher", content: "把大纲改成先冲突后揭秘" });
+    await turnService.createTurn(project.id, { role: "teacher", content: "先聊聊新的开场" });
+
+    const historical = readAgentObservationsFromMessages(await service.getMessages(project.id));
+    const current = inputs.at(-1)?.conversationContext?.agentWorldState?.agentObservations ?? [];
+    expect(historical).toEqual(expect.arrayContaining([expect.objectContaining({ reasonCodes: ["old_branch_failure"] })]));
+    expect(current).toEqual(expect.arrayContaining([expect.objectContaining({ source: "teacher_revision" })]));
+    expect(current).not.toEqual(expect.arrayContaining([expect.objectContaining({ reasonCodes: ["old_branch_failure"] })]));
+  });
+
+  it("uses the existing PPT impact analyzer for an exact page revision and preserves unaffected artifacts", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "V1-4 page impact", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const design = await service.saveArtifact(project.id, {
+      nodeKey: "ppt_design_draft",
+      kind: "ppt_design_draft",
+      title: "PPT逐页设计",
+      status: "needs_review",
+      summary: "已完成逐页设计",
+      markdownContent: "# PPT逐页设计",
+      structuredContent: { pptDesignPackage: validPptDesignPackage() },
+    });
+    await service.approveArtifact(project.id, design.id);
+    await seedPendingPlan(service, project.id, "ppt_design", "ppt_design_draft");
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: { async respond() { return { ...buildAgentToolTurn("ppt_design", "ppt_design_draft"), state: "chatting", shouldRunToolNow: false }; } },
+    });
+
+    await turnService.createTurn(project.id, { role: "teacher", content: "只修改第6页的文字和排版，其他页保持不变" });
+    const messages = await service.getMessages(project.id);
+    const revisionMessage = messages.find((message) => message.role === "teacher" && message.content.includes("第6页"));
+    const impact = revisionMessage?.metadata.conversationControlImpact as Record<string, unknown>;
+
+    expect(impact).toMatchObject({ impactScope: "unit", preservedArtifacts: true });
+    expect(impact.domainImpact).toMatchObject({
+      nextAction: "repair_unit",
+      invalidatedPageIds: ["page_06"],
+      invalidateReports: true,
+      impactDigest: expect.any(String),
+    });
+    expect(await service.getArtifact(project.id, design.id)).toMatchObject({ status: "approved", isApproved: true });
   });
 
   it("persists a checkpoint and blocks the third identical failed tool attempt", async () => {

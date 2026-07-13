@@ -7,6 +7,8 @@ export type ConversationControlDecisionKind =
   | "confirm_active_offer"
   | "switch_to_capability"
   | "clarify_offer"
+  | "pause_active_offer"
+  | "resume_paused_offer"
   | "cancel_active_offer"
   | "revise_active_offer"
   | "ordinary_message";
@@ -17,9 +19,13 @@ export type ConversationControlDecision = {
   targetCapabilityId?: CapabilityId;
   usePendingActionId?: boolean;
   supersedePendingAction?: boolean;
+  pendingPlanStatus?: "paused" | "canceled" | "superseded";
+  advanceIntentEpoch?: boolean;
+  createPauseCheckpoint?: boolean;
 };
 
 export type ConversationControlPendingPlan = {
+  status?: "pending" | "paused" | "confirmed" | "canceled" | "superseded";
   actionId?: string;
   teacherRequest: string;
   toolPlan: CapabilityToolPlan;
@@ -35,6 +41,127 @@ export function resolveConversationControl(input: {
 }): { decision: ConversationControlDecision; turn: MainAgentTurn } {
   const targetCapabilityId = resolveRequestedCapability(input.userMessage);
   const pendingCapabilityId = input.pendingPlan?.toolPlan.capabilityId;
+
+  if (input.pendingPlan && isExplicitPause(input.userMessage)) {
+    return {
+      decision: {
+        kind: "pause_active_offer",
+        reasonCode: "teacher_paused_active_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+        pendingPlanStatus: "paused",
+        createPauseCheckpoint: true,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "已暂停刚才的任务，当前内容会保留。需要继续时直接告诉我恢复刚才的任务。" },
+        state: "chatting",
+        toolPlan: undefined,
+        deliveryPlan: undefined,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
+  if (input.pendingPlan && isExplicitCancellation(input.userMessage)) {
+    return {
+      decision: {
+        kind: "cancel_active_offer",
+        reasonCode: "teacher_cancelled_active_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+        pendingPlanStatus: "canceled",
+        advanceIntentEpoch: true,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "已取消刚才待执行的内容。你可以直接告诉我接下来要调整什么。" },
+        state: "chatting",
+        toolPlan: undefined,
+        deliveryPlan: undefined,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
+  if (input.pendingPlan && targetCapabilityId && targetCapabilityId !== pendingCapabilityId) {
+    return {
+      decision: {
+        kind: "switch_to_capability",
+        reasonCode: "explicit_capability_switch",
+        targetCapabilityId,
+        supersedePendingAction: true,
+        pendingPlanStatus: "superseded",
+        advanceIntentEpoch: true,
+      },
+      turn: buildCapabilityTurn(targetCapabilityId, input.userMessage, input.capabilityAvailability, input.agentTurn.runtimeKind),
+    };
+  }
+
+  if (input.pendingPlan?.status === "paused" && isExplicitResume(input.userMessage)) {
+    return {
+      decision: {
+        kind: "resume_paused_offer",
+        reasonCode: "teacher_resumed_paused_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+        pendingPlanStatus: "superseded",
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "已恢复刚才的任务。为避免误操作，请确认后继续执行。" },
+        state: "awaiting_confirmation",
+        toolPlan: { ...input.pendingPlan.toolPlan, requiresConfirmation: true },
+        deliveryPlan: input.pendingPlan.deliveryPlan,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
+  if (input.pendingPlan && isActiveOfferRevision(input.userMessage)) {
+    return {
+      decision: {
+        kind: "revise_active_offer",
+        reasonCode: "teacher_revised_active_offer",
+        targetCapabilityId: pendingCapabilityId,
+        supersedePendingAction: true,
+        pendingPlanStatus: "superseded",
+        advanceIntentEpoch: true,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "我已按你的新要求更新这一步，旧版本不会继续执行。请确认后我再按新要求处理。" },
+        state: "awaiting_confirmation",
+        toolPlan: {
+          ...input.pendingPlan.toolPlan,
+          planId: `${input.pendingPlan.toolPlan.capabilityId}:revised-offer`,
+          inputDraft: { ...input.pendingPlan.toolPlan.inputDraft, teacherGoal: input.userMessage },
+          requiresConfirmation: true,
+        },
+        deliveryPlan: input.pendingPlan.deliveryPlan,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
+
+  if (input.pendingPlan?.status === "paused") {
+    return {
+      decision: { kind: "clarify_offer", reasonCode: "paused_offer_requires_resume", targetCapabilityId: pendingCapabilityId },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "刚才的任务仍处于暂停状态。你可以说“恢复刚才的任务”，或者告诉我新的方向。" },
+        state: "chatting",
+        toolPlan: undefined,
+        deliveryPlan: undefined,
+        shouldRunToolNow: false,
+        artifactRefs: [],
+      },
+    };
+  }
 
   if (input.pendingPlan && input.receivedConfirmedActionId && input.receivedConfirmedActionId !== input.pendingPlan.actionId) {
     return {
@@ -66,63 +193,6 @@ export function resolveConversationControl(input: {
     };
   }
 
-  if (input.pendingPlan && targetCapabilityId && targetCapabilityId !== pendingCapabilityId) {
-    return {
-      decision: {
-        kind: "switch_to_capability",
-        reasonCode: "explicit_capability_switch",
-        targetCapabilityId,
-        supersedePendingAction: true,
-      },
-      turn: buildCapabilityTurn(targetCapabilityId, input.userMessage, input.capabilityAvailability, input.agentTurn.runtimeKind),
-    };
-  }
-
-  if (input.pendingPlan && isExplicitCancellation(input.userMessage)) {
-    return {
-      decision: {
-        kind: "cancel_active_offer",
-        reasonCode: "teacher_cancelled_active_offer",
-        targetCapabilityId: pendingCapabilityId,
-        supersedePendingAction: true,
-      },
-      turn: {
-        ...input.agentTurn,
-        assistantMessage: { body: "已取消刚才待执行的内容。你可以直接告诉我接下来要调整什么。" },
-        state: "chatting",
-        toolPlan: undefined,
-        deliveryPlan: undefined,
-        shouldRunToolNow: false,
-        artifactRefs: [],
-      },
-    };
-  }
-
-  if (input.pendingPlan && isActiveOfferRevision(input.userMessage)) {
-    return {
-      decision: {
-        kind: "revise_active_offer",
-        reasonCode: "teacher_revised_active_offer",
-        targetCapabilityId: pendingCapabilityId,
-        supersedePendingAction: true,
-      },
-      turn: {
-        ...input.agentTurn,
-        assistantMessage: { body: "我已按你的新要求更新这一步，旧版本不会继续执行。请确认后我再按新要求处理。" },
-        state: "awaiting_confirmation",
-        toolPlan: {
-          ...input.pendingPlan.toolPlan,
-          planId: `${input.pendingPlan.toolPlan.capabilityId}:revised-offer`,
-          inputDraft: { ...input.pendingPlan.toolPlan.inputDraft, teacherGoal: input.userMessage },
-          requiresConfirmation: true,
-        },
-        deliveryPlan: input.pendingPlan.deliveryPlan,
-        shouldRunToolNow: false,
-        artifactRefs: [],
-      },
-    };
-  }
-
   if (input.pendingPlan && isExplicitConfirmation(input.userMessage, pendingCapabilityId)) {
     const requiresHumanGate = toolRequiresHumanGate(pendingCapabilityId!);
     return {
@@ -139,6 +209,20 @@ export function resolveConversationControl(input: {
         toolPlan: input.pendingPlan.toolPlan,
         deliveryPlan: input.pendingPlan.deliveryPlan,
         shouldRunToolNow: !requiresHumanGate || Boolean(input.receivedConfirmedActionId),
+      },
+    };
+  }
+
+  if (input.pendingPlan && isContinuationSelection(input.userMessage) && toolRequiresHumanGate(pendingCapabilityId!)) {
+    return {
+      decision: { kind: "clarify_offer", reasonCode: "high_cost_continuation_requires_bound_confirmation", targetCapabilityId: pendingCapabilityId },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: `${input.pendingPlan.toolPlan.reasonForUser}这一步会生成真实文件或调用外部生成能力，请使用当前确认选项明确授权后开始。` },
+        state: "awaiting_confirmation",
+        toolPlan: input.pendingPlan.toolPlan,
+        deliveryPlan: input.pendingPlan.deliveryPlan,
+        shouldRunToolNow: false,
       },
     };
   }
@@ -262,8 +346,25 @@ function isExplicitConfirmation(text: string, capabilityId?: CapabilityId): bool
 
 function isExplicitCancellation(text: string): boolean {
   const normalized = text.trim().replace(/\s+/g, "");
-  return /(?:取消|算了|停止|暂停|先不做|暂时不做|不要做)(?:这一步|刚才|当前|了|$)/.test(normalized)
+  return /(?:取消|拒绝|算了|不做|停止|终止|先不做|暂时不做|不要做)(?:这一步|刚才|当前|任务|了|$)/.test(normalized)
     || /(?:这一步|刚才|当前).*(?:取消|停止|先不做|暂时不做)/.test(normalized);
+}
+
+function isExplicitPause(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "");
+  return /(?:暂停|停一下|先停|先放一放|稍后再继续)(?:这一步|刚才|当前|任务|了|$)/.test(normalized)
+    || /(?:这一步|刚才|当前|任务).*(?:暂停|停一下|先停)/.test(normalized);
+}
+
+function isExplicitResume(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "");
+  return /(?:恢复|继续|接着)(?:刚才|之前|上次|暂停的)?的?(?:任务|计划|那一步)/.test(normalized)
+    || /(?:刚才|之前|上次|暂停的)(?:任务|计划|那一步).*(?:恢复|继续|接着)/.test(normalized);
+}
+
+function isContinuationSelection(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
+  return /^(继续|接着做|继续下一步|继续推进|往下做|按计划继续)$/.test(normalized);
 }
 
 function isActiveOfferRevision(text: string): boolean {

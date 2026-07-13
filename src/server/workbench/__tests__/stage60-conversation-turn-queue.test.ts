@@ -134,6 +134,30 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(pendingDeliveryPlanOf(assistantPlanMessage)).toMatchObject({ status: "confirmed", actionId });
   });
 
+  it("queued execution treats edited quick-reply text as a revision and never spends the old action", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "V1-4 queued edited action", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
+    await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
+    const oldActionId = await getLatestPendingActionId(service, project.id);
+    const edited = await service.addMessage(project.id, {
+      role: "teacher",
+      content: "把叙事改成先冲突后揭秘，不要按刚才那版执行",
+      metadata: { confirmedActionId: oldActionId },
+    });
+    await service.enqueueConversationTurn(project.id, { teacherMessageId: edited.id });
+
+    const result = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
+    const snapshot = await service.getProjectSnapshot(project.id);
+    const oldPlan = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
+
+    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(snapshot.artifacts).toHaveLength(0);
+    expect(snapshot.project.intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
+    expect(pendingDeliveryPlanOf(oldPlan)).toMatchObject({ status: "superseded", actionId: oldActionId });
+    expect(await getLatestPendingActionId(service, project.id)).not.toBe(oldActionId);
+  });
+
   it("POST /messages accepts actionId as an alias for confirmedActionId before queued execution", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API actionId 入队确认", grade: "五年级", subject: "数学", lessonTopic: "百分数" });

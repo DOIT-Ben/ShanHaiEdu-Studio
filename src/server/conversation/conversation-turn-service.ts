@@ -13,6 +13,7 @@ import {
   appendRunCheckpointMetadata,
   clearRunCheckpointMetadata,
   createAgentObservation,
+  createRunCheckpoint,
   guardReActTransition,
   readAgentObservationsFromMessages,
   readLatestRunCheckpointFromMessages,
@@ -25,6 +26,8 @@ import { routeToolCall } from "@/server/tools/tool-router";
 import { getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
 import { isVerifiedProviderToolSuccess, type ToolExecutionResult } from "@/server/tools/tool-types";
 import type { ValidationReport } from "@/server/quality/quality-types";
+import { analyzePptRevisionImpact } from "@/server/ppt-quality/ppt-impact-analysis";
+import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactKind, ArtifactRecord, ConversationMessageRecord, ExecutionIdentitySnapshot, ProjectExecutionFence, ProjectRecord, WorkflowNodeKey } from "@/server/workbench/types";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
@@ -36,7 +39,7 @@ import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
 type PendingDeliveryPlanMetadata = {
-  status: "pending" | "confirmed" | "superseded";
+  status: "pending" | "paused" | "confirmed" | "canceled" | "superseded";
   teacherRequest: string;
   toolPlan: CapabilityToolPlan;
   deliveryPlan?: DeliveryPlan;
@@ -169,9 +172,10 @@ async function executeTeacherMessageTurn(input: {
   const turnJobs = await input.service.getConversationTurnJobs(input.projectId);
   const availableArtifactKinds = artifacts.map((artifact) => artifact.kind);
 
-  const pendingPlan = findPendingDeliveryPlan(messages);
+  const activePlans = findActiveDeliveryPlans(messages);
+  const pendingPlan = resolveActiveDeliveryPlan(activePlans, input.confirmedActionId);
   const toolObservations = readActiveToolObservationsFromMessages(messages);
-  const agentObservations = readAgentObservationsFromMessages(messages);
+  const agentObservations = readAgentObservationsForCurrentIntent(messages, project.intentEpoch ?? 0);
   const agentToolReports = readAgentToolReportsFromMessages(messages);
   const runCheckpoint = readLatestRunCheckpointFromMessages(messages);
   const budgetEvents = readAgentHarnessBudgetEventsFromMessages(messages);
@@ -181,6 +185,31 @@ async function executeTeacherMessageTurn(input: {
     artifacts,
     providerAvailability: resolveRuntimeProviderAvailability(),
   });
+  if (activePlans.length > 1 && !input.confirmedActionId && isGenericContinuationRequest(teacherContent)) {
+    const labels = activePlans.slice(0, 3).map((plan) => getCapabilityDefinition(plan.toolPlan.capabilityId).userLabel);
+    const content = `当前有多个待处理方向：${labels.join("、")}。你想继续哪一个？`;
+    const assistantMessage = await input.service.addMessage(input.projectId, {
+      role: "assistant",
+      content,
+      metadata: { conversationControlDecision: { kind: "clarify_offer", reasonCode: "multiple_active_offers" } },
+    });
+    return {
+      message: input.triggerMessage,
+      assistantMessage,
+      agentTurn: {
+        assistantMessage: { body: content },
+        state: "collecting_inputs",
+        quickReplies: activePlans.slice(0, 3).map((plan, index) => ({
+          label: labels[index],
+          prompt: `继续${labels[index]}`,
+          recommended: index === 0,
+        })),
+        recommendedOptions: [],
+        shouldRunToolNow: false,
+        runtimeKind: "deterministic",
+      },
+    };
+  }
   const agentWorldState = buildAgentWorldState({
     project,
     workflowNodes,
@@ -223,13 +252,22 @@ async function executeTeacherMessageTurn(input: {
     ?? (controlResolution.decision.usePendingActionId ? pendingPlan?.actionId : undefined);
 
   if (controlResolution.decision.supersedePendingAction && pendingPlan) {
-    await updatePendingPlanStatus(input.service, input.projectId, pendingPlan, "superseded");
+    await updatePendingPlanStatus(
+      input.service,
+      input.projectId,
+      pendingPlan,
+      controlResolution.decision.pendingPlanStatus ?? "superseded",
+    );
     const currentIntentEpoch = project.intentEpoch ?? 0;
-    const planVersion = await input.service.advanceProjectIntentEpoch(input.projectId, currentIntentEpoch);
+    const planVersion = controlResolution.decision.advanceIntentEpoch
+      ? await input.service.advanceProjectIntentEpoch(input.projectId, currentIntentEpoch)
+      : currentIntentEpoch;
+    const isPause = controlResolution.decision.kind === "pause_active_offer";
+    const isCancel = controlResolution.decision.kind === "cancel_active_offer";
     const revisionObservation = createAgentObservation({
       projectId: input.projectId,
       source: "teacher_revision",
-      status: "repair",
+      status: isPause || isCancel ? "needs_input" : "repair",
       actionKey: `${controlResolution.decision.kind}:${pendingPlan.toolPlan.capabilityId}`,
       inputHash: hashRunInput({
         planId: pendingPlan.toolPlan.planId,
@@ -241,14 +279,34 @@ async function executeTeacherMessageTurn(input: {
       reportRefs: [],
       targetLocators: [],
       responsibleStage: pendingPlan.toolPlan.capabilityId,
-      minimalNextAction: controlResolution.decision.kind === "cancel_active_offer" ? "pause" : "repair_upstream",
-      teacherSafeSummary: controlResolution.decision.kind === "cancel_active_offer"
-        ? "已取消刚才待执行的内容。"
-        : "已按新的要求废止旧计划，后续内容会重新核对。",
+      minimalNextAction: isPause || isCancel ? "pause" : "repair_upstream",
+      teacherSafeSummary: isPause
+        ? "已暂停刚才待执行的内容。"
+        : isCancel ? "已取消刚才待执行的内容。" : "已按新的要求废止旧计划，后续内容会重新核对。",
     });
-    await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, clearRunCheckpointMetadata(
-      appendAgentObservationMetadata(input.triggerMessage.metadata, revisionObservation),
-    ));
+    const observationMetadata = appendAgentObservationMetadata(input.triggerMessage.metadata, revisionObservation);
+    const checkpointMetadata = controlResolution.decision.createPauseCheckpoint
+      ? appendRunCheckpointMetadata(observationMetadata, createRunCheckpoint({
+          projectId: input.projectId,
+          planVersion,
+          reason: "teacher_requested_pause",
+          actionKey: `${pendingPlan.toolPlan.capabilityId}:${pendingPlan.toolPlan.expectedArtifactKind ?? ""}`,
+          inputHash: revisionObservation.inputHash,
+          observationRefs: [revisionObservation.observationId],
+        }))
+      : clearRunCheckpointMetadata(observationMetadata);
+    await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
+      ...checkpointMetadata,
+      conversationControlImpact: createConversationControlImpact({
+        decision: controlResolution.decision,
+        previousIntentEpoch: currentIntentEpoch,
+        nextIntentEpoch: planVersion,
+        capabilityId: pendingPlan.toolPlan.capabilityId,
+        sourceActionId: pendingPlan.actionId,
+        teacherMessage: teacherContent,
+        artifacts,
+      }),
+    });
   }
 
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
@@ -279,7 +337,10 @@ async function executeTeacherMessageTurn(input: {
     });
   }
   const assistantMetadata = mergeMessageMetadata(
-    createPendingDeliveryPlanMetadata(agentTurn, teacherContent),
+    createPendingDeliveryPlanMetadata(
+      agentTurn,
+      controlResolution.decision.kind === "resume_paused_offer" && pendingPlan ? pendingPlan.teacherRequest : teacherContent,
+    ),
     createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
     { conversationControlDecision: controlResolution.decision },
   );
@@ -1075,7 +1136,7 @@ async function replanAfterBusinessToolResult(input: {
     contextPackage,
     pendingPlan,
     toolObservations: readActiveToolObservationsFromMessages(messages),
-    agentObservations: readAgentObservationsFromMessages(messages),
+    agentObservations: readAgentObservationsForCurrentIntent(messages, project.intentEpoch ?? 0),
     agentToolReports: readAgentToolReportsFromMessages(messages),
     runCheckpoint: readLatestRunCheckpointFromMessages(messages),
   });
@@ -1491,10 +1552,26 @@ function findPendingDeliveryPlan(messages: ConversationMessageRecord[]): Pending
   return null;
 }
 
+function findActiveDeliveryPlans(messages: ConversationMessageRecord[]): PendingDeliveryPlanSnapshot[] {
+  const plans: PendingDeliveryPlanSnapshot[] = [];
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "assistant") continue;
+    const plan = parsePendingDeliveryPlanMetadata(message.metadata.pendingDeliveryPlan);
+    if (!plan || (plan.status !== "pending" && plan.status !== "paused")) continue;
+    plans.push({ ...plan, messageId: message.id, messageMetadata: message.metadata });
+  }
+  return plans;
+}
+
+function resolveActiveDeliveryPlan(plans: PendingDeliveryPlanSnapshot[], confirmedActionId?: string) {
+  if (confirmedActionId) return plans.find((plan) => plan.actionId === confirmedActionId) ?? plans[0] ?? null;
+  return plans.length === 1 ? plans[0] : null;
+}
+
 function parsePendingDeliveryPlanMetadata(value: unknown, options: { allowMissingActionId?: boolean } = {}): PendingDeliveryPlanMetadata | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Partial<PendingDeliveryPlanMetadata>;
-  if (candidate.status !== "pending" && candidate.status !== "confirmed" && candidate.status !== "superseded") return null;
+  if (!isPendingDeliveryPlanStatus(candidate.status)) return null;
   if (typeof candidate.teacherRequest !== "string" || !candidate.teacherRequest.trim()) return null;
   if (!candidate.toolPlan || typeof candidate.toolPlan !== "object") return null;
   if (candidate.deliveryPlan !== undefined && (typeof candidate.deliveryPlan !== "object" || Array.isArray(candidate.deliveryPlan))) return null;
@@ -1509,6 +1586,87 @@ function parsePendingDeliveryPlanMetadata(value: unknown, options: { allowMissin
     runtimeKind: candidate.runtimeKind,
     actionId: typeof candidate.actionId === "string" ? candidate.actionId : undefined,
   };
+}
+
+function isPendingDeliveryPlanStatus(value: unknown): value is PendingDeliveryPlanMetadata["status"] {
+  return value === "pending" || value === "paused" || value === "confirmed" || value === "canceled" || value === "superseded";
+}
+
+function createConversationControlImpact(input: {
+  decision: import("@/server/conversation/conversation-control-resolver").ConversationControlDecision;
+  previousIntentEpoch: number;
+  nextIntentEpoch: number;
+  capabilityId: CapabilityId;
+  sourceActionId?: string;
+  teacherMessage: string;
+  artifacts: ArtifactRecord[];
+}) {
+  const domainImpact = resolveDomainRevisionImpact(input.teacherMessage, input.artifacts);
+  const scope = input.decision.kind === "pause_active_offer" || input.decision.kind === "cancel_active_offer"
+    ? "none"
+    : domainImpact?.nextAction === "repair_unit" ? "unit" : "upstream";
+  const payload = {
+    decisionKind: input.decision.kind,
+    reasonCode: input.decision.reasonCode,
+    previousIntentEpoch: input.previousIntentEpoch,
+    nextIntentEpoch: input.nextIntentEpoch,
+    capabilityId: input.capabilityId,
+    sourceActionBound: Boolean(input.sourceActionId),
+    impactScope: scope,
+    preservedArtifacts: true,
+    domainImpact,
+  };
+  return { ...payload, impactDigest: hashRunInput(payload) };
+}
+
+function resolveDomainRevisionImpact(teacherMessage: string, artifacts: ArtifactRecord[]) {
+  const pageMatch = teacherMessage.match(/第\s*(\d{1,3})\s*页/);
+  if (!pageMatch) return null;
+  const pageId = `page_${pageMatch[1].padStart(2, "0")}`;
+  const designArtifact = [...artifacts].reverse().find((artifact) => artifact.kind === "ppt_design_draft");
+  const packageValue = designArtifact?.structuredContent.pptDesignPackage;
+  if (!isPptDesignPackageShape(packageValue)) {
+    return {
+      nextAction: "ask_teacher" as const,
+      requestedPageIds: [pageId],
+      reasonCodes: ["ppt_design_package_missing_for_exact_impact"],
+    };
+  }
+  try {
+    return analyzePptRevisionImpact(packageValue, { kind: "page_text_layout", pageId });
+  } catch {
+    return {
+      nextAction: "ask_teacher" as const,
+      requestedPageIds: [pageId],
+      reasonCodes: ["ppt_page_locator_not_found"],
+    };
+  }
+}
+
+function isPptDesignPackageShape(value: unknown): value is PptDesignPackage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Array.isArray(record.pageSpecs) && Array.isArray(record.objectives) && Array.isArray(record.evidenceBindings)
+    && Boolean(record.samplePlan) && typeof record.samplePlan === "object";
+}
+
+function readAgentObservationsForCurrentIntent(messages: ConversationMessageRecord[], intentEpoch: number) {
+  let boundary = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const impact = messages[index].metadata.conversationControlImpact;
+    if (!impact || typeof impact !== "object" || Array.isArray(impact)) continue;
+    const record = impact as Record<string, unknown>;
+    if (record.nextIntentEpoch === intentEpoch && record.previousIntentEpoch !== record.nextIntentEpoch) {
+      boundary = index;
+      break;
+    }
+  }
+  return readAgentObservationsFromMessages(messages.slice(boundary));
+}
+
+function isGenericContinuationRequest(text: string) {
+  const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
+  return /^(继续|继续下一步|接着做|继续推进|往下做|按计划继续)$/.test(normalized);
 }
 
 function toMainAgentConversationContext(messages: ConversationMessageRecord[], pendingPlan: PendingDeliveryPlanSnapshot | null) {
