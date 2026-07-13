@@ -45,6 +45,7 @@ test("production preflight passes with complete local production env without lea
       SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
       NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
       SHANHAI_ADMIN_BOOTSTRAP_CONFIRMED: "1",
+      SHANHAI_APP_INSTANCE_COUNT: "1",
       DATABASE_URL: `file:${databasePath}`,
       ARTIFACT_STORAGE_ROOT: storageRoot,
       AGENT_BRAIN_CHANNEL: "fallback",
@@ -113,6 +114,27 @@ test("production preflight requires explicit trusted proxy mode", async () => {
     const result = await runProductionPreflight({ cwd, env });
     assert.equal(result.checks.find((check) => check.id === "trusted-proxy")?.ok, false);
   }
+});
+
+test("production preflight requires an explicit single application instance for SQLite", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const storageRoot = makeExternalStorageRoot();
+
+  for (const overrides of [
+    { SHANHAI_APP_INSTANCE_COUNT: undefined },
+    { SHANHAI_APP_INSTANCE_COUNT: "2" },
+    { SHANHAI_APP_INSTANCE_COUNT: "1", WEB_CONCURRENCY: "2" },
+    { SHANHAI_APP_INSTANCE_COUNT: "1", PM2_INSTANCES: "max" },
+  ]) {
+    const env = { ...completeEnv(storageRoot), ...overrides };
+    if (overrides.SHANHAI_APP_INSTANCE_COUNT === undefined) delete env.SHANHAI_APP_INSTANCE_COUNT;
+    const result = await runProductionPreflight({ cwd, env });
+    assert.equal(result.checks.find((check) => check.id === "single-instance-topology")?.ok, false);
+  }
+
+  const passing = await runProductionPreflight({ cwd, env: completeEnv(storageRoot) });
+  assert.equal(passing.checks.find((check) => check.id === "single-instance-topology")?.ok, true);
 });
 
 test("production preflight requires a real active password administrator in SQLite", async () => {
@@ -217,6 +239,7 @@ function completeEnv(storageRoot, { databasePath = makeAuthDatabase({ admin: tru
     SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
     NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
     SHANHAI_ADMIN_BOOTSTRAP_CONFIRMED: "1",
+    SHANHAI_APP_INSTANCE_COUNT: "1",
     DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: storageRoot,
     OPENAI_API_KEY: "test-openai-key-do-not-print",

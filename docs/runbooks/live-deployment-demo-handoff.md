@@ -1,5 +1,7 @@
 # ShanHaiEdu 真实环境部署演示交接包
 
+> V1 邀请制正式发布、单实例 SQLite 拓扑、离线备份和灾难恢复以 `docs\runbooks\v1-invited-release-recovery.md` 为当前权威操作入口；本文保留为早期部署演示交接证据。
+
 日期：2026-07-08
 
 ## 1. 当前结论

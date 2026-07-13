@@ -55,6 +55,7 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
     checkServerAuthMode(env),
     checkClientAuthMode(env),
     checkTrustedProxy(env),
+    checkSingleInstanceTopology(env),
     checkPublicRegistration(env),
     checkDatabaseUrl(cwd, env),
     checkAdminReadiness(cwd, env),
@@ -109,6 +110,22 @@ function checkServerAuthMode(env) {
     message: ok ? "Server authentication mode is password." : "Set SHANHAI_AUTH_MODE=password for production.",
     missing: env.SHANHAI_AUTH_MODE?.trim() ? [] : ["SHANHAI_AUTH_MODE"],
     source: ok ? "password" : "invalid",
+  });
+}
+
+function checkSingleInstanceTopology(env) {
+  const declared = parsePositiveInteger(env.SHANHAI_APP_INSTANCE_COUNT);
+  const workerOverrides = ["WEB_CONCURRENCY", "PM2_INSTANCES", "NODE_CLUSTER_WORKERS"]
+    .filter((name) => env[name]?.trim())
+    .map((name) => ({ name, count: parsePositiveInteger(env[name]) }));
+  const conflicting = workerOverrides.filter((entry) => entry.count !== 1).map((entry) => entry.name);
+  const ok = declared === 1 && conflicting.length === 0;
+  return buildCheck("single-instance-topology", ok, {
+    message: ok
+      ? "Single application instance topology is declared for SQLite."
+      : "Declare exactly one application instance and remove multi-worker overrides before using SQLite in production.",
+    missing: env.SHANHAI_APP_INSTANCE_COUNT?.trim() ? conflicting : ["SHANHAI_APP_INSTANCE_COUNT", ...conflicting],
+    source: ok ? "single_process_sqlite" : "invalid",
   });
 }
 
@@ -280,6 +297,13 @@ function missingEnv(env, keys) {
 
 function hasAll(env, keys) {
   return missingEnv(env, keys).length === 0;
+}
+
+function parsePositiveInteger(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(normalized)) return null;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function canAccessDirectory(directory) {
