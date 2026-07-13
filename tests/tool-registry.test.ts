@@ -183,11 +183,16 @@ describe("ToolRegistry", () => {
         "ppt_design_draft",
         "pptx_artifact",
         "image_prompts",
+        "video_script_generate",
         "concat_only_assemble",
       ],
       producedArtifactKind: "final_delivery",
     });
-    expect(tool.inputSchema.required).toEqual(["projectId", "userInstruction", "artifactRefs"]);
+    expect(tool.inputSchema.required).toEqual(["projectId", "userInstruction", "artifactRefs", "classroomRunSpecDraft"]);
+    expect(tool.inputSchema.properties?.classroomRunSpecDraft).toMatchObject({
+      type: "object",
+      required: ["schemaVersion", "courseAnchor", "sequence"],
+    });
   });
 
   it("accepts project id and nullable user instruction for create_requirement_spec", () => {

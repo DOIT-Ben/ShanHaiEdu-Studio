@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import JSZip from "jszip";
 
-export type FinalPackageRole = "lesson_plan" | "pptx" | "pdf" | "video";
+export type FinalPackageRole = "lesson_plan" | "pptx" | "pdf" | "image" | "video";
 
 export type FinalPackageFile = {
   role: FinalPackageRole;
@@ -15,12 +15,16 @@ export type FinalPackageFile = {
   courseAnchor: string;
   reviewBatchId: string;
   deliveryStatus: "final_eligible";
+  sourceArtifactId: string;
+  sourceArtifactVersion: number;
+  sourceArtifactDigest: string;
 };
 
 export type ClassroomRunSpec = {
   schemaVersion: "classroom-run-spec.v1";
   courseVersionId: string;
   courseAnchor: string;
+  reviewBatchId: string;
   sequence: Array<{
     ordinal: number;
     action: "play_intro_video" | "ask_return_question" | "open_ppt" | "teacher_explain" | "reveal_answer";
@@ -36,7 +40,7 @@ export type FinalPackageMediaEvidence = {
   video: { durationSeconds: number; width: number; height: number; fps: number; videoCodec: string; audioCodec: string };
 };
 
-type Inspectors = {
+export type FinalPackageInspectors = {
   pptx: (buffer: Buffer) => Promise<FinalPackageMediaEvidence["pptx"]>;
   pdf: (filePath: string) => FinalPackageMediaEvidence["pdf"];
   video: (filePath: string) => FinalPackageMediaEvidence["video"];
@@ -46,10 +50,11 @@ export async function buildVersionedFinalPackage(input: {
   files: FinalPackageFile[];
   classroomRunSpec: ClassroomRunSpec;
   teacherSignoff: boolean;
-  inspectors?: Partial<Inspectors>;
+  inspectors?: Partial<FinalPackageInspectors>;
 }): Promise<{ buffer: Buffer; manifest: Record<string, unknown>; sha256: string }> {
   const files = validateFileSet(input.files, input.classroomRunSpec);
-  const inspectors: Inspectors = {
+  validateClassroomRunSpec(input.classroomRunSpec);
+  const inspectors: FinalPackageInspectors = {
     pptx: input.inspectors?.pptx ?? inspectPptx,
     pdf: input.inspectors?.pdf ?? inspectPdf,
     video: input.inspectors?.video ?? inspectVideo,
@@ -69,7 +74,6 @@ export async function buildVersionedFinalPackage(input: {
     video: inspectors.video(fileByRole(files, "video").filePath),
   };
   validateMediaEvidence(mediaEvidence);
-  validateClassroomRunSpec(input.classroomRunSpec);
 
   const manifest = {
     schemaVersion: "final-package-manifest.v1",
@@ -78,13 +82,16 @@ export async function buildVersionedFinalPackage(input: {
     reviewBatchId: files[0].reviewBatchId,
     packageStatus: input.teacherSignoff ? "teacher_signed_off" : "integration_review_passed",
     teacherSignoff: input.teacherSignoff,
-    requiredRoles: ["lesson_plan", "pptx", "pdf", "video"],
+    requiredRoles: ["lesson_plan", "pptx", "pdf", "image", "video"],
     mediaEvidence,
     files: Object.fromEntries(files.map((file) => [file.role, {
       fileName: file.packageFileName,
       bytes: buffers.get(file.role)!.length,
       sha256: file.sha256.toLowerCase(),
       deliveryStatus: file.deliveryStatus,
+      sourceArtifactId: file.sourceArtifactId,
+      sourceArtifactVersion: file.sourceArtifactVersion,
+      sourceArtifactDigest: file.sourceArtifactDigest,
     }])),
   };
 
@@ -103,8 +110,24 @@ export async function verifyFinalPackageBuffer(buffer: Buffer, expectedManifest?
   const manifestEntry = zip.file("manifest.json");
   const runSpecEntry = zip.file("classroom-run-spec.json");
   if (!manifestEntry || !runSpecEntry) throw new Error("final_package_required_metadata_missing");
-  const manifest = JSON.parse(await manifestEntry.async("string")) as { files?: Record<string, { fileName?: string; bytes?: number; sha256?: string }> };
+  const manifest = JSON.parse(await manifestEntry.async("string")) as {
+    courseVersionId?: string;
+    courseAnchor?: string;
+    reviewBatchId?: string;
+    requiredRoles?: string[];
+    files?: Record<string, { fileName?: string; bytes?: number; sha256?: string }>;
+  };
   if (expectedManifest && JSON.stringify(manifest) !== JSON.stringify(expectedManifest)) throw new Error("final_package_manifest_changed");
+  const requiredRoles: FinalPackageRole[] = ["lesson_plan", "pptx", "pdf", "image", "video"];
+  if (manifest.requiredRoles?.length !== requiredRoles.length || Object.keys(manifest.files ?? {}).length !== requiredRoles.length ||
+      requiredRoles.some((role) => !manifest.requiredRoles?.includes(role) || !manifest.files?.[role])) {
+    throw new Error("final_package_manifest_roles_invalid");
+  }
+  const runSpec = JSON.parse(await runSpecEntry.async("string")) as Partial<ClassroomRunSpec>;
+  if (runSpec.courseVersionId !== manifest.courseVersionId || runSpec.courseAnchor !== manifest.courseAnchor || runSpec.reviewBatchId !== manifest.reviewBatchId) {
+    throw new Error("final_package_run_spec_binding_invalid");
+  }
+  validateClassroomRunSpec(runSpec as ClassroomRunSpec);
   for (const [role, evidence] of Object.entries(manifest.files ?? {})) {
     if (!evidence.fileName || !evidence.sha256) throw new Error(`final_package_manifest_file_invalid:${role}`);
     const entry = zip.file(evidence.fileName);
@@ -116,16 +139,21 @@ export async function verifyFinalPackageBuffer(buffer: Buffer, expectedManifest?
 }
 
 function validateFileSet(files: FinalPackageFile[], runSpec: ClassroomRunSpec): FinalPackageFile[] {
-  const required: FinalPackageRole[] = ["lesson_plan", "pptx", "pdf", "video"];
+  const required: FinalPackageRole[] = ["lesson_plan", "pptx", "pdf", "image", "video"];
   const byRole = new Map(files.map((file) => [file.role, file]));
   if (files.length !== required.length || required.some((role) => !byRole.has(role))) throw new Error("final_package_required_file_missing");
   if (new Set(files.map((file) => file.role)).size !== files.length) throw new Error("final_package_duplicate_role");
+  if (new Set(files.map((file) => file.packageFileName.toLowerCase())).size !== files.length) throw new Error("final_package_duplicate_file_name");
   if (files.some((file) => file.deliveryStatus !== "final_eligible")) throw new Error("final_package_artifact_not_eligible");
   const binding = files.map((file) => `${file.courseVersionId}\u0000${file.courseAnchor}\u0000${file.reviewBatchId}`);
   if (new Set(binding).size !== 1) throw new Error("final_package_version_binding_mismatch");
-  if (runSpec.courseVersionId !== files[0].courseVersionId || runSpec.courseAnchor !== files[0].courseAnchor) throw new Error("classroom_run_spec_version_mismatch");
+  if (runSpec.courseVersionId !== files[0].courseVersionId || runSpec.courseAnchor !== files[0].courseAnchor || runSpec.reviewBatchId !== files[0].reviewBatchId) {
+    throw new Error("classroom_run_spec_version_mismatch");
+  }
   for (const file of files) {
-    if (!file.packageFileName.trim() || path.basename(file.packageFileName) !== file.packageFileName || !/^[a-f0-9]{64}$/i.test(file.sha256)) {
+    if (!file.packageFileName.trim() || path.basename(file.packageFileName) !== file.packageFileName ||
+        !file.sourceArtifactId.trim() || !Number.isInteger(file.sourceArtifactVersion) || file.sourceArtifactVersion < 1 ||
+        !/^[a-f0-9]{64}$/i.test(file.sha256) || !/^[a-f0-9]{64}$/i.test(file.sourceArtifactDigest)) {
       throw new Error(`final_package_file_contract_invalid:${file.role}`);
     }
   }
@@ -134,7 +162,8 @@ function validateFileSet(files: FinalPackageFile[], runSpec: ClassroomRunSpec): 
 
 function validateClassroomRunSpec(spec: ClassroomRunSpec): void {
   if (spec.schemaVersion !== "classroom-run-spec.v1" || spec.sequence.length < 5) throw new Error("classroom_run_spec_incomplete");
-  if (spec.sequence.some((step, index) => step.ordinal !== index + 1 || !step.instruction.trim())) throw new Error("classroom_run_spec_sequence_invalid");
+  const allowedActions = new Set(["play_intro_video", "ask_return_question", "open_ppt", "teacher_explain", "reveal_answer"]);
+  if (spec.sequence.some((step, index) => step.ordinal !== index + 1 || !allowedActions.has(step.action) || !step.instruction.trim())) throw new Error("classroom_run_spec_sequence_invalid");
   const actions = spec.sequence.map((step) => step.action);
   const videoIndex = actions.indexOf("play_intro_video");
   const questionIndex = actions.indexOf("ask_return_question");
@@ -142,6 +171,16 @@ function validateClassroomRunSpec(spec: ClassroomRunSpec): void {
   const revealIndex = actions.indexOf("reveal_answer");
   if ([videoIndex, questionIndex, pptIndex, revealIndex].some((index) => index < 0) || !(videoIndex < questionIndex && questionIndex < pptIndex && pptIndex < revealIndex)) {
     throw new Error("classroom_run_spec_pedagogy_order_invalid");
+  }
+  for (const action of ["play_intro_video", "ask_return_question", "open_ppt", "reveal_answer"] as const) {
+    if (actions.filter((candidate) => candidate === action).length !== 1) throw new Error("classroom_run_spec_action_count_invalid");
+  }
+  const videoStep = spec.sequence[videoIndex];
+  const questionStep = spec.sequence[questionIndex];
+  const pptSteps = spec.sequence.filter((step) => step.action === "open_ppt" || step.action === "teacher_explain" || step.action === "reveal_answer");
+  if (videoStep.artifactRole !== "video" || questionStep.artifactRole !== undefined || questionStep.pptPage !== undefined ||
+      pptSteps.some((step) => step.artifactRole !== "pptx" || !Number.isInteger(step.pptPage) || step.pptPage! < 1 || step.pptPage! > 12)) {
+    throw new Error("classroom_run_spec_artifact_binding_invalid");
   }
 }
 

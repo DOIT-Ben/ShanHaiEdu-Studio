@@ -85,6 +85,42 @@ function videoSegmentInputSchema(): JsonSchemaObject {
   };
 }
 
+function finalPackageInputSchema(requiredArtifactKinds: string[]): JsonSchemaObject {
+  const schema = artifactInputSchema(requiredArtifactKinds);
+  return {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      classroomRunSpecDraft: {
+        type: "object",
+        additionalProperties: false,
+        required: ["schemaVersion", "courseAnchor", "sequence"],
+        properties: {
+          schemaVersion: { type: "string", const: "classroom-run-spec-draft.v1" },
+          courseAnchor: { type: "string", minLength: 1 },
+          sequence: {
+            type: "array",
+            minItems: 5,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["ordinal", "action", "artifactRole", "pptPage", "instruction"],
+              properties: {
+                ordinal: { type: "integer", minimum: 1 },
+                action: { type: "string", enum: ["play_intro_video", "ask_return_question", "open_ppt", "teacher_explain", "reveal_answer"] },
+                artifactRole: { type: ["string", "null"], enum: ["lesson_plan", "pptx", "pdf", "image", "video", null] },
+                pptPage: { type: ["integer", "null"], minimum: 1 },
+                instruction: { type: "string", minLength: 1 },
+              },
+            },
+          },
+        },
+      },
+    },
+    required: [...(schema.required ?? []), "classroomRunSpecDraft"],
+  };
+}
+
 function artifactOutputSchema(producedArtifactKind: string): JsonSchemaObject {
   return {
     type: "object",
@@ -158,6 +194,7 @@ function packageTool(definition: {
   capabilityId: CapabilityId;
   requiredArtifactKinds: string[];
   producedArtifactKind: string;
+  inputSchema?: JsonSchemaObject;
 }): ToolDefinition {
   return {
     id: definition.id,
@@ -165,7 +202,7 @@ function packageTool(definition: {
     description: definition.description,
     adapterKind: "package",
     capabilityId: definition.capabilityId,
-    inputSchema: artifactInputSchema(definition.requiredArtifactKinds),
+    inputSchema: definition.inputSchema ?? artifactInputSchema(definition.requiredArtifactKinds),
     outputSchema: artifactOutputSchema(definition.producedArtifactKind),
     requiresHumanGate: true,
     sideEffectLevel: "package_write",
@@ -295,8 +332,9 @@ const toolDefinitions: ToolDefinition[] = [
     label: "打包最终交付材料",
     description: "把已确认的教案、PPTX、课堂图片和导入视频打包成最终材料包。",
     capabilityId: "final_package",
-    requiredArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "concat_only_assemble"],
+    requiredArtifactKinds: ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_script_generate", "concat_only_assemble"],
     producedArtifactKind: "final_delivery",
+    inputSchema: finalPackageInputSchema(["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_script_generate", "concat_only_assemble"]),
   }),
   {
     id: "generate_pptx_from_design",

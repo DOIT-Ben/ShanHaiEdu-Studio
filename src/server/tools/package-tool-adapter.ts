@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
-import { buildStoredImageDownload } from "@/server/image-generation/artifact-image";
-import { buildFinalMaterialPackageDownload } from "@/server/package/artifact-package";
-import { buildStoredArtifactPptxDownload } from "@/server/pptx/artifact-pptx";
+import { prepareVersionedFinalPackageInput } from "@/server/package/final-package-input-contract";
+import { buildVersionedFinalPackage, type FinalPackageInspectors } from "@/server/package/versioned-final-package";
 import { buildStoredVideoDownload } from "@/server/video-generation/artifact-video";
 import { buildPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
 import { composePptKeySamplePptx } from "@/server/ppt-quality/ppt-key-sample-composer";
@@ -50,6 +49,7 @@ export type PackageToolAdapterInput = {
     sampleApproval: PptSampleApproval;
   }) => Promise<PptFullDeckCandidate>;
   runVideoNarration?: (input: { script: VideoNarrationScript }) => Promise<VideoNarrationProviderResult>;
+  finalPackageInspectors?: Partial<FinalPackageInspectors>;
 };
 
 const ZIP_MIME = "application/zip";
@@ -259,8 +259,8 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
       nodeKey: "concat_only_assemble",
       kind: "concat_only_assemble",
       title: "真实导入视频成片",
-      summary: "已按分镜顺序完成 FFmpeg 归一化组装和技术校验，等待字幕、音轨与成片审查。",
-      markdownContent: "# 真实导入视频成片\n\n已按镜头身份和顺序完成真实媒体组装、完整解码与采样帧校验。字幕或转写证据补齐后，才能进入成片独立审查。",
+      summary: "已按分镜顺序完成 FFmpeg 归一化组装、受控音轨替换和字幕校验，等待成片审查。",
+      markdownContent: "# 真实导入视频成片\n\n已按镜头身份和顺序完成真实媒体组装、受控音轨替换、字幕时序校验、完整解码与采样帧校验，等待成片 Critic 独立审查。",
       structuredContent: {
         文件状态: "真实导入视频已完成技术组装",
         文件大小: `${assembly.finalVideo.bytes} bytes`,
@@ -297,20 +297,35 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
 }
 
 async function executeFinalPackage(input: PackageToolAdapterInput): Promise<ToolExecutionResult> {
-  const finalDelivery = buildFinalDeliveryArtifact(input);
-  const pptx = await buildStoredArtifactPptxDownload(requireArtifact(input, "pptx_artifact"));
-  const image = buildStoredImageDownload(requireArtifact(input, "image_prompts"));
-  const video = buildStoredVideoDownload(requireArtifact(input, "concat_only_assemble"));
-  const download = await buildFinalMaterialPackageDownload({ finalDelivery, pptx, image, video });
-  if (!validateZipBuffer(download.buffer)) {
-    throw new Error("invalid_final_package_zip");
+  const prepared = prepareVersionedFinalPackageInput({
+    projectId: input.projectId,
+    classroomRunSpecDraft: input.toolInput?.classroomRunSpecDraft,
+    artifacts: {
+      requirement: requireArtifact(input, "requirement_spec"),
+      lessonPlan: requireArtifact(input, "lesson_plan"),
+      pptDesign: requireArtifact(input, "ppt_design_draft"),
+      pptx: requireArtifact(input, "pptx_artifact"),
+      image: requireFinalImageArtifact(input),
+      narrationScript: requireArtifact(input, "video_script_generate"),
+      video: requireArtifact(input, "concat_only_assemble"),
+    },
+  });
+  let download: Awaited<ReturnType<typeof buildVersionedFinalPackage>>;
+  try {
+    download = await buildVersionedFinalPackage({
+      files: prepared.files,
+      classroomRunSpec: prepared.classroomRunSpec,
+      teacherSignoff: false,
+      inspectors: input.finalPackageInspectors,
+    });
+  } finally {
+    prepared.cleanup();
   }
 
-  const stored = writeLocalArtifact({ category: "package-artifacts", fileName: download.filename, buffer: download.buffer });
-  const sha256 = createHash("sha256").update(download.buffer).digest("hex");
-  const sourceArtifactIds = input.tool.requiredArtifactKinds.map((kind) => requireArtifact(input, kind).id);
+  const fileName = `shanhai-final-${safeFileSegment(input.projectId)}.zip`;
+  const stored = writeLocalArtifact({ category: "package-artifacts", fileName, buffer: download.buffer });
   const artifactTruth = buildArtifactTruth(input.tool, "final_delivery");
-  const qualityGate = { passed: true, gates: ["zip_valid", "pptx_included", "image_included", "video_included", "manifest_included"] } satisfies ToolQualityGateResult;
+  const qualityGate = { passed: true, gates: ["version_binding_verified", "review_batch_verified", "classroom_run_spec_verified", "all_files_final_eligible", "manifest_reverse_verified"] } satisfies ToolQualityGateResult;
 
   return {
     status: "succeeded",
@@ -326,15 +341,19 @@ async function executeFinalPackage(input: PackageToolAdapterInput): Promise<Tool
         文件状态: "真实最终材料包已生成",
         文件大小: `${download.buffer.length} bytes`,
         文件类型: ZIP_MIME,
+        finalPackageManifest: download.manifest,
+        classroomRunSpec: prepared.classroomRunSpec,
+        courseVersionId: prepared.courseVersionId,
+        reviewBatchId: prepared.reviewBatchId,
         storage: {
           packageAsset: {
-            fileName: download.filename,
+            fileName,
             localOutput: stored.localOutput,
             bytes: download.buffer.length,
-            sha256,
+            sha256: download.sha256,
             mime: ZIP_MIME,
-            generationMode: "final_package_generated",
-            sourceArtifactIds,
+            generationMode: "versioned_final_package_generated",
+            sourceArtifactIds: prepared.sourceArtifactIds,
           },
         },
         artifactTruth,
@@ -343,22 +362,8 @@ async function executeFinalPackage(input: PackageToolAdapterInput): Promise<Tool
     },
     artifactTruth,
     qualityGate,
-    assistantSummary: "最终材料包已生成并通过基础校验。",
+    assistantSummary: "最终材料包已完成版本、审查批次、课堂顺序和文件完整性校验。",
     budgetEvent: buildBudgetEvent(input.tool, "succeeded", "tool_succeeded"),
-  };
-}
-
-function buildFinalDeliveryArtifact(input: PackageToolAdapterInput) {
-  const now = new Date().toISOString();
-  return {
-    id: `final-${input.projectId}`,
-    key: `final-${input.projectId}`,
-    nodeKey: "final_delivery",
-    kind: "final_delivery",
-    title: "最终材料包",
-    summary: "真实交付材料汇总。",
-    markdownContent: buildFinalDeliveryMarkdown(input),
-    updatedAt: now,
   };
 }
 
@@ -387,6 +392,16 @@ function requireArtifact(input: PackageToolAdapterInput, kind: string): Artifact
   if (!artifact) {
     throw new Error(`missing_${kind}`);
   }
+  return artifact;
+}
+
+function requireFinalImageArtifact(input: PackageToolAdapterInput): ArtifactRecord {
+  const artifact = findResolvedArtifacts(input, "image_prompts").find((candidate) => {
+    const storage = candidate.structuredContent.storage;
+    if (!isRecord(storage) || !isRecord(storage.imageAsset)) return false;
+    return typeof storage.imageAsset.localOutput === "string" && typeof storage.imageAsset.sha256 === "string";
+  });
+  if (!artifact) throw new Error("missing_final_classroom_image");
   return artifact;
 }
 

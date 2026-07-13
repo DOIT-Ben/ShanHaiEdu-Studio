@@ -404,6 +404,38 @@ describe("M55-C model-first main conversation agent", () => {
     ]);
   });
 
+  it("requires a Main Agent classroom run spec before proposing the final package", async () => {
+    const classroomRunSpecDraft = {
+      schemaVersion: "classroom-run-spec-draft.v1",
+      courseAnchor: "带着这个问题回到课堂",
+      sequence: [
+        { ordinal: 1, action: "play_intro_video", artifactRole: "video", pptPage: null, instruction: "播放视频。" },
+        { ordinal: 2, action: "ask_return_question", artifactRole: null, pptPage: null, instruction: "提出回接问题。" },
+        { ordinal: 3, action: "open_ppt", artifactRole: "pptx", pptPage: 1, instruction: "打开课件。" },
+        { ordinal: 4, action: "teacher_explain", artifactRole: "pptx", pptPage: 2, instruction: "组织讨论。" },
+        { ordinal: 5, action: "reveal_answer", artifactRole: "pptx", pptPage: 6, instruction: "讨论后揭示答案。" },
+      ],
+    };
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "课堂运行顺序已形成，等待你确认后打包。" },
+      state: "awaiting_confirmation",
+      quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "final_package", reasonForUser: "可以打包最终材料。", missingInputs: [], nextSuggestedCapabilities: [], requiresConfirmation: true,
+        inputDraft: { teacherGoal: "完成最终包", notes: null, classroomRunSpecDraft },
+      },
+      deliveryPlan: null,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+    const turn = await agent.respond({ userMessage: "生成最终材料包", availableArtifactKinds: [] });
+
+    expect(client.lastPayload?.instructions).toContain("inputDraft.classroomRunSpecDraft");
+    expect(client.lastPayload?.instructions).toContain("courseVersionId和reviewBatchId由服务端计算");
+    const inputDraftSchema = (client.lastPayload as any).text.format.schema.properties.toolPlan.properties.inputDraft;
+    expect(inputDraftSchema.required).toContain("classroomRunSpecDraft");
+    expect(turn.toolPlan?.inputDraft).toMatchObject({ classroomRunSpecDraft });
+  });
+
   it("keeps the model-selected capability in full delivery plans instead of forcing a fixed first step", async () => {
     const client = fakeResponsesClient({
       assistantMessage: {

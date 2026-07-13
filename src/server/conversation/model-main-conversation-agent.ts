@@ -212,6 +212,7 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       "每次提出video_segment_generate都必须只指定一个镜头，并把唯一目标shotId放入inputDraft.shotIds；初次生成也要逐镜头分别计划，不得一次提交多个镜头或省略shotIds。",
       "完整视频候选必须调用delivery_critic_review，domain=video且stage=video_final_review；实际MP4、时间线、采样帧、字幕或转写、音轨证据不完整时不得猜测通过。",
       "成片finding定位shot或frame_range时，只提出video_segment_generate并把目标shotId放入inputDraft.shotIds；定位track或timeline时把trackIds或timeRanges放入inputDraft，只返修受影响单元，不重做整片。",
+      "只有当前教案、完整PPT、课堂视觉图、受控旁白和最终视频都已通过审查并由教师批准时，才可提出final_package。此时必须在inputDraft.classroomRunSpecDraft中给出课堂运行顺序：先播放独立导入视频，再提出唯一回接问题，然后打开PPT、组织教学，最后才揭示答案；courseAnchor必须复用当前已批准旁白中的原文，不得自行改写。courseVersionId和reviewBatchId由服务端计算，不得由你填写。",
       "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
       "不要输出工程词、底层字段名、schema、provider、node_id、storage、debug、local path 或密钥。",
       "返回内容必须严格符合 JSON 结构。",
@@ -517,10 +518,35 @@ const mainAgentOutputSchema = {
         inputDraft: {
           type: "object",
           additionalProperties: false,
-          required: ["teacherGoal", "notes"],
+          required: ["teacherGoal", "notes", "classroomRunSpecDraft"],
           properties: {
             teacherGoal: { type: ["string", "null"] },
             notes: { type: ["string", "null"] },
+            classroomRunSpecDraft: {
+              type: ["object", "null"],
+              additionalProperties: false,
+              required: ["schemaVersion", "courseAnchor", "sequence"],
+              properties: {
+                schemaVersion: { type: "string", const: "classroom-run-spec-draft.v1" },
+                courseAnchor: { type: "string" },
+                sequence: {
+                  type: "array",
+                  minItems: 5,
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["ordinal", "action", "artifactRole", "pptPage", "instruction"],
+                    properties: {
+                      ordinal: { type: "integer", minimum: 1 },
+                      action: { type: "string", enum: ["play_intro_video", "ask_return_question", "open_ppt", "teacher_explain", "reveal_answer"] },
+                      artifactRole: { type: ["string", "null"], enum: ["lesson_plan", "pptx", "pdf", "image", "video", null] },
+                      pptPage: { type: ["integer", "null"], minimum: 1 },
+                      instruction: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
