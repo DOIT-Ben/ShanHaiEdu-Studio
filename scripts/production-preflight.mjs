@@ -260,7 +260,7 @@ function checkCozePptProvider(env) {
 function checkImageProvider(env) {
   const channelName = env.IMAGE_PROVIDER_CHANNEL?.trim() || "primary";
   const channel = imageChannels[channelName] ?? imageChannels.primary;
-  const missing = missingEnv(env, [channel.apiKey, channel.baseUrl, channel.model]);
+  const missing = missingEnv(env, [channel.apiKey, channel.baseUrl]);
   return buildCheck("provider-image", missing.length === 0, {
     message: missing.length === 0 ? "Image provider env is present." : "Image provider env is missing.",
     missing,
@@ -269,6 +269,16 @@ function checkImageProvider(env) {
 }
 
 function checkVideoProvider(env) {
+  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
+  if (wantsEvolink) {
+    const hasKey = Boolean(env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim());
+    return buildCheck("provider-video", hasKey, {
+      message: hasKey ? "Evolink video provider env is present." : "Evolink video provider env is missing.",
+      missing: hasKey ? [] : ["EVOLINK_VIDEO_API_KEY"],
+      source: "evolink",
+    });
+  }
+
   const hasOcto = hasAll(env, ["OCTO_API_KEY", "OCTO_BASE_URL"]) && Boolean(env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim());
   const hasNewApi = hasAll(env, ["NEWAPI_API_KEY", "NEWAPI_BASE_URL"]) && Boolean(env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim());
   const missing = hasOcto || hasNewApi ? [] : ["OCTO_API_KEY", "OCTO_BASE_URL", "VIDEO_MODEL"];

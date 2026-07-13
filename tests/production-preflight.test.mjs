@@ -77,6 +77,29 @@ test("production preflight passes with complete local production env without lea
   assert.doesNotMatch(serialized, /video-private\.invalid/);
 });
 
+test("production preflight accepts the same image defaults and Evolink aliases as the runtime", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const env = completeEnv(makeExternalStorageRoot());
+  delete env.IMAGEGEN_FREE_MODEL;
+  delete env.OCTO_API_KEY;
+  delete env.OCTO_BASE_URL;
+  delete env.VIDEO_MODEL;
+  Object.assign(env, {
+    VIDEO_PROVIDER_MODE: "evolink",
+    EVOLINK_API_KEY: "test-evolink-key-do-not-print",
+    EVOLINK_VIDEO_MODEL: "test-evolink-model",
+  });
+
+  const result = await runProductionPreflight({ cwd, env });
+  const serialized = JSON.stringify(result);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "free");
+  assert.equal(result.checks.find((check) => check.id === "provider-video")?.source, "evolink");
+  assert.doesNotMatch(serialized, /test-evolink-key-do-not-print/);
+});
+
 test("production preflight detects missing standalone output and package script", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: false, omitStart: true });
