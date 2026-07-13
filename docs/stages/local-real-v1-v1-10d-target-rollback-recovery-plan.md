@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`accepted / in progress`
+状态：`done / target localhost rehearsal verified`
 
 ## 1. 目标
 

@@ -29,3 +29,7 @@
 ## 3. 边界
 
 本测试不调用 Provider、不生成交付包、不代替真实教师 HumanGate，不执行公网 nginx/HTTPS 切流。
+
+## 4. 验证结论
+
+2026-07-13，10D-01 至 10D-10 全部通过。完整目标服务器证据、负例修复和残余边界见 `local-real-v1-v1-10d-target-rollback-recovery-closeout.md`。

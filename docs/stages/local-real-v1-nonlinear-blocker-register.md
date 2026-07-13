@@ -24,8 +24,8 @@
 
 - 事实：本地生产预检正确拒绝缺少生产反代、关闭公开注册和绝对生产数据库的配置。
 - 已验证：本地数据库初始化、管理员准备、artifact storage 可写、构建、全量测试、恢复和浏览器只读门检。
-- 已通过：目标服务器单容器运行时、release 外共享 SQLite/Artifact 挂载、localhost-only staging、容器重启持久性和公开注册 API=403。
-- 未通过：release 回滚、备份恢复、公网 nginx/HTTPS 切流后的注册关闭复核与教师签收。
+- 已通过：目标服务器单容器运行时、release 外共享 SQLite/Artifact 挂载、localhost-only staging、容器重启持久性、代码回滚/前滚、停写备份、全新目录恢复、恢复副本独立容器和公开注册 API=403。
+- 未通过：公网 nginx/HTTPS 切流后的注册关闭复核与真实教师签收。
 - 当前可推进：不依赖服务器权限且不调用真实媒体Provider的V1-2至V1-8编排、隔离和恢复任务。
 - 回收条件：获得目标服务器操作窗口后，在真实发布环境执行 runbook 并保存脱敏结果。
 
@@ -40,6 +40,15 @@
 - 持久性证据：容器重启后数据库与Artifact探针哈希保持一致，SQLite integrity=ok，既有管理员记录仍存在。
 - 保护证据：nginx配置校验通过，根站与3001仍为200，3010仍监听，单staging容器运行；未切公网流量。
 - 后续入口：V1-10继续执行release回滚、备份恢复和正式切流门；不得把本次localhost staging称为公网上线。
+
+### 2026-07-13 V1-10D 回收结果
+
+- 状态：`closed / target localhost rehearsal verified`
+- 代码回滚：上一成功镜像与修复前滚镜像均在同一共享数据上通过healthy、200/401/403，SQLite与Artifact哈希保持一致。
+- 数据恢复：停写窗口内backup、verify、restore全部`ok=true`；恢复副本在独立loopback端口通过healthy、200/401/403、SQLite integrity、管理员记录和Artifact探针。
+- 缺陷回收：WAL目录错误只读挂载曾导致`better-sqlite3` backup无限重试；新增无进展/超时双门禁后，真实错误挂载在0秒内exit 2。
+- 最终状态：staging运行精确提交`c7533ef`镜像，单容器、loopback-only；恢复副本容器已停止，3211无监听，nginx、根站、3001和3010不变。
+- 残余边界：失败路径产生的未签名不完整备份目录按安全规则保留，未执行删除；正式公网切流和教师签收仍未通过。
 
 
 ## B-04 中年级教材权威输入
