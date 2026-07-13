@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-6已完成；下一阶段是V1-7 视频产品内编排闭环`。
+当前阶段：`V1-1至V1-7已完成；下一阶段是V1-8 两用户并发与恢复`。
 
 ## 2. 最近已完成阶段
 
@@ -53,6 +53,7 @@ V1 交付质量与邀请制上线
 | V1-4 HumanGate and interruption | done | 按钮/自由输入统一授权、暂停恢复、取消改道、旧action防重放、IntentEpoch隔离、多计划消歧和PPT页级影响报告已封板；专项96/96 |
 | V1-5 generation intensity | done | 项目级四档强度、任务快照、Main Agent/Agent Tool路由、受控升级建议、极致确认和响应式slider已封板；专项52/52 |
 | V1-6 PPT internal orchestration | done | PPT Critic正式审查持久化、HumanGate批准边界、结构化页级返修和Main Agent编排已封板；专项71/71，未调用真实媒体Provider |
+| V1-7 video internal orchestration | done | 课程锚点六硬门、成片九项审查、双HumanGate、实际证据门和结构化镜头返修输入已封板；专项150/150，未调用真实媒体Provider |
 
 ## 2.1 v1 与接管基线
 
@@ -65,6 +66,7 @@ V1 交付质量与邀请制上线
 - 2026-07-13 V1-4最终封板证据：专项7文件96/96；TypeScript exit 0；Node 259/259；完整Vitest exit 0；生产构建exit 0并生成13个静态页面；`.tmp\v1-4-init.db`同库连续初始化2/2；`git diff --check` exit 0。未调用真实媒体Provider。
 - 2026-07-13 V1-5最终封板证据：专项7文件52/52；TypeScript exit 0；Node 259/259；Vitest 110文件799/799；生产构建exit 0并生成13个静态页面；`.tmp\v1-5-generation-intensity.db`同库连续初始化2/2；1366×768和390×844真实浏览器通过；`git diff --check` exit 0。未调用真实媒体Provider。
 - 2026-07-13 V1-6最终封板证据：专项7文件71/71；TypeScript exit 0；Node 259/259；完整Vitest通过；生产构建exit 0并生成13个静态页面；`npm test`隔离SQLite初始化与持久化测试通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
+- 2026-07-13 V1-7最终封板证据：专项10文件150/150；TypeScript exit 0；Node 259/259；完整Vitest随`npm test`正常完成；生产构建exit 0并生成13个静态页面；隔离SQLite初始化与视频审查持久化通过；`git diff --check` exit 0。无UI改动，浏览器项不适用；未调用真实媒体Provider。
 - 2026-07-12低年级真实包的PPT、文件结构、hash和Provider技术链有证据，但视频独立创意与课程锚点失败，整包完整交付资格已撤销；`teacher_signoff=false`，只能作为工艺和负例证据。
 - 提交标题里的“封板完成”仅指工程验证交接与文档封板完成，不代表发布门禁、真实 Provider 或目标服务器上线门禁完成。
 
@@ -88,8 +90,8 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. V1-7完成视频产品内编排、课程锚点前置与成片后Critic。
-2. V1-8完成双用户隔离、并发和恢复。
+1. V1-8完成双用户隔离、并发和恢复。
+2. V1-9执行一次产品内真实PPT、视频和最终包E2E，并补齐真实成片证据采集。
 3. 仅在V1-1至V1-8通过后执行一次产品内真实PPT/视频/最终包E2E；外部Codex在成包后黑盒审核并将问题归因到责任层。
 4. 完成目标服务器恢复、公开注册关闭复核和真实教师签收后开放邀请制V1。
 
@@ -98,15 +100,15 @@ V1 交付质量与邀请制上线
 用户已经批准继续推进 V1 交付质量主线。PPT、图片、视频和最终包的底层生产链已经有真实证据，下一阶段不再由外部Codex重复制作交付包，而是验证产品内部Main Agent的协调能力。当前唯一恢复点：
 
 ```text
-V1-7：视频产品内编排闭环
+V1-8：两用户并发与恢复
 ```
 
 推荐拆分：
 
-1. 读取V1-6 closeout并复用已封板的Critic持久化、HumanGate、IntentEpoch、Observation和结构化局部返修合同。
-2. 先写V1-7计划与测试计划，冻结Video Director、课程锚点Critic、成片Critic、业务Tool与Quality Gate的责任边界。
-3. 使用确定性媒体夹具和历史负例验证独立创意、唯一最小课程锚点、成片漂移审查与shot/时间范围级返修。
-4. 前置反例必须在昂贵Provider调用前阻断；V1-7真实媒体请求次数保持为0。
+1. 读取V1-7 closeout，复用项目租约、IntentEpoch、任务强度快照、GenerationJob和VideoShot恢复合同。
+2. 先写V1-8计划与测试计划，冻结两个邀请账号、两个不同项目和同项目单写者的并发矩阵。
+3. 验证两个项目可同时运行，项目、消息、强度、任务、费用事件、Provider taskId和产物不串线。
+4. 验证同一项目第二写者被租约阻断，不影响另一项目继续执行；失败恢复不重复提交。
 5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
 6. 保持既有`v1`、`v1.1.0-alpha`和`v1.1.0-alpha.1`标签不动；最终邀请制发布使用新的不可变发布标识。
 

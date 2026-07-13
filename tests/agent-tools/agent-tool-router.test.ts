@@ -5,6 +5,7 @@ import { createAgentToolInvocationEnvelope } from "@/server/tools/agent-tool-inv
 import { routeAgentToolCall } from "@/server/tools/agent-tool-router";
 import { isAgentToolResultEligibleForProductionGuard } from "@/server/tools/agent-tool-types";
 import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
+import { videoFinalReviewHardGateIds } from "@/server/tools/video-final-review-gate";
 
 function validEnvelope() {
   return createAgentToolInvocationEnvelope({
@@ -111,6 +112,30 @@ function videoCriticOutput(overrides: Record<string, unknown> = {}) {
       rationale: "证据充分。",
       findingIds: [],
     })),
+    ...overrides,
+  };
+}
+
+function videoFinalCriticEnvelope() {
+  return createAgentToolInvocationEnvelope({
+    ...validEnvelope(), invocationId: "video-final-critic-1", toolId: "delivery_critic.review",
+    reviewTargetRef: { artifactId: "final-video-a", kind: "concat_only_assemble", version: 3, digest: "d".repeat(64) },
+    arguments: {
+      domain: "video", stage: "video_final_review",
+      targetLocators: [{ kind: "artifact", artifactKind: "concat_only_assemble", artifactId: "final-video-a" }],
+      reviewFocus: "成片创意、锚点、连续性和音字证据", courseAnchorRef: null,
+      rubricRef: { id: "video-final", version: "v1", digest: "e".repeat(64) },
+      generatorInvocationId: "video-generator-1",
+    },
+  });
+}
+
+function videoFinalCriticOutput(overrides: Record<string, unknown> = {}) {
+  return {
+    recommendation: "pass", summary: "成片审查通过。", findings: [],
+    targetLocators: [{ kind: "artifact", artifactKind: "concat_only_assemble", artifactId: "final-video-a" }],
+    responsibleStage: "video_timeline_assembly", minimalFix: "无需返修。", inconclusiveReasons: [],
+    hardGateResults: videoFinalReviewHardGateIds.map((gateId) => ({ gateId, status: "passed", evidenceRefs: [`evidence:${gateId}`], rationale: "证据充分。", findingIds: [] })),
     ...overrides,
   };
 }
@@ -424,6 +449,27 @@ describe("V1-2 Agent Tool router", () => {
         },
       },
       structuredOutput: { recommendation: "pass", responsibleStage: "video_concept_selection" },
+    });
+    expect(isAgentToolResultEligibleForProductionGuard(result)).toBe(false);
+  });
+
+  it("applies the final-video hard gates before final delivery can continue", async () => {
+    const envelope = videoFinalCriticEnvelope();
+    const executor = vi.fn(async () => ({
+      status: "succeeded" as const, toolId: "delivery_critic.review" as const,
+      invocationId: envelope.invocationId, structuredOutput: videoFinalCriticOutput(),
+      assistantSummary: "成片审查通过。", artifactCreated: false as const,
+    }));
+
+    const result = await routeAgentToolCall(envelope, { executor, authorize: async () => true });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      policyOutcome: {
+        gateId: "video_final_critic", passed: true, eligibleForDownstreamGuard: true,
+        reviewOutcome: "eligible_for_downstream_guard",
+        reviewBinding: { reviewTargetRef: { artifactId: "final-video-a", kind: "concat_only_assemble" } },
+      },
     });
     expect(isAgentToolResultEligibleForProductionGuard(result)).toBe(false);
   });

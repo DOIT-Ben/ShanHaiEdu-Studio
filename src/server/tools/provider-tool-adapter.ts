@@ -42,6 +42,7 @@ export type ProviderToolAdapterInput = {
   projectId: string;
   project?: ProjectRecord;
   userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
   artifactRefs: ProviderArtifactRef[];
   resolvedArtifacts?: ArtifactRecord[];
   sourceMessageId?: string;

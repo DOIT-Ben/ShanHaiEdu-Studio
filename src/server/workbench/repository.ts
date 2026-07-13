@@ -228,7 +228,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
         });
         const shouldPropagateStale = previousApproved?.id !== artifactId;
-        const structuredContentWithApproval = attachPptSampleApproval(existing.structuredContentJson);
+        const structuredContentWithApproval = attachArtifactApprovalEvidence(existing);
 
         await tx.artifact.updateMany({
           where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
@@ -1691,8 +1691,40 @@ function parseStructuredContent(value: string): Record<string, unknown> {
   }
 }
 
-function attachPptSampleApproval(structuredContentJson: string): Record<string, unknown> {
-  const structuredContent = parseStructuredContent(structuredContentJson);
+function attachArtifactApprovalEvidence(artifact: { nodeKey: string; kind: string; structuredContentJson: string }): Record<string, unknown> {
+  const structuredContent = parseStructuredContent(artifact.structuredContentJson);
+  if (artifact.nodeKey === "creative_theme_generate" && artifact.kind === "creative_theme_generate") {
+    const review = structuredContent.videoCourseAnchorReview;
+    if (!isPassedVideoReview(review, "video-course-anchor-review.v1")) {
+      throw new Error("Video concept approval blocked: course_anchor_review_required");
+    }
+    return {
+      ...structuredContent,
+      videoCourseAnchorApproval: {
+        schemaVersion: "video-course-anchor-approval.v1",
+        decision: "approved",
+        decisionSource: "artifact_approve_action",
+        reviewEvidenceDigest: review.evidenceDigest,
+        approvedAt: new Date().toISOString(),
+      },
+    };
+  }
+  if (artifact.nodeKey === "concat_only_assemble" && artifact.kind === "concat_only_assemble") {
+    const review = structuredContent.videoFinalReview;
+    if (!isPassedVideoReview(review, "video-final-review.v1")) {
+      throw new Error("Final video approval blocked: video_final_review_required");
+    }
+    return {
+      ...structuredContent,
+      videoFinalApproval: {
+        schemaVersion: "video-final-approval.v1",
+        decision: "approved",
+        decisionSource: "artifact_approve_action",
+        reviewEvidenceDigest: review.evidenceDigest,
+        approvedAt: new Date().toISOString(),
+      },
+    };
+  }
   if ("pptKeySampleCandidate" in structuredContent && !("pptKeySampleSet" in structuredContent)) {
     throw new Error("PPT key sample approval blocked: dvp_review_required");
   }
@@ -1733,6 +1765,11 @@ function attachPptSampleApproval(structuredContentJson: string): Record<string, 
     throw new Error(`PPT key sample approval blocked: ${approvalValidation.issues.map((item) => item.code).join(",")}`);
   }
   return { ...structuredContent, pptSampleApproval: approval };
+}
+
+function isPassedVideoReview(value: unknown, schemaVersion: string): value is Record<string, unknown> {
+  return isRecord(value) && value.schemaVersion === schemaVersion && value.overallStatus === "passed" &&
+    typeof value.evidenceDigest === "string" && /^[a-f0-9]{64}$/i.test(value.evidenceDigest);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

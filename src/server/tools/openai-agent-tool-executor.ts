@@ -44,7 +44,7 @@ export function createOpenAIAgentToolExecutor(options: OpenAIAgentToolExecutorOp
       const artifacts = await loadContext(envelope);
       const response = await adapter.createResponse({
         reasoning: { effort: strategy.reasoningEffort ?? reasoningEffort },
-        instructions: instructionsFor(definition),
+        instructions: instructionsFor(definition, envelope),
         input: JSON.stringify({
           goal: envelope.arguments,
           project: { projectId: envelope.projectId, intentEpoch: envelope.intentEpoch },
@@ -120,7 +120,7 @@ async function loadAgentToolContext(envelope: AgentToolInvocationEnvelope): Prom
   }));
 }
 
-function instructionsFor(definition: AgentToolDefinition): string {
+function instructionsFor(definition: AgentToolDefinition, envelope: AgentToolInvocationEnvelope): string {
   const common = [
     "你是山海课伴产品内部的专业只读Agent Tool。",
     "只依据输入中的可信材料工作，不批准教师操作，不创建文件，不调用外部媒体，不改变Artifact状态。",
@@ -132,6 +132,12 @@ function instructionsFor(definition: AgentToolDefinition): string {
     common.push("你先保证视频作为独立创意短片成立，再使用唯一最小课程锚点回接；小学生受众不等于儿童主角、教室或课堂活动。 ");
   } else {
     common.push("你是独立Critic；按量表给出证据、定位、责任阶段和最小修复，不能用自评替代审查。 ");
+    if (envelope.arguments.domain === "video" && envelope.arguments.stage === "course_anchor") {
+      common.push("课程锚点审查必须逐项输出六个且仅六个hardGateResults：independent_understandability、standalone_viewing_value、not_textbook_or_ppt_retelling、exactly_one_minimal_course_anchor、audience_not_story_world_constraint、no_answer_disclosure。每项必须引用实际证据；失败finding定位当前创意Artifact并返回可执行最小修复。 ");
+    }
+    if (envelope.arguments.domain === "video" && envelope.arguments.stage === "video_final_review") {
+      common.push("成片审查必须读取实际MP4、时间线、采样帧、字幕或转写和音轨证据，并逐项输出九个且仅九个hardGateResults：independent_understandability、standalone_viewing_value、not_textbook_or_ppt_retelling、exactly_one_minimal_course_anchor、audience_not_story_world_constraint、no_answer_disclosure、shot_timeline_continuity、caption_transcript_integrity、audio_track_integrity。失败finding只能定位当前成片内的shot、frame_range、track或timeline。 ");
+    }
   }
   return common.join("\n");
 }

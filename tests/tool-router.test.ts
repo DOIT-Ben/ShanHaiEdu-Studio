@@ -255,6 +255,7 @@ describe("M64-D ToolRouter Core", () => {
         capabilityId: "video_segment_generate",
         projectId: "project-a",
         userInstruction: "生成真实分镜视频",
+        toolInput: { shotIds: ["shot_02"] },
         artifactRefs,
         resolvedArtifacts,
       },
@@ -270,6 +271,7 @@ describe("M64-D ToolRouter Core", () => {
         capabilityId: "video_segment_generate",
       },
       projectId: "project-a",
+      toolInput: { shotIds: ["shot_02"] },
       artifactRefs,
       resolvedArtifacts,
     });

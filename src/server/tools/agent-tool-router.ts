@@ -27,8 +27,13 @@ import {
   type VideoCourseAnchorCandidate,
   type VideoCourseAnchorCriticCandidate,
 } from "./video-course-anchor-gate";
+import {
+  enforceVideoFinalReviewGate,
+  type VideoFinalReviewCandidate,
+} from "./video-final-review-gate";
 
 const COURSE_ANCHOR_REVIEW_ARTIFACT_KIND = "creative_theme_generate";
+const FINAL_VIDEO_REVIEW_ARTIFACT_KIND = "concat_only_assemble";
 const SUCCEEDED_EXECUTOR_RESULT_KEYS = new Set([
   "status",
   "toolId",
@@ -144,7 +149,7 @@ export async function routeAgentToolCall(
         result.structuredOutput,
         envelope.reviewTargetRef,
         envelope.arguments.targetLocators,
-        isVideoCourseAnchorCriticInvocation(tool, envelope),
+        isVideoCourseAnchorCriticInvocation(tool, envelope) || isVideoFinalCriticInvocation(tool, envelope),
       );
       if (outputBindingIssues.length > 0) {
         return failed(
@@ -204,6 +209,24 @@ export async function routeAgentToolCall(
       return { ...result, structuredOutput, policyOutcome };
     }
 
+    if (isVideoFinalCriticInvocation(tool, envelope)) {
+      const gate = enforceVideoFinalReviewGate(result.structuredOutput as unknown as VideoFinalReviewCandidate);
+      const { reportStructurallyValid, reviewPassed, eligibleForDownstreamGuard, reasonCodes, forbiddenNextToolIntents, ...structuredOutput } = gate;
+      if (!reportStructurallyValid) {
+        return failed(envelope, "agent_tool_output_invalid", `Agent Tool video final review contract failed: ${reasonCodes.join(",")}`, false);
+      }
+      const policyOutcome: AgentToolPolicyOutcome = {
+        gateId: "video_final_critic",
+        passed: reviewPassed,
+        eligibleForDownstreamGuard,
+        reviewOutcome: reviewPassed ? "eligible_for_downstream_guard" : criticReviewOutcome(gate.recommendation),
+        reasonCodes,
+        forbiddenNextToolIntents,
+        reviewBinding: createInjectedReviewBinding(envelope, tool),
+      };
+      return { ...result, structuredOutput, policyOutcome };
+    }
+
     return result;
   } catch {
     return failed(envelope, "agent_tool_execution_failed", "Agent Tool execution failed.", true);
@@ -238,6 +261,11 @@ function validateInvocationBindings(
     if (!asRubricRef(envelope.arguments.rubricRef)) issues.push("rubric_ref_invalid");
     if (!hasText(envelope.arguments.generatorInvocationId)) issues.push("generator_invocation_id_invalid");
   }
+  if (isVideoFinalCriticInvocation(tool, envelope)) {
+    if (envelope.reviewTargetRef?.kind !== FINAL_VIDEO_REVIEW_ARTIFACT_KIND) issues.push("video_final_review_target_kind_invalid");
+    if (!asRubricRef(envelope.arguments.rubricRef)) issues.push("rubric_ref_invalid");
+    if (!hasText(envelope.arguments.generatorInvocationId)) issues.push("generator_invocation_id_invalid");
+  }
 
   return issues;
 }
@@ -249,6 +277,12 @@ function isVideoCourseAnchorCriticInvocation(
   return tool.id === "delivery_critic.review" &&
     envelope.arguments.domain === "video" &&
     envelope.arguments.stage === "course_anchor";
+}
+
+function isVideoFinalCriticInvocation(tool: AgentToolDefinition, envelope: AgentToolInvocationEnvelope): boolean {
+  return tool.id === "delivery_critic.review" &&
+    envelope.arguments.domain === "video" &&
+    envelope.arguments.stage === "video_final_review";
 }
 
 function createInjectedReviewBinding(
@@ -307,7 +341,9 @@ async function defaultAuthorize(
       db,
       envelope.projectId,
       envelope.reviewTargetRef,
-      isCourseAnchorReviewArguments(envelope.arguments) ? COURSE_ANCHOR_REVIEW_ARTIFACT_KIND : null,
+      isCourseAnchorReviewArguments(envelope.arguments)
+        ? COURSE_ANCHOR_REVIEW_ARTIFACT_KIND
+        : isVideoFinalReviewArguments(envelope.arguments) ? FINAL_VIDEO_REVIEW_ARTIFACT_KIND : null,
     )) {
       return false;
     }
@@ -525,6 +561,10 @@ function locatorBelongsToReviewTarget(value: unknown, ref: AgentToolArtifactRef)
 
 function isCourseAnchorReviewArguments(argumentsValue: Record<string, unknown>): boolean {
   return argumentsValue.domain === "video" && argumentsValue.stage === "course_anchor";
+}
+
+function isVideoFinalReviewArguments(argumentsValue: Record<string, unknown>): boolean {
+  return argumentsValue.domain === "video" && argumentsValue.stage === "video_final_review";
 }
 
 function isDigest(value: unknown): value is string {

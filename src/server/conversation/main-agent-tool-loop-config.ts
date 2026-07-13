@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { appendAgentObservationMetadata, createAgentObservation, type AgentObservation } from "@/server/conversation/react-control";
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { adaptPptAgentCriticReview } from "@/server/ppt-quality/ppt-agent-critic-review-adapter";
+import { adaptVideoAgentCriticReview } from "@/server/video-quality/video-agent-critic-review-adapter";
 import { appendAgentToolReportMetadata, createPersistedAgentToolReport } from "@/server/tools/agent-tool-report";
 import type { AgentToolArtifactRef, AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { listAgentToolDefinitions } from "@/server/tools/agent-tool-registry";
@@ -121,6 +122,46 @@ export function createMainAgentToolLoopOptions(
             responsibleStage: String(dispatch.envelope.arguments.stage ?? "ppt_review"),
             minimalNextAction: "repair_upstream",
             teacherSafeSummary: "课件审查证据不完整，暂时不能进入下一步。",
+          });
+          currentMetadata = appendAgentObservationMetadata(appendAgentToolReportMetadata(currentMetadata, report), observation);
+          await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
+          return {
+            status: "inconclusive",
+            modelOutput: { reason: "review_evidence_incomplete", nextAction: "repair_upstream" },
+            observationId: observation.observationId,
+          };
+        }
+      }
+      if (dispatch.result.status === "succeeded" &&
+          dispatch.envelope.toolId === "delivery_critic.review" &&
+          dispatch.envelope.arguments.domain === "video") {
+        const target = dispatch.envelope.reviewTargetRef
+          ? input.artifacts.find((artifact) => artifact.id === dispatch.envelope.reviewTargetRef?.artifactId)
+          : undefined;
+        try {
+          if (!target) throw new Error("video_critic_target_missing");
+          const submission = adaptVideoAgentCriticReview({
+            projectId: input.project.id,
+            intentEpoch: input.project.intentEpoch ?? 0,
+            envelope: dispatch.envelope,
+            artifact: target,
+            structuredOutput: dispatch.result.structuredOutput,
+          });
+          reviewArtifact = await input.service.saveArtifact(input.project.id, submission);
+          input.artifacts.push(reviewArtifact);
+        } catch {
+          const observation = createAgentObservation({
+            projectId: input.project.id,
+            source: "quality",
+            status: "inconclusive",
+            actionKey: dispatch.envelope.toolId,
+            inputHash: dispatch.envelope.inputHash,
+            reasonCodes: ["video_critic_review_persistence_failed"],
+            reportRefs: [{ kind: "critic", id: report.reportId, digest: report.reportDigest }],
+            targetLocators: [],
+            responsibleStage: String(dispatch.envelope.arguments.stage ?? "video_review"),
+            minimalNextAction: "repair_upstream",
+            teacherSafeSummary: "视频审查证据不完整，暂时不能进入下一步。",
           });
           currentMetadata = appendAgentObservationMetadata(appendAgentToolReportMetadata(currentMetadata, report), observation);
           await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);

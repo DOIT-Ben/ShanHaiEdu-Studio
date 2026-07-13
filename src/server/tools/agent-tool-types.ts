@@ -72,7 +72,7 @@ export type AgentToolReviewBinding = {
 };
 
 export type AgentToolPolicyOutcome = {
-  gateId: "video_director_candidate" | "video_course_anchor_critic";
+  gateId: "video_director_candidate" | "video_course_anchor_critic" | "video_final_critic";
   passed: boolean;
   eligibleForDownstreamGuard: boolean;
   reviewOutcome:

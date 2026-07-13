@@ -124,6 +124,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       projectId: input.projectId,
       project: input.project,
       userInstruction: input.userInstruction,
+      toolInput: input.toolInput,
       artifactRefs: input.artifactRefs ?? [],
       resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
