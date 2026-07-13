@@ -19,6 +19,10 @@ test("V1 container deployment keeps one non-root process and external shared dat
   for (const dependency of ["ffmpeg", "libreoffice-impress", "poppler-utils", "curl", "fonts-noto-cjk", "tini"]) {
     assert.match(dockerfile, new RegExp(`\\b${dependency}\\b`));
   }
+  for (const buildDependency of ["python3", "make", "g++"]) {
+    assert.match(dockerfile, new RegExp(`^\\s*${escapeRegExp(buildDependency)}\\s*\\\\?$`, "m"));
+  }
+  assert.match(dockerfile, /apt-get purge -y --auto-remove python3 make g\+\+/);
   assert.match(dockerfile, /ARG DEBIAN_MIRROR_URL/);
   assert.match(dockerfile, /ARG DEBIAN_SECURITY_MIRROR_URL/);
   assert.match(dockerfile, /DEBIAN_MIRROR_URL.+deb\.debian\.org\/debian/s);

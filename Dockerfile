@@ -19,7 +19,10 @@ RUN if [ -n "$DEBIAN_SECURITY_MIRROR_URL" ]; then \
     fontconfig \
     fonts-noto-cjk \
     libreoffice-impress \
+    g++ \
+    make \
     poppler-utils \
+    python3 \
     tini \
   && rm -rf /var/lib/apt/lists/*
 
@@ -29,6 +32,9 @@ USER node
 
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci
+USER root
+RUN apt-get purge -y --auto-remove python3 make g++
+USER node
 
 COPY --chown=node:node . .
 
