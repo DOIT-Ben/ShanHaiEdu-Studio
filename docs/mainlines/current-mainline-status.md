@@ -12,7 +12,7 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-1至V1-8已完成；下一阶段是V1-9 产品内真实E2E`。
+当前阶段：`V1-1至V1-8、V1-9A至V1-9F已完成；下一阶段是在真实教师确认后继续V1-9产品内E2E`。
 
 ## 2. 最近已完成阶段
 
@@ -26,6 +26,8 @@ V1 交付质量与邀请制上线
 | M66-R runtime loop | done | OpenAIRuntime native tool loop 已通过显式开关接入生产 Runtime Factory；首批只暴露 internal tools，provider 工具仍后置 |
 | M67 feedback center | implementation done / rollout pending | 工程实现与本地 E2E 已完成；真实服务器重启、回滚和备份恢复门禁待关闭 |
 | Agent workflow closure | implementation done / V1-9 real E2E pending | `asset_image_generate`、`concat_only_assemble`、真实最终包与package resolved Artifact门禁已完成；不在前段追加真实Provider smoke |
+| V1-9A至V1-9E | done | 真实时间线、成片审查证据、受控音字轨、版本一致最终包和30-90秒完整导入视频门禁已封板 |
+| V1-9F Main Agent runtime recovery | done | 定位并修复 Critic function-tool locator Schema 的 Provider兼容问题；真实UI已形成19步计划并停在合法需求确认门 |
 | M69 multi-user management | implementation done / rollout pending | 内测账号分配、登录、管理员用户管理、项目成员共享与隔离已完成；真实用户开放统一等待V1-9产品内E2E和V1-10发布门 |
 | M70 frontend workbench polish | done | 首次欢迎态、附件拖放/截图粘贴、文件状态、工具菜单、假入口清理和桌面/390px 响应式验收已完成 |
 | M71A project lifecycle and feedback polish | done | 反馈选中态、轻量问候、项目重命名、归档、回收站、恢复、生命周期写入门禁与受控回退已完成；不含永久删除 |
@@ -114,7 +116,7 @@ V1-9：产品内真实E2E
 5. V1-9由产品智能体独立生成真实交付包，外部Codex只在成包后审查PPT、视频、课程一致性和链路归因，再推动定点优化。
 6. 保持既有`v1`、`v1.1.0-alpha`和`v1.1.0-alpha.1`标签不动；最终邀请制发布使用新的不可变发布标识。
 
-当前明确未关闭的上线门：PPT/视频产品内闭环、课程锚点独立Critic审查、双用户并发、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
+当前明确未关闭的上线门：真实教师继续当前需求确认、PPT/视频产品内闭环、课程锚点独立Critic审查、产品内真实E2E、目标服务器恢复、公开注册关闭复核和至少一名真实教师签收。两用户隔离与单进程并发已由V1-8封板；既有真实包只作为工艺、Provider和负例证据，不作为产品Main Agent已经通过的证据。
 
 V1 Agent 与交付质量设计、Contracts、Prompts 和实验依据已经迁入项目，统一入口：
 

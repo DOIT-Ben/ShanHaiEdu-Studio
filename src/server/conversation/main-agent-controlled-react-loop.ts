@@ -26,6 +26,7 @@ export type MainAgentReActLoopResult = {
   toolRoundsUsed: number;
   observationIds: string[];
   reason: "none" | "adapter_failed" | "multiple_tool_calls_blocked" | "tool_call_invalid" | "tool_round_limit_reached" | "repeated_tool_call";
+  diagnosticMessage?: string;
 };
 
 const safeFailureText = "当前编排已暂停，请调整要求后继续。";
@@ -41,7 +42,7 @@ export async function runMainAgentControlledReActLoop(
 
   while (true) {
     if (currentResponse.diagnostics.status === "failed") {
-      return failed("adapter_failed", toolRoundsUsed, observationIds);
+      return failed("adapter_failed", toolRoundsUsed, observationIds, currentResponse.diagnostics.errorMessage);
     }
     if (currentResponse.functionCalls.length === 0) {
       return {
@@ -111,8 +112,8 @@ function functionOutputItem(call: GptFunctionCall, output: string) {
   return { type: "function_call_output", call_id: call.callId, output };
 }
 
-function failed(reason: MainAgentReActLoopResult["reason"], rounds: number, observationIds: string[]): MainAgentReActLoopResult {
-  return { status: "failed", assistantText: safeFailureText, toolRoundsUsed: rounds, observationIds, reason };
+function failed(reason: MainAgentReActLoopResult["reason"], rounds: number, observationIds: string[], diagnosticMessage?: string): MainAgentReActLoopResult {
+  return { status: "failed", assistantText: safeFailureText, toolRoundsUsed: rounds, observationIds, reason, ...(diagnosticMessage ? { diagnosticMessage } : {}) };
 }
 
 function blocked(reason: MainAgentReActLoopResult["reason"], rounds: number, observationIds: string[]): MainAgentReActLoopResult {

@@ -74,6 +74,21 @@ describe("V1-3 Main Agent controlled ReAct loop", () => {
     });
     expect(parallel).toMatchObject({ status: "blocked", reason: "multiple_tool_calls_blocked" });
   });
+
+  it("preserves the sanitized adapter diagnostic when a ReAct request fails", async () => {
+    const diagnosticMessage = "Request rejected: invalid response schema at [redacted-url]";
+    const result = await runMainAgentControlledReActLoop({
+      adapter: sequenceAdapter([{
+        assistantText: "", rawText: "", functionCalls: [], outputItems: [], outputItemsSummary: [],
+        diagnostics: { status: "failed", provider: "openai_responses", model: "test", errorMessage: diagnosticMessage },
+      }]),
+      request: { instructions: "test", input: "teacher request" },
+      tools: [{ type: "function", name: "ppt_director_plan_or_repair" }],
+      allowedToolNames: ["ppt_director_plan_or_repair"],
+      dispatch: vi.fn(),
+    });
+    expect(result).toMatchObject({ status: "failed", reason: "adapter_failed", diagnosticMessage });
+  });
 });
 
 function sequenceAdapter(responses: Array<Record<string, any>>) {

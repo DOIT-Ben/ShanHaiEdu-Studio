@@ -63,6 +63,22 @@ describe("V1-2 Agent Tool registry", () => {
     }
   });
 
+  it("projects the critic invocation to one artifact without weakening its canonical locator contract", () => {
+    const definition = getAgentToolDefinition("delivery_critic.review");
+    const schema = toolDefinitionToOpenAiFunctionTool(definition);
+    const modelLocator = (schema.parameters.properties as Record<string, any>).targetLocators.items;
+    const canonicalLocator = (definition.inputSchema.properties as Record<string, any>).targetLocators.items;
+
+    expect(modelLocator).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "artifactKind", "artifactId"],
+      properties: { kind: { enum: ["artifact"] } },
+    });
+    expect(modelLocator).not.toHaveProperty("oneOf");
+    expect(canonicalLocator.oneOf).toHaveLength(9);
+  });
+
   it("requires video independence gates and critic hard gates in structured outputs", () => {
     const videoOutput = getAgentToolDefinition("video_director.plan_or_repair").outputSchema;
     const criticInput = getAgentToolDefinition("delivery_critic.review").inputSchema;

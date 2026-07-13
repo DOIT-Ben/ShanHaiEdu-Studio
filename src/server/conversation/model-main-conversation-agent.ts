@@ -13,6 +13,14 @@ type OpenAIMainConversationAgentOptions = {
   client: OpenAIResponsesClient;
   model: string;
   reasoningEffort?: OpenAIReasoningEffort;
+  onFailureDiagnostic?: (event: MainAgentFailureDiagnostic) => void;
+};
+
+export type MainAgentFailureDiagnostic = {
+  phase: "direct_response" | "agent_tool_loop" | "output_parse";
+  reason: string;
+  errorName: string;
+  summary: string;
 };
 
 type StructuredMainAgentOutput = {
@@ -61,11 +69,13 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
   private readonly client: OpenAIResponsesClient;
   private readonly model: string;
   private readonly reasoningEffort: OpenAIReasoningEffort;
+  private readonly onFailureDiagnostic?: (event: MainAgentFailureDiagnostic) => void;
 
   constructor(options: OpenAIMainConversationAgentOptions) {
     this.client = options.client;
     this.model = options.model;
     this.reasoningEffort = options.reasoningEffort ?? "high";
+    this.onFailureDiagnostic = options.onFailureDiagnostic;
   }
 
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
@@ -77,11 +87,24 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
       const strategy = input.generationIntensity ? resolveGenerationIntensityStrategy(input.generationIntensity) : null;
       const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: strategy?.model ?? this.model });
       const request = buildMainAgentRequest(input, strategy?.reasoningEffort ?? this.reasoningEffort);
-      const assistantText = input.agentToolLoop?.tools.length
-        ? await runMainAgentToolLoop(adapter, request, input.agentToolLoop)
-        : (await adapter.createResponse(request)).assistantText;
-      return normalizeModelTurn(parseMainAgentOutput(assistantText), input);
-    } catch {
+      let assistantText: string;
+      if (input.agentToolLoop?.tools.length) {
+        assistantText = await runMainAgentToolLoop(adapter, request, input.agentToolLoop);
+      } else {
+        const response = await adapter.createResponse(request);
+        if (response.diagnostics.status === "failed") {
+          throw new MainAgentExecutionError("direct_response", "adapter_failed", response.diagnostics.errorMessage);
+        }
+        if (!response.assistantText.trim()) throw new MainAgentExecutionError("direct_response", "empty_output");
+        assistantText = response.assistantText;
+      }
+      try {
+        return normalizeModelTurn(parseMainAgentOutput(assistantText), input);
+      } catch (error) {
+        throw error instanceof MainAgentExecutionError ? error : new MainAgentExecutionError("output_parse", "invalid_output", errorMessage(error));
+      }
+    } catch (error) {
+      this.onFailureDiagnostic?.(toMainAgentFailureDiagnostic(error));
       return {
         assistantMessage: {
           body: "智能生成服务暂时不可用，暂时不能可靠理解并推进这次需求。请稍后重试，或联系管理员检查配置。",
@@ -113,7 +136,12 @@ export function createMainConversationAgentFromEnv(env: OpenAICompatibleEnv = pr
     maxRetries: 0,
   }) as OpenAIResponsesClient;
 
-  return new OpenAIMainConversationAgent({ client, model: config.model, reasoningEffort: config.reasoningEffort });
+  return new OpenAIMainConversationAgent({
+    client,
+    model: config.model,
+    reasoningEffort: config.reasoningEffort,
+    onFailureDiagnostic: (event) => console.error("[main-agent-failure]", JSON.stringify(event)),
+  });
 }
 
 export function resolveMainAgentTimeoutMs(env: OpenAICompatibleEnv = process.env) {
@@ -266,8 +294,44 @@ async function runMainAgentToolLoop(
     dispatch: options.dispatch,
     maxToolRounds: options.maxToolRounds,
   });
-  if (result.status !== "completed") throw new Error(`Main Agent ReAct loop stopped: ${result.reason}`);
+  if (result.status !== "completed") throw new MainAgentExecutionError("agent_tool_loop", result.reason, result.diagnosticMessage);
+  if (!result.assistantText.trim()) throw new MainAgentExecutionError("agent_tool_loop", "empty_output");
   return result.assistantText;
+}
+
+class MainAgentExecutionError extends Error {
+  constructor(
+    readonly phase: MainAgentFailureDiagnostic["phase"],
+    readonly reason: string,
+    diagnostic?: string,
+  ) {
+    super(diagnostic || reason);
+    this.name = "MainAgentExecutionError";
+  }
+}
+
+function toMainAgentFailureDiagnostic(error: unknown): MainAgentFailureDiagnostic {
+  const executionError = error instanceof MainAgentExecutionError ? error : null;
+  return {
+    phase: executionError?.phase ?? "output_parse",
+    reason: executionError?.reason ?? "unexpected_error",
+    errorName: error instanceof Error ? error.name : "Error",
+    summary: sanitizeFailureSummary(errorMessage(error)),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
+}
+
+function sanitizeFailureSummary(value: string): string {
+  return value
+    .replace(/Bearer\s+[^\s,;]+/gi, "[redacted]")
+    .replace(/\b(api[_-]?key|credential|token|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/https?:\/\/[^\s,;)]+/gi, "[redacted-url]")
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .replace(/\b[A-Za-z]:[\\/][^\s,;)]+/g, "[redacted-path]")
+    .slice(0, 600);
 }
 
 function parseMainAgentOutput(outputText: string | undefined): StructuredMainAgentOutput {

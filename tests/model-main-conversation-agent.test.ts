@@ -25,6 +25,21 @@ describe("M55-C model-first main conversation agent", () => {
     expect(turn.shouldRunToolNow).toBe(false);
   });
 
+  it("reports a sanitized direct adapter failure without exposing it to the teacher", async () => {
+    const unsafeUrl = ["https:", "", "private.example", "v1", "responses"].join("/");
+    const unsafeCredential = ["sk", "test-only-value"].join("-");
+    const client = {
+      responses: { async create() { throw new Error(`request failed at ${unsafeUrl} Bearer ${unsafeCredential}`); } },
+    } as OpenAIResponsesClient;
+    const diagnostics: unknown[] = [];
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model", onFailureDiagnostic: (event) => diagnostics.push(event) });
+    const turn = await agent.respond({ userMessage: "五年级数学百分数", availableArtifactKinds: [] });
+    expect(turn).toMatchObject({ state: "failed_retryable", assistantMessage: { body: expect.stringContaining("智能生成服务暂时不可用") } });
+    expect(diagnostics).toEqual([expect.objectContaining({ phase: "direct_response", reason: "adapter_failed", errorName: "MainAgentExecutionError" })]);
+    expect(JSON.stringify(diagnostics)).not.toContain(unsafeUrl);
+    expect(JSON.stringify(diagnostics)).not.toContain(unsafeCredential);
+  });
+
   it("uses the same short greeting in deterministic fallback mode", async () => {
     const turn = await createDeterministicMainConversationAgent().respond({ userMessage: "你好", availableArtifactKinds: [] });
 

@@ -23,12 +23,34 @@ export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition | AgentT
     type: "function",
     name: agentTool ? tool.transportName : tool.id,
     description: tool.description,
-    parameters: cloneJsonSchema(tool.inputSchema),
+    parameters: agentTool ? modelVisibleAgentToolInputSchema(tool) : cloneJsonSchema(tool.inputSchema),
     strict: true,
   };
 
   assertSafeOpenAiToolSchema(schema, tool.id);
 
+  return schema;
+}
+
+function modelVisibleAgentToolInputSchema(tool: AgentToolDefinition): JsonSchemaObject {
+  const schema = cloneJsonSchema(tool.inputSchema);
+  if (tool.id !== "delivery_critic.review") return schema;
+
+  if (!schema.properties) throw new Error("Delivery critic input schema properties are required.");
+  schema.properties.targetLocators = {
+    type: "array",
+    minItems: 1,
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        kind: { type: "string", enum: ["artifact"] },
+        artifactKind: { type: "string", minLength: 1 },
+        artifactId: { type: "string", minLength: 1 },
+      },
+      required: ["kind", "artifactKind", "artifactId"],
+    },
+  };
   return schema;
 }
 
