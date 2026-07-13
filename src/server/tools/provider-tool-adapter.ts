@@ -360,6 +360,7 @@ function buildVideoSuccessResult(
         generationMode: "video_generated",
         sourceArtifactId: sourceArtifactIds[0],
         sourceArtifactIds,
+        ...(providerResult.requestEvidence ? { requestEvidence: providerResult.requestEvidence } : {}),
       },
     },
     artifactTruth,

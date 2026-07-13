@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -43,6 +44,18 @@ function mp4Buffer(label: string) {
     Buffer.from("moov"),
     Buffer.alloc(900, label.charCodeAt(0)),
   ]);
+}
+
+function realMp4Buffer(color: string, withAudio: boolean) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-real-mp4-"));
+  const output = path.join(root, "fixture.mp4");
+  const ffmpeg = process.env.FFMPEG_PATH || "D:\\Soft\\ffmpeg-7.1.1-essentials_build\\bin\\ffmpeg.exe";
+  const args = ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=c=${color}:s=320x180:r=24:d=0.6`];
+  if (withAudio) args.push("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=0.6", "-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac");
+  args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-shortest", "-y", output);
+  const result = spawnSync(ffmpeg, args, { encoding: "utf8", windowsHide: true });
+  if (result.status !== 0) throw new Error(`test_ffmpeg_fixture_failed:${result.stderr}`);
+  try { return readFileSync(output); } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
 function pngBuffer() {
@@ -247,16 +260,18 @@ describe("M68 PackageToolAdapter", () => {
 
   it("assembles approved video segments into a persisted concat_only_assemble artifact", async () => {
     await withArtifactStorage(async () => {
-      const first = writeLocalArtifact({ category: "video-artifacts", fileName: "s1.mp4", buffer: mp4Buffer("a") });
-      const second = writeLocalArtifact({ category: "video-artifacts", fileName: "s2.mp4", buffer: mp4Buffer("b") });
+      const firstBuffer = realMp4Buffer("red", false);
+      const secondBuffer = realMp4Buffer("blue", true);
+      const first = writeLocalArtifact({ category: "video-artifacts", fileName: "s1.mp4", buffer: firstBuffer });
+      const second = writeLocalArtifact({ category: "video-artifacts", fileName: "s2.mp4", buffer: secondBuffer });
       const segments = [
         artifact("video_segment_generate", "segment-1", {
           version: 1,
-          structuredContent: { storage: { videoAsset: { fileName: "s1.mp4", localOutput: first.localOutput, mime: "video/mp4" } } },
+          structuredContent: { storage: { videoAsset: { fileName: "s1.mp4", localOutput: first.localOutput, mime: "video/mp4", sha256: createHash("sha256").update(firstBuffer).digest("hex"), requestEvidence: { shotId: "shot_01", references: [] } } } },
         }),
         artifact("video_segment_generate", "segment-2", {
           version: 2,
-          structuredContent: { storage: { videoAsset: { fileName: "s2.mp4", localOutput: second.localOutput, mime: "video/mp4" } } },
+          structuredContent: { storage: { videoAsset: { fileName: "s2.mp4", localOutput: second.localOutput, mime: "video/mp4", sha256: createHash("sha256").update(secondBuffer).digest("hex"), requestEvidence: { shotId: "shot_02", references: [] } } } },
         }),
       ];
 
@@ -280,22 +295,42 @@ describe("M68 PackageToolAdapter", () => {
           structuredContent: {
             storage: {
               videoAsset: {
-                generationMode: "concat_only_assembled",
+                generationMode: "ffmpeg_timeline_assembled",
                 sourceArtifactIds: ["segment-1", "segment-2"],
               },
+            },
+            videoFinalReviewEvidence: {
+              finalVideo: { fullyDecoded: true, audio: { codec: "aac" } },
+              timeline: { shotIds: ["shot_01", "shot_02"], entries: [{ shotId: "shot_01" }, { shotId: "shot_02" }] },
+              sampledFrames: [{ shotId: "shot_01" }, { shotId: "shot_02" }],
             },
           },
         },
         artifactTruth: { created: true, persisted: true, placeholder: false, producedArtifactKind: "concat_only_assemble" },
-        qualityGate: { passed: true, gates: expect.arrayContaining(["mp4_ftyp_present", "mp4_moov_present", "concat_only_order_preserved"]) },
+        qualityGate: { passed: true, gates: expect.arrayContaining(["ffprobe_shots_verified", "ffmpeg_timeline_assembled", "final_video_fully_decoded", "sampled_frames_created"]) },
       });
       expect(result.status).toBe("succeeded");
       if (result.status === "succeeded") {
         const output = result.artifactDraft.structuredContent?.storage as { videoAsset?: { localOutput?: string } };
         const absolutePath = resolveLocalArtifactOutput(output.videoAsset?.localOutput ?? "");
         expect(absolutePath && existsSync(absolutePath)).toBe(true);
-        expect(readFileSync(absolutePath!).length).toBe(mp4Buffer("a").length + mp4Buffer("b").length);
+        expect(readFileSync(absolutePath!).length).toBeGreaterThan(1024);
+        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).not.toHaveProperty("transcript");
+        expect(result.artifactDraft.structuredContent?.videoFinalReviewEvidence).not.toHaveProperty("audioTrack");
       }
+    });
+  });
+
+  it("rejects video timeline assembly when a segment has no persisted shot binding", async () => {
+    await withArtifactStorage(async () => {
+      const buffer = realMp4Buffer("green", true);
+      const stored = writeLocalArtifact({ category: "video-artifacts", fileName: "unbound.mp4", buffer });
+      const result = await executePackageTool({
+        tool: getToolDefinition("concat_only_assemble"), projectId: "project-a",
+        artifactRefs: [{ kind: "video_segment_generate", artifactId: "segment-unbound" }],
+        resolvedArtifacts: [artifact("video_segment_generate", "segment-unbound", { structuredContent: { storage: { videoAsset: { fileName: "unbound.mp4", localOutput: stored.localOutput, sha256: createHash("sha256").update(buffer).digest("hex"), mime: "video/mp4" } } } })],
+      });
+      expect(result).toMatchObject({ status: "failed", observation: { kind: "quality_gate_failed" } });
     });
   });
 

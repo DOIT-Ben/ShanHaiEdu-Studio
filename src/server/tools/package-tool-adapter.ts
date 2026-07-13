@@ -20,6 +20,7 @@ import type { ArtifactRecord } from "@/server/workbench/types";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
+import { assembleVideoTimeline } from "@/server/video-quality/video-timeline-assembler";
 
 export type PackageArtifactRef = {
   kind: string;
@@ -231,23 +232,16 @@ async function runDefaultPptKeySampleAssembly(input: {
 }
 
 async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promise<ToolExecutionResult> {
-  const segments = findResolvedArtifacts(input, "video_segment_generate").sort(compareArtifactsForConcat);
+  const segments = findResolvedArtifacts(input, "video_segment_generate");
   if (segments.length === 0) {
     throw new Error("missing_video_segments");
   }
 
-  const buffers = segments.map((artifact) => buildStoredVideoDownload(artifact).buffer);
-  const output = Buffer.concat(buffers);
-  if (!validateMp4Buffer(output)) {
-    throw new Error("invalid_concat_video_output");
-  }
-
-  const fileName = `concat-${safeFileSegment(input.projectId)}-${Date.now()}.mp4`;
-  const stored = writeLocalArtifact({ category: "video-artifacts", fileName, buffer: output });
-  const sha256 = createHash("sha256").update(output).digest("hex");
-  const sourceArtifactIds = segments.map((artifact) => artifact.id);
+  const clipInputs = segments.map((artifact) => buildTimelineClipInput(artifact));
+  const assembly = assembleVideoTimeline({ projectId: input.projectId, clips: clipInputs });
+  const sourceArtifactIds = assembly.timeline.entries.map((entry) => entry.sourceArtifactId);
   const artifactTruth = buildArtifactTruth(input.tool, "concat_only_assemble");
-  const qualityGate = { passed: true, gates: ["mp4_ftyp_present", "mp4_moov_present", "concat_only_order_preserved"] } satisfies ToolQualityGateResult;
+  const qualityGate = { passed: true, gates: ["ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_transcript_and_final_review"] } satisfies ToolQualityGateResult;
 
   return {
     status: "succeeded",
@@ -257,30 +251,37 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
       nodeKey: "concat_only_assemble",
       kind: "concat_only_assemble",
       title: "真实导入视频成片",
-      summary: "已按分镜顺序只拼接已通过校验的视频片段，请核对播放连贯性。",
-      markdownContent: "# 真实导入视频成片\n\n已按分镜顺序只拼接视频片段，没有重排、转场、滤镜或内容改写。",
+      summary: "已按分镜顺序完成 FFmpeg 归一化组装和技术校验，等待字幕、音轨与成片审查。",
+      markdownContent: "# 真实导入视频成片\n\n已按镜头身份和顺序完成真实媒体组装、完整解码与采样帧校验。字幕或转写证据补齐后，才能进入成片独立审查。",
       structuredContent: {
-        文件状态: "真实导入视频已拼接",
-        文件大小: `${output.length} bytes`,
+        文件状态: "真实导入视频已完成技术组装",
+        文件大小: `${assembly.finalVideo.bytes} bytes`,
         文件类型: "video/mp4",
         storage: {
           videoAsset: {
-            fileName,
-            localOutput: stored.localOutput,
-            bytes: output.length,
-            sha256,
+            fileName: `concat-${safeFileSegment(input.projectId)}.mp4`,
+            localOutput: assembly.finalVideo.storageRef,
+            bytes: assembly.finalVideo.bytes,
+            sha256: assembly.finalVideo.sha256,
             mime: "video/mp4",
-            generationMode: "concat_only_assembled",
+            generationMode: "ffmpeg_timeline_assembled",
             sourceArtifactIds,
           },
         },
+        videoFinalReviewEvidence: {
+          finalVideo: assembly.finalVideo,
+          timeline: assembly.timeline,
+          sampledFrames: assembly.sampledFrames,
+        },
+        shotProbeEvidence: assembly.shotProbes,
+        normalizedClipManifest: assembly.normalizedClips,
         artifactTruth,
         qualityGate,
       },
     },
     artifactTruth,
     qualityGate,
-    assistantSummary: "真实导入视频已按分镜顺序拼接并通过基础校验。",
+    assistantSummary: "真实导入视频已完成 FFmpeg 时间线组装和技术校验；字幕或转写证据尚未形成，暂不能批准成片。",
     budgetEvent: buildBudgetEvent(input.tool, "succeeded", "tool_succeeded"),
   };
 }
@@ -423,9 +424,22 @@ function resolveRepairPageIds(input: PackageToolAdapterInput, candidatePageIds: 
   return pageIds;
 }
 
-function compareArtifactsForConcat(left: ArtifactRecord, right: ArtifactRecord) {
-  if (left.version !== right.version) return left.version - right.version;
-  return left.updatedAt.localeCompare(right.updatedAt);
+function buildTimelineClipInput(artifact: ArtifactRecord) {
+  const storage = isRecord(artifact.structuredContent.storage) ? artifact.structuredContent.storage : null;
+  const videoAsset = storage && isRecord(storage.videoAsset) ? storage.videoAsset : null;
+  const requestEvidence = videoAsset && isRecord(videoAsset.requestEvidence) ? videoAsset.requestEvidence : null;
+  const shotId = requestEvidence?.shotId;
+  if (typeof shotId !== "string" || !/^shot_[a-z0-9_-]+$/i.test(shotId)) throw new Error("video_segment_shot_binding_missing");
+  const match = shotId.match(/(\d+)$/);
+  if (!match) throw new Error("video_segment_shot_ordinal_missing");
+  const localOutput = typeof videoAsset?.localOutput === "string" ? videoAsset.localOutput : "";
+  const sourcePath = resolveLocalArtifactOutput(localOutput);
+  if (!sourcePath) throw new Error("video_segment_storage_invalid");
+  const buffer = buildStoredVideoDownload(artifact).buffer;
+  const storedDigest = typeof videoAsset?.sha256 === "string" ? videoAsset.sha256.toLowerCase() : "";
+  const actualDigest = createHash("sha256").update(buffer).digest("hex");
+  if (storedDigest && storedDigest !== actualDigest) throw new Error("video_segment_digest_mismatch");
+  return { shotId, ordinal: Number(match[1]), sourceArtifactId: artifact.id, sourcePath, sourceSha256: actualDigest };
 }
 
 function buildArtifactTruth(tool: ToolDefinition, fallbackKind: string): ToolArtifactTruth {

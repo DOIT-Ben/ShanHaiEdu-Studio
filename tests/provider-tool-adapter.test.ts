@@ -893,6 +893,7 @@ describe("M64-C ProviderToolAdapter", () => {
             sha256: "video-sha256",
             videoValid: true,
             mime: "video/mp4",
+            requestEvidence: { shotId: "shot_01", references: [] },
           };
         },
       });
@@ -928,6 +929,7 @@ describe("M64-C ProviderToolAdapter", () => {
                 generationMode: "video_generated",
                 sourceArtifactId: "artifact-video-plan-a",
                 sourceArtifactIds: ["artifact-video-plan-a", "artifact-storyboard-a", "artifact-assets-a"],
+                requestEvidence: { shotId: "shot_01", references: [] },
               },
             },
             artifactTruth: {
