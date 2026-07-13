@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { afterEach, test } from "node:test";
 
 import {
+  createSqliteBackupProgressGuard,
   createReleaseDataBackup,
   restoreReleaseDataBackup,
   verifyReleaseDataBackup,
@@ -16,6 +17,28 @@ const roots = [];
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+test("SQLite backup progress guard fails closed when backup stops making progress", () => {
+  let now = 0;
+  const guard = createSqliteBackupProgressGuard({
+    maxStalledSteps: 2,
+    maxDurationMs: 10_000,
+    now: () => now,
+  });
+
+  assert.equal(guard({ remainingPages: 8 }), 100);
+  assert.equal(guard({ remainingPages: 8 }), 100);
+  assert.throws(() => guard({ remainingPages: 8 }), /stopped making progress/i);
+
+  const deadlineGuard = createSqliteBackupProgressGuard({
+    maxStalledSteps: 100,
+    maxDurationMs: 5,
+    now: () => now,
+  });
+  assert.equal(deadlineGuard({ remainingPages: 8 }), 100);
+  now = 6;
+  assert.throws(() => deadlineGuard({ remainingPages: 7 }), /time limit/i);
 });
 
 test("release data backup captures WAL commits and restores database plus artifacts", async () => {

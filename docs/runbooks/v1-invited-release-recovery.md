@@ -48,6 +48,8 @@ npm run preflight:production
 
 备份工具不会伪装在线原子快照。执行前必须停止应用进程并确认没有 worker、脚本或管理员任务继续写 SQLite/Artifact。
 
+若通过容器运行 CLI，WAL 数据库所在目录不能挂为文件系统只读：即使源连接使用 SQLite `readonly`，WAL 模式仍需访问同目录的 `-wal`/`-shm` 协调文件。应依靠停写窗口、工具只读连接和最小用户权限保护源数据；错误的只读挂载会被备份进度门限明确终止，不得无限重试。
+
 ```powershell
 npm run release:data:backup -- `
   --database <SQLITE_ABSOLUTE_PATH> `

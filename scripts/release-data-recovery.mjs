@@ -20,6 +20,34 @@ import Database from "better-sqlite3";
 const schemaVersion = "shanhai-release-data-backup.v1";
 const databaseRelativePath = "database/production.sqlite";
 const artifactRelativeRoot = "artifacts";
+const sqliteBackupPagesPerStep = 100;
+const sqliteBackupMaxStalledSteps = 1_000;
+const sqliteBackupMaxDurationMs = 15 * 60 * 1_000;
+
+export function createSqliteBackupProgressGuard({
+  maxStalledSteps = sqliteBackupMaxStalledSteps,
+  maxDurationMs = sqliteBackupMaxDurationMs,
+  now = Date.now,
+} = {}) {
+  const startedAt = now();
+  let lastRemainingPages;
+  let stalledSteps = 0;
+
+  return ({ remainingPages }) => {
+    if (now() - startedAt > maxDurationMs) {
+      throw new Error("SQLite backup exceeded its time limit.");
+    }
+    if (remainingPages === lastRemainingPages) stalledSteps += 1;
+    else {
+      lastRemainingPages = remainingPages;
+      stalledSteps = 0;
+    }
+    if (stalledSteps >= maxStalledSteps) {
+      throw new Error("SQLite backup stopped making progress.");
+    }
+    return sqliteBackupPagesPerStep;
+  };
+}
 
 export async function createReleaseDataBackup({
   databasePath,
@@ -45,7 +73,7 @@ export async function createReleaseDataBackup({
 
   const source = new Database(sourceDatabase, { readonly: true, fileMustExist: true });
   try {
-    await source.backup(databaseDestination);
+    await source.backup(databaseDestination, { progress: createSqliteBackupProgressGuard() });
   } finally {
     source.close();
   }
