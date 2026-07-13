@@ -1,8 +1,16 @@
 import { spawnSync } from "node:child_process";
 
 const minimums = "Prisma requires Node 20.19+, 22.12+, or 24+";
-const binaries = ["ffmpeg", "ffprobe", "soffice", "pdfinfo", "pdftoppm", "curl", "fc-match"];
-const checks = [checkNode(), ...binaries.map(checkBinary), checkChineseFont()];
+const binaryProbes = [
+  ["ffmpeg", ["-version"]],
+  ["ffprobe", ["-version"]],
+  ["soffice", ["--version"]],
+  ["pdfinfo", ["-v"]],
+  ["pdftoppm", ["-v"]],
+  ["curl", ["--version"]],
+  ["fc-match", ["--version"]],
+];
+const checks = [checkNode(), ...binaryProbes.map(([command, args]) => checkBinary(command, args)), checkChineseFont()];
 const result = { ok: checks.every((item) => item.ok), stage: "v1_10c_container_runtime", checks };
 
 console.log(JSON.stringify(result, null, 2));
@@ -14,8 +22,8 @@ function checkNode() {
   return { id: "node-engine", ok, version: process.versions.node, requirement: minimums };
 }
 
-function checkBinary(command) {
-  const result = spawnSync(command, ["--version"], { encoding: "utf8", windowsHide: true, timeout: 15_000 });
+function checkBinary(command, args) {
+  const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 15_000 });
   return { id: `binary-${command}`, ok: result.status === 0 };
 }
 

@@ -55,6 +55,10 @@ test("V1 container deployment keeps one non-root process and external shared dat
   for (const binary of ["ffmpeg", "ffprobe", "soffice", "pdfinfo", "pdftoppm", "curl", "fc-match"]) {
     assert.match(preflight, new RegExp(`"${escapeRegExp(binary)}"`));
   }
+  assert.match(preflight, /\["ffmpeg", \["-version"\]\]/);
+  assert.match(preflight, /\["ffprobe", \["-version"\]\]/);
+  assert.match(preflight, /\["pdfinfo", \["-v"\]\]/);
+  assert.match(preflight, /\["pdftoppm", \["-v"\]\]/);
   assert.match(preflight, /20\.19/);
 });
 
