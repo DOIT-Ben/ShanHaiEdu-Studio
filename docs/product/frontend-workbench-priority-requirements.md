@@ -6,6 +6,10 @@
 
 来源：M54-A 前端聊天式工作台深度规格、路线和测试计划。以下是现阶段仍未完整落地的需求，不等同于从零重做 UI。
 
+本文件保留教师可观察行为，不再定义第二套消息Runtime。V1只完成必要显示修复；V1.1的消息Part、真流式、活动、Tool状态、重试和恢复统一按`docs\product\v1-1-assistant-ui-conversation-runtime-requirements.md`由assistant-ui实现。
+
+> 2026-07-13 版本决策：本文关于“右侧糖葫芦必须常驻”的口径只保留为 V1 历史需求。V1.5 由 RQ-037 和 `docs\product\v1-5-artifact-workspace-requirements.md` 替代为“对话控制台 + 当前成果工作区 + 全部成果抽屉”；底层 Artifact 与质量状态继续保留。
+
 ## 1. 已有基础
 
 - 聊天式三栏工作台已有基础：左侧项目、中间对话、右侧交付链。
@@ -46,6 +50,7 @@
 
 - 正在理解、整理材料、生成回复、保存成果等状态准确。
 - 最终接入真实流式回复；未接通前不能伪装 streaming。
+- V1.1由assistant-ui ExternalStoreRuntime消费项目自有MessagePart和AG-UI兼容事件；不得在`ChatTranscript`旁新增另一套长期自研流式状态。
 
 ### 2.7 快捷下一步
 

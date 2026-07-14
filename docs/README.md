@@ -17,6 +17,8 @@
 7. 相关架构入口：`docs\architecture\README.md`。
 8. 当前阶段计划：`docs\stages\...-plan.md`。
 
+阶段目录的活动、后续和历史导航统一从 `docs\stages\README.md` 进入。
+
 V1 Agent、PPT、视频和交付质量专题资料统一入口：
 
 ```text
@@ -55,6 +57,48 @@ docs\stages\local-real-v1-v1-8-two-user-concurrency-plan.md
 docs\stages\local-real-v1-v1-8-two-user-concurrency-test-plan.md
 docs\stages\local-real-v1-v1-8-two-user-concurrency-closeout.md
 docs\stages\local-real-v1-v1-8-multi-client-sqlite-write-blocker.md
+```
+
+V1 收尾智能体回复呈现要求：
+
+```text
+docs\product\v1-agent-guided-response-presentation-requirements.md
+```
+
+V1.5 当前成果工作区与糖葫芦退场决策：
+
+```text
+docs\product\v1-5-artifact-workspace-requirements.md
+docs\architecture\decisions\2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md
+```
+
+V1 发布完成后的 V1.1 对话Runtime、活动流、反馈闭环与教师体验入口：
+
+```text
+docs\product\v1-1-assistant-ui-conversation-runtime-requirements.md
+docs\product\v1-1-feedback-closed-loop-requirements.md
+docs\architecture\decisions\2026-07-14-adr-v1-1采用assistant-ui与AG-UI兼容事件层.md
+docs\stages\v1-1-feedback-closed-loop-plan.md
+docs\stages\v1-1-feedback-closed-loop-test-plan.md
+```
+
+V1.1 只在 V1-10 发布门关闭后进入实施；当前 V1 主线不得因上述规划提前改道。
+
+V1.1发布后的审查需求分期：
+
+```text
+V1.2：docs\product\v1-2-stage-qa-requirements.md
+V2.0之后：docs\product\v2-plus-continuous-review-requirements.md
+```
+
+V1.2只做每阶段独立QA、一次定点返修复验和前端展示；持续多轮、高强度、可计费审查不早于V2.0之后。
+
+V2.0前生产化、50人在线与5人同时使用的硬门入口：
+
+```text
+docs\product\v2-0前生产化与容量要求.md
+docs\stages\v2-0前生产化30天计划.md
+docs\stages\v2-0前生产化验收计划.md
 ```
 
 `local-real-v1-quality-release-*`、Stage 0R 至 Stage 6 以及旧真实交付包文档只保留为历史实现和证据来源。它们不得覆盖当前主线，也不得触发新的真实图片、视频或整包生成；真实媒体整包验证统一延后到 V1-9。

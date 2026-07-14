@@ -42,6 +42,13 @@ docs\architecture\decisions\YYYY-MM-DD-adr-主题.md
 
 ADR 应包含：背景、决策、取舍、风险、验证方式、回退方式。
 
+已接受的关键决策：
+
+```text
+docs\architecture\decisions\2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md
+docs\architecture\decisions\2026-07-14-adr-v1-1采用assistant-ui与AG-UI兼容事件层.md
+```
+
 ## 4. V1 Agent 与交付质量专题
 
 PPT、视频、受控 ReAct、节点合同、质量量表、提示词、框架审计和真实 API 实验统一从以下入口读取：
