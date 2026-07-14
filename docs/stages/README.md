@@ -39,6 +39,15 @@ local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-blocker.md
 
 V1-9R 关闭前不得进入 V1-9 唯一真实 Provider 全链路。V1 发布前真实浏览器门只运行桌面视口；既有窄屏合同和历史证据继续保留。
 
+2026-07-14 项目治理期间，产品阶段暂停推进，先按以下文档收敛唯一主线与工作目录：
+
+```text
+2026-07-14-mainline-worktree-consolidation-plan.md
+2026-07-14-mainline-worktree-consolidation-test-plan.md
+```
+
+该治理阶段不改变产品需求、R5 状态或 V1-9 准入条件。
+
 ## 5. 已接受但未进入当前主线
 
 以下文档属于独立切片或 V1 发布后的规划，不得打断当前 V1 主线：

@@ -175,11 +175,11 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       "image_prompts",
       "video_storyboard",
       "final_delivery",
+      "interactive_courseware_spec",
     ]);
     expect(snapshot.artifacts.map((artifact: { nodeKey: string; version: number }) => [artifact.nodeKey, artifact.version])).toEqual([
       ["requirement_spec", 1],
       ["requirement_spec", 2],
-      ["textbook_evidence", 1],
     ]);
   });
 

@@ -1,6 +1,6 @@
 # ShanHaiEdu 架构文档入口
 
-更新时间：2026-07-10
+更新时间：2026-07-14
 
 本文是架构文档导航。架构文档只记录长期结构、边界、职责和决策，不承载单阶段开发流水账。
 
@@ -58,3 +58,13 @@ docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
 ```
 
 该专题属于候选设计与证据包，不覆盖产品需求基线或已接受 ADR。实施时必须先核对 `docs\mainlines\current-mainline-status.md` 的最新代码事实。
+
+## 5. V1 后 Runtime 候选
+
+以下文件只保存 V1 完成后的复审候选，不改变当前 Runtime、Main Agent、ToolRouter、HumanGate 或 V1 执行顺序：
+
+```text
+docs\architecture\用Codex-SDK加强shanhai-studio-V1.md
+```
+
+该候选原由两条同提交的远端讨论分支保存；项目主线收敛后以本文件为唯一仓内副本，未来实施前必须重新核对届时代码与官方能力。

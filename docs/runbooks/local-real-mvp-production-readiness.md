@@ -2,6 +2,8 @@
 
 日期：2026-07-07
 
+2026-07-14勘误：当前代码工作目录已统一为`main\`，V1邀请制发布、备份、恢复和原子切换以`docs\runbooks\v1-invited-release-recovery.md`为权威入口。本文只保留本机准备背景。
+
 ## 1. 适用范围
 
 本 runbook 用于 ShanHaiEdu 本地真实 MVP 的上线前本机准备。当前目标是“先不上线，但具备上线能力”：能构建、能检查生产启动前置条件、能初始化本地 SQLite、能把真实素材写入固定本地存储目录。
@@ -13,7 +15,7 @@
 工作目录：
 
 ```powershell
-cd E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\local-real-mvp-mainline
+cd E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 ```
 
 必须存在但不得提交的本机配置：

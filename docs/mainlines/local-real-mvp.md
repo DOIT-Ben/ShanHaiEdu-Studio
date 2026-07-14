@@ -1,4 +1,6 @@
 > 历史口径提示：本文为本地真实 MVP 早期路线，仅保留为历史参考。当前开发与验收以 `docs\product\current-requirements-baseline.md` 为唯一权威口径；任何文本 fallback、未校验 PPTX 或 placeholder 媒体都不得作为真实完成。
+>
+> 2026-07-14目录与分支勘误：本文正文中的`local-real-mvp-mainline`工作区和`mainline/local-real-mvp`分支均为历史事实，不再是执行入口。当前唯一代码目录为`E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main`，唯一开发分支为`main`；现状以`docs\mainlines\current-mainline-status.md`为准。
 
 # Local Real MVP 主线规划
 

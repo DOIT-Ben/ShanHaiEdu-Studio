@@ -1,6 +1,6 @@
 # Local Real MVP 当前主线状态
 
-更新时间：2026-07-14（V1-9R仓内控制面通过，R5仅待Provider完整Main Agent与结构化文本链路健康）
+更新时间：2026-07-14（项目治理优先；产品主线停在R5 Provider健康门）
 
 ## 1. 当前主线
 
@@ -14,9 +14,11 @@ V1 交付质量与邀请制上线
 
 当前阶段：`V1-9R5 in progress / autonomous control-plane acceptance`。V1-9R0至R4已按对应计划和测试完成，不重做；V1-9A至V1-9G的媒体/Runtime/最终包前置硬化和V1-10A至V1-10G的部署/恢复底座继续保留。当前只关闭Main Agent自主选择高层业务Tool、动态Observe/Replan、失败恢复、暂停/改道/局部任务、桌面体验和两用户隔离；V1发布前不再运行390px真实黑盒。V1-9真实Provider E2E、正式公网切流和教师签收仍暂停。
 
+2026-07-14治理优先级：用户已暂停继续追求当前产品阶段，先收敛项目结构、主线、分支、worktree和权威文档。治理期间不重复Provider请求、不执行R5浏览器黑盒、不进入V1-9，也不改变上述产品完成状态。治理入口为`docs\stages\2026-07-14-mainline-worktree-consolidation-plan.md`及对应test plan。
+
 2026-07-14最新仓内结论：`ppt_design`已按ADR分成R5紧凑语义候选与V1-9生产设计包。R5模型只生成`ppt-design-candidate.v1`的TaskBrief digest、完整目标语义、可信Artifact证据绑定、教学目标、叙事和连续逐页候选；服务端只计算candidate digest并验证最低结构，不确定性补全PageSpec、可编辑层、样张计划或production checks。缺少正式`pptDesignPackage`时，真实媒体Tool继续失败关闭。
 
-本轮新鲜仓级门为：候选定向`3 files / 35 tests`、控制面扩大回归`16 files / 203 tests`、Node`284/284`、单worker排除独立互动课件Stage7在途冲突后Vitest`127 files / 960 tests`、TypeScript、生产构建14页面和`git diff --check`全部通过；构建仍只有既有5条动态文件模式警告。Runner证据隔离测试`8/8`，每次真实黑盒现在把脱敏snapshot写入该次独立run目录并记录非敏感Provider通道。
+2026-07-14治理复验已关闭互动课件Stage7旧固定节点列表和“批准需求后自动生成教材证据”两个过时断言：互动课件定向`6/6`、控制面定向`17/17`、受影响回归`14/14`、Node`284/284`、完整Vitest`128 files / 965 tests`、TypeScript和生产构建14页面全部通过；构建仍只有既有5条动态文件模式警告。该结果只证明仓内候选可合并，不改变R5真实Provider阻塞结论。
 
 primary桌面运行`test-results\m67-e2e-47140-1784026423599\`证明Main Agent检查点压缩有效：一句话PPT三次Main Agent请求约`8.6k-10.2k tokens`，响应约`4.7-6.5s`，先自主选择并完成`create_requirement_spec`，再选择`create_ppt_outline`；后者的结构化文本Runtime单次180秒timeout，Observation保存`reasonCodes=[timeout,tool_execution_not_succeeded]`和`minimalNextAction=repair_upstream`，随后诚实暂停。A/B前置场景仍为0媒体GenerationJob、0外部Codex编排介入。
 

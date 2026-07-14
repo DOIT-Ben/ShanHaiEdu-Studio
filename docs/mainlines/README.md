@@ -1,103 +1,74 @@
 # 主线总览
 
-日期：2026-07-07
+更新时间：2026-07-14
 
-## 当前状态
-
-四条 MVP 并行支线已经通过 `integration/unified-mainline` 收束，并合并到 `main`。
-
-当前项目不再按四条长期并行支线推进。后续默认只有一条持续主线：
+## 1. 当前唯一入口
 
 ```text
-mainline/local-real-mvp
+代码目录：E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
+开发分支：main
+远端主线：origin/main
+状态入口：docs\mainlines\current-mainline-status.md
 ```
 
-目标是把已经集成的 MVP 骨架推进成本地真实可用系统。
+2026-07-14 已完成本地分支和 worktree 收敛。后续产品、前端、后端、Runtime、E2E、部署与文档工作均从 `main` 当前 HEAD 开始，不再从 `feature/mvp-*`、`integration/unified-mainline`、`mainline/local-real-mvp`、`codex/*` 或 detached worktree 继续开发。
 
-## 当前唯一主线
+当前产品阶段仍停在 V1-9R5 Provider 健康门；项目治理优先不代表 R5、V1-9 或发布已经通过。
 
-| 主线 | 工作区 | 目标 |
-| --- | --- | --- |
-| Local Real MVP | `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\local-real-mvp-mainline` | 让教师在本机完成一节小学数学公开课材料的真实生产闭环 |
+## 2. 当前治理状态
 
-主线文档：
+本地目标状态：
 
-- `docs\mainlines\local-real-mvp.md`
+| 项目 | 当前口径 |
+| --- | --- |
+| 本地代码目录 | 仅 `main\` |
+| 本地活动分支 | 仅 `main` |
+| Git worktree | 仅权威 `main\` 目录 |
+| 历史标签 | 保留原对象，不移动、不重写 |
+| 历史开发分支 | 内容进入 `main` 后删除 |
+| 临时审查目录 | 任务结束、结果回写且工作树干净后移除 |
 
-## 2026-07-08 分支盘点
+远端历史分支只有在 `origin/main` 已包含其全部有效内容后才能删除。远端清理和推送结果以本次治理 closeout 为准。
 
-本次已重新执行 `git fetch origin --prune`、`git branch -vv`、`git branch -r -vv`、`git worktree list --porcelain` 和祖先关系检查。
+## 3. 数据与代码边界
 
-当前仓库仍有多个分支引用，但只有一条开发主线：
+集合根下的 `local-real-mvp-mainline\artifact-storage-root` 只保留历史 PPT、图片、视频、feedback 等业务数据，不是代码工作区，也不是后续开发入口。
 
-```text
-mainline/local-real-mvp
+以下内容不随分支治理删除：
+
+- `.env` 和其他本机配置；
+- SQLite、WAL、SHM；
+- Artifact、feedback、上传文件和真实交付物；
+- `test-results\archive` 及被当前验收文档引用的证据；
+- `docs\archive` 和历史阶段报告；
+- annotated tags。
+
+## 4. 执行规则
+
+- 常规工作直接在 `main` 上按项目计划实施；需要隔离高风险实验时才创建短生命周期分支。
+- 临时分支必须从最新 `main` 创建，完成后经测试进入 `main` 并及时删除。
+- 新需求、架构调整和阶段开发继续遵守“需求基线 -> plan -> test-plan -> 实现 -> 集中验收 -> closeout”。
+- 不把本地预览、mock、deterministic fixture 或历史证据写成真实 Provider 与发布完成。
+- 任何删除、远端分支清理、生产写入和部署继续执行对应授权门。
+
+## 5. 基线验收
+
+主线治理至少执行：
+
+```powershell
+npm test
+npx tsc --noEmit
+npm run build
+git diff --check
 ```
 
-分支现状：
+测试和构建结果、分支删除清单、worktree 状态与残余风险必须写入治理 closeout。
 
-| 类型 | 数量 | 说明 |
-| --- | ---: | --- |
-| 本地分支 | 7 | `main`、`mainline/local-real-mvp`、4 条历史 feature、1 条 integration |
-| 远程分支 | 8 | `origin/main`、`origin/mainline/local-real-mvp`、4 条历史 feature、`origin/integration/unified-mainline`、`origin/master` |
-| 本地 worktree | 8 | 包含 `main`、当前主线、历史支线、集成支线和一个 detached audit worktree |
+## 6. 关联文档
 
-祖先关系确认：
-
-- `feature/mvp-agent-runtime-adapter` 已进入 `main`，也是 `mainline/local-real-mvp` 的祖先。
-- `feature/mvp-backend-workflow-lite` 已进入 `main`，也是 `mainline/local-real-mvp` 的祖先。
-- `feature/mvp-frontend-api-backed-workbench` 已进入 `main`，也是 `mainline/local-real-mvp` 的祖先。
-- `feature/mvp-e2e-verification` 已进入 `main`，也是 `mainline/local-real-mvp` 的祖先。
-- `integration/unified-mainline` 已进入 `main`，也是 `mainline/local-real-mvp` 的祖先。
-- `main` 已是 `mainline/local-real-mvp` 的祖先。
-
-同步状态：
-
-- `main` 与 `origin/main` 同步：`0 0`。
-- `mainline/local-real-mvp` 本地领先 `origin/mainline/local-real-mvp`：`0 62`。
-- `mainline/local-real-mvp` 本地领先 `origin/main`：`0 63`。
-
-结论：
-
-- 代码和规划已经统一收束到 `mainline/local-real-mvp`。
-- 旧 feature/integration 分支与 worktree 只作为历史追溯，不再承接新开发。
-- 不删除旧 worktree、旧分支或远程分支，除非用户单独确认。
-- 任何新阶段、测试定义、开发、验收、审查和提交都必须在 `local-real-mvp-mainline` 工作区、`mainline/local-real-mvp` 分支上推进。
-
-## 已收束支线
-
-以下支线已经进入 `main`，后续只作为历史记录和必要追溯来源：
-
-- `feature/mvp-agent-runtime-adapter`
-- `feature/mvp-backend-workflow-lite`
-- `feature/mvp-frontend-api-backed-workbench`
-- `feature/mvp-e2e-verification`
-- `integration/unified-mainline`
-
-旧支线 worktree 在确认不再需要后再归档或清理；删除动作必须单独确认。
-
-## 执行规则
-
-- 新开发只从 `mainline/local-real-mvp` 推进。
-- 不从 `feature/mvp-*`、`integration/unified-mainline`、`main` 或 detached audit worktree 继续开发。
-- 如果需要临时审查或实验，必须从 `mainline/local-real-mvp` 当前 HEAD 创建短生命周期分支或 worktree，并把结论回写本主线文档。
-- 每个阶段先写阶段规划文档和测试定义，再开发。
-- 阶段结束后集中验收，不用碎片化小验收冒充完成。
-- 主线对话负责统一产品、前端、后端、Runtime、E2E 和交付边界。
-- 临时审查或专项任务可以开短任务，但结论必须回写主线文档。
-
-## 基线验收
-
-`main` 合并后的基线已经通过：
-
-- `npm test`
-- `npm run build`
-- `npm run test:e2e:stage2:preflight`
-
-## 关联文档
-
-- `REQUIREMENTS_DECISION_V1.md`
-- `原始需求记录_V1.md`
-- `docs\mvp-to-production-agent-architecture.md`
-- `docs\stages\unified-mainline-integration-report.md`
-- `docs\handoffs\TARGET_MODE_HANDOFF_TEMPLATE.md`
+- `docs\product\current-requirements-baseline.md`
+- `docs\mainlines\current-mainline-status.md`
+- `docs\mainlines\local-real-mvp.md`（历史路线）
+- `docs\stages\2026-07-14-mainline-worktree-consolidation-plan.md`
+- `docs\stages\2026-07-14-mainline-worktree-consolidation-test-plan.md`
+- `docs\runbooks\v1-invited-release-recovery.md`
