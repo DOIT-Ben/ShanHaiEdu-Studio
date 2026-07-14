@@ -24,6 +24,18 @@
 
 ## 2. 上线门槛
 
+### RQ-040 互动课件规格与课堂活动模块基础
+
+- 状态：`accepted / split / isolated foundation`
+- 来源：2026-07-14 产品 Owner 指令；外包交付的互动课前端 MVP 仅含 Mock API 和静态构建包，需在 Studio 产品主线建立真实后端归属。
+- 目标：以现有 `Project`、Artifact、质量门和 Agent Runtime 为基础，建立教师可编辑、可校验、可版本化的互动课件规格；后续由课堂运行端和课件共创智能体共同消费。
+- 首切片：新增 `interactive_courseware_spec` Artifact 合同与确定性校验。输入为已批准的 `lesson_plan`，输出包含页面、活动、题目、答案判定、教师提示、时长和教学目标映射的结构化规格。规格校验通过只代表“可供后续编辑/运行”，不代表已经发布、已有学生答题数据或实时课堂可用。
+- 必须复用：Project 授权、Artifact 版本化、Node Contract、ToolRouter、ValidationReport、Quality Gate、Conversation/Agent Runtime；不得另建账号、项目、Provider、文件存储、Agent Runtime 或课堂数据真源。
+- 不纳入首切片：真实学生数据、实时 WebSocket、积分排名、课堂控制、白板、真实 Provider 调用、自动发布、未成年人数据出境。
+- 验收：有效规格可被保存为项目内版本化 Artifact；无活动、重复 ID、不可判定答案、无教学目标映射或缺少结束条件的规格必须被拒绝；所有失败以结构化 locator 返回；项目权限、Artifact 审批和现有 V1 主线行为不回归。
+- 需求规格：`docs\product\2026-07-14-interactive-courseware-requirements.md`。
+- 阶段与测试：`docs\stages\interactive-courseware-spec-foundation-plan.md`、`docs\stages\interactive-courseware-spec-foundation-test-plan.md`。
+
 ### RQ-038 Main Agent 自主编排与 HumanGate 职责纠偏
 
 - 状态：`accepted / P0 / blocks V1 real E2E and public cutover`
