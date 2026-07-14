@@ -20,6 +20,19 @@ ShanHaiEdu-Studio 不以 Hermes 替换现有 Main Agent、ToolRouter、HumanGate
 4. Codex Thread、模型消息历史和压缩摘要都不是 Project 的事实来源。
 5. 吸收 Hermes 的韧性、可观测性和运行时切换，不复制其集中式通用 Agent 内核。
 
+### 1.1 分阶段吸收与记忆优先级
+
+Hermes Intake 不作为一次性重构执行。每一项能力拥有独立编号、规格、实施计划、测试、实现和验收提交，全部保留在 \`intake-hermes\` 分支。
+
+记忆系统被确定为第一优先级 Intake（H01），因为 Runtime 切换、上下文压缩、Codex 接入和子智能体都依赖一致、可审计的 Memory Package。H01 不复制 Hermes 的本地 Markdown 文件，而是吸收其有界常驻记忆、按需 Session Search、MemoryProvider 生命周期、压缩前提取、后台复盘、写入审批、内容安全扫描和 Session 谱系，并改造成 ShanHai 的多租户 Memory Control Plane。
+
+详细设计与阶段台账：
+
+- \`docs/superpowers/specs/2026-07-15-hermes-memory-intake-design.md\`
+- \`docs/superpowers/specs/2026-07-15-hermes-intake-ledger.md\`
+
+H01 设计评审完成前，不进入 Memory Repository 或其他 Hermes Intake 的生产实现。
+
 ## 2. 当前 ShanHai 基线
 
 当前系统已经具备比 Hermes 更强的业务治理边界：
