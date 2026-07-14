@@ -28,7 +28,7 @@
 | 历史开发分支 | 内容进入 `main` 后删除 |
 | 临时审查目录 | 任务结束、结果回写且工作树干净后移除 |
 
-远端历史分支只有在 `origin/main` 已包含其全部有效内容后才能删除。远端清理和推送结果以本次治理 closeout 为准。
+远端历史分支已在 `origin/main` 包含全部有效内容后删除；最终远端只保留 `origin/main`。详细证据见 `docs\stages\2026-07-14-mainline-worktree-consolidation-closeout.md`。
 
 ## 3. 数据与代码边界
 

@@ -14,7 +14,7 @@ V1 交付质量与邀请制上线
 
 当前阶段：`V1-9R5 in progress / autonomous control-plane acceptance`。V1-9R0至R4已按对应计划和测试完成，不重做；V1-9A至V1-9G的媒体/Runtime/最终包前置硬化和V1-10A至V1-10G的部署/恢复底座继续保留。当前只关闭Main Agent自主选择高层业务Tool、动态Observe/Replan、失败恢复、暂停/改道/局部任务、桌面体验和两用户隔离；V1发布前不再运行390px真实黑盒。V1-9真实Provider E2E、正式公网切流和教师签收仍暂停。
 
-2026-07-14治理优先级：用户已暂停继续追求当前产品阶段，先收敛项目结构、主线、分支、worktree和权威文档。治理期间不重复Provider请求、不执行R5浏览器黑盒、不进入V1-9，也不改变上述产品完成状态。治理入口为`docs\stages\2026-07-14-mainline-worktree-consolidation-plan.md`及对应test plan。
+2026-07-14项目治理已完成：本地与远端均只保留`main`，Git只保留权威`main\`工作目录，历史标签和业务数据未移动，完整仓内门通过。用户已暂停继续追求当前产品阶段；恢复产品工作前不重复Provider请求、不执行R5浏览器黑盒、不进入V1-9，也不改变上述产品完成状态。治理证据见`docs\stages\2026-07-14-mainline-worktree-consolidation-closeout.md`。
 
 2026-07-14最新仓内结论：`ppt_design`已按ADR分成R5紧凑语义候选与V1-9生产设计包。R5模型只生成`ppt-design-candidate.v1`的TaskBrief digest、完整目标语义、可信Artifact证据绑定、教学目标、叙事和连续逐页候选；服务端只计算candidate digest并验证最低结构，不确定性补全PageSpec、可编辑层、样张计划或production checks。缺少正式`pptDesignPackage`时，真实媒体Tool继续失败关闭。
 
