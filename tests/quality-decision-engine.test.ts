@@ -47,7 +47,7 @@ describe("V1 Stage 2B deterministic quality decision", () => {
     expect(decision.reasonCodes).toContain("required_dimension_not_scorable");
   });
 
-  it("passes when hard validation, evidence, dimensions and severity thresholds all pass", () => {
+  it("lets an internally qualified version continue downstream without forging teacher signoff", () => {
     const validation = validationReport("passed");
     const rubric = resolveEffectiveRubric("ppt_final");
     const critic = criticReport({ rubric });
@@ -55,7 +55,8 @@ describe("V1 Stage 2B deterministic quality decision", () => {
     const first = decideQuality({ validationReports: [validation], criticReport: critic, rubric, target });
     const second = decideQuality({ validationReports: [validation], criticReport: critic, rubric, target });
 
-    expect(first).toMatchObject({ outcome: "pass", nextAction: "await_teacher_approval", deliveryEligibility: "final_candidate" });
+    expect(first).toMatchObject({ outcome: "pass", nextAction: "continue_downstream", deliveryEligibility: "final_candidate" });
+    expect(first).not.toHaveProperty("teacherDecision");
     expect(second.decisionDigest).toBe(first.decisionDigest);
   });
 

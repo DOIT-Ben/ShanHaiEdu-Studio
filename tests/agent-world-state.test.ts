@@ -11,12 +11,25 @@ import type {
 } from "@/server/workbench/types";
 
 describe("AgentWorldState", () => {
-  it("separates approved artifacts as trusted inputs and non-approved artifacts as drafts", () => {
+  it("separates teacher-approved or internally eligible artifacts from untrusted drafts", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
       workflowNodes: [nodeRecord({ key: "requirement_spec", status: "approved" })],
       artifacts: [
         artifactRecord({ id: "artifact-approved", title: "已确认需求", status: "approved", isApproved: true }),
+        artifactRecord({
+          id: "artifact-internally-eligible",
+          title: "内部审查通过的需求",
+          status: "needs_review",
+          isApproved: false,
+          structuredContent: {
+            artifactQualityState: {
+              validationStatus: "passed",
+              reviewStatus: "passed",
+              downstreamEligibility: "eligible",
+            },
+          },
+        }),
         artifactRecord({ id: "artifact-review", nodeKey: "ppt_draft", kind: "ppt_draft", title: "待审 PPT 大纲", status: "needs_review", isApproved: false }),
         artifactRecord({ id: "artifact-mismatch", title: "状态已确认但未被教师确认", status: "approved", isApproved: false }),
       ],
@@ -29,6 +42,7 @@ describe("AgentWorldState", () => {
     expect(state.currentNodeKey).toBe("ppt_draft");
     expect(state.trustedInputs).toEqual([
       expect.objectContaining({ id: "artifact-approved", title: "已确认需求", status: "approved", isApproved: true }),
+      expect.objectContaining({ id: "artifact-internally-eligible", status: "needs_review", isApproved: false, downstreamEligible: true }),
     ]);
     expect(state.draftArtifacts.map((artifact) => artifact.id)).toEqual(["artifact-review", "artifact-mismatch"]);
     expect(JSON.stringify(state.draftArtifacts)).not.toMatch(/completed/i);

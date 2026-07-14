@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { createAgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { getAgentToolDefinition } from "@/server/tools/agent-tool-registry";
-import { createAgentToolExecutorFromEnv, createOpenAIAgentToolExecutor } from "@/server/tools/openai-agent-tool-executor";
+import {
+  createAgentToolExecutorFromEnv,
+  createOpenAIAgentToolExecutor,
+  createOpenAIChatCompletionsAgentToolExecutor,
+  type OpenAIChatCompletionsClient,
+} from "@/server/tools/openai-agent-tool-executor";
+import { validPptDirectorOutput } from "../support/ppt-director-output-fixture";
 
 describe("V1-3 OpenAI Agent Tool Executor", () => {
   it("uses the Agent Tool output schema and returns a model-generated read-only result", async () => {
@@ -32,6 +38,9 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
     expect(payload?.text).toMatchObject({
       format: { type: "json_schema", name: "ppt_director_plan_or_repair", strict: true },
     });
+    expect(JSON.stringify((payload?.text as any).format.schema)).not.toContain("minItems");
+    expect(JSON.stringify(getAgentToolDefinition(envelope.toolId).outputSchema)).toContain("minItems");
+    expect(JSON.stringify(getAgentToolDefinition(envelope.toolId).outputSchema)).toContain('"contains_embedded_text":{"type":"boolean","const":false}');
     expect(JSON.stringify(payload)).not.toContain("deterministic_draft");
   });
 
@@ -73,6 +82,125 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
     expect(createAgentToolExecutorFromEnv({})).toBeUndefined();
   });
 
+  it("uses an explicitly selected Chat Completions channel without weakening Router schema validation", async () => {
+    let payload: Record<string, unknown> | undefined;
+    const client = {
+      chat: { completions: { async create(input: Record<string, unknown>) {
+        payload = input;
+        return { choices: [{ message: { content: JSON.stringify(validPptDirectorOutput()) } }] };
+      } } },
+    } as OpenAIChatCompletionsClient;
+    const executor = createOpenAIChatCompletionsAgentToolExecutor({
+      client,
+      model: "deepseek-test",
+      loadContext: async () => [],
+    });
+    const envelope = directorEnvelope();
+
+    const result = await executor(envelope, getAgentToolDefinition(envelope.toolId));
+
+    expect(result).toMatchObject({ status: "succeeded", artifactCreated: false });
+    expect(payload).toMatchObject({
+      model: "deepseek-test",
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_tokens: 32_768,
+    });
+    expect((payload?.messages as Array<{ content: string }>)[0].content).toContain('"page_specs"');
+    expect((payload?.messages as Array<{ content: string }>)[0].content).toContain("所选页面中至少一页的risk_level必须为high");
+    expect((payload?.messages as Array<{ content: string }>)[0].content).toContain("有且只有一个source_id完全相同的放置层");
+    expect((payload?.messages as Array<{ content: string }>)[0].content).toContain("至少包含20个可见字符");
+    expect(JSON.stringify(payload)).not.toContain("deterministic_draft");
+  });
+
+  it("requires an explicit complete DeepSeek channel configuration", () => {
+    expect(createAgentToolExecutorFromEnv({ AGENT_TOOL_MODEL_CHANNEL: "deepseek" })).toBeUndefined();
+    expect(createAgentToolExecutorFromEnv({
+      AGENT_TOOL_MODEL_CHANNEL: "deepseek",
+      DEEPSEEK_API_KEY: "test-key",
+      DEEPSEEK_BASE_URL: "https://example.invalid/v1",
+      DEEPSEEK_MODEL: "deepseek-chat",
+    })).toBeDefined();
+  });
+
+  it.each([
+    ["length", "{\"summary\":", "agent_tool_output_truncated"],
+    ["stop", "not-json", "agent_tool_output_invalid_json"],
+  ])("classifies Chat Completions %s output without creating an artifact", async (finishReason, content, errorCategory) => {
+    const client = {
+      chat: { completions: { async create() {
+        return { choices: [{ finish_reason: finishReason, message: { content } }] };
+      } } },
+    } as OpenAIChatCompletionsClient;
+    const executor = createOpenAIChatCompletionsAgentToolExecutor({
+      client,
+      model: "deepseek-test",
+      loadContext: async () => [],
+    });
+    const envelope = directorEnvelope();
+
+    const result = await executor(envelope, getAgentToolDefinition(envelope.toolId));
+
+    expect(result).toMatchObject({ status: "failed", artifactCreated: false, errorCategory });
+    expect(result).not.toHaveProperty("structuredOutput");
+  });
+
+  it("uses one bounded model repair when Chat Completions output misses the authoritative schema", async () => {
+    const invalid: any = structuredClone(validPptDirectorOutput());
+    invalid.page_specs[0].composition.layers[0].text = "not allowed";
+    const calls: Record<string, unknown>[] = [];
+    const client = {
+      chat: { completions: { async create(input: Record<string, unknown>) {
+        calls.push(input);
+        return {
+          choices: [{
+            finish_reason: "stop",
+            message: { content: JSON.stringify(calls.length === 1 ? invalid : validPptDirectorOutput()) },
+          }],
+        };
+      } } },
+    } as OpenAIChatCompletionsClient;
+    const executor = createOpenAIChatCompletionsAgentToolExecutor({
+      client,
+      model: "deepseek-test",
+      loadContext: async () => [],
+    });
+    const envelope = directorEnvelope();
+
+    const result = await executor(envelope, getAgentToolDefinition(envelope.toolId));
+
+    expect(result).toMatchObject({ status: "succeeded", artifactCreated: false });
+    expect(calls).toHaveLength(2);
+    const repairMessages = calls[1].messages as Array<{ role: string; content: string }>;
+    expect(repairMessages.at(-1)?.content).toContain("$.page_specs[0].composition.layers[0].text:additionalProperty");
+  });
+
+  it("uses the same bounded repair for PPT production semantics before returning to Main Agent", async () => {
+    const invalid: any = structuredClone(validPptDirectorOutput());
+    for (const page of invalid.page_specs) page.risk_level = "low";
+    const calls: Record<string, unknown>[] = [];
+    const client = {
+      chat: { completions: { async create(input: Record<string, unknown>) {
+        calls.push(input);
+        return {
+          choices: [{
+            finish_reason: "stop",
+            message: { content: JSON.stringify(calls.length === 1 ? invalid : validPptDirectorOutput()) },
+          }],
+        };
+      } } },
+    } as OpenAIChatCompletionsClient;
+    const executor = createOpenAIChatCompletionsAgentToolExecutor({ client, model: "deepseek-test", loadContext: async () => [] });
+    const envelope = directorEnvelope();
+
+    const result = await executor(envelope, getAgentToolDefinition(envelope.toolId));
+
+    expect(result).toMatchObject({ status: "succeeded", artifactCreated: false });
+    expect(calls).toHaveLength(2);
+    const repairMessages = calls[1].messages as Array<{ role: string; content: string }>;
+    expect(repairMessages.at(-1)?.content).toContain("sample_high_risk_page_missing");
+  });
+
   it("gives the final-video Critic the exact evidence and hard-gate contract", async () => {
     let payload: Record<string, unknown> | undefined;
     const client = { responses: { async create(input: Record<string, unknown>) {
@@ -112,16 +240,5 @@ function directorEnvelopeInput() {
     reviewTargetRef: null,
     approvedArtifactRefs: [],
     arguments: { goal: "规划课件", stage: "page_design", targetPageIds: [], focus: null },
-  };
-}
-
-function validPptDirectorOutput() {
-  return {
-    decision: "plan",
-    summary: "形成逐页设计后再选样张。",
-    targetLocators: [],
-    nextToolIntents: ["assemble_ppt_key_samples"],
-    assumptions: [],
-    stopConditions: ["sample_review"],
   };
 }

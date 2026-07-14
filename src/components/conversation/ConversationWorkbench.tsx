@@ -81,8 +81,8 @@ export function ConversationWorkbench({
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, composerSubmitting, projectBusy]);
+    scrollAnchorRef.current?.scrollIntoView({ behavior: compact ? "auto" : "smooth", block: "end" });
+  }, [compact, messages.length, composerSubmitting, projectBusy]);
 
   function registerMessage(id: string, node: HTMLElement | null) {
     messageRefs.current[id] = node;

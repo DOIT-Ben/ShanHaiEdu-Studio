@@ -5,8 +5,19 @@ import {
   listMainAgentToolDefinitions,
   resolveMainAgentToolDefinition,
 } from "@/server/tools/main-agent-tool-registry";
+import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
 
 const expectedBusinessTools = [
+  "create_requirement_spec",
+  "create_lesson_plan",
+  "create_ppt_outline",
+  "create_video_course_anchor",
+  "generate_intro_creative_themes",
+  "generate_intro_video_script",
+  "generate_video_storyboard",
+  "generate_video_asset_brief",
+  "plan_video_segments",
+  "create_ppt_design_draft",
   "generate_ppt_sample_assets",
   "assemble_ppt_key_samples",
   "generate_ppt_full_assets",
@@ -37,7 +48,6 @@ describe("V1-3 Main Agent visible tool registry", () => {
 
     expect(ids).not.toContain("intro_video");
     expect(ids).not.toContain("generate_pptx_from_design");
-    expect(ids).not.toContain("create_requirement_spec");
     expect(ids).not.toContain("database_write");
     expect(ids).not.toContain("artifact_promote");
   });
@@ -59,5 +69,15 @@ describe("V1-3 Main Agent visible tool registry", () => {
     const second = listMainAgentToolDefinitions();
 
     expect(second[0]!.description).not.toBe("mutated");
+  });
+
+  it("exports strict-safe Main Agent Tool schemas without unsupported composition keywords", () => {
+    const serialized = JSON.stringify(
+      listMainAgentExecutableToolDefinitions().map(toolDefinitionToOpenAiFunctionTool),
+    );
+
+    for (const keyword of ["allOf", "anyOf", "oneOf", "contains", "minItems"]) {
+      expect(serialized).not.toContain(`\"${keyword}\"`);
+    }
   });
 });

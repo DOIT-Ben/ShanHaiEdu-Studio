@@ -25,8 +25,11 @@ export interface ToolObservationRetryPolicy {
 export interface ToolObservation {
   observationId: string;
   projectId: string;
+  runId?: string;
   turnId?: string;
   jobId?: string;
+  inputDigest?: string;
+  errorCategory?: string;
   sourceMessageId?: string;
   capabilityId: string;
   expectedArtifactKind?: string;
@@ -42,8 +45,11 @@ export interface ToolObservation {
 
 export interface CreateToolObservationInput {
   projectId: string;
+  runId?: string;
   turnId?: string;
   jobId?: string;
+  inputDigest?: string;
+  errorCategory?: string;
   sourceMessageId?: string;
   capabilityId: string;
   expectedArtifactKind?: string;
@@ -79,8 +85,11 @@ export function createToolObservation(input: CreateToolObservationInput): ToolOb
   return {
     observationId: randomUUID(),
     projectId: input.projectId,
+    runId: input.runId,
     turnId: input.turnId,
     jobId: input.jobId,
+    inputDigest: input.inputDigest,
+    errorCategory: input.errorCategory,
     sourceMessageId: input.sourceMessageId,
     capabilityId: input.capabilityId,
     expectedArtifactKind: input.expectedArtifactKind,
@@ -156,6 +165,9 @@ export function isToolObservation(value: unknown): value is ToolObservation {
   return (
     typeof value.observationId === "string" &&
     typeof value.projectId === "string" &&
+    (value.runId === undefined || typeof value.runId === "string") &&
+    (value.inputDigest === undefined || typeof value.inputDigest === "string") &&
+    (value.errorCategory === undefined || typeof value.errorCategory === "string") &&
     typeof value.capabilityId === "string" &&
     (value.expectedArtifactKind === undefined || typeof value.expectedArtifactKind === "string") &&
     isToolObservationKind(value.kind) &&

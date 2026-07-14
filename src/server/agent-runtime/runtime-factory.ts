@@ -7,61 +7,62 @@ import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/o
 
 type RuntimeFactoryEnv = OpenAICompatibleEnv & {
   SHANHAI_OPENAI_NATIVE_TOOL_LOOP?: string;
+  SHANHAI_E2E_DETERMINISTIC_RUNTIME?: string;
+  AGENT_RUNTIME_TIMEOUT_MS?: string;
 };
 
+const defaultAgentRuntimeTimeoutMs = 180_000;
+const minimumAgentRuntimeTimeoutMs = 10_000;
+
 export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env): AgentRuntime {
-  const fallback = new DeterministicRuntime();
+  if (env.NODE_ENV !== "production" && env.SHANHAI_E2E_DETERMINISTIC_RUNTIME === "1") {
+    return new DeterministicRuntime();
+  }
   const config = pickOpenAICompatibleConfig(env);
   if (!config) {
-    return fallback;
+    return new UnavailableAgentRuntime();
   }
 
   const client = new OpenAI({
     apiKey: config.credential,
     baseURL: config.baseURL,
-    timeout: 20000,
+    timeout: resolveAgentRuntimeTimeoutMs(env),
     maxRetries: 0,
   }) as OpenAIResponsesClient;
 
-  const toolExecutionRuntime = new FallbackAgentRuntime(
-    new OpenAIRuntime({
-      client,
-      model: config.model,
-      reasoningEffort: config.reasoningEffort,
-    }),
-    fallback,
-  );
+  const toolExecutionRuntime = new OpenAIRuntime({
+    client,
+    model: config.model,
+    reasoningEffort: config.reasoningEffort,
+  });
 
   const nativeToolLoop = env.SHANHAI_OPENAI_NATIVE_TOOL_LOOP === "1"
     ? (input: AgentRuntimeInput) => createOpenAIRuntimeNativeToolLoopOptions(input, { toolExecutionRuntime })
     : undefined;
 
-  return new FallbackAgentRuntime(
-    new OpenAIRuntime({
-      client,
-      model: config.model,
-      reasoningEffort: config.reasoningEffort,
-      nativeToolLoop,
-    }),
-    fallback,
-  );
+  return new OpenAIRuntime({
+    client,
+    model: config.model,
+    reasoningEffort: config.reasoningEffort,
+    nativeToolLoop,
+  });
 }
 
-export class FallbackAgentRuntime implements AgentRuntime {
-  private readonly primary: AgentRuntime;
-  private readonly fallback: AgentRuntime;
+export function resolveAgentRuntimeTimeoutMs(env: Record<string, string | undefined> = process.env) {
+  const configured = Number.parseInt(env.AGENT_RUNTIME_TIMEOUT_MS ?? "", 10);
+  return Number.isFinite(configured) && configured >= minimumAgentRuntimeTimeoutMs
+    ? configured
+    : defaultAgentRuntimeTimeoutMs;
+}
 
-  constructor(primary: AgentRuntime, fallback: AgentRuntime) {
-    this.primary = primary;
-    this.fallback = fallback;
-  }
-
+class UnavailableAgentRuntime implements AgentRuntime {
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
-    const primaryResult = await this.primary.run(input);
-    if (primaryResult.status === "succeeded") {
-      return primaryResult;
-    }
-
-    return this.fallback.run(input);
+    return {
+      status: "failed",
+      run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "failed" },
+      failure: { category: "provider", retryable: true },
+      assistantMessage: { title: "暂时无法生成", body: "智能生成服务暂时不可用，请稍后重试。" },
+      nextSuggestedAction: { type: "retry", label: "稍后重试" },
+    };
   }
 }

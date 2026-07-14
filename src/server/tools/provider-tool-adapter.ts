@@ -630,7 +630,7 @@ function buildNeedsInputResult(input: ProviderToolAdapterInput, capabilityId: st
       internalReasonSanitized: `Missing required source artifacts: ${missingInputs.join(", ")}`,
       retryPolicy: {
         retryable: false,
-        nextAction: "ask_teacher",
+        nextAction: "fix_inputs",
       },
     }),
     artifactCreated: false,

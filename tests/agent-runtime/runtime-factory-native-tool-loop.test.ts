@@ -65,6 +65,28 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
       parallel_tool_calls: false,
     });
   });
+
+  it("returns the real runtime failure instead of creating a deterministic draft after a 60-second-equivalent failure", async () => {
+    const { createAgentRuntimeFromEnv } = await import("@/server/agent-runtime/runtime-factory");
+    const runtime = createAgentRuntimeFromEnv(openAIEnv());
+
+    const result = await runtime.run(runtimeInput());
+
+    expect(result).toMatchObject({
+      status: "failed",
+      run: { runtimeKind: "openai", status: "failed" },
+    });
+    expect("artifactDraft" in result).toBe(false);
+  });
+
+  it("uses a configurable 180-second Runtime timeout for real Provider generation", async () => {
+    const { resolveAgentRuntimeTimeoutMs } = await import("@/server/agent-runtime/runtime-factory");
+
+    expect(resolveAgentRuntimeTimeoutMs({})).toBe(180_000);
+    expect(resolveAgentRuntimeTimeoutMs({ AGENT_RUNTIME_TIMEOUT_MS: "45000" })).toBe(45_000);
+    expect(resolveAgentRuntimeTimeoutMs({ AGENT_RUNTIME_TIMEOUT_MS: "1000" })).toBe(180_000);
+    expect(resolveAgentRuntimeTimeoutMs({ AGENT_RUNTIME_TIMEOUT_MS: "not-a-number" })).toBe(180_000);
+  });
 });
 
 function openAIEnv() {

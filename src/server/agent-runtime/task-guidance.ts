@@ -28,9 +28,9 @@ export const taskGuidance: Record<AgentRuntimeTask, RuntimeTaskGuidance> = {
     checklist: ["每页是否只承载一个教学动作。", "页面节奏是否匹配课堂时长。", "主视觉需求是否服务教学而非装饰。"],
   },
   ppt_design: {
-    label: "PPT 逐页质量设计包",
-    requiredFields: ["证据绑定", "叙事大纲", "视觉系统", "逐页设计", "底图", "元素", "文字", "排版", "可编辑层", "样张计划"],
-    checklist: ["每页是否只承担一个叙事和教学动作。", "AI 场景、AI 素材、可编辑文字与数学层是否职责分离。", "样张是否覆盖不同页型并包含高风险页。"],
+    label: "PPT 逐页结构化设计候选",
+    requiredFields: ["任务语义", "证据绑定", "视觉方向", "逐页结构", "下游准备"],
+    checklist: ["每页是否只承担一个学习动作。", "主视觉与可编辑内容是否职责清楚。", "候选是否绑定当前TaskBrief与可信大纲并可继续展开生产结构。"],
   },
   intro_video_plan: {
     label: "导入视频方案",
@@ -38,14 +38,14 @@ export const taskGuidance: Record<AgentRuntimeTask, RuntimeTaskGuidance> = {
     checklist: ["是否不提前讲解知识结论。", "课程锚点是否能自然接回课堂。", "视频是否只承担吸引和设问，不替代授课。"],
   },
   knowledge_anchor_extract: {
-    label: "视频知识锚点",
-    requiredFields: ["知识锚点", "学生易错点", "生活关联点", "可创意化表达点", "课堂回落问题"],
-    checklist: ["知识锚点是否来自结构化教案。", "是否包含学生易错点和生活关联点。", "课堂回落问题是否能把视频带回本课。"],
+    label: "视频最小课程锚点",
+    requiredFields: ["唯一最小课程锚点", "课程任务回接", "回接时机", "不可扩张约束"],
+    checklist: ["锚点是否只承担独立短片与课程任务之间的最小回接。", "是否没有把创意限定为儿童、教师、教室或课堂活动。", "是否避免提前解释答案。"],
   },
   creative_theme_generate: {
     label: "导入创意主题",
-    requiredFields: ["候选主题", "一句话故事", "创意类型", "绑定知识锚点", "课堂适配原因", "风险"],
-    checklist: ["创意主题是否绑定知识锚点。", "是否只制造兴趣和设问，不直接讲完知识结论。", "风险是否说明不适合课堂导入之处。"],
+    requiredFields: ["独立创意候选", "一句话故事", "创意成立性", "唯一最小课程锚点", "课程回接", "风险"],
+    checklist: ["短片脱离教材后是否仍能独立成立。", "课程锚点是否只在必要位置最小回接。", "是否只制造兴趣和设问，不直接讲完知识结论。"],
   },
   video_script_generate: {
     label: "导入视频脚本",

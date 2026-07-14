@@ -21,6 +21,16 @@ type MainAgentAgentToolDefinition = AgentToolDefinition & {
 export type MainAgentToolDefinition = MainAgentAgentToolDefinition | MainAgentBusinessToolDefinition;
 
 const businessToolAliases = [
+  { id: "create_requirement_spec", internalToolId: "create_requirement_spec" },
+  { id: "create_lesson_plan", internalToolId: "create_lesson_plan" },
+  { id: "create_ppt_outline", internalToolId: "create_ppt_outline" },
+  { id: "create_video_course_anchor", internalToolId: "extract_knowledge_anchors" },
+  { id: "generate_intro_creative_themes", internalToolId: "generate_intro_creative_themes" },
+  { id: "generate_intro_video_script", internalToolId: "generate_intro_video_script" },
+  { id: "generate_video_storyboard", internalToolId: "generate_video_storyboard" },
+  { id: "generate_video_asset_brief", internalToolId: "generate_video_asset_brief" },
+  { id: "plan_video_segments", internalToolId: "plan_video_segments" },
+  { id: "create_ppt_design_draft", internalToolId: "create_ppt_design_draft" },
   { id: "generate_ppt_sample_assets", internalToolId: "generate_ppt_sample_assets" },
   { id: "assemble_ppt_key_samples", internalToolId: "assemble_ppt_key_samples" },
   { id: "generate_ppt_full_assets", internalToolId: "generate_ppt_full_assets" },
@@ -70,6 +80,15 @@ function createBusinessToolAlias(alias: typeof businessToolAliases[number]): Mai
 
   return {
     ...internal,
+    ...(alias.id === "create_ppt_design_draft" ? {
+      description: "基于当前TaskBrief和可信上游生成逐页PPT设计候选；可复用本轮PPT Director结果，但Director不是必经步骤。候选必须来自真实模型、绑定证据并通过最低结构校验。",
+      inputSchema: {
+        type: "object" as const,
+        additionalProperties: false as const,
+        properties: {},
+        required: [],
+      },
+    } : {}),
     id: alias.id,
     transportName: alias.id,
     internalToolId: alias.internalToolId,

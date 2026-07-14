@@ -13,6 +13,7 @@ import type {
 import type { ProviderArtifactRef } from "@/server/tools/provider-tool-adapter";
 import type { ToolArtifactTruth, ToolDefinition, ToolQualityGateResult } from "@/server/tools/tool-types";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { validatePptDesignPackage } from "@/server/ppt-quality/ppt-design-validator";
 import { validatePptAssetManifest } from "@/server/ppt-quality/ppt-asset-validator";
 import type { PptAssetManifest, PptAssetRequestBatch } from "@/server/ppt-quality/ppt-asset-types";
@@ -364,7 +365,7 @@ function approvedInputEvidence(kind: string, input: {
       candidate.projectId === input.projectId &&
       candidate.kind === kind &&
       candidate.nodeKey === kind &&
-      (candidate.status === "approved" && candidate.isApproved === true || isRepairablePptCandidate(input.tool, candidate)),
+      (isArtifactTrustedForDownstream(candidate) || isRepairablePptCandidate(input.tool, candidate)),
     );
     return artifact ? `artifact:${artifact.id}:v${artifact.version}` : undefined;
   }

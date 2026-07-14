@@ -9,6 +9,32 @@ import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invo
 import { createWorkbenchService } from "../service";
 
 describe("Local Real MVP M60 conversation turn queue", () => {
+  it("runs a one-sentence PPT task through the production queue without a routine confirmation", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "V1-9R2 queue autonomy", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const teacherMessage = await service.addMessage(project.id, {
+      role: "teacher",
+      content: "请做五年级数学百分数公开课 PPT，导入用投篮命中率情境，约 10 页。",
+    });
+    await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
+
+    const result = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new DeterministicRuntime(),
+      enableTaskGrantAutonomy: true,
+    });
+    const snapshot = await service.getProjectSnapshot(project.id);
+    const persistedTeacherMessage = snapshot.messages.find((message) => message.id === teacherMessage.id)!;
+
+    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", kind: "requirement_spec", status: "needs_review" })]);
+    expect(persistedTeacherMessage.metadata).toMatchObject({
+      taskBrief: { goal: expect.stringContaining("投篮命中率"), intentEpoch: 0 },
+      intentGrant: { standardWorkAuthorized: true, taskId: expect.any(String), intensity: "standard" },
+    });
+    expect(snapshot.messages.filter((message) => message.role === "assistant").at(-1)?.metadata.pendingDeliveryPlan).toBeUndefined();
+  });
+
   it("persists queued conversation turn jobs in the project snapshot", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 对话队列状态" });
@@ -381,6 +407,11 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const project = await service.createProject({ title: "V1-3 queued Agent Tool identity" });
     const enhancedProject = await service.updateProjectGenerationIntensity(project.id, { intensity: "enhanced", expectedVersion: 0 });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "请先规划PPT样张" });
+    await service.saveArtifact(project.id, {
+      nodeKey: "ppt_draft", kind: "ppt_draft", title: "可信 PPT 大纲", status: "needs_review",
+      summary: "已通过内部校验，可供 Director 审查。", markdownContent: "# PPT 大纲",
+      structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
+    });
     await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
     await service.updateProjectGenerationIntensity(project.id, { intensity: "deep", expectedVersion: enhancedProject.intensityVersion ?? 1 });
     let invocation: AgentToolInvocationEnvelope | undefined;

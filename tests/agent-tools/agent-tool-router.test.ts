@@ -6,6 +6,7 @@ import { routeAgentToolCall } from "@/server/tools/agent-tool-router";
 import { isAgentToolResultEligibleForProductionGuard } from "@/server/tools/agent-tool-types";
 import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
 import { videoFinalReviewHardGateIds } from "@/server/tools/video-final-review-gate";
+import { validPptDirectorOutput } from "../support/ppt-director-output-fixture";
 
 function validEnvelope() {
   return createAgentToolInvocationEnvelope({
@@ -160,14 +161,7 @@ describe("V1-2 Agent Tool router", () => {
       status: "succeeded" as const,
       toolId: "ppt_director.plan_or_repair" as const,
       invocationId: "invocation-1",
-      structuredOutput: {
-        decision: "repair",
-        summary: "只返修目标页面。",
-        targetLocators: ["page_03"],
-        nextToolIntents: ["repair_ppt_full_deck_pages"],
-        assumptions: [],
-        stopConditions: ["target pages validated"],
-      },
+      structuredOutput: { ...validPptDirectorOutput(), decision: "repair", targetLocators: ["page_03"] },
       assistantSummary: "建议只返修第3页。",
       artifactCreated: false as const,
     }));
@@ -189,14 +183,7 @@ describe("V1-2 Agent Tool router", () => {
       status: "succeeded" as const,
       toolId: "ppt_director.plan_or_repair" as const,
       invocationId: "invocation-1",
-      structuredOutput: {
-        decision: "repair",
-        summary: "只返修目标页面。",
-        targetLocators: ["page_03"],
-        nextToolIntents: ["repair_ppt_full_deck_pages"],
-        assumptions: [],
-        stopConditions: ["target pages validated"],
-      },
+      structuredOutput: { ...validPptDirectorOutput(), decision: "repair", targetLocators: ["page_03"] },
       assistantSummary: "建议只返修第3页。",
       artifactCreated: false as const,
       [forgedField]: { outcome: "pass" },
@@ -241,14 +228,7 @@ describe("V1-2 Agent Tool router", () => {
       status: "succeeded" as const,
       toolId: tool.id,
       invocationId: envelope.invocationId,
-      structuredOutput: {
-        decision: "repair",
-        summary: "只返修目标页面。",
-        targetLocators: ["page_03"],
-        nextToolIntents: ["repair_ppt_full_deck_pages"],
-        assumptions: [],
-        stopConditions: ["target pages validated"],
-      },
+      structuredOutput: { ...validPptDirectorOutput(), decision: "repair", targetLocators: ["page_03"] },
       assistantSummary: "建议只返修第3页。",
       artifactCreated: false as const,
     }));

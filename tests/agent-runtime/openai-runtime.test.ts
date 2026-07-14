@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { FallbackAgentRuntime, createAgentRuntimeFromEnv } from "../../src/server/agent-runtime/runtime-factory";
+import { createAgentRuntimeFromEnv } from "../../src/server/agent-runtime/runtime-factory";
 import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
 import { OpenAIRuntime } from "../../src/server/agent-runtime/openai-runtime";
 import type { AgentRuntime, AgentRuntimeInput } from "../../src/server/agent-runtime/types";
@@ -8,6 +8,7 @@ import type { ToolRouterInput } from "../../src/server/tools/tool-router";
 import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
 import { expectSucceeded } from "./test-helpers";
 import { validPptDesignPackage } from "../support/ppt-quality-fixture";
+import { createPptDesignCandidateProjection, type PptDesignCandidateInput } from "../../src/server/ppt-quality/ppt-design-candidate";
 import { createStoryboardManifest } from "../../src/server/video-quality/video-production-contract";
 import { createVideoNarrationScript } from "../../src/server/video-quality/video-narration-contract";
 
@@ -99,14 +100,15 @@ describe("OpenAIRuntime", () => {
     await expect(runtime.run(storyboardInput())).resolves.toMatchObject({ status: "failed" });
   });
 
-  it("transports a validated PPT design package as structured artifact content", async () => {
+  it("transports a compact PPT design candidate without projecting production structural content", async () => {
     const calls: Array<Record<string, unknown>> = [];
-    const packageValue = validPptDesignPackage();
+    const candidate = compactPptDesignCandidate();
+    expect(() => createPptDesignCandidateProjection(candidate)).not.toThrow();
     const client = {
       responses: {
         create: async (payload: Record<string, unknown>) => {
           calls.push(payload);
-          return { output_text: structuredPptDesignOutput(packageValue) };
+          return { output_text: structuredPptDesignOutput(candidate) };
         },
       },
     };
@@ -114,9 +116,15 @@ describe("OpenAIRuntime", () => {
     const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
     const result = expectSucceeded(await runtime.run(pptDesignInput()));
 
-    expect(result.artifactDraft.structuredContent).toEqual({ pptDesignPackage: packageValue });
-    expect(JSON.stringify(calls[0])).toContain("mediaAccessibility");
-    expect(JSON.stringify(calls[0])).toContain("独立的学习动作");
+    expect(result.artifactDraft.structuredContent?.pptDesignCandidate).toMatchObject({
+      schemaVersion: "ppt-design-candidate.v1",
+      taskBriefDigest: "b".repeat(64),
+      candidateDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(result.artifactDraft.structuredContent).not.toHaveProperty("pptDesignPackage");
+    expect(JSON.stringify(calls[0])).not.toContain("mediaAccessibility");
+    expect(JSON.stringify(calls[0])).not.toContain("productionPath");
+    expect(JSON.stringify(calls[0])).toContain("逐页紧凑设计候选");
     expect(calls[0]).toMatchObject({
       text: {
         format: {
@@ -132,7 +140,7 @@ describe("OpenAIRuntime", () => {
     });
   });
 
-  it("rejects PPT Director output when the structured design package is missing", async () => {
+  it("rejects PPT design output when the structured candidate is missing", async () => {
     const client = {
       responses: {
         create: async () => ({ output_text: structuredPptDesignOutput(null) }),
@@ -194,7 +202,14 @@ describe("OpenAIRuntime", () => {
     };
 
     const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
-    const result = expectSucceeded(await runtime.run(input()));
+    const result = expectSucceeded(await runtime.run({
+      ...input(),
+      taskInput: {
+        teacherGoal: "五年级数学百分数公开课，约 10 页",
+        targetPageCount: 10,
+        reliableDefaultPolicy: "use_general_curriculum_context",
+      },
+    }));
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
@@ -212,6 +227,10 @@ describe("OpenAIRuntime", () => {
     expect(JSON.stringify(calls[0])).toContain("百分数");
     expect(JSON.stringify(calls[0])).toContain("需求规格说明书");
     expect(JSON.stringify(calls[0])).toContain("教案需围绕百分数意义展开");
+    expect(JSON.stringify(calls[0])).toContain("targetPageCount");
+    expect(JSON.stringify(calls[0])).toContain("use_general_curriculum_context");
+    expect(calls[0]).toMatchObject({ instructions: expect.stringContaining("可修改且不伪造教材证据的通用课程默认") });
+    expect(calls[0]).toMatchObject({ instructions: expect.stringContaining("逐字作为二级标题") });
     expect(result).toMatchObject({
       status: "succeeded",
       run: {
@@ -367,13 +386,34 @@ describe("OpenAIRuntime", () => {
     }
   });
 
-  it("falls back to deterministic runtime when no key is configured", async () => {
+  it("fails honestly without a configured model channel", async () => {
     const runtime = createAgentRuntimeFromEnv({});
-    const result = expectSucceeded(await runtime.run(input()));
+    const result = await runtime.run(input());
 
-    expect(result.status).toBe("succeeded");
-    expect(result.run.runtimeKind).toBe("deterministic");
-    expect(result.artifactDraft.generationMode).toBe("deterministic_draft");
+    expect(result).toMatchObject({ status: "failed", run: { runtimeKind: "openai", status: "failed" } });
+    expect(result).not.toHaveProperty("artifactDraft");
+  });
+
+  it("allows an explicit deterministic runtime fixture only outside production", async () => {
+    const fixtureRuntime = createAgentRuntimeFromEnv({
+      NODE_ENV: "development",
+      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
+    });
+    const fixtureResult = expectSucceeded(await fixtureRuntime.run(input()));
+    expect(fixtureResult).toMatchObject({
+      status: "succeeded",
+      run: { runtimeKind: "deterministic" },
+      artifactDraft: { generationMode: "deterministic_draft" },
+    });
+
+    const productionRuntime = createAgentRuntimeFromEnv({
+      NODE_ENV: "production",
+      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
+    });
+    expect(await productionRuntime.run(input())).toMatchObject({
+      status: "failed",
+      run: { runtimeKind: "openai" },
+    });
   });
 
   it("rejects thin model output that misses required review sections", async () => {
@@ -400,7 +440,7 @@ describe("OpenAIRuntime", () => {
     const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
     const result = await runtime.run(input());
 
-    expect(result.status).toBe("failed");
+    expect(result).toMatchObject({ status: "failed", failure: { category: "validation", retryable: true } });
     expect(result.assistantMessage.body).toContain("重试");
   });
 
@@ -482,37 +522,34 @@ describe("OpenAIRuntime", () => {
     expect(teacherText).toContain("重试");
   });
 
-  it("falls back to deterministic artifacts when the configured model runtime fails", async () => {
-    const failingPrimary: AgentRuntime = {
-      async run(runtimeInput) {
-        return {
-          status: "failed",
-          run: {
-            runId: runtimeInput.runId,
-            projectId: runtimeInput.projectId,
-            task: runtimeInput.task,
-            runtimeKind: "openai",
-            status: "failed",
-          },
-          assistantMessage: {
-            title: "本次生成没有完成",
-            body: "请稍后重试。",
-          },
-          nextSuggestedAction: {
-            type: "retry",
-            label: "重试本次生成",
-          },
-        };
-      },
-    };
+  it.each([
+    ["timeout", new Error("Request timed out after 20000ms")],
+    ["network", new Error("fetch failed: ECONNRESET")],
+  ] as const)("classifies %s failures without creating an artifact", async (category, failure) => {
+    const client = { responses: { async create() { throw failure; } } };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
 
-    const runtime = new FallbackAgentRuntime(failingPrimary, new DeterministicRuntime());
-    const result = expectSucceeded(await runtime.run(input()));
+    const result = await runtime.run(input());
 
-    expect(result.run.runtimeKind).toBe("deterministic");
-    expect(result.artifactDraft.generationMode).toBe("deterministic_draft");
-    expect(result.artifactDraft.markdown).toContain("## 教学目标");
-    expect(result.artifactDraft.markdown).toContain("## 自检清单");
+    expect(result).toMatchObject({
+      status: "failed",
+      run: { runId: "run-openai", status: "failed" },
+      failure: { category, retryable: true },
+    });
+    expect("artifactDraft" in result).toBe(false);
+  });
+
+  it.each([
+    ["parse", "{not-json"],
+    ["missing_field", JSON.stringify({ assistantMessage: { title: "标题", body: "正文" } })],
+  ] as const)("classifies %s output failures without promoting success", async (category, outputText) => {
+    const client = { responses: { async create() { return { output_text: outputText }; } } };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+
+    const result = await runtime.run(input());
+
+    expect(result).toMatchObject({ status: "failed", failure: { category } });
+    expect("artifactDraft" in result).toBe(false);
   });
 });
 
@@ -555,47 +592,70 @@ function structuredLessonPlanOutput(): string {
   });
 }
 
-function structuredPptDesignOutput(packageValue: ReturnType<typeof validPptDesignPackage> | null): string {
+function structuredPptDesignOutput(candidate: PptDesignCandidateInput | null): string {
   return JSON.stringify({
     assistantMessage: {
-      title: "PPT 设计包已生成",
-      body: "已生成可检查的逐页设计包。",
+      title: "PPT 设计候选已生成",
+      body: "已生成可检查的逐页结构化设计候选。",
     },
     artifactDraft: {
-      title: "百分数 PPT 逐页设计包",
-      summary: "包含 12 页叙事、视觉、可编辑层和样张计划。",
+      title: "百分数 PPT 逐页设计候选",
+      summary: "包含 12 页任务语义、视觉方向和逐页结构。",
       markdown: [
+        "## 任务语义",
+        "五年级百分数公开课逐页设计。",
         "## 证据绑定",
         "教材证据与目标逐项绑定。",
-        "## 叙事大纲",
-        "12 页均承担独立学习动作。",
-        "## 视觉系统",
+        "## 视觉方向",
         "统一轻立体课堂视觉。",
-        "## 逐页设计",
+        "## 逐页结构",
         "12 页逐页描述。",
-        "## 底图",
-        "场景层不嵌入文字和数学内容。",
-        "## 元素",
-        "课堂教具拆分为透明素材。",
-        "## 文字",
-        "全部保留为可编辑文字层。",
-        "## 排版",
-        "使用稳定阅读顺序和安全区。",
-        "## 可编辑层",
-        "精确文字和数学内容保持可编辑。",
-        "## 样张计划",
-        "覆盖不同页型和高风险页。",
+        "## 下游准备",
+        "可继续展开完整页面结构并进入独立生产门。",
         "## 自检清单",
-        "逐页结构、数学层和样张覆盖已检查。",
+        "逐页结构、证据和下游边界已检查。",
       ].join("\n"),
-      structuredContentJson: packageValue === null
+      structuredContentJson: candidate === null
         ? null
-        : JSON.stringify({ pptDesignPackage: packageValue }),
+        : JSON.stringify({ pptDesignCandidate: candidate }),
     },
     nextSuggestedAction: {
       label: "查看并确认 PPT 设计包",
     },
   });
+}
+
+function compactPptDesignCandidate(): PptDesignCandidateInput {
+  const packageValue = validPptDesignPackage();
+  return {
+    schemaVersion: "ppt-design-candidate.v1",
+    taskBriefDigest: "b".repeat(64),
+    goalSummary: "五年级百分数公开课逐页PPT设计。",
+    brief: {
+      grade: packageValue.brief.grade,
+      subject: packageValue.brief.subject,
+      topic: packageValue.brief.topic,
+      audience: packageValue.brief.audience,
+      useCase: packageValue.brief.useCase,
+      targetSlideCount: packageValue.brief.targetSlideCount,
+    },
+    evidenceBindings: packageValue.evidenceBindings.map((binding) => ({ ...binding, digest: "a".repeat(64) })),
+    objectives: packageValue.objectives,
+    narrative: {
+      openingTension: packageValue.narrative.openingTension,
+      learningProgression: packageValue.narrative.learningProgression,
+      closingResolution: packageValue.narrative.closingResolution,
+    },
+    pagePlans: packageValue.pageSpecs.map((page) => ({
+      pageNumber: page.pageNumber,
+      objectiveIds: page.objectiveIds,
+      narrativeJob: page.narrativeJob,
+      teachingAction: page.teachingAction,
+      takeawayTitle: page.takeawayTitle,
+      primaryVisualBrief: page.primaryVisualBrief,
+    })),
+    downstreamUse: "production_design_expansion",
+  };
 }
 
 function structuredStoryboardOutput(manifest: ReturnType<typeof validStoryboardManifest> | null): string {

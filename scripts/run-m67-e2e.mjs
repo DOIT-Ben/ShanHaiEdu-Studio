@@ -1,3 +1,4 @@
+import "dotenv/config";
 import Database from "better-sqlite3";
 import { spawn } from "node:child_process";
 import { randomBytes, scrypt as nodeScrypt } from "node:crypto";
@@ -11,9 +12,13 @@ const runId = `${process.pid}-${Date.now()}`;
 const tempRoot = path.join(root, "test-results", `m67-e2e-${runId}`);
 const databasePath = path.join(tempRoot, "m67.sqlite");
 const artifactRoot = path.join(tempRoot, "artifact-storage");
+const evidenceRoot = path.join(tempRoot, "evidence");
 const playwrightOutput = path.join(tempRoot, "playwright-output");
 const generatedConfigPath = path.join(tempRoot, "playwright.config.mjs");
 const isolatedAppRoot = path.join(tempRoot, "next-app");
+const preserveRunDirectory = process.env.M67_E2E_PRESERVE_RUN_DIR === "1";
+const requestedSpec = resolveRequestedSpec(process.env.M67_E2E_SPEC ?? "tests/e2e/beta-feedback-center.spec.ts");
+const requestedProjects = resolveRequestedProjects(process.env.M67_E2E_PROJECTS);
 const admin = {
   email: process.env.M67_E2E_ADMIN_EMAIL ?? "m67-admin@example.test",
   password: process.env.M67_E2E_ADMIN_PASSWORD ?? "M67 admin password 2026!",
@@ -24,11 +29,24 @@ const teacher = {
   password: process.env.M67_E2E_TEACHER_PASSWORD ?? "M67 teacher password 2026!",
   displayName: "M67 验收教师",
 };
+const secondTeacher = {
+  email: process.env.M67_E2E_SECOND_TEACHER_EMAIL ?? "m67-teacher-b@example.test",
+  password: process.env.M67_E2E_SECOND_TEACHER_PASSWORD ?? "M67 second teacher password 2026!",
+  displayName: "M67 验收教师乙",
+};
+const browserRestrictedPorts = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79,
+  87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137,
+  139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540,
+  548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
+  3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080,
+]);
 
 const ownedChildren = new Set();
 let nextServer;
 let cleanupPromise;
 let serverLogTail = [];
+const mainAgentFailureDiagnostics = [];
 
 process.once("SIGINT", () => void stopFromSignal(130));
 process.once("SIGTERM", () => void stopFromSignal(143));
@@ -53,17 +71,18 @@ try {
     [
       "node_modules/@playwright/test/cli.js",
       "test",
-      "tests/e2e/beta-feedback-center.spec.ts",
+      requestedSpec,
       "--config",
       generatedConfigPath,
-      "--project=chromium-desktop",
-      "--project=chromium-narrow",
+      ...requestedProjects.map((project) => `--project=${project}`),
       "--workers=1",
     ],
     env,
-    Number.parseInt(process.env.M67_E2E_TIMEOUT_MS ?? "360000", 10),
+    resolvePlaywrightCommandTimeoutMs(requestedSpec, process.env.M67_E2E_TIMEOUT_MS),
   );
+  writeSanitizedSummary("passed");
 } catch (error) {
+  writeSanitizedSummary("failed");
   console.error(error instanceof Error ? error.message : error);
   if (serverLogTail.length > 0) {
     console.error("M67 Next dev log tail:\n" + serverLogTail.join(""));
@@ -74,10 +93,12 @@ try {
 }
 
 function createEnvironment(baseURL, port) {
+  const deterministicFixture = process.env.M67_E2E_DETERMINISTIC === "1";
   return {
     ...process.env,
     DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: artifactRoot,
+    M67_E2E_EVIDENCE_DIR: evidenceRoot,
     NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
     NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
     SHANHAI_AUTH_MODE: "password",
@@ -94,6 +115,12 @@ function createEnvironment(baseURL, port) {
     M67_E2E_ADMIN_PASSWORD: admin.password,
     M67_E2E_TEACHER_EMAIL: teacher.email,
     M67_E2E_TEACHER_PASSWORD: teacher.password,
+    M67_E2E_SECOND_TEACHER_EMAIL: secondTeacher.email,
+    M67_E2E_SECOND_TEACHER_PASSWORD: secondTeacher.password,
+    ...(deterministicFixture ? {
+      SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
+    } : {}),
     CI: "1",
   };
 }
@@ -117,6 +144,12 @@ async function seedUsers(env) {
       SHANHAI_INVITE_USER_INITIAL_PASSWORD: teacher.password,
       SHANHAI_INVITE_USER_DISPLAY_NAME: teacher.displayName,
     }, 60_000);
+    await runCommand(process.execPath, [teacherScript], {
+      ...env,
+      SHANHAI_INVITE_USER_EMAIL: secondTeacher.email,
+      SHANHAI_INVITE_USER_INITIAL_PASSWORD: secondTeacher.password,
+      SHANHAI_INVITE_USER_DISPLAY_NAME: secondTeacher.displayName,
+    }, 60_000);
     return;
   }
 
@@ -133,6 +166,7 @@ async function seedUsers(env) {
     `);
     insert.run("m67-admin", admin.displayName, "admin", admin.email, await hashPassword(admin.password));
     insert.run("m67-teacher", teacher.displayName, "teacher", teacher.email, await hashPassword(teacher.password));
+    insert.run("m67-teacher-b", secondTeacher.displayName, "teacher", secondTeacher.email, await hashPassword(secondTeacher.password));
   } finally {
     db.close();
   }
@@ -141,13 +175,16 @@ async function seedUsers(env) {
 function assertSeededUsers() {
   const db = new Database(databasePath, { readonly: true });
   try {
-    const rows = db.prepare(`SELECT "email", "role", "authMode" FROM "LocalUser" WHERE "email" IN (?, ?)`).all(admin.email, teacher.email);
+    const rows = db.prepare(`SELECT "email", "role", "authMode" FROM "LocalUser" WHERE "email" IN (?, ?, ?)`).all(admin.email, teacher.email, secondTeacher.email);
     const byEmail = new Map(rows.map((row) => [row.email, row]));
     if (byEmail.get(admin.email)?.role !== "admin" || byEmail.get(admin.email)?.authMode !== "password") {
       throw new Error("M67 administrator seed did not create a password-auth admin.");
     }
     if (byEmail.get(teacher.email)?.role !== "teacher" || byEmail.get(teacher.email)?.authMode !== "password") {
       throw new Error("M67 teacher seed did not create a password-auth teacher.");
+    }
+    if (byEmail.get(secondTeacher.email)?.role !== "teacher" || byEmail.get(secondTeacher.email)?.authMode !== "password") {
+      throw new Error("M67 second teacher seed did not create a password-auth teacher.");
     }
   } finally {
     db.close();
@@ -166,10 +203,7 @@ function startNextServer(env, port) {
       windowsHide: true,
     },
   );
-  const capture = (chunk) => {
-    serverLogTail.push(chunk.toString());
-    if (serverLogTail.length > 80) serverLogTail = serverLogTail.slice(-80);
-  };
+  const capture = captureServerOutput;
   child.stdout.on("data", capture);
   child.stderr.on("data", capture);
   child.once("error", (error) => {
@@ -245,6 +279,91 @@ export default defineConfig({
   fs.writeFileSync(generatedConfigPath, config, "utf8");
 }
 
+function resolveRequestedSpec(value) {
+  const normalized = value.replaceAll("\\", "/");
+  if (!/^tests\/e2e\/[a-z0-9._-]+\.spec\.ts$/i.test(normalized)) {
+    throw new Error("M67_E2E_SPEC must name one spec directly under tests/e2e.");
+  }
+  return normalized;
+}
+
+function resolvePlaywrightCommandTimeoutMs(spec, configuredValue) {
+  const configured = Number.parseInt(configuredValue ?? "360000", 10);
+  const requestedTimeout = Number.isFinite(configured) && configured > 0 ? configured : 360_000;
+  const specFloor = spec === "tests/e2e/v1-9r-two-user-main-agent.spec.ts" ? 1_560_000 : 0;
+  return Math.max(requestedTimeout, specFloor);
+}
+
+function resolveRequestedProjects(value) {
+  const allowed = new Set(["chromium-desktop", "chromium-narrow"]);
+  const projects = (value ?? "chromium-desktop,chromium-narrow").split(",").map((item) => item.trim()).filter(Boolean);
+  if (projects.length === 0 || projects.some((project) => !allowed.has(project))) {
+    throw new Error("M67_E2E_PROJECTS contains an unsupported project.");
+  }
+  return [...new Set(projects)];
+}
+
+function captureServerOutput(chunk) {
+  const text = chunk.toString();
+  serverLogTail.push(text);
+  if (serverLogTail.length > 80) serverLogTail = serverLogTail.slice(-80);
+  for (const match of text.matchAll(/\[main-agent-failure\]\s+(\{[^\r\n]*\})/g)) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      mainAgentFailureDiagnostics.push({
+        phase: sanitizeDiagnosticText(parsed.phase),
+        reason: sanitizeDiagnosticText(parsed.reason),
+        errorName: sanitizeDiagnosticText(parsed.errorName),
+        summary: sanitizeDiagnosticText(parsed.summary),
+      });
+    } catch {
+      mainAgentFailureDiagnostics.push({
+        phase: "unknown",
+        reason: "diagnostic_parse_failed",
+        errorName: "Error",
+        summary: "Main Agent failure diagnostic could not be parsed.",
+      });
+    }
+  }
+}
+
+function sanitizeDiagnosticText(value) {
+  return String(value ?? "")
+    .replace(/Bearer\s+[^\s,;]+/gi, "[redacted]")
+    .replace(/\b(api[_-]?key|credential|token|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/https?:\/\/[^\s,;)]+/gi, "[redacted-url]")
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .replace(/\b[A-Za-z]:[\\/][^\s,;)]+/g, "[redacted-path]")
+    .slice(0, 600);
+}
+
+function writeSanitizedSummary(status) {
+  if (!requestedSpec.includes("v1-9r")) return;
+  const summaryPath = path.join(root, "test-results", "v1-9r-two-user-summary.json");
+  fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
+  fs.writeFileSync(summaryPath, JSON.stringify({
+    status,
+    completedAt: new Date().toISOString(),
+    spec: requestedSpec,
+    projects: requestedProjects,
+    fixture: process.env.M67_E2E_DETERMINISTIC === "1"
+      ? "isolated-sqlite-explicit-deterministic-fixture"
+      : "isolated-sqlite-with-configured-product-main-agent",
+    providerChannel: resolveProviderChannel(process.env),
+    preservedRunDirectory: preserveRunDirectory
+      ? path.relative(root, tempRoot).replaceAll("\\", "/")
+      : null,
+    externalCodexOrchestrationCount: 0,
+    failureDiagnostics: mainAgentFailureDiagnostics,
+  }, null, 2) + "\n", "utf8");
+}
+
+function resolveProviderChannel(env) {
+  if (env.OPENAI_API_KEY?.trim()) return "openai";
+  const channel = env.AGENT_BRAIN_CHANNEL?.trim().toLowerCase();
+  return ["primary", "third", "fallback"].includes(channel) ? channel : "primary";
+}
+
 function runCommand(command, args, env, timeoutMs) {
   const child = spawn(command, args, {
     cwd: root,
@@ -280,16 +399,23 @@ function runCommand(command, args, env, timeoutMs) {
 
 async function reservePort() {
   const requested = Number.parseInt(process.env.M67_E2E_PORT ?? "0", 10);
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen({ host: "127.0.0.1", port: requested }, () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close((error) => error ? reject(error) : resolve(port));
+  if (requested > 0 && browserRestrictedPorts.has(requested)) {
+    throw new Error(`M67_E2E_PORT ${requested} is browser-restricted.`);
+  }
+  while (true) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", reject);
+      server.listen({ host: "127.0.0.1", port: requested }, () => {
+        const address = server.address();
+        const reservedPort = typeof address === "object" && address ? address.port : 0;
+        server.close((error) => error ? reject(error) : resolve(reservedPort));
+      });
     });
-  });
+    if (!browserRestrictedPorts.has(port)) return port;
+    if (requested > 0) throw new Error(`M67_E2E_PORT ${requested} is browser-restricted.`);
+  }
 }
 
 function cleanup() {
@@ -297,10 +423,22 @@ function cleanup() {
     cleanupPromise = (async () => {
       const activeChildren = new Set([nextServer, ...ownedChildren].filter(Boolean));
       await Promise.all([...activeChildren].map((child) => stopProcessTree(child)));
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      if (!preserveRunDirectory) await removeOwnedTempRoot();
     })();
   }
   return cleanupPromise;
+}
+
+async function removeOwnedTempRoot() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!error || typeof error !== "object" || !["EBUSY", "EPERM"].includes(error.code) || attempt === 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
 }
 
 async function stopFromSignal(code) {

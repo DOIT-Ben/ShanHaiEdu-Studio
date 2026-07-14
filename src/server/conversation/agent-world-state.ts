@@ -3,6 +3,7 @@ import type { ToolObservation } from "@/server/capabilities/tool-observation";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import type { AgentObservation, RunCheckpoint } from "@/server/conversation/react-control";
 import type { PersistedAgentToolReport } from "@/server/tools/agent-tool-report";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -16,7 +17,7 @@ import type {
 export type AgentWorldStateArtifact = Pick<
   ArtifactRecord,
   "id" | "nodeKey" | "kind" | "title" | "status" | "summary" | "isApproved" | "version"
->;
+> & { downstreamEligible?: boolean };
 
 export type AgentWorldStateBlockedItem = {
   nodeKey: WorkflowNodeKey;
@@ -131,10 +132,10 @@ const blockedReasonByStatus: Record<"blocked" | "failed", string> = {
 
 export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWorldState {
   const trustedInputs = input.artifacts
-    .filter((artifact) => artifact.status === "approved" && artifact.isApproved)
+    .filter(isArtifactTrustedForDownstream)
     .map(toWorldStateArtifact);
   const draftArtifacts = input.artifacts
-    .filter((artifact) => artifact.status !== "approved" || !artifact.isApproved)
+    .filter((artifact) => !isArtifactTrustedForDownstream(artifact))
     .map(toWorldStateArtifact);
 
   const blockedItems = input.workflowNodes
@@ -227,6 +228,7 @@ function toWorldStateArtifact(artifact: ArtifactRecord): AgentWorldStateArtifact
     status: artifact.status,
     summary: artifact.summary,
     isApproved: artifact.isApproved,
+    downstreamEligible: isArtifactTrustedForDownstream(artifact),
     version: artifact.version,
   };
 }

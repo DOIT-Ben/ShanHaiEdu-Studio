@@ -331,16 +331,22 @@ export function useWorkbenchController() {
 
   async function updateGenerationIntensity(intensity: GenerationIntensity, confirmationActionId?: string) {
     if (!activeProject) throw new Error("No active project.");
-    const result = await dataSource.updateGenerationIntensity(
-      activeProject.id,
-      intensity,
-      intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0,
-      confirmationActionId,
-    );
-    intensityVersionRef.current.set(result.project.id, result.project.intensityVersion ?? 0);
-    setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
-    if (!result.confirmationRequired) setNotice(`生成强度已调整为${intensity === "standard" ? "标准" : intensity === "enhanced" ? "增强" : intensity === "deep" ? "深度" : "极致"}，从下一条任务开始生效。`);
-    return result;
+    try {
+      const result = await dataSource.updateGenerationIntensity(
+        activeProject.id,
+        intensity,
+        intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0,
+        confirmationActionId,
+      );
+      intensityVersionRef.current.set(result.project.id, result.project.intensityVersion ?? 0);
+      setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
+      if (!result.confirmationRequired) setNotice(`生成强度已调整为${intensity === "standard" ? "标准" : intensity === "enhanced" ? "增强" : intensity === "deep" ? "深度" : "极致"}，从下一条任务开始生效。`);
+      return result;
+    } catch (error) {
+      const status = error instanceof Error && "status" in error ? Number(error.status) : undefined;
+      if (status === 409) await loadProject(activeProject.id);
+      throw error;
+    }
   }
 
   function updateInput(value: string) {

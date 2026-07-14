@@ -126,7 +126,7 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   ppt_draft: "PPT 大纲",
   ppt_design_draft: "PPT 设计稿",
   pptx_artifact: "PPTX 文件",
-  knowledge_anchor_extract: "知识锚点",
+  knowledge_anchor_extract: "最小课程锚点",
   creative_theme_generate: "创意主题",
   video_script_generate: "视频脚本",
   storyboard_generate: "视频分镜",
@@ -526,6 +526,16 @@ export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
     .slice()
     .sort((left, right) => left.order - right.order)
     .map((node) => mapBackendNodeToArtifactItem(node, artifactsByNode.get(node.key)));
+  const visibleArtifactIds = new Set(artifacts.flatMap((artifact) => artifact.artifactId ? [artifact.artifactId] : []));
+  const referencedArtifactIds = new Set(value.messages.flatMap((message) => message.artifactRefs));
+  const historicArtifacts = value.artifacts
+    .filter((artifact) => referencedArtifactIds.has(artifact.id) && !visibleArtifactIds.has(artifact.id))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .flatMap((artifact) => {
+      const node = value.nodes.find((candidate) => candidate.key === artifact.nodeKey);
+      return node ? [mapBackendNodeToArtifactItem(node, artifact)] : [];
+    });
+  artifacts.push(...historicArtifacts);
   const activeArtifact =
     artifacts.find((item) => item.nodeKey === value.project.currentNodeKey && item.artifactId) ??
     artifacts.find((item) => item.status === "needs_review") ??

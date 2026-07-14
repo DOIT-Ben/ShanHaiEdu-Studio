@@ -11,15 +11,23 @@ import {
   type AgentHarnessBudgetEventStatus,
 } from "@/server/conversation/agent-harness-budget";
 import type { ToolDefinition, ToolExecutionResult } from "./tool-types";
+import {
+  adaptPptDirectorOutputToDesignArtifact,
+  type PptDirectorPlanBinding,
+} from "@/server/ppt-quality/ppt-director-design-adapter";
 
 export type InternalCapabilityToolInput = {
   tool: ToolDefinition;
   runtime: AgentRuntime;
   projectId: string;
   userMessage: string;
+  taskInput?: Record<string, unknown>;
   projectContext: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
   sourceMessageId?: string;
+  inputDigest?: string;
+  intentEpoch?: number;
+  pptDirectorPlan?: PptDirectorPlanBinding;
 };
 
 export type InternalCapabilityToolDependencies = {
@@ -44,12 +52,17 @@ export async function executeInternalCapabilityTool(
 
   const runCapability = dependencies.runCapability ?? runCapabilityWithAgentRuntime;
 
+  if (capabilityId === "ppt_design" && hasCurrentPptDirectorPlan(input)) {
+    return executePptDirectorDesign(input);
+  }
+
   try {
     const result = await runCapability({
       runtime: input.runtime,
       projectId: input.projectId,
       capabilityId,
       userMessage: input.userMessage,
+      taskInput: input.taskInput,
       projectContext: input.projectContext,
       approvedArtifacts: input.approvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
@@ -88,6 +101,7 @@ export async function executeInternalCapabilityTool(
       internalReason: `${result.errorCategory}: ${result.userMessage}`,
       retryable: result.retryable,
       errorCategory: result.errorCategory,
+      runtimeRun: result.runtimeRun,
     });
   } catch (error) {
     return buildFailureResult(input, {
@@ -100,6 +114,41 @@ export async function executeInternalCapabilityTool(
   }
 }
 
+function executePptDirectorDesign(input: InternalCapabilityToolInput): ToolExecutionResult {
+  const binding = input.pptDirectorPlan!;
+  try {
+    const artifactDraft = adaptPptDirectorOutputToDesignArtifact({
+      invocationId: binding.invocationId,
+      structuredOutput: binding.structuredOutput,
+      approvedArtifactRefs: binding.approvedArtifactRefs,
+    });
+    return {
+      status: "succeeded",
+      toolId: input.tool.id,
+      capabilityId: "ppt_design",
+      artifactDraft,
+      assistantSummary: "逐页课件设计已完成并通过最低可信结构检查。",
+      budgetEvent: buildBudgetEvent(input, "ppt_design", "succeeded", "tool_succeeded"),
+    };
+  } catch (error) {
+    return buildFailureResult(input, {
+      capabilityId: "ppt_design",
+      userMessage: "逐页课件设计没有通过完整性检查，我会按问题位置重新规划。",
+      internalReason: error instanceof Error ? error.message : "ppt_director_output_invalid",
+      retryable: false,
+      errorCategory: "validation",
+    });
+  }
+}
+
+function hasCurrentPptDirectorPlan(input: InternalCapabilityToolInput): boolean {
+  return Boolean(
+    input.pptDirectorPlan &&
+    input.pptDirectorPlan.projectId === input.projectId &&
+    input.pptDirectorPlan.intentEpoch === input.intentEpoch,
+  );
+}
+
 function buildFailureResult(
   input: InternalCapabilityToolInput,
   failure: {
@@ -108,6 +157,7 @@ function buildFailureResult(
     internalReason: string;
     retryable: boolean;
     errorCategory: string;
+    runtimeRun?: Extract<CapabilityRunResult, { status: "failed" }>["runtimeRun"];
   },
 ): ToolExecutionResult {
   const normalizedErrorCategory = normalizeErrorCategory(failure.errorCategory);
@@ -123,7 +173,10 @@ function buildFailureResult(
     capabilityId: failure.capabilityId,
     observation: createToolObservation({
       projectId: input.projectId,
+      runId: failure.runtimeRun?.runId,
       sourceMessageId: input.sourceMessageId,
+      inputDigest: input.inputDigest,
+      errorCategory: normalizedErrorCategory,
       capabilityId: failure.capabilityId,
       expectedArtifactKind: input.tool.producedArtifactKind,
       kind: observationKind,
@@ -155,7 +208,7 @@ function createBlockedObservation(
     internalReasonSanitized: details.internalReasonSanitized,
     retryPolicy: {
       retryable: false,
-      nextAction: "ask_teacher",
+      nextAction: "fix_inputs",
     },
   });
 }

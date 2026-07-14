@@ -248,18 +248,18 @@ const toolDefinitions: ToolDefinition[] = [
   }),
   internalTool({
     id: "extract_knowledge_anchors",
-    label: "提取视频知识锚点",
-    description: "从教案中提取导入视频必须回到的关键知识、易错点和课堂问题。",
+    label: "生成视频最小课程锚点",
+    description: "从任务语义生成独立创意短片与课程任务之间唯一、最小的回接，不规定角色、场景或创作主题。",
     capabilityId: "knowledge_anchor_extract",
-    requiredArtifactKinds: ["lesson_plan"],
+    requiredArtifactKinds: ["requirement_spec"],
     producedArtifactKind: "knowledge_anchor_extract",
   }),
   internalTool({
     id: "generate_intro_creative_themes",
     label: "生成导入创意主题",
-    description: "围绕知识锚点生成课堂导入创意主题。",
+    description: "先生成脱离教材仍成立的独立创意短片主题，再为候选标注唯一最小课程回接。",
     capabilityId: "creative_theme_generate",
-    requiredArtifactKinds: ["knowledge_anchor_extract"],
+    requiredArtifactKinds: ["requirement_spec"],
     producedArtifactKind: "creative_theme_generate",
   }),
   internalTool({

@@ -6,8 +6,8 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createWorkbenchService } from "@/server/workbench/service";
 
-describe("Local Real MVP M3 PPT outline loop", () => {
-  it("generates a PPT outline text artifact after approving the lesson plan", async () => {
+describe("Local Real MVP M3 approval compatibility", () => {
+  it("does not traverse the legacy deterministic chain after approval", async () => {
     const projectResponse = await postProjectRoute(new Request("http://localhost/api/workbench/projects", { method: "POST" }));
     const projectBody = await projectResponse.json();
     const projectId = projectBody.project.id;
@@ -17,23 +17,10 @@ describe("Local Real MVP M3 PPT outline loop", () => {
     let snapshot = await readSnapshot(projectId);
     await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "requirement_spec").id);
     snapshot = await readSnapshot(projectId);
-    await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "textbook_evidence").id);
-    snapshot = await readSnapshot(projectId);
-    await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "lesson_plan").id);
-
-    snapshot = await readSnapshot(projectId);
     const pptOutline = snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "ppt_draft");
 
-    expect(pptOutline).toMatchObject({
-      nodeKey: "ppt_draft",
-      title: "PPT 大纲与逐页脚本",
-      status: "needs_review",
-      version: 1,
-    });
-    expect(pptOutline.markdownContent).toContain("## 页面结构");
-    expect(pptOutline.markdownContent).toContain("## 逐页脚本原则");
-    expect(pptOutline.markdownContent).toContain("## 主视觉需求");
-    expect(pptOutline.markdownContent).not.toContain("PPTX 文件已生成");
+    expect(pptOutline).toBeUndefined();
+    expect(snapshot.artifacts.map((artifact: { nodeKey: string }) => artifact.nodeKey)).toEqual(["requirement_spec"]);
   });
 });
 

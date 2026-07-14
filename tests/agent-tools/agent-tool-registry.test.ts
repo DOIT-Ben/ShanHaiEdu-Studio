@@ -143,4 +143,43 @@ describe("V1-2 Agent Tool registry", () => {
     expect((criticOutput.properties as Record<string, any>).minimalFix).toMatchObject({ minLength: 1 });
     expect(videoCourseAnchorHardGateIds).toHaveLength(6);
   });
+
+  it("freezes the PPT Director output as a complete executable page-design contract", () => {
+    const output = getAgentToolDefinition("ppt_director.plan_or_repair").outputSchema;
+    expect(output.required).toEqual(expect.arrayContaining([
+      "communication_job",
+      "presentation_brief",
+      "evidence_bindings",
+      "learning_objectives",
+      "deck_narrative",
+      "learning_objective_coverage",
+      "visual_system",
+      "page_specs",
+      "asset_requests",
+      "sample_plan",
+      "self_check",
+    ]));
+    const pageSpec = (output.properties as Record<string, any>).page_specs.items;
+    expect(pageSpec.required).toEqual(expect.arrayContaining([
+      "page_id",
+      "page_number",
+      "objective_ids",
+      "composition",
+      "alt_text",
+      "reading_order",
+      "non_color_coding",
+      "media_accessibility",
+      "risk_level",
+    ]));
+    expect(pageSpec.properties.composition.properties.layers.items.required).toEqual(expect.arrayContaining([
+      "layer_id",
+      "layer_kind",
+      "source_id",
+      "x",
+      "y",
+      "width",
+      "height",
+      "z_index",
+    ]));
+  });
 });

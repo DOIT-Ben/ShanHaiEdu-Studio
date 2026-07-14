@@ -18,6 +18,20 @@ export type AgentRuntimeKind = "deterministic" | "openai";
 
 export type AgentRunStatus = "succeeded" | "failed";
 
+export type AgentRuntimeFailureCategory =
+  | "provider"
+  | "network"
+  | "timeout"
+  | "parse"
+  | "missing_field"
+  | "validation"
+  | "unknown";
+
+export type AgentRuntimeFailure = {
+  category: AgentRuntimeFailureCategory;
+  retryable: boolean;
+};
+
 export type AgentProjectContext = {
   grade: string;
   subject: string;
@@ -29,6 +43,10 @@ export type AgentProjectContext = {
 };
 
 export type ApprovedArtifactInput = {
+  artifactId?: string;
+  kind?: string;
+  version?: number;
+  digest?: string;
   nodeKey: string;
   title: string;
   summary: string;
@@ -41,6 +59,7 @@ export type AgentRuntimeInput = {
   sourceMessageId?: string;
   task: AgentRuntimeTask;
   userMessage: string;
+  taskInput?: Record<string, unknown>;
   projectContext: AgentProjectContext;
   approvedArtifacts: ApprovedArtifactInput[];
 };
@@ -86,6 +105,7 @@ export type AgentRuntimeSucceededResult = {
 export type AgentRuntimeFailedResult = {
   status: "failed";
   run: AgentRunMetadata;
+  failure?: AgentRuntimeFailure;
   assistantMessage: AgentAssistantMessage;
   nextSuggestedAction: AgentNextSuggestedAction;
 };

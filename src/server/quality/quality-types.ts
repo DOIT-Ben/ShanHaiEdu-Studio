@@ -148,7 +148,7 @@ export type QualityDecision = {
   outcome: "pass" | "repair" | "block";
   weightedScore: number | null;
   reasonCodes: string[];
-  nextAction: "await_teacher_approval" | "repair_unit" | "repair_upstream" | "regenerate_evidence";
+  nextAction: "continue_downstream" | "await_teacher_approval" | "repair_unit" | "repair_upstream" | "regenerate_evidence";
   repairTargets: TargetLocator[];
   deliveryEligibility: "not_eligible" | "preview_only" | "unit_candidate" | "final_candidate";
   validationReportDigests: string[];

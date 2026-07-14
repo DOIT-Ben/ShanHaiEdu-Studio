@@ -6,8 +6,8 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createWorkbenchService } from "@/server/workbench/service";
 
-describe("Local Real MVP M4 intro video plan loop", () => {
-  it("generates an intro video plan text artifact after approving the PPT outline", async () => {
+describe("Local Real MVP M4 approval compatibility", () => {
+  it("does not generate a video plan from artifact approval", async () => {
     const projectResponse = await postProjectRoute(new Request("http://localhost/api/workbench/projects", { method: "POST" }));
     const projectBody = await projectResponse.json();
     const projectId = projectBody.project.id;
@@ -17,28 +17,10 @@ describe("Local Real MVP M4 intro video plan loop", () => {
     let snapshot = await readSnapshot(projectId);
     await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "requirement_spec").id);
     snapshot = await readSnapshot(projectId);
-    await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "textbook_evidence").id);
-    snapshot = await readSnapshot(projectId);
-    await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "lesson_plan").id);
-    snapshot = await readSnapshot(projectId);
-    await approve(projectId, snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "ppt_draft").id);
-
-    snapshot = await readSnapshot(projectId);
     const introVideoPlan = snapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "intro_video_plan");
 
-    expect(introVideoPlan).toMatchObject({
-      nodeKey: "intro_video_plan",
-      title: "导入视频方案",
-      status: "needs_review",
-      version: 1,
-    });
-    expect(introVideoPlan.markdownContent).toContain("## 独立主题");
-    expect(introVideoPlan.markdownContent).toContain("## 开场钩子与吸睛点");
-    expect(introVideoPlan.markdownContent).toContain("吸睛点");
-    expect(introVideoPlan.markdownContent).toContain("## 课程锚点");
-    expect(introVideoPlan.markdownContent).toContain("课堂落点问题");
-    expect(introVideoPlan.markdownContent).not.toContain("视频文件已生成");
-    expect(introVideoPlan.markdownContent).not.toContain("视频成片已生成");
+    expect(introVideoPlan).toBeUndefined();
+    expect(snapshot.artifacts.map((artifact: { nodeKey: string }) => artifact.nodeKey)).toEqual(["requirement_spec"]);
   });
 });
 

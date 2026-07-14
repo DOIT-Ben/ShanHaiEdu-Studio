@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { dispatchMainAgentToolCall } from "@/server/tools/main-agent-tool-dispatcher";
+import { validPptDirectorOutput } from "../support/ppt-director-output-fixture";
 
 const serverContext = {
   identity: { actorUserId: "teacher-1", actorAuthMode: "password" as const, authSessionId: "session-1" },
@@ -16,14 +17,7 @@ describe("V1-3 Main Agent Tool Dispatcher", () => {
       status: "succeeded" as const,
       toolId: "ppt_director.plan_or_repair" as const,
       invocationId: envelope.invocationId,
-      structuredOutput: {
-        decision: "plan",
-        summary: "先形成逐页设计。",
-        targetLocators: [],
-        nextToolIntents: ["assemble_ppt_key_samples"],
-        assumptions: [],
-        stopConditions: ["sample_review"],
-      },
+      structuredOutput: validPptDirectorOutput(),
       assistantSummary: "已形成课件规划。",
       artifactCreated: false as const,
     }));

@@ -52,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (shouldAutoDrainConversationQueue()) {
-        void drainProjectConversationQueue(projectId, { service, runtime, agent: mainAgent, agentToolExecutor }).catch(() => null);
+        void drainProjectConversationQueue(projectId, { service, runtime, agent: mainAgent, agentToolExecutor, enableTaskGrantAutonomy: true }).catch(() => null);
       }
 
       return NextResponse.json({ message, job }, { status: 202 });

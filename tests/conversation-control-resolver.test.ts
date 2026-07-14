@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
 import type { MainAgentTurn } from "@/server/capabilities/types";
+import type { IntentGrant, PendingDecision } from "@/server/conversation/task-contract";
+import { v19rRealFailureDialogue } from "./fixtures/v1-9r-real-failure-dialogue.fixture";
 
 const baseTurn: MainAgentTurn = {
   assistantMessage: { body: "好的" },
@@ -12,22 +14,74 @@ const baseTurn: MainAgentTurn = {
 };
 
 describe("ConversationControlResolver", () => {
-  it("runs a directly requested safe internal capability without forcing linear order", () => {
+  it("keeps a complete task active when the teacher says continue or confirm", () => {
+    const pendingPlan = {
+      ...pendingRequirementPlan(),
+      intentGrant: {
+        schemaVersion: "intent-grant.v1",
+        taskId: "task-1",
+        projectId: "project-1",
+        intentEpoch: 0,
+        standardWorkAuthorized: true,
+        intensity: "standard",
+        budgetPolicyVersion: "v1-standard",
+        maxCostCredits: null,
+        maxExternalProviderCalls: 3,
+        requiredCheckpoints: [],
+        expiresAt: null,
+      } satisfies IntentGrant,
+      toolPlan: {
+        ...pendingRequirementPlan().toolPlan,
+        inputDraft: { teacherGoal: v19rRealFailureDialogue.expectedRecovery.preserveTaskGoal },
+      },
+    };
+
+    for (const userMessage of v19rRealFailureDialogue.messages.slice(1, 3)) {
+      const result = resolveConversationControl({
+        userMessage,
+        pendingPlan,
+        agentTurn: { ...baseTurn, toolPlan: pendingPlan.toolPlan },
+        capabilityAvailability: [],
+      });
+
+      expect(result.turn).toMatchObject({
+        state: "running_tool",
+        shouldRunToolNow: true,
+        toolPlan: {
+          capabilityId: "requirement_spec",
+          inputDraft: { teacherGoal: v19rRealFailureDialogue.expectedRecovery.preserveTaskGoal },
+        },
+      });
+    }
+  });
+
+  it("does not synthesize a Tool when the Main Agent failed on a direct local request", () => {
+    const failedTurn: MainAgentTurn = {
+      ...baseTurn,
+      assistantMessage: { body: "智能生成服务暂时不可用。" },
+      state: "failed_retryable",
+      runtimeKind: "openai",
+    };
     const result = resolveConversationControl({
       userMessage: "只做视频脚本",
       pendingPlan: null,
-      agentTurn: baseTurn,
+      agentTurn: failedTurn,
       capabilityAvailability: [{
         capabilityId: "video_script_generate",
-        status: "available",
+        status: "needs_approved_inputs",
         requiresConfirmation: true,
-        missingApprovedInputs: [],
-        reasonForModel: "available",
-        reasonForUser: "可以继续。",
+        missingApprovedInputs: ["creative_theme_generate"],
+        reasonForModel: "missing trusted creative theme",
+        reasonForUser: "还缺少可信的导入创意主题。",
       }],
     });
-    expect(result.decision).toMatchObject({ kind: "switch_to_capability", targetCapabilityId: "video_script_generate" });
-    expect(result.turn).toMatchObject({ state: "running_tool", shouldRunToolNow: true, toolPlan: { requiresConfirmation: false } });
+    expect(result.decision).toMatchObject({ kind: "ordinary_message", reasonCode: "no_control_override" });
+    expect(result.turn).toMatchObject({
+      assistantMessage: { body: "智能生成服务暂时不可用。" },
+      state: "failed_retryable",
+      shouldRunToolNow: false,
+    });
+    expect(result.turn.toolPlan).toBeUndefined();
   });
 
   it("turns an unbound provider execution request into a real confirmation plan", () => {
@@ -57,14 +111,33 @@ describe("ConversationControlResolver", () => {
   });
 
   it("supersedes the old action when the teacher changes capability", () => {
+    const mainAgentPrerequisiteTurn: MainAgentTurn = {
+      ...baseTurn,
+      assistantMessage: { body: "我会先补齐视频脚本所需的可信前置。" },
+      state: "running_tool",
+      shouldRunToolNow: true,
+      toolPlan: {
+        planId: "requirement:new-video-script-task",
+        capabilityId: "requirement_spec",
+        reasonForUser: "先整理当前局部任务的完整语义。",
+        internalReason: "main_agent_selected_prerequisite",
+        inputDraft: { teacherGoal: "只做视频脚本" },
+        missingInputs: [],
+        upstreamPlan: [],
+        nextSuggestedCapabilities: [],
+        requiresConfirmation: false,
+        expectedArtifactKind: "requirement_spec",
+      },
+    };
     const result = resolveConversationControl({
       userMessage: "先不要做 PPT，改做视频脚本",
       pendingPlan: pendingPptOutlinePlan(),
-      agentTurn: baseTurn,
+      agentTurn: mainAgentPrerequisiteTurn,
       capabilityAvailability: [],
     });
     expect(result.decision).toMatchObject({ kind: "switch_to_capability", targetCapabilityId: "video_script_generate", supersedePendingAction: true });
-    expect(result.turn.toolPlan?.capabilityId).toBe("video_script_generate");
+    expect(result.turn.toolPlan?.capabilityId).toBe("requirement_spec");
+    expect(result.turn.toolPlan?.internalReason).toBe("main_agent_selected_prerequisite");
   });
 
   it("does not turn natural language into provider HumanGate confirmation", () => {
@@ -91,6 +164,24 @@ describe("ConversationControlResolver", () => {
     expect(result.decision.reasonCode).toBe("mismatched_confirmed_action_id");
     expect(result.decision.usePendingActionId).toBeUndefined();
     expect(result.turn.shouldRunToolNow).toBe(false);
+  });
+
+  it("does not let another project member replay an actor-bound pending action", () => {
+    const pendingPlan = {
+      ...pendingProviderPlan(),
+      pendingDecision: pendingDecision("teacher-a", "human:p:coze_ppt:m1"),
+    };
+    const result = resolveConversationControl({
+      userMessage: "确认生成 PPTX",
+      pendingPlan,
+      receivedConfirmedActionId: pendingPlan.actionId,
+      receivedActorUserId: "teacher-b",
+      agentTurn: { ...baseTurn, state: "running_tool", shouldRunToolNow: true, toolPlan: pendingPlan.toolPlan },
+      capabilityAvailability: [],
+    });
+
+    expect(result.decision.reasonCode).toBe("pending_action_actor_mismatch");
+    expect(result.turn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
   });
 
   it("supersedes the active offer when the teacher revises its content", () => {
@@ -229,5 +320,31 @@ function pendingRequirementPlan() {
       requiresConfirmation: false,
       expectedArtifactKind: "requirement_spec",
     },
+  };
+}
+
+function pendingDecision(actorUserId: string, actionId: string): PendingDecision {
+  return {
+    schemaVersion: "pending-decision.v1",
+    decisionId: `decision:${actionId}`,
+    status: "pending",
+    kind: "publish",
+    reasonCode: "publish",
+    question: "是否确认发布？",
+    impactSummary: "确认后内容可能被外部访问。",
+    options: [
+      { id: "confirm", label: "确认继续", recommended: true },
+      { id: "cancel", label: "暂不继续", recommended: false },
+    ],
+    actorUserId,
+    projectId: "p",
+    taskId: "task-1",
+    intentEpoch: 0,
+    planId: "coze:test",
+    actionId,
+    budgetPolicyVersion: "v1-standard",
+    maxCostCredits: null,
+    maxExternalProviderCalls: 3,
+    expiresAt: null,
   };
 }

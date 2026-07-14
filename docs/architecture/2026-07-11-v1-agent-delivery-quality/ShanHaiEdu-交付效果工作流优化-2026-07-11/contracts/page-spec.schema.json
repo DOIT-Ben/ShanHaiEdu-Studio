@@ -3,7 +3,7 @@
   "$id": "https://shanhaiedu.local/schemas/page-spec.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["page_id", "page_number", "narrative_job", "teaching_action", "student_action", "takeaway_title", "primary_visual_type", "primary_visual_brief", "visible_text_budget", "local_math_layers", "generated_asset_refs", "layout_constraints", "alt_text", "reading_order", "non_color_coding", "media_accessibility", "transition_from_previous", "presenter_note", "acceptance_checks", "objective_ids"],
+  "required": ["page_id", "page_number", "narrative_job", "teaching_action", "student_action", "takeaway_title", "primary_visual_type", "primary_visual_brief", "visible_text_budget", "ai_scene", "ai_assets", "editable_math", "editable_text", "layout_family", "layout_constraints", "composition", "alt_text", "reading_order", "non_color_coding", "media_accessibility", "transition_from_previous", "presenter_note", "acceptance_checks", "objective_ids", "risk_level"],
   "properties": {
     "page_id": { "type": "string", "pattern": "^page_[0-9]{2,3}$" },
     "page_number": { "type": "integer", "minimum": 1, "maximum": 60 },
@@ -15,15 +15,70 @@
     "primary_visual_type": { "enum": ["immersive_scene", "focused_observation", "process", "comparison", "operation", "relationship", "student_work", "summary"] },
     "primary_visual_brief": { "type": "string", "minLength": 20 },
     "visible_text_budget": { "type": "object", "additionalProperties": false, "required": ["max_lines", "max_characters", "min_font_pt"], "properties": { "max_lines": { "type": "integer", "minimum": 1, "maximum": 8 }, "max_characters": { "type": "integer", "minimum": 1, "maximum": 180 }, "min_font_pt": { "type": "number", "minimum": 18 } } },
-    "local_math_layers": { "type": "array", "items": { "type": "object", "required": ["layer_id", "role", "exact_content"], "properties": { "layer_id": { "type": "string" }, "role": { "type": "string" }, "exact_content": {} } } },
-    "generated_asset_refs": { "type": "array", "items": { "type": "string" } },
+    "ai_scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "brief", "forbidden_content_excluded"],
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "brief": { "type": "string", "minLength": 20 },
+        "forbidden_content_excluded": { "type": "array", "minItems": 4, "uniqueItems": true, "items": { "enum": ["text", "formula", "answer", "exact_countable_objects"] } }
+      }
+    },
+    "ai_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "role", "prompt_brief", "contains_embedded_text", "contains_exact_math"],
+        "properties": {
+          "asset_id": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "minLength": 1 },
+          "prompt_brief": { "type": "string", "minLength": 1 },
+          "contains_embedded_text": { "type": "boolean", "const": false },
+          "contains_exact_math": { "type": "boolean", "const": false }
+        }
+      }
+    },
+    "editable_math": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["layer_id", "role", "exact_content"], "properties": { "layer_id": { "type": "string", "minLength": 1 }, "role": { "type": "string", "minLength": 1 }, "exact_content": { "type": "string", "minLength": 1 } } } },
+    "editable_text": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["layer_id", "role", "text"], "properties": { "layer_id": { "type": "string", "minLength": 1 }, "role": { "type": "string", "minLength": 1 }, "text": { "type": "string", "minLength": 1 } } } },
+    "layout_family": { "enum": ["immersive_scene", "focused_observation", "operation", "comparison", "summary"] },
     "layout_constraints": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canvas_width", "canvas_height", "layers"],
+      "properties": {
+        "canvas_width": { "const": 1920 },
+        "canvas_height": { "const": 1080 },
+        "layers": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["layer_id", "layer_kind", "source_id", "x", "y", "width", "height", "z_index"],
+            "properties": {
+              "layer_id": { "type": "string", "minLength": 1 },
+              "layer_kind": { "enum": ["AI_SCENE", "AI_ASSET", "EDITABLE_TEXT", "EDITABLE_MATH"] },
+              "source_id": { "type": "string", "minLength": 1 },
+              "x": { "type": "number", "minimum": 0, "maximum": 1920 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1080 },
+              "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1920 },
+              "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1080 },
+              "z_index": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
     "alt_text": { "type": "string", "minLength": 5 },
     "reading_order": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "non_color_coding": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 3 } },
     "media_accessibility": { "type": "object", "additionalProperties": false, "required": ["captions_required", "transcript_required"], "properties": { "captions_required": { "type": "boolean" }, "transcript_required": { "type": "boolean" } } },
     "transition_from_previous": { "type": ["string", "null"] },
     "presenter_note": { "type": "string", "minLength": 5 },
-    "acceptance_checks": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+    "acceptance_checks": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "risk_level": { "enum": ["low", "medium", "high"] }
   }
 }

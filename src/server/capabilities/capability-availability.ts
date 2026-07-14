@@ -1,5 +1,6 @@
 import type { CapabilityDefinition, CapabilityId } from "./types";
 import type { ArtifactRecord } from "../workbench/types";
+import { isArtifactTrustedForDownstream } from "../quality/artifact-quality-state";
 
 export type CapabilityAvailabilityStatus =
   | "available"
@@ -95,8 +96,7 @@ function buildMissingApprovedInputsReason(
 function hasApprovedArtifactForCapability(artifacts: ArtifactRecord[], definition: CapabilityDefinition): boolean {
   return artifacts.some(
     (artifact) =>
-      artifact.status === "approved" &&
-      artifact.isApproved === true &&
+      isArtifactTrustedForDownstream(artifact) &&
       (artifact.kind === definition.artifactKind || artifact.nodeKey === definition.workflowNodeKey),
   );
 }

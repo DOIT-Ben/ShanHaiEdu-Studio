@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCapabilityRunResult, runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-runner";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
-import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { createStoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { createVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
+import { createPptDesignCandidateProjection } from "@/server/ppt-quality/ppt-design-candidate";
 
 describe("M54-B CapabilityRunner contract", () => {
   it("keeps failed tool results failed and user-readable", () => {
@@ -20,6 +20,35 @@ describe("M54-B CapabilityRunner contract", () => {
       retryable: true,
     });
     expect("artifactDraft" in result).toBe(false);
+  });
+
+  it("preserves the runtime run and timeout category for recovery", async () => {
+    const runtime: AgentRuntime = {
+      async run(input) {
+        return {
+          status: "failed",
+          run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "failed" },
+          failure: { category: "timeout", retryable: true },
+          assistantMessage: { title: "本次生成没有完成", body: "已保留当前输入，可以稍后重试。" },
+          nextSuggestedAction: { type: "retry", label: "重试本次生成" },
+        };
+      },
+    };
+
+    const result = await runCapabilityWithAgentRuntime({
+      runtime,
+      projectId: "project-timeout",
+      capabilityId: "requirement_spec",
+      userMessage: "请整理五年级数学百分数公开课需求",
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["需求规格"] },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCategory: "timeout",
+      retryable: true,
+      runtimeRun: { runId: expect.any(String), runtimeKind: "openai", status: "failed" },
+    });
   });
 
   it("marks deterministic drafts instead of pretending they are real provider outputs", () => {
@@ -43,8 +72,10 @@ describe("M54-B CapabilityRunner contract", () => {
   });
 
   it("maps the ppt_outline runtime task into the ppt_draft workflow artifact", async () => {
+    let runtimeInput: Parameters<AgentRuntime["run"]>[0] | undefined;
     const runtime: AgentRuntime = {
       async run(input) {
+        runtimeInput = input;
         return {
           status: "succeeded",
           run: {
@@ -87,6 +118,23 @@ describe("M54-B CapabilityRunner contract", () => {
         topic: "百分数",
         requestedOutputs: ["PPT 大纲"],
       },
+      taskInput: {
+        teacherGoal: "五年级数学百分数公开课，约 10 页",
+        targetPageCount: 10,
+        taskBrief: {
+          goal: "完成公开课材料包",
+          generationIntensity: "standard",
+        },
+      },
+    });
+
+    expect(runtimeInput?.taskInput).toEqual({
+      teacherGoal: "五年级数学百分数公开课，约 10 页",
+      targetPageCount: 10,
+      taskBrief: {
+        goal: "完成公开课材料包",
+        generationIntensity: "standard",
+      },
     });
 
     expect(result).toMatchObject({
@@ -102,32 +150,28 @@ describe("M54-B CapabilityRunner contract", () => {
     });
   });
 
-  it("preserves the PPT design package while adding runtime metadata", async () => {
-    const packageValue = validPptDesignPackage();
+  it("accepts a real model PPT design candidate without requiring Director first", async () => {
+    let runtimeCalls = 0;
+    const designCandidate = validPptDesignCandidate();
     const runtime: AgentRuntime = {
       async run(input) {
+        runtimeCalls += 1;
         return {
           status: "succeeded",
-          run: {
-            runId: input.runId,
-            projectId: input.projectId,
-            task: input.task,
-            runtimeKind: "openai",
-            status: "succeeded",
-          },
-          assistantMessage: { title: "PPT 设计包已生成", body: "请检查逐页设计。" },
+          run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "succeeded" },
+          assistantMessage: { title: "逐页设计已完成", body: "已形成可信结构化设计候选。" },
           artifactDraft: {
             nodeKey: "ppt_design",
             kind: "ppt_design",
-            title: "百分数 PPT 设计包",
-            summary: "12 页逐页质量设计。",
-            markdown: validPptDesignMarkdown(),
+            title: "百分数逐页设计",
+            summary: "真实模型逐页设计候选",
+            markdown: "# 逐页设计",
             contentType: "text/markdown",
             generationMode: "model_generated",
             isReadyForTeacherReview: true,
-            structuredContent: { pptDesignPackage: packageValue },
+            structuredContent: { pptDesignCandidate: designCandidate },
           },
-          nextSuggestedAction: { type: "review_artifact", label: "查看并确认设计包" },
+          nextSuggestedAction: { type: "review_artifact", label: "检查设计候选" },
         };
       },
     };
@@ -136,26 +180,62 @@ describe("M54-B CapabilityRunner contract", () => {
       runtime,
       projectId: "project-ppt-quality",
       capabilityId: "ppt_design",
-      userMessage: "生成 PPT 设计包",
+      userMessage: "生成 PPT 设计候选",
+      taskInput: { taskBrief: { digest: "b".repeat(64) } },
       projectContext: {
         grade: "五年级",
         subject: "数学",
         topic: "百分数",
-        requestedOutputs: ["PPT 设计包"],
+        requestedOutputs: ["PPT 设计候选"],
       },
+      approvedArtifacts: [{
+        artifactId: "artifact_textbook_evidence",
+        kind: "textbook_evidence",
+        version: 1,
+        digest: "a".repeat(64),
+        nodeKey: "textbook_evidence",
+        title: "教材证据",
+        summary: "教材第84-85页",
+        markdown: "# 教材证据",
+      }],
     });
 
     expect(result).toMatchObject({
       status: "succeeded",
+      providerStatus: "real",
       artifactDraft: {
-        structuredContent: {
-          pptDesignPackage: packageValue,
-          capabilityId: "ppt_design",
-          generationMode: "model_generated",
-          providerStatus: "real",
-        },
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        structuredContent: { generationMode: "model_generated", providerStatus: "real" },
       },
     });
+    expect(runtimeCalls).toBe(1);
+  });
+
+  it("rejects a PPT design candidate whose evidence digest is not bound to a trusted upstream artifact", async () => {
+    const designCandidate = validPptDesignCandidate();
+    const runtime: AgentRuntime = {
+      async run(input) {
+        return {
+          status: "succeeded",
+          run: { runId: input.runId, projectId: input.projectId, task: input.task, runtimeKind: "openai", status: "succeeded" },
+          assistantMessage: { title: "逐页设计已完成", body: "已形成结构化设计候选。" },
+          artifactDraft: {
+            nodeKey: "ppt_design", kind: "ppt_design", title: "逐页设计", summary: "候选", markdown: "# 逐页设计",
+            contentType: "text/markdown", generationMode: "model_generated", isReadyForTeacherReview: true,
+            structuredContent: { pptDesignCandidate: designCandidate },
+          },
+          nextSuggestedAction: { type: "review_artifact", label: "检查设计候选" },
+        };
+      },
+    };
+    const result = await runCapabilityWithAgentRuntime({
+      runtime, projectId: "project-ppt-unbound", capabilityId: "ppt_design", userMessage: "生成PPT设计候选",
+      taskInput: { taskBrief: { digest: "b".repeat(64) } },
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["PPT设计候选"] },
+      approvedArtifacts: [{ artifactId: "artifact_textbook_evidence", digest: "c".repeat(64), nodeKey: "textbook_evidence", title: "教材证据", summary: "证据", markdown: "# 证据" }],
+    });
+    expect(result).toMatchObject({ status: "failed", retryable: true, errorCategory: "validation" });
   });
 
   it("requires and preserves an executable storyboard manifest", async () => {
@@ -234,15 +314,55 @@ function videoScriptRuntime(structuredContent: Record<string, unknown> | undefin
   };
 }
 
-function validPptDesignMarkdown(): string {
-  return [
-    "总页数：12 页",
-    ...Array.from({ length: 12 }, (_, index) => [
-      `## 第 ${index + 1} 页`,
-      "- 底图：无文字课堂场景。",
-      "- 元素：透明背景教具。",
-      "- 文字：可编辑标题。",
-      "- 排版：稳定阅读顺序。",
-    ].join("\n")),
-  ].join("\n");
+function validPptDesignCandidate() {
+  return createPptDesignCandidateProjection({
+    schemaVersion: "ppt-design-candidate.v1",
+    taskBriefDigest: "b".repeat(64),
+    goalSummary: "五年级数学百分数公开课，用投篮命中率建立比较需求。",
+    brief: {
+      grade: "五年级",
+      subject: "数学",
+      topic: "百分数",
+      audience: "五年级学生",
+      useCase: "public_lesson",
+      targetSlideCount: 2,
+    },
+    evidenceBindings: [{
+      evidenceId: "evidence-textbook",
+      sourceArtifactId: "artifact_textbook_evidence",
+      sourceType: "teacher_material",
+      pageRefs: ["教材第84-85页"],
+      claims: ["用投篮命中率引出百分数比较"],
+      digest: "a".repeat(64),
+    }],
+    objectives: [{
+      objectiveId: "objective-1",
+      statement: "理解百分数用于表示比较关系",
+      evidenceRefs: ["evidence-textbook"],
+    }],
+    narrative: {
+      openingTension: "两组命中数不同，不能直接判断谁更准。",
+      learningProgression: ["观察数据", "统一比较标准"],
+      closingResolution: "用百分数说明命中水平。",
+    },
+    pagePlans: [
+      {
+        pageNumber: 1,
+        objectiveIds: ["objective-1"],
+        narrativeJob: "提出两组投篮数据能否直接比较的矛盾",
+        teachingAction: "引导学生说明仅看命中数为什么不公平",
+        takeawayTitle: "谁的投篮更准",
+        primaryVisualBrief: "两组投篮数据形成可观察的球场记分牌",
+      },
+      {
+        pageNumber: 2,
+        objectiveIds: ["objective-1"],
+        narrativeJob: "建立统一标准并形成百分数表达",
+        teachingAction: "组织学生把命中次数和投篮总数配对比较",
+        takeawayTitle: "统一标准才能公平比较",
+        primaryVisualBrief: "两块记分牌转化为统一百分比刻度",
+      },
+    ],
+    downstreamUse: "production_design_expansion",
+  }).candidate;
 }

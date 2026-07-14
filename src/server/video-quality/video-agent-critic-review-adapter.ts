@@ -4,6 +4,7 @@ import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor
 import { videoFinalReviewHardGateIds } from "@/server/tools/video-final-review-gate";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import type { ArtifactRecord, SaveArtifactInput } from "@/server/workbench/types";
+import { withArtifactQualityState } from "@/server/quality/artifact-quality-state";
 
 export function adaptVideoAgentCriticReview(input: {
   projectId: string;
@@ -46,15 +47,19 @@ export function adaptVideoAgentCriticReview(input: {
     nodeKey: input.artifact.nodeKey,
     kind: input.artifact.kind,
     title: stage === "course_anchor"
-      ? passed ? "视频创意与课程锚点待批准" : "视频创意与课程锚点待返修"
-      : passed ? "完整导入视频待批准" : "完整导入视频待局部返修",
+      ? passed ? "视频创意与课程锚点已通过内审" : "视频创意与课程锚点待返修"
+      : passed ? "完整导入视频已通过内审" : "完整导入视频待局部返修",
     status: "needs_review",
-    summary: passed ? "独立审查已通过，等待教师明确批准。" : "独立审查发现未关闭问题，尚不能进入下一步。",
-    markdownContent: passed ? "# 视频审查通过\n\n独立审查证据已形成，等待教师明确批准。" : "# 视频需要返修\n\n请按定位结果执行最小范围返修后重新审查。",
-    structuredContent: {
+    summary: passed ? "独立审查已通过，可继续内部下游；教师签收仍单独记录。" : "独立审查发现未关闭问题，尚不能进入下一步。",
+    markdownContent: passed ? "# 视频审查通过\n\n独立审查证据已形成，可以继续内部制作；教师签收仍是独立状态。" : "# 视频需要返修\n\n请按定位结果执行最小范围返修后重新审查。",
+    structuredContent: withArtifactQualityState({
       ...input.artifact.structuredContent,
       [stage === "course_anchor" ? "videoCourseAnchorReview" : "videoFinalReview"]: review,
-    },
+    }, {
+      validationStatus: "not_required",
+      reviewStatus: passed ? "passed" : recommendation === "blocked" ? "blocked" : recommendation === "inconclusive" ? "inconclusive" : "repair",
+      downstreamEligibility: passed ? "eligible" : "blocked",
+    }),
   };
 }
 

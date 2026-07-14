@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
+import { isExplorationOnlyRequest, planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
+import { v19rRealFailureDialogue } from "./fixtures/v1-9r-real-failure-dialogue.fixture";
 
 function availabilityEntry(input: Partial<CapabilityAvailabilityEntry> & Pick<CapabilityAvailabilityEntry, "capabilityId" | "status">): CapabilityAvailabilityEntry {
   return {
@@ -56,19 +57,35 @@ describe("M54-B CapabilityPlanner", () => {
     expect(plan).toBeNull();
   });
 
-  it("plans requirement specification before PPT outline when no confirmed requirement exists", () => {
+  it("does not require routine confirmation before starting a complete one-sentence PPT task", () => {
     const plan = planCapabilityForRequest({
-      userMessage: "帮我做五年级数学百分数 PPT",
+      userMessage: v19rRealFailureDialogue.messages[0],
       availableArtifactKinds: [],
+      intentGrant: { standardWorkAuthorized: true },
     });
 
     expect(plan).toMatchObject({
       capabilityId: "requirement_spec",
-      requiresConfirmation: true,
+      requiresConfirmation: false,
       expectedArtifactKind: "requirement_spec",
     });
     expect(plan?.nextSuggestedCapabilities).toContain("ppt_design");
     expect(plan?.missingInputs).toEqual([]);
+  });
+
+  it("does not downgrade an explicit local video-script redirect to exploration", () => {
+    const userMessage = "改道：仍然只做局部视频脚本，但独立创意改成无人灯塔的错误信号；不要沿用机械信标方案。";
+    expect(isExplorationOnlyRequest(userMessage)).toBe(false);
+    expect(planCapabilityForRequest({
+      userMessage,
+      availableArtifactKinds: [],
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      intentGrant: { standardWorkAuthorized: true },
+    })).toMatchObject({
+      capabilityId: "requirement_spec",
+      missingInputs: [],
+      requiresConfirmation: false,
+    });
   });
 
   it("plans PPT outline after a requirement specification exists", () => {
@@ -126,6 +143,22 @@ describe("M54-B CapabilityPlanner", () => {
       requiresConfirmation: false,
     });
     expect(plan?.missingInputs).toEqual(["grade", "subject", "topic"]);
+  });
+
+  it("uses reliable project defaults instead of asking for grade, subject, and topic again", () => {
+    const plan = planCapabilityForRequest({
+      userMessage: "帮我做一份约 10 页的公开课课件，默认信息都可以修改",
+      availableArtifactKinds: [],
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      intentGrant: { standardWorkAuthorized: true },
+    });
+
+    expect(plan).toMatchObject({
+      capabilityId: "requirement_spec",
+      missingInputs: [],
+      requiresConfirmation: false,
+      inputDraft: { teacherGoal: expect.stringContaining("约 10 页") },
+    });
   });
 
   it("builds a full delivery plan for one-sentence material package requests", () => {

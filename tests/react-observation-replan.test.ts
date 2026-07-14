@@ -41,7 +41,7 @@ describe("V1 Stage 2C Observation and Replan", () => {
       latestObservation: second,
       observationHistory: [first, second],
     });
-    expect(decision).toMatchObject({ allowed: false, nextAction: "ask_teacher", checkpoint: { status: "paused", reason: "repeated_failure" } });
+    expect(decision).toMatchObject({ allowed: false, nextAction: "pause", checkpoint: { status: "paused", reason: "repeated_failure" } });
   });
 
   it("routes page-scoped quality repair to only the located unit", () => {

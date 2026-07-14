@@ -11,6 +11,7 @@ import { createAgentToolInvocationEnvelope } from "@/server/tools/agent-tool-inv
 import { routeAgentToolCall } from "@/server/tools/agent-tool-router";
 import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
+import { validPptDirectorOutput } from "../support/ppt-director-output-fixture";
 
 const root = process.cwd();
 const stageRoot = path.join(root, ".tmp", "agent-tool-auth-tests");
@@ -320,14 +321,7 @@ function successfulExecutor(invocationId: string) {
     status: "succeeded" as const,
     toolId: "ppt_director.plan_or_repair" as const,
     invocationId,
-    structuredOutput: {
-      decision: "repair",
-      summary: "只修复目标页。",
-      targetLocators: ["page_01"],
-      nextToolIntents: ["repair_ppt_full_deck_pages"],
-      assumptions: [],
-      stopConditions: ["page validated"],
-    },
+    structuredOutput: { ...validPptDirectorOutput(), decision: "repair", targetLocators: ["page_01"] },
     assistantSummary: "建议定点返修。",
     artifactCreated: false as const,
   }));

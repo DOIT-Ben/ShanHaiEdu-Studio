@@ -29,6 +29,22 @@ function approvedArtifactFor(capabilityId: CapabilityId): ArtifactRecord {
   };
 }
 
+function internallyValidatedArtifactFor(capabilityId: CapabilityId): ArtifactRecord {
+  const artifact = approvedArtifactFor(capabilityId);
+  return {
+    ...artifact,
+    status: "needs_review",
+    isApproved: false,
+    structuredContent: {
+      artifactQualityState: {
+        validationStatus: "passed",
+        reviewStatus: "passed",
+        downstreamEligibility: "eligible",
+      },
+    },
+  };
+}
+
 function entryFor(capabilityId: CapabilityId, artifacts: ArtifactRecord[] = [], providerAvailability?: Partial<Record<CapabilityId, boolean>>) {
   const entries = buildCapabilityAvailability({
     capabilityDefinitions: definitions,
@@ -51,6 +67,15 @@ describe("CapabilityAvailability", () => {
       capabilityId: "lesson_plan",
       status: "available",
       requiresConfirmation: true,
+      missingApprovedInputs: [],
+    });
+  });
+
+  it("accepts an internally validated artifact for downstream work without teacher approval", () => {
+    const entry = entryFor("lesson_plan", [internallyValidatedArtifactFor("requirement_spec")]);
+
+    expect(entry).toMatchObject({
+      status: "available",
       missingApprovedInputs: [],
     });
   });

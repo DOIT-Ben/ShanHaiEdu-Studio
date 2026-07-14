@@ -19,8 +19,8 @@ test("ConversationWorkbench scrolls to the newest chat state", () => {
 
   assert.match(source, /useEffect/);
   assert.match(source, /scrollAnchorRef/);
-  assert.match(source, /scrollIntoView\(\{ behavior: "smooth", block: "end" \}\)/);
-  assert.match(source, /\[messages\.length, composerSubmitting, projectBusy\]/);
+  assert.match(source, /scrollIntoView\(\{ behavior: compact \? "auto" : "smooth", block: "end" \}\)/);
+  assert.match(source, /\[compact, messages\.length, composerSubmitting, projectBusy\]/);
   assert.match(source, /data-chat-scroll-anchor/);
   assert.match(source, /<ChatTranscript[\s\S]*projectBusy=\{projectBusy\}/);
 });

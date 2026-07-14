@@ -4,9 +4,12 @@ import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
 import { createValidationReport, validateToolExecutionResult, validateToolPreconditions } from "@/server/contracts/contract-validator";
 import type { ValidationReport } from "@/server/quality/quality-types";
+import { hasValidExecutionEnvelope, type ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { withArtifactQualityState } from "@/server/quality/artifact-quality-state";
 import type { ProjectRecord } from "@/server/workbench/types";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import type { VideoGenerationTaskLifecycle } from "@/server/video-generation/video-generation-run";
+import type { PptDirectorPlanBinding } from "@/server/ppt-quality/ppt-director-design-adapter";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
 import { executePackageTool, type PackageToolAdapterInput } from "./package-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
@@ -29,6 +32,8 @@ export type ToolRouterInput = {
   generationTaskLifecycle?: VideoGenerationTaskLifecycle;
   executionInputHash?: string;
   executionIntentEpoch?: number;
+  pptDirectorPlan?: PptDirectorPlanBinding;
+  executionEnvelope?: ExecutionEnvelope;
 };
 
 export type ToolRouterDependencies = {
@@ -39,6 +44,24 @@ export type ToolRouterDependencies = {
 };
 
 export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRouterDependencies = {}): Promise<ToolExecutionResult> {
+  if (input.executionEnvelope && (
+    !hasValidExecutionEnvelope(input.executionEnvelope) ||
+    input.executionEnvelope.projectId !== input.projectId ||
+    input.executionEnvelope.intentEpoch !== input.executionIntentEpoch
+  )) {
+    return withUnknownToolValidation(input, buildBlockedResult({
+      input,
+      toolId: input.toolName ?? "unknown_tool",
+      capabilityId: input.capabilityId ?? "unknown",
+      expectedArtifactKind: undefined,
+      teacherSafeSummary: "这一步的任务版本已经变化，我会按当前任务重新规划。",
+      internalReason: "Invalid or stale ExecutionEnvelope.",
+      resultStatus: "failed",
+      budgetStatus: "blocked",
+      budgetKind: "blocked_by_policy",
+      errorCategory: "invalid_execution_envelope",
+    }));
+  }
   const tool = resolveToolDefinition(input, dependencies);
   if (!tool) {
     return withUnknownToolValidation(input, buildBlockedResult({
@@ -110,9 +133,13 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       runtime: input.runtime,
       projectId: input.projectId,
       userMessage: input.userInstruction ?? "",
+      taskInput: input.toolInput,
       projectContext: input.projectContext,
       approvedArtifacts: input.approvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
+      inputDigest: input.executionInputHash,
+      intentEpoch: input.executionIntentEpoch,
+      pptDirectorPlan: input.pptDirectorPlan,
     });
     return attachPostValidation(input, tool, result);
   }
@@ -214,7 +241,7 @@ function buildNeedsInputResult(input: ToolRouterInput, tool: ToolDefinition, cap
       internalReasonSanitized: `Missing required source artifacts: ${missingInputs.join(", ")}`,
       retryPolicy: {
         retryable: false,
-        nextAction: "ask_teacher",
+        nextAction: "fix_inputs",
       },
     }),
     artifactCreated: false,
@@ -284,17 +311,39 @@ function buildUnverifiedProviderResult(input: ToolRouterInput, tool: ToolDefinit
 }
 
 function attachPostValidation(input: ToolRouterInput, tool: ToolDefinition, result: ToolExecutionResult): RoutedToolExecutionResult {
-  const validationReport = validateToolExecutionResult({
+  const initialValidationReport = validateToolExecutionResult({
     tool,
     projectId: input.projectId,
     result,
     inputHash: input.executionInputHash,
     intentEpoch: input.executionIntentEpoch,
   });
-  if (result.status === "succeeded" && validationReport.overallStatus !== "passed") {
-    return buildPostValidationFailureResult(input, tool, validationReport);
+  if (result.status === "succeeded" && initialValidationReport.overallStatus !== "passed") {
+    return buildPostValidationFailureResult(input, tool, initialValidationReport);
   }
-  return { ...result, validationReport };
+  if (result.status !== "succeeded" || tool.adapterKind !== "internal_capability") {
+    return { ...result, validationReport: initialValidationReport };
+  }
+
+  const downstreamEligibleResult: ToolExecutionResult = {
+    ...result,
+    artifactDraft: {
+      ...result.artifactDraft,
+      structuredContent: withArtifactQualityState(result.artifactDraft.structuredContent ?? {}, {
+        validationStatus: "passed",
+        reviewStatus: "passed",
+        downstreamEligibility: "eligible",
+      }),
+    },
+  };
+  const validationReport = validateToolExecutionResult({
+    tool,
+    projectId: input.projectId,
+    result: downstreamEligibleResult,
+    inputHash: input.executionInputHash,
+    intentEpoch: input.executionIntentEpoch,
+  });
+  return { ...downstreamEligibleResult, validationReport };
 }
 
 function buildPostValidationFailureResult(input: ToolRouterInput, tool: ToolDefinition, validationReport: ValidationReport): RoutedToolExecutionResult {

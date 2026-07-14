@@ -1,5 +1,15 @@
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import type { GptFunctionCall, GptProtocolRequest, GptProtocolResponse } from "@/server/gpt-protocol/types";
+import {
+  buildMainAgentReActContinuationItems,
+  checkpointCharacters,
+  createMainAgentReActCheckpoint,
+  measureMainAgentReActRequest,
+  type MainAgentReActCheckpoint,
+  type MainAgentReActCheckpointSeed,
+  type MainAgentReActContinuationObservation,
+  type MainAgentReActRoundRecord,
+} from "./main-agent-react-checkpoint";
 
 export type MainAgentReActAdapter = {
   createResponse(request: GptProtocolRequest): Promise<GptProtocolResponse>;
@@ -7,8 +17,12 @@ export type MainAgentReActAdapter = {
 
 export type MainAgentReActDispatchResult = {
   status: "succeeded" | "failed" | "blocked" | "inconclusive";
-  modelOutput: Record<string, unknown>;
-  observationId?: string;
+  observation: MainAgentReActContinuationObservation;
+};
+
+export type MainAgentReActToolSet = {
+  tools: unknown[];
+  allowedToolNames: readonly string[];
 };
 
 export type MainAgentReActLoopOptions = {
@@ -16,8 +30,40 @@ export type MainAgentReActLoopOptions = {
   request: GptProtocolRequest;
   tools: unknown[];
   allowedToolNames: readonly string[];
+  refreshTools?: () => MainAgentReActToolSet | Promise<MainAgentReActToolSet>;
   dispatch: (call: { callId: string; toolName: string; arguments: Record<string, unknown> }) => Promise<MainAgentReActDispatchResult>;
   maxToolRounds?: number;
+  checkpointSeed?: MainAgentReActCheckpointSeed;
+  getCheckpointSeed?: () => MainAgentReActCheckpointSeed;
+  maxCheckpointTokens?: number;
+  onContextTelemetry?: (event: MainAgentReActContextTelemetry) => void | Promise<void>;
+  onRejectedToolCall?: (event: MainAgentReActRejectedToolCall) => void | Promise<void>;
+  onBudgetExhausted?: (event: MainAgentReActBudgetExhausted) => void | Promise<void>;
+};
+
+export type MainAgentReActRejectedToolCall = {
+  toolName: string;
+  toolRound: number;
+  reason: "repeated_tool_call";
+};
+
+export type MainAgentReActBudgetExhausted = {
+  reason: "tool_round_limit_reached";
+  toolRoundsUsed: number;
+  maxToolRounds: number;
+  pendingToolName: string | null;
+  observationIds: string[];
+};
+
+export type MainAgentReActContextTelemetry = {
+  phase: "initial" | "continuation";
+  toolRound: number;
+  requestCharacters: number;
+  estimatedInputTokens: number;
+  checkpointCharacters: number;
+  checkpointObservationCount: number;
+  toolCount: number;
+  responseDurationMs: number;
 };
 
 export type MainAgentReActLoopResult = {
@@ -25,7 +71,7 @@ export type MainAgentReActLoopResult = {
   assistantText: string;
   toolRoundsUsed: number;
   observationIds: string[];
-  reason: "none" | "adapter_failed" | "multiple_tool_calls_blocked" | "tool_call_invalid" | "tool_round_limit_reached" | "repeated_tool_call";
+  reason: "none" | "adapter_failed" | "multiple_tool_calls_blocked" | "tool_call_invalid" | "tool_round_limit_reached" | "repeated_tool_call" | "repeated_tool_failure";
   diagnosticMessage?: string;
 };
 
@@ -35,10 +81,22 @@ export async function runMainAgentControlledReActLoop(
   options: MainAgentReActLoopOptions,
 ): Promise<MainAgentReActLoopResult> {
   const maxToolRounds = Math.max(0, options.maxToolRounds ?? 3);
-  const signatures = new Set<string>();
+  const callAttempts = new Map<string, { attempts: number; lastStatus: MainAgentReActDispatchResult["status"] }>();
+  const failureCounts = new Map<string, number>();
   const observationIds: string[] = [];
   let toolRoundsUsed = 0;
-  let currentResponse = await options.adapter.createResponse(modelRequest(options.request, options.tools));
+  let currentToolSet: MainAgentReActToolSet = {
+    tools: options.tools,
+    allowedToolNames: options.allowedToolNames,
+  };
+  const roundRecords: MainAgentReActRoundRecord[] = [];
+  let currentResponse = await createResponseWithTelemetry({
+    options,
+    request: modelRequest(options.request, currentToolSet.tools),
+    phase: "initial",
+    toolRound: 0,
+    toolCount: currentToolSet.allowedToolNames.length,
+  });
 
   while (true) {
     if (currentResponse.diagnostics.status === "failed") {
@@ -53,28 +111,84 @@ export async function runMainAgentControlledReActLoop(
         reason: "none",
       };
     }
-    if (toolRoundsUsed >= maxToolRounds) return failed("tool_round_limit_reached", toolRoundsUsed, observationIds);
+    if (toolRoundsUsed >= maxToolRounds) {
+      await options.onBudgetExhausted?.({
+        reason: "tool_round_limit_reached",
+        toolRoundsUsed,
+        maxToolRounds,
+        pendingToolName: currentResponse.functionCalls.length === 1 ? currentResponse.functionCalls[0].name : null,
+        observationIds: [...observationIds],
+      });
+      return failed("tool_round_limit_reached", toolRoundsUsed, observationIds);
+    }
     if (currentResponse.functionCalls.length !== 1) return blocked("multiple_tool_calls_blocked", toolRoundsUsed, observationIds);
 
     const call = currentResponse.functionCalls[0];
-    const parsed = parseAllowedCall(call, options.allowedToolNames);
+    const parsed = parseAllowedCall(call, currentToolSet.allowedToolNames);
     if (!parsed) return blocked("tool_call_invalid", toolRoundsUsed, observationIds);
     const signature = hashRunInput({ toolName: parsed.toolName, arguments: parsed.arguments });
-    if (signatures.has(signature)) return blocked("repeated_tool_call", toolRoundsUsed, observationIds);
-    signatures.add(signature);
+    const previousAttempt = callAttempts.get(signature);
+    if (previousAttempt && (previousAttempt.lastStatus === "succeeded" || previousAttempt.attempts >= 2)) {
+      await notifyRejectedToolCall(options, parsed.toolName, toolRoundsUsed + 1);
+      return blocked("repeated_tool_call", toolRoundsUsed, observationIds);
+    }
 
     const dispatchResult = await options.dispatch(parsed);
-    if (dispatchResult.observationId) observationIds.push(dispatchResult.observationId);
-    const items = [
-      originalInputItem(options.request),
-      ...continuationItems(currentResponse),
-      functionOutputItem(call, JSON.stringify({
-        status: dispatchResult.status,
-        result: dispatchResult.modelOutput,
-      })),
-    ];
+    callAttempts.set(signature, {
+      attempts: (previousAttempt?.attempts ?? 0) + 1,
+      lastStatus: dispatchResult.status,
+    });
+    if (dispatchResult.observation.observationId) observationIds.push(dispatchResult.observation.observationId);
     toolRoundsUsed += 1;
-    currentResponse = await options.adapter.createResponse(modelRequest(options.request, options.tools, items));
+    if (dispatchResult.status !== "succeeded") {
+      const failureSignature = hashRunInput({
+        toolName: parsed.toolName,
+        status: dispatchResult.status,
+        reasonCodes: dispatchResult.observation.reasonCodes,
+      });
+      const failureCount = (failureCounts.get(failureSignature) ?? 0) + 1;
+      failureCounts.set(failureSignature, failureCount);
+      if (failureCount >= 2) return blocked("repeated_tool_failure", toolRoundsUsed, observationIds);
+    }
+    roundRecords.push({
+      round: toolRoundsUsed,
+      toolName: parsed.toolName,
+      callDigest: signature,
+      observation: dispatchResult.observation,
+    });
+    if (options.refreshTools) currentToolSet = await options.refreshTools();
+    const checkpoint = createMainAgentReActCheckpoint({
+      request: options.request,
+      seed: options.getCheckpointSeed?.() ?? options.checkpointSeed,
+      records: roundRecords,
+      currentToolNames: currentToolSet.allowedToolNames,
+      maxEstimatedTokens: options.maxCheckpointTokens,
+    });
+    const continuationRequest = modelRequest(
+      options.request,
+      currentToolSet.tools,
+      buildMainAgentReActContinuationItems({ request: options.request, checkpoint, latestCall: call }),
+    );
+    currentResponse = await createResponseWithTelemetry({
+      options,
+      request: continuationRequest,
+      phase: "continuation",
+      toolRound: toolRoundsUsed,
+      toolCount: currentToolSet.allowedToolNames.length,
+      checkpoint,
+    });
+  }
+}
+
+async function notifyRejectedToolCall(
+  options: MainAgentReActLoopOptions,
+  toolName: string,
+  toolRound: number,
+) {
+  try {
+    await options.onRejectedToolCall?.({ toolName, toolRound, reason: "repeated_tool_call" });
+  } catch {
+    // Audit telemetry must never change Main Agent control flow.
   }
 }
 
@@ -93,23 +207,32 @@ function modelRequest(request: GptProtocolRequest, tools: unknown[], inputItems?
   };
 }
 
-function originalInputItem(request: GptProtocolRequest) {
-  return { role: "user", content: request.input };
-}
-
-function continuationItems(response: GptProtocolResponse): unknown[] {
-  if (response.outputItems.length > 0) return response.outputItems;
-  return response.functionCalls.map((call) => ({
-    ...(call.id ? { id: call.id } : {}),
-    type: "function_call",
-    call_id: call.callId,
-    name: call.name,
-    arguments: call.argumentsText,
-  }));
-}
-
-function functionOutputItem(call: GptFunctionCall, output: string) {
-  return { type: "function_call_output", call_id: call.callId, output };
+async function createResponseWithTelemetry(input: {
+  options: MainAgentReActLoopOptions;
+  request: GptProtocolRequest;
+  phase: MainAgentReActContextTelemetry["phase"];
+  toolRound: number;
+  toolCount: number;
+  checkpoint?: MainAgentReActCheckpoint;
+}) {
+  const startedAt = performance.now();
+  const response = await input.options.adapter.createResponse(input.request);
+  const measurement = measureMainAgentReActRequest(input.request);
+  const event: MainAgentReActContextTelemetry = {
+    phase: input.phase,
+    toolRound: input.toolRound,
+    ...measurement,
+    checkpointCharacters: checkpointCharacters(input.checkpoint),
+    checkpointObservationCount: input.checkpoint?.completedRounds.length ?? 0,
+    toolCount: input.toolCount,
+    responseDurationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+  };
+  try {
+    await input.options.onContextTelemetry?.(event);
+  } catch {
+    // Telemetry must never change Main Agent control flow.
+  }
+  return response;
 }
 
 function failed(reason: MainAgentReActLoopResult["reason"], rounds: number, observationIds: string[], diagnosticMessage?: string): MainAgentReActLoopResult {

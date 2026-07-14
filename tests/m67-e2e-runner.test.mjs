@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 const root = process.cwd();
 const runnerSource = readFileSync(path.join(root, "scripts", "run-m67-e2e.mjs"), "utf8");
+const v19rSpecSource = readFileSync(path.join(root, "tests", "e2e", "v1-9r-two-user-main-agent.spec.ts"), "utf8");
 
 test("runCommand owns init, bootstrap, invite, and Playwright children until they settle", async () => {
   assert.match(runnerSource, /const ownedChildren = new Set\(\)/);
@@ -54,20 +55,25 @@ test("cleanup calls share one promise and remove tempRoot only after every owned
   const pendingStops = [];
   const stopped = [];
   const removals = [];
-  const cleanup = compileFunction("cleanup", {
-    cleanupPromise: undefined,
-    nextServer,
-    ownedChildren,
-    stopProcessTree(child) {
-      stopped.push(child);
-      return new Promise((resolve) => pendingStops.push(resolve));
-    },
+  const removeOwnedTempRoot = compileFunction("removeOwnedTempRoot", {
     fs: {
       rmSync(...args) {
         removals.push(args);
       },
     },
     tempRoot: "controlled-temp-root",
+    setTimeout,
+  });
+  const cleanup = compileFunction("cleanup", {
+    cleanupPromise: undefined,
+    nextServer,
+    ownedChildren,
+    preserveRunDirectory: false,
+    stopProcessTree(child) {
+      stopped.push(child);
+      return new Promise((resolve) => pendingStops.push(resolve));
+    },
+    removeOwnedTempRoot,
   });
 
   const firstCleanup = cleanup();
@@ -79,6 +85,36 @@ test("cleanup calls share one promise and remove tempRoot only after every owned
   for (const resolve of pendingStops) resolve();
   await firstCleanup;
   assert.deepEqual(removals, [["controlled-temp-root", { recursive: true, force: true }]]);
+});
+
+test("explicit evidence preservation keeps the isolated run directory after owned processes stop", async () => {
+  const nextServer = new FakeChild(211);
+  const removals = [];
+  const cleanup = compileFunction("cleanup", {
+    cleanupPromise: undefined,
+    nextServer,
+    ownedChildren: new Set(),
+    preserveRunDirectory: true,
+    stopProcessTree: async () => {},
+    removeOwnedTempRoot: async () => removals.push("removed"),
+  });
+
+  await cleanup();
+
+  assert.deepEqual(removals, []);
+  assert.match(runnerSource, /M67_E2E_PRESERVE_RUN_DIR/);
+});
+
+test("keeps sanitized R5 snapshots and provider channel attribution inside each isolated run", () => {
+  assert.match(runnerSource, /M67_E2E_EVIDENCE_DIR:\s*evidenceRoot/);
+  assert.match(runnerSource, /providerChannel:\s*resolveProviderChannel\(process\.env\)/);
+  assert.match(v19rSpecSource, /process\.env\.M67_E2E_EVIDENCE_DIR/);
+  assert.match(v19rSpecSource, /path\.resolve\(evidenceRoot\(\),/);
+
+  const resolveProviderChannel = compileFunction("resolveProviderChannel", {});
+  assert.equal(resolveProviderChannel({}), "primary");
+  assert.equal(resolveProviderChannel({ AGENT_BRAIN_CHANNEL: " fallback " }), "fallback");
+  assert.equal(resolveProviderChannel({ OPENAI_API_KEY: "configured", AGENT_BRAIN_CHANNEL: "fallback" }), "openai");
 });
 
 test("Windows taskkill is gated by runner ownership and targets only the owned child PID", async () => {
@@ -103,6 +139,52 @@ test("Windows taskkill is gated by runner ownership and targets only the owned c
 
   await stopProcessTree(ownedChild);
   assert.deepEqual(calls, [{ command: "taskkill.exe", args: ["/PID", "301", "/T", "/F"] }]);
+});
+
+test("captures only sanitized Main Agent failure diagnostics before isolated cleanup", () => {
+  const serverLogTail = [];
+  const mainAgentFailureDiagnostics = [];
+  const sanitizeDiagnosticText = compileFunction("sanitizeDiagnosticText", {});
+  const captureServerOutput = compileFunction("captureServerOutput", {
+    serverLogTail,
+    mainAgentFailureDiagnostics,
+    sanitizeDiagnosticText,
+  });
+
+  captureServerOutput(Buffer.from(
+    '[main-agent-failure] {"phase":"agent_tool_loop","reason":"adapter_failed","errorName":"Error","summary":"request failed at https://example.invalid with token=private"}\n',
+  ));
+
+  assert.equal(mainAgentFailureDiagnostics.length, 1);
+  assert.deepEqual(mainAgentFailureDiagnostics[0], {
+    phase: "agent_tool_loop",
+    reason: "adapter_failed",
+    errorName: "Error",
+    summary: "request failed at [redacted-url] with token=[redacted]",
+  });
+  assert.match(runnerSource, /writeSanitizedSummary\("failed"\)/);
+});
+
+test("skips browser-restricted ports before starting the isolated Next server", () => {
+  assert.match(runnerSource, /const browserRestrictedPorts = new Set/);
+  assert.match(runnerSource, /1719, 1720, 1723, 2049/);
+  const reservePortSource = extractFunction("reservePort");
+  assert.match(reservePortSource, /browserRestrictedPorts\.has\(port\)/);
+  assert.match(reservePortSource, /browserRestrictedPorts\.has\(requested\)/);
+});
+
+test("keeps the V1-9R runner alive longer than the spec-level timeout", () => {
+  const resolvePlaywrightCommandTimeoutMs = compileFunction("resolvePlaywrightCommandTimeoutMs", {});
+
+  assert.equal(resolvePlaywrightCommandTimeoutMs(
+    "tests/e2e/v1-9r-two-user-main-agent.spec.ts",
+    "900000",
+  ), 1_560_000);
+  assert.equal(resolvePlaywrightCommandTimeoutMs(
+    "tests/e2e/v1-9r-two-user-main-agent.spec.ts",
+    "1800000",
+  ), 1_800_000);
+  assert.equal(resolvePlaywrightCommandTimeoutMs("tests/e2e/beta-feedback-center.spec.ts", undefined), 360_000);
 });
 
 function compileFunction(name, dependencies) {

@@ -24,6 +24,7 @@ import type {
   ProjectSnapshot,
   RegenerateArtifactInput,
   SaveArtifactInput,
+  SaveInteractiveCoursewareSpecInput,
   SetMessageReactionInput,
   StartAgentRunInput,
   WorkflowNodeRecord,
@@ -37,6 +38,8 @@ import type {
   UpsertVideoShotsInput,
   VideoShotRecord,
 } from "./types";
+import { validateInteractiveCoursewareSpec } from "@/server/activities/interactive-courseware-spec";
+import { withArtifactQualityState } from "@/server/quality/artifact-quality-state";
 import { deriveGenerationIntensitySuggestion, normalizeGenerationIntensity, type GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot, WorkflowNode } from "@/generated/prisma/client";
 import { sealPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
@@ -139,6 +142,27 @@ export function createWorkbenchService(
       return mapArtifact(artifact);
     },
 
+    async saveInteractiveCoursewareSpec(projectId: string, input: SaveInteractiveCoursewareSpecInput): Promise<ArtifactRecord> {
+      await ensureProjectAccess(projectId, "write");
+      const validation = validateInteractiveCoursewareSpec(input.spec);
+      if (!validation.ok) {
+        const details = validation.errors.map((entry) => `${entry.path}: ${entry.code}`).join("; ");
+        throw new Error(`Interactive courseware spec is invalid: ${details}`);
+      }
+
+      const activityCount = input.spec.pages.reduce((total, page) => total + page.activities.length, 0);
+      const artifact = await repository.saveArtifact(projectId, {
+        nodeKey: "interactive_courseware_spec",
+        kind: "interactive_courseware_spec",
+        title: `互动课件：${input.spec.title}`,
+        status: "needs_review",
+        summary: `包含 ${input.spec.pages.length} 个页面和 ${activityCount} 个互动活动，等待教师审阅。`,
+        markdownContent: `# ${input.spec.title}\n\n互动课件规格草稿，包含 ${input.spec.pages.length} 个页面和 ${activityCount} 个互动活动。`,
+        structuredContent: { interactiveCoursewareSpec: input.spec },
+      });
+      return mapArtifact(artifact);
+    },
+
     async submitPptSampleReview(projectId: string, artifactId: string, input: SubmitPptSampleReviewInput): Promise<ArtifactRecord> {
       await ensureProjectAccess(projectId, "write");
       const stored = await repository.getArtifact(projectId, artifactId);
@@ -168,19 +192,23 @@ export function createWorkbenchService(
       if (allPassed) {
         sampleSet = sealPptKeySampleCandidate({ designPackage, requestBatch, manifest, candidate, qa: input.qa });
       }
-      const nextStructuredContent = {
+      const nextStructuredContent = withArtifactQualityState({
         ...artifact.structuredContent,
         pptKeySampleReview: review,
         ...(sampleSet ? { pptKeySampleSet: sampleSet } : {}),
-      };
+      }, {
+        validationStatus: "passed",
+        reviewStatus: allPassed ? "passed" : "repair",
+        downstreamEligibility: allPassed ? "eligible" : "blocked",
+      });
       const saved = await repository.saveArtifact(projectId, {
         nodeKey: artifact.nodeKey,
         kind: artifact.kind,
         title: sampleSet ? "PPT 关键样张验收包" : "PPT 关键样张返修包",
         status: "needs_review",
-        summary: sampleSet ? "逐页 D/V/P 已通过，等待教师批准。" : "逐页 D/V/P 存在未关闭问题，需要定点返修后重新审查。",
+        summary: sampleSet ? "逐页 D/V/P 已通过，可继续内部下游；教师签收仍单独记录。" : "逐页 D/V/P 存在未关闭问题，需要定点返修后重新审查。",
         markdownContent: sampleSet
-          ? "# PPT 关键样张验收包\n\n逐页 D/V/P 已全部通过，等待教师明确批准。"
+          ? "# PPT 关键样张验收包\n\n逐页 D/V/P 已全部通过，可以继续内部制作；教师签收仍是独立状态。"
           : "# PPT 关键样张返修包\n\n存在未关闭的设计、视觉或来源问题，尚不能批准。",
         structuredContent: nextStructuredContent,
       });
@@ -215,15 +243,19 @@ export function createWorkbenchService(
         kind: artifact.kind,
         title: deckPackage ? "完整 PPT 交付验收包" : "完整 PPT 页级返修包",
         status: "needs_review",
-        summary: deckPackage ? "12 页 Delivery Critic 已通过，等待教师确认用于最终交付。" : "存在未关闭的页面问题，需要按页返修后重新审查。",
+        summary: deckPackage ? "12 页 Delivery Critic 已通过，可继续内部下游；教师签收仍单独记录。" : "存在未关闭的页面问题，需要按页返修后重新审查。",
         markdownContent: deckPackage
-          ? "# 完整 PPT 交付验收包\n\n全部页面的设计、视觉、来源和可读性审查通过，等待教师确认进入最终交付。"
+          ? "# 完整 PPT 交付验收包\n\n全部页面的设计、视觉、来源和可读性审查通过，可以继续内部制作；教师签收仍是独立状态。"
           : "# 完整 PPT 页级返修包\n\n存在未关闭的页面问题，尚不能进入最终交付。",
-        structuredContent: {
+        structuredContent: withArtifactQualityState({
           ...artifact.structuredContent,
           pptFullDeckReview: review,
           ...(deckPackage ? { pptFullDeckPackage: deckPackage } : {}),
-        },
+        }, {
+          validationStatus: "passed",
+          reviewStatus: allPassed ? "passed" : "repair",
+          downstreamEligibility: allPassed ? "eligible" : "blocked",
+        }),
       });
       return mapArtifact(saved);
     },

@@ -5,6 +5,7 @@ import type {
   AgentToolProfileId,
   AgentToolTransportName,
 } from "./agent-tool-types";
+import { createPptDirectorOutputSchema } from "./ppt-director-contract";
 
 const readOnlyFailurePolicy: ToolFailurePolicy = {
   retryable: true,
@@ -133,15 +134,6 @@ function createCriticInputSchema(): JsonSchemaObject {
       "rubricRef",
       "generatorInvocationId",
     ],
-  };
-}
-
-function createPptDirectorOutputSchema(): JsonSchemaObject {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: createCommonDirectorOutputProperties(),
-    required: commonDirectorOutputRequired(),
   };
 }
 

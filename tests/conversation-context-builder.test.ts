@@ -61,7 +61,7 @@ describe("conversation-context-builder", () => {
     expect(conversationContext.latestAssistantContent).toBe("消息 1");
     expect(conversationContext.pendingDeliveryPlan).toMatchObject({ teacherRequest: "帮我做百分数 PPT" });
     expect(conversationContext.contextPackage.workflowNodes).toEqual([expect.objectContaining({ key: "requirement_spec", status: "needs_review" })]);
-    expect(conversationContext.contextPackage.guardrails).toContain("只有 approved artifact 可作为下游可信输入。");
+    expect(conversationContext.contextPackage.guardrails).toContain("只有教师已批准，或已通过内部验证与审查并标记为下游可用的 artifact，才可作为下游可信输入；教师签收保持独立。");
   });
 
   it("sanitizes workflow stale reasons before they enter ContextPackage", () => {

@@ -102,7 +102,12 @@ export type CapabilityRunResult =
       status: "failed";
       userMessage: string;
       retryable: boolean;
-      errorCategory: "provider" | "validation" | "permission" | "timeout" | "unknown";
+      errorCategory: "provider" | "network" | "validation" | "permission" | "timeout" | "parse" | "missing_field" | "unknown";
+      runtimeRun?: {
+        runId: string;
+        runtimeKind: "deterministic" | "openai";
+        status: "failed";
+      };
     };
 
 export type QuickReply = {

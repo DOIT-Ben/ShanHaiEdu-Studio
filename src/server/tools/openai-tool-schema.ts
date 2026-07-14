@@ -2,6 +2,7 @@ import type { JsonSchemaObject, OpenAiFunctionToolSchema, ToolDefinition } from 
 import type { AgentToolDefinition } from "./agent-tool-types";
 
 const unsafeDescriptionPattern = /provider|storage|runtimeKind|debug|token|API_KEY|SECRET|local path/i;
+const unsupportedStrictSchemaKeywords = new Set(["allOf", "anyOf", "oneOf", "contains", "minItems"]);
 
 function cloneJsonSchema(schema: JsonSchemaObject): JsonSchemaObject {
   return structuredClone(schema);
@@ -23,13 +24,30 @@ export function toolDefinitionToOpenAiFunctionTool(tool: ToolDefinition | AgentT
     type: "function",
     name: agentTool ? tool.transportName : tool.id,
     description: tool.description,
-    parameters: agentTool ? modelVisibleAgentToolInputSchema(tool) : cloneJsonSchema(tool.inputSchema),
+    parameters: sanitizeOpenAiStrictSchema(
+      agentTool ? modelVisibleAgentToolInputSchema(tool) : cloneJsonSchema(tool.inputSchema),
+    ),
     strict: true,
   };
 
   assertSafeOpenAiToolSchema(schema, tool.id);
 
   return schema;
+}
+
+export function sanitizeOpenAiStrictSchema(schema: JsonSchemaObject): JsonSchemaObject {
+  return sanitizeSchemaValue(schema) as JsonSchemaObject;
+}
+
+function sanitizeSchemaValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeSchemaValue);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !unsupportedStrictSchemaKeywords.has(key))
+      .map(([key, child]) => [key, sanitizeSchemaValue(child)]),
+  );
 }
 
 function modelVisibleAgentToolInputSchema(tool: AgentToolDefinition): JsonSchemaObject {

@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { getCapabilityDefinition } from "./capability-registry";
-import { validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
 import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
 import type { CapabilityId, CapabilityRunResult, SaveArtifactDraft } from "./types";
 import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
+import { validatePptDesignCandidate, type PptDesignCandidate } from "@/server/ppt-quality/ppt-design-candidate";
 
 export type AgentRuntimeCapabilityInput = {
   runtime: AgentRuntime;
   projectId: string;
   capabilityId: CapabilityId;
   userMessage: string;
+  taskInput?: Record<string, unknown>;
   projectContext: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
   sourceMessageId?: string;
@@ -67,6 +68,7 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     sourceMessageId: input.sourceMessageId,
     task,
     userMessage: input.userMessage,
+    taskInput: input.taskInput,
     projectContext: input.projectContext,
     approvedArtifacts: input.approvedArtifacts ?? [],
   });
@@ -75,8 +77,13 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     return {
       status: "failed",
       userMessage: result.assistantMessage.body || capability.failureRecovery.userMessage,
-      retryable: capability.failureRecovery.retryable,
-      errorCategory: "provider",
+      retryable: result.failure?.retryable ?? capability.failureRecovery.retryable,
+      errorCategory: result.failure?.category ?? "provider",
+      runtimeRun: {
+        runId: result.run.runId,
+        runtimeKind: result.run.runtimeKind,
+        status: "failed",
+      },
     };
   }
 
@@ -92,17 +99,6 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     } satisfies CapabilityRunResult & { status: "failed" };
   }
 
-  if (input.capabilityId === "ppt_design") {
-    const designValidation = validatePptDesignDraftForCoze(result.artifactDraft.markdown);
-    if (!designValidation.valid) {
-      return {
-        status: "failed",
-        userMessage: designValidation.message,
-        retryable: true,
-        errorCategory: "validation",
-      };
-    }
-  }
   if (input.capabilityId === "storyboard_generate") {
     const manifest = result.artifactDraft.structuredContent?.videoStoryboardManifest;
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) || !validateStoryboardManifest(manifest as StoryboardManifest).valid) {
@@ -118,6 +114,21 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     const script = result.artifactDraft.structuredContent?.videoNarrationScript;
     if (!script || typeof script !== "object" || Array.isArray(script) || !validateVideoNarrationScript(script as VideoNarrationScript).valid) {
       return { status: "failed", userMessage: "视频脚本缺少可执行的受控旁白内容，请重新生成脚本。", retryable: true, errorCategory: "validation" };
+    }
+  }
+  if (input.capabilityId === "ppt_design") {
+    const designCandidate = result.artifactDraft.structuredContent?.pptDesignCandidate as PptDesignCandidate | undefined;
+    if (
+      !designCandidate ||
+      !hasTrustedPptEvidenceBindings(designCandidate, input.approvedArtifacts ?? []) ||
+      !isCandidateBoundToCurrentTask(designCandidate, input.taskInput)
+    ) {
+      return {
+        status: "failed",
+        userMessage: "逐页课件设计没有绑定当前可信上游证据，请重新生成设计候选。",
+        retryable: true,
+        errorCategory: "validation",
+      };
     }
   }
 
@@ -145,6 +156,26 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
   };
 }
 
+function hasTrustedPptEvidenceBindings(candidate: PptDesignCandidate, artifacts: ApprovedArtifactInput[]): boolean {
+  const trusted = new Map(artifacts.flatMap((artifact) =>
+    artifact.artifactId && artifact.digest ? [[artifact.artifactId, artifact.digest] as const] : []));
+  return trusted.size > 0 && candidate.evidenceBindings.length > 0 &&
+    candidate.evidenceBindings.every((binding) => trusted.get(binding.sourceArtifactId) === binding.digest);
+}
+
+function isCandidateBoundToCurrentTask(candidate: PptDesignCandidate, taskInput: Record<string, unknown> | undefined): boolean {
+  const taskBrief = isRecord(taskInput?.taskBrief) ? taskInput.taskBrief : null;
+  return (
+    validatePptDesignCandidate(candidate).valid &&
+    typeof taskBrief?.digest === "string" &&
+    taskBrief.digest === candidate.taskBriefDigest
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function normalizeCapabilityRunResult(result: CapabilityRunResult): CapabilityRunResult {
   if (result.status === "failed") {
     return {
@@ -152,6 +183,7 @@ export function normalizeCapabilityRunResult(result: CapabilityRunResult): Capab
       userMessage: result.userMessage.trim() || "这一步暂时没有完成，可以稍后重试。",
       retryable: result.retryable,
       errorCategory: result.errorCategory,
+      ...(result.runtimeRun ? { runtimeRun: result.runtimeRun } : {}),
     };
   }
 

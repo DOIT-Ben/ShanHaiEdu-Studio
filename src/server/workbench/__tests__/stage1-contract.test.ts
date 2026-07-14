@@ -37,6 +37,7 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
       "image_prompts",
       "video_storyboard",
       "final_delivery",
+      "interactive_courseware_spec",
     ]);
     expect(snapshot.messages).toEqual([]);
     expect(snapshot.artifacts).toEqual([]);

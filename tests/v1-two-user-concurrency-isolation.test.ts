@@ -9,6 +9,8 @@ import { createWorkbenchActor } from "@/server/auth/actor";
 import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { executeRecoverableVideoTask } from "@/server/video-generation/video-generation-run";
+import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 
 const root = process.cwd();
 const temporaryRoot = path.join(root, ".tmp", "v1-8-two-user");
@@ -126,6 +128,66 @@ describe("V1-8 two invited users concurrency and recovery", () => {
       serviceB.releaseProjectExecutionLease({ projectId: projectB.id, holderId: "worker-b", fencingToken: leaseB!.fencingToken }),
     ]);
   });
+
+  it("keeps task grants and pending decisions isolated when one teacher changes direction", async () => {
+    const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
+    const previousToken = process.env.COZE_API_TOKEN;
+    const previousRunUrl = process.env.COZE_PPT_RUN_URL;
+    process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
+    process.env.COZE_API_TOKEN = "test-token";
+    process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
+    try {
+      const actorA = createWorkbenchActor({ userId: `teacher-r5-a-${randomUUID()}`, displayName: "Teacher A", authMode: "password" });
+      const actorB = createWorkbenchActor({ userId: `teacher-r5-b-${randomUUID()}`, displayName: "Teacher B", authMode: "password" });
+      const repository = createPrismaWorkbenchRepository(clientA);
+      const serviceA = createWorkbenchService(repository, actorA);
+      const serviceB = createWorkbenchService(repository, actorB);
+      const [projectA, projectB] = await Promise.all([
+        serviceA.createProject({ title: "教师甲 PPT" }),
+        serviceB.createProject({ title: "教师乙 PPT" }),
+      ]);
+      await Promise.all([
+        approvedPptDesign(serviceA, projectA.id, "甲"),
+        approvedPptDesign(serviceB, projectB.id, "乙"),
+      ]);
+      const providerAgent = {
+        async respond() {
+          return {
+            assistantMessage: { body: "我会生成可编辑 PPTX。" }, state: "running_tool" as const,
+            quickReplies: [], recommendedOptions: [], shouldRunToolNow: true, runtimeKind: "openai" as const,
+            toolPlan: {
+              planId: "coze_ppt:two-user", capabilityId: "coze_ppt" as const,
+              reasonForUser: "我会生成可编辑 PPTX。", internalReason: "test",
+              inputDraft: {}, missingInputs: [], upstreamPlan: [], nextSuggestedCapabilities: [],
+              requiresConfirmation: false, expectedArtifactKind: "pptx_artifact",
+            },
+          };
+        },
+      };
+      const turnA = createConversationTurnService({ service: serviceA, runtime: new DeterministicRuntime(), agent: providerAgent });
+      const turnB = createConversationTurnService({ service: serviceB, runtime: new DeterministicRuntime(), agent: providerAgent });
+
+      await Promise.all([
+        turnA.createTurn(projectA.id, { role: "teacher", content: "生成真实 PPTX" }),
+        turnB.createTurn(projectB.id, { role: "teacher", content: "生成真实 PPTX" }),
+      ]);
+      await turnA.createTurn(projectA.id, { role: "teacher", content: "取消当前任务" });
+      const [snapshotA, snapshotB] = await Promise.all([serviceA.getProjectSnapshot(projectA.id), serviceB.getProjectSnapshot(projectB.id)]);
+      const decisionA = latestPendingDecision(snapshotA);
+      const decisionB = latestPendingDecision(snapshotB);
+
+      expect(decisionA).toMatchObject({ projectId: projectA.id, kind: "budget_disclosure", status: "canceled", intentEpoch: 0 });
+      expect(decisionB).toMatchObject({ projectId: projectB.id, kind: "budget_disclosure", status: "pending", intentEpoch: 0 });
+      expect(snapshotA.project.intentEpoch).toBe(1);
+      expect(snapshotB.project.intentEpoch).toBe(0);
+      expect(JSON.stringify(snapshotA.messages)).not.toContain(projectB.id);
+      expect(JSON.stringify(snapshotB.messages)).not.toContain(projectA.id);
+    } finally {
+      restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
+      restoreEnv("COZE_API_TOKEN", previousToken);
+      restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
+    }
+  });
 });
 
 function createClient() {
@@ -138,6 +200,26 @@ async function approvedSource(service: ReturnType<typeof createWorkbenchService>
     status: "needs_review", summary: `${marker} source`, markdownContent: `# ${marker}`,
   });
   return service.approveArtifact(projectId, artifact.id);
+}
+
+async function approvedPptDesign(service: ReturnType<typeof createWorkbenchService>, projectId: string, marker: string) {
+  const artifact = await service.saveArtifact(projectId, {
+    nodeKey: "ppt_design_draft", kind: "ppt_design_draft", title: `${marker} PPT 设计稿`,
+    status: "needs_review", summary: `${marker} design`, markdownContent: `# ${marker}`,
+  });
+  return service.approveArtifact(projectId, artifact.id);
+}
+
+function latestPendingDecision(snapshot: Awaited<ReturnType<ReturnType<typeof createWorkbenchService>["getProjectSnapshot"]>>) {
+  const pendingPlan = [...snapshot.messages].reverse()
+    .map((message) => message.metadata.pendingDeliveryPlan)
+    .find((value): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value)));
+  return pendingPlan?.pendingDecision;
+}
+
+function restoreEnv(key: string, value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }
 
 function shotPlan(sourceArtifactId: string) {

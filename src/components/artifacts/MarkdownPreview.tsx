@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ArtifactItem } from "@/lib/types";
 
 type MarkdownPreviewProps = {
@@ -12,13 +13,14 @@ function normalizeValue(value: string | string[]) {
 type MarkdownBlock =
   | { type: "heading"; level: 1 | 2 | 3; text: string }
   | { type: "list"; items: string[] }
+  | { type: "quote"; text: string }
   | { type: "paragraph"; text: string };
 
 function isMarkdownText(text: string) {
-  return /^#{1,3}\s/m.test(text) || /^-\s/m.test(text);
+  return /^#{1,3}\s/m.test(text) || /^-\s/m.test(text) || /^>\s/m.test(text) || /\*\*.+?\*\*|\[[^\]]+\]\([^)]+\)/.test(text);
 }
 
-function renderMarkdownBlocks(markdown: string): MarkdownBlock[] {
+export function renderMarkdownBlocks(markdown: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
   const pendingParagraph: string[] = [];
   let pendingList: string[] = [];
@@ -47,6 +49,12 @@ function renderMarkdownBlocks(markdown: string): MarkdownBlock[] {
       pendingList.push(line.slice(2).trim());
       continue;
     }
+    if (line.startsWith("> ")) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "quote", text: line.slice(2).trim() });
+      continue;
+    }
     if (line.startsWith("#")) {
       const match = /^(#{1,3})\s+(.+)$/.exec(line);
       if (match) {
@@ -65,6 +73,31 @@ function renderMarkdownBlocks(markdown: string): MarkdownBlock[] {
   return blocks;
 }
 
+export function isSafeMarkdownLink(href: string) {
+  try {
+    const protocol = new URL(href, "https://shanhaiedu.local").protocol;
+    return protocol === "https:" || protocol === "http:" || protocol === "mailto:";
+  } catch {
+    return false;
+  }
+}
+
+function renderInlineMarkdown(value: string): ReactNode[] {
+  const parts = value.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g).filter(Boolean);
+  return parts.map((part, index) => {
+    const bold = /^\*\*([^*]+)\*\*$/.exec(part);
+    if (bold) return <strong key={index} className="font-semibold text-foreground">{bold[1]}</strong>;
+    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    if (link) {
+      const [, label, href] = link;
+      return isSafeMarkdownLink(href)
+        ? <a key={index} href={href} target={href.startsWith("http") ? "_blank" : undefined} rel={href.startsWith("http") ? "noreferrer" : undefined} className="font-medium text-[#367d6d] underline underline-offset-2">{label}</a>
+        : <span key={index}>{label}</span>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
 function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
   if (block.type === "heading") {
     const className =
@@ -80,15 +113,16 @@ function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
       <ul className="space-y-1.5 pl-4 text-sm leading-7 text-muted-foreground">
         {block.items.map((entry) => (
           <li key={entry} className="list-disc pl-1">
-            {entry}
+            {renderInlineMarkdown(entry)}
           </li>
         ))}
       </ul>
     );
   }
   if (block.type === "paragraph") {
-    return <p className="text-sm leading-7 text-muted-foreground">{block.text}</p>;
+    return <p className="text-sm leading-7 text-muted-foreground">{renderInlineMarkdown(block.text)}</p>;
   }
+  return <blockquote className="border-l-2 border-[#9ccfc2] pl-3 text-sm leading-7 text-muted-foreground">{renderInlineMarkdown(block.text)}</blockquote>;
 }
 
 export function MarkdownPreview({ item, showHeader = true }: MarkdownPreviewProps) {
@@ -132,7 +166,7 @@ export function MarkdownPreview({ item, showHeader = true }: MarkdownPreviewProp
                   </div>
                 ) : (
                   <p key={line} className="text-sm leading-7 text-muted-foreground">
-                    {entry}
+                    {renderInlineMarkdown(entry)}
                   </p>
                 ),
               )}

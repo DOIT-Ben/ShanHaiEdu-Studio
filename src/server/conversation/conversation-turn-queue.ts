@@ -32,6 +32,7 @@ export type DrainProjectConversationQueueOptions = {
   workerId?: string;
   leaseMs?: number;
   agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
+  enableTaskGrantAutonomy?: boolean;
 };
 
 export type DrainProjectConversationQueueResult = {
@@ -161,6 +162,7 @@ function createDefaultExecutor(options: DrainProjectConversationQueueOptions): C
       executionIdentity: readJobExecutionIdentity(job),
       executionFence: fence,
       generationIntensityOverride: job.generationIntensity,
+      enableTaskGrantAutonomy: options.enableTaskGrantAutonomy,
     });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {

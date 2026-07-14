@@ -1,14 +1,18 @@
-import { planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
+import { isExplorationOnlyRequest, planCapabilityForRequest, planDeliveryForRequest } from "@/server/capabilities/capability-planner";
 import type { CapabilityToolPlan, DeliveryPlan, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
 import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
 import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import type { XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
-import type { MainAgentReActDispatchResult } from "@/server/conversation/main-agent-controlled-react-loop";
+import type { MainAgentReActBudgetExhausted, MainAgentReActContextTelemetry, MainAgentReActDispatchResult, MainAgentReActRejectedToolCall, MainAgentReActToolSet } from "@/server/conversation/main-agent-controlled-react-loop";
+import type { MainAgentReActCheckpointSeed } from "@/server/conversation/main-agent-react-checkpoint";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
+import type { IntentGrant, TaskBrief } from "./task-contract";
 
 export type MainConversationAgentInput = {
   userMessage: string;
+  taskBrief?: TaskBrief;
+  intentGrant?: IntentGrant | { standardWorkAuthorized: boolean };
   responseStyle?: XiaoKuResponseStyle;
   generationIntensity?: GenerationIntensity;
   availableArtifactKinds: string[];
@@ -32,13 +36,22 @@ export type MainConversationAgentInput = {
   agentToolLoop?: {
     tools: unknown[];
     allowedToolNames: readonly string[];
+    refreshTools?: () => MainAgentReActToolSet | Promise<MainAgentReActToolSet>;
     dispatch: (call: { callId: string; toolName: string; arguments: Record<string, unknown> }) => Promise<MainAgentReActDispatchResult>;
     maxToolRounds?: number;
+    checkpointSeed?: MainAgentReActCheckpointSeed;
+    getCheckpointSeed?: () => MainAgentReActCheckpointSeed;
+    onContextTelemetry?: (event: MainAgentReActContextTelemetry) => void | Promise<void>;
+    onRejectedToolCall?: (event: MainAgentReActRejectedToolCall) => void | Promise<void>;
+    onBudgetExhausted?: (event: MainAgentReActBudgetExhausted) => void | Promise<void>;
   };
   replanDirective?: {
-    reason: "tool_succeeded" | "tool_failed" | "quality_rework";
+    reason: "tool_succeeded" | "tool_failed" | "quality_rework" | "completion_contract_unsatisfied";
     previousActionKey: string;
     observationIds: string[];
+    remainingRequestedOutputs?: string[];
+    repairAction?: "fix_inputs" | "retry_later" | "ask_teacher" | "do_not_retry_automatically";
+    reliableDefaultsAvailable?: boolean;
   };
 };
 
@@ -82,7 +95,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
         };
       }
 
-      if (isExplorationOnly(text)) {
+      if (isExplorationOnlyRequest(text)) {
         return {
           assistantMessage: {
             body: "可以，我们先不急着生成材料。你可以先从课堂目标、导入情境和学生互动方式里选一个方向聊起。",
@@ -101,6 +114,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
 
       const plannerInput = {
         ...input,
+        intentGrant: input.intentGrant,
         capabilityAvailability: input.conversationContext?.capabilityAvailability,
       };
       const toolPlan = planCapabilityForRequest(plannerInput);
@@ -146,6 +160,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
         };
       }
 
+      const shouldRunToolNow = !toolPlan.requiresConfirmation;
       return {
         assistantMessage: {
           title: "我理解你的任务",
@@ -153,12 +168,12 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
             ? "你想做一套完整公开课材料。我会先整理需求，再按计划推进教案、PPT、图片、导入视频和最终交付包。"
             : "你想做一套公开课相关材料。我建议先把需求规格整理清楚，再继续生成 PPT 大纲和可下载文件。",
         },
-        state: "awaiting_confirmation",
-        quickReplies: deliveryPlan ? deliveryPlanConfirmationReplies() : singleStepConfirmationReplies(),
+        state: shouldRunToolNow ? "running_tool" : "awaiting_confirmation",
+        quickReplies: shouldRunToolNow ? [] : deliveryPlan ? deliveryPlanConfirmationReplies() : singleStepConfirmationReplies(),
         recommendedOptions: [],
         toolPlan,
         deliveryPlan,
-        shouldRunToolNow: false,
+        shouldRunToolNow,
         runtimeKind: "deterministic",
       };
     },
@@ -187,10 +202,6 @@ function deliveryPlanConfirmationReplies(): QuickReply[] {
 
 function isCasualChat(text: string): boolean {
   return ["你好", "您好", "hi", "hello", "在吗", "谢谢"].includes(text.toLowerCase());
-}
-
-function isExplorationOnly(text: string): boolean {
-  return /聊聊|想法|创意|怎么设计|怎么上/.test(text) && !/帮我做|生成|做一个|做份|输出/.test(text);
 }
 
 function isShortConfirmation(text: string): boolean {

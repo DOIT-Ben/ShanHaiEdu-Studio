@@ -7,7 +7,7 @@ import type { ArtifactRecord, ConversationMessageRecord, ProjectRecord, Workflow
 
 const CONTEXT_GUARDRAILS = [
   "不得把未完成产物描述为已完成或可下载。",
-  "只有 approved artifact 可作为下游可信输入。",
+  "只有教师已批准，或已通过内部验证与审查并标记为下游可用的 artifact，才可作为下游可信输入；教师签收保持独立。",
   "不得向教师暴露 provider、schema、storage、local path、debug 等工程细节。",
 ];
 

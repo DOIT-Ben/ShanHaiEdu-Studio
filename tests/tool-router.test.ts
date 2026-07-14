@@ -115,6 +115,10 @@ describe("M64-D ToolRouter Core", () => {
         toolName: "create_requirement_spec",
         projectId: "project-a",
         userInstruction: "帮我整理百分数公开课需求",
+        toolInput: {
+          teacherGoal: "五年级数学百分数公开课，约 10 页",
+          targetPageCount: 10,
+        },
         runtime: fakeRuntime(),
         projectContext,
         approvedArtifacts: [],
@@ -133,6 +137,10 @@ describe("M64-D ToolRouter Core", () => {
       },
       projectId: "project-a",
       userMessage: "帮我整理百分数公开课需求",
+      taskInput: {
+        teacherGoal: "五年级数学百分数公开课，约 10 页",
+        targetPageCount: 10,
+      },
       projectContext,
     });
     expect(result).toMatchObject({

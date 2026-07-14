@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
+import type { IntentGrant } from "@/server/conversation/task-contract";
+
+const taskGrant: IntentGrant = {
+  schemaVersion: "intent-grant.v1", taskId: "task-1", projectId: "project-1", intentEpoch: 0,
+  standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: null,
+  maxCostCredits: null, maxExternalProviderCalls: null, requiredCheckpoints: [], expiresAt: null,
+};
 
 describe("PlanGuard", () => {
   it("requires an exact HumanGate action for the PPT sample asset batch", () => {
@@ -31,6 +38,16 @@ describe("PlanGuard", () => {
 
     expect(result.status).toBe("needs_confirmation");
     expect(result.reason).toContain("package");
+  });
+
+  it("allows reversible package work under a bound task grant without a node confirmation", () => {
+    const result = evaluateToolPlan({
+      capabilityId: "final_package",
+      intentGrant: taskGrant,
+      expectedScope: { projectId: "project-1", intentEpoch: 0, intensity: "standard" },
+    });
+
+    expect(result.status).toBe("allowed");
   });
 
   it("does not treat capability requiresConfirmation metadata as human confirmation", () => {
@@ -84,7 +101,11 @@ describe("PlanGuard", () => {
   });
 
   it("allows safe internal capabilities without HumanGate", () => {
-    const result = evaluateToolPlan({ capabilityId: "requirement_spec" });
+    const result = evaluateToolPlan({
+      capabilityId: "requirement_spec",
+      intentGrant: taskGrant,
+      expectedScope: { projectId: "project-1", intentEpoch: 0, intensity: "standard" },
+    });
 
     expect(result.status).toBe("allowed");
     expect(result.reason.length).toBeGreaterThan(0);

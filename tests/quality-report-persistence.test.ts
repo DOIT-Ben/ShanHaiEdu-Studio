@@ -57,6 +57,12 @@ describe("V1 Stage 2B quality report persistence", () => {
       criticReportId: persisted.criticReport.id,
       decisionDigest: fixture.decision.decisionDigest,
       outcome: "pass",
+      nextAction: "continue_downstream",
+      deliveryEligibility: "final_candidate",
+    });
+    expect(await client.artifact.findUnique({ where: { id: fixture.artifactId } })).toMatchObject({
+      status: "needs_review",
+      isApproved: false,
     });
   });
 

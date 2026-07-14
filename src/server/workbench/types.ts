@@ -17,6 +17,7 @@ export type WorkflowNodeKey =
   | "requirement_spec"
   | "textbook_evidence"
   | "lesson_plan"
+  | "interactive_courseware_spec"
   | "ppt_draft"
   | "ppt_design_draft"
   | "pptx_artifact"
@@ -247,6 +248,10 @@ export type SaveArtifactInput = {
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
   validationReport?: import("@/server/quality/quality-types").ValidationReport;
+};
+
+export type SaveInteractiveCoursewareSpecInput = {
+  spec: import("@/server/activities/interactive-courseware-spec").InteractiveCoursewareSpec;
 };
 
 export type SubmitPptSampleReviewInput = {

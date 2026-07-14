@@ -1,6 +1,7 @@
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import type { ExecutionIdentitySnapshot } from "@/server/workbench/types";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
+import { hasValidExecutionEnvelope, type ExecutionEnvelope } from "@/server/conversation/task-contract";
 
 import { createAgentToolInvocationEnvelope, type AgentToolArtifactRef, type AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import { routeAgentToolCall, type AgentToolAuthorizationDatabase, type AgentToolRouterResult } from "./agent-tool-router";
@@ -17,6 +18,7 @@ export type MainAgentToolServerContext = {
   generationIntensity?: GenerationIntensity;
   approvedArtifactRefs: AgentToolArtifactRef[];
   reviewTargetRef?: AgentToolArtifactRef | null;
+  executionEnvelope?: ExecutionEnvelope;
 };
 
 export type MainAgentToolDispatchRequest = {
@@ -93,9 +95,14 @@ export async function dispatchMainAgentToolCall(
   if (!dependencies.allowBusinessExecution || !dependencies.buildBusinessToolInput) {
     return blocked(request, "business_tool_requires_outer_guard");
   }
-  const result = await (dependencies.businessToolRouter ?? routeToolCall)(
-    dependencies.buildBusinessToolInput(request, definition.internalToolId),
-  );
+  if (!request.serverContext.executionEnvelope || !hasValidExecutionEnvelope(request.serverContext.executionEnvelope)) {
+    return blocked(request, "invalid_execution_envelope");
+  }
+  const businessInput = dependencies.buildBusinessToolInput(request, definition.internalToolId);
+  if (businessInput.executionEnvelope !== request.serverContext.executionEnvelope) {
+    return blocked(request, "execution_envelope_not_forwarded");
+  }
+  const result = await (dependencies.businessToolRouter ?? routeToolCall)(businessInput);
   return { kind: "business_tool", result };
 }
 

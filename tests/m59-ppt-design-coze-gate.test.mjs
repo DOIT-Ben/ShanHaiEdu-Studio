@@ -41,22 +41,20 @@ test("M59 adds a distinct ppt_design_draft workflow artifact and teacher mapping
   assert.match(artifactRouteSource, /"pptx_artifact"/);
 });
 
-test("M59 agent runtime can produce a four-layer PPT design draft", () => {
+test("M59 keeps the R5 design candidate contract separate from the production four-layer gate", () => {
   const runtimeTypes = readSource("src/server/agent-runtime/types.ts");
   const runnerSource = readSource("src/server/capabilities/capability-runner.ts");
   const guidanceSource = readSource("src/server/agent-runtime/task-guidance.ts");
-  const deterministicSource = readSource("src/server/agent-runtime/deterministic-runtime.ts");
   const openaiSource = readSource("src/server/agent-runtime/openai-runtime.ts");
+  const cozeSource = readSource("src/server/coze-ppt/coze-ppt-run.ts");
 
   assert.match(runtimeTypes, /\| "ppt_design"/);
   assert.match(runnerSource, /ppt_design: "ppt_design"/);
   assert.match(runnerSource, /ppt_design: \{ nodeKey: "ppt_design_draft", kind: "ppt_design_draft" \}/);
-  for (const source of [guidanceSource, deterministicSource, openaiSource]) {
-    assert.match(source, /底图/);
-    assert.match(source, /元素/);
-    assert.match(source, /文字/);
-    assert.match(source, /排版/);
-  }
+  assert.match(guidanceSource, /任务语义[\s\S]*证据绑定[\s\S]*视觉方向[\s\S]*逐页结构[\s\S]*下游准备/);
+  assert.match(openaiSource, /逐页紧凑设计候选/);
+  assert.match(openaiSource, /不得使用页码范围或通用占位描述/);
+  assert.match(cozeSource, /底图[\s\S]*元素[\s\S]*文字[\s\S]*排版/);
 });
 
 test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer design", () => {
@@ -87,13 +85,18 @@ test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer
 test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {
   const validationSource = readSource("src/server/ppt-design/ppt-design-validation.ts");
   const runnerSource = readSource("src/server/capabilities/capability-runner.ts");
+  const directorAdapterSource = readSource("src/server/ppt-quality/ppt-director-design-adapter.ts");
+  const providerAdapterSource = readSource("src/server/tools/provider-tool-adapter.ts");
   const cozeSource = readSource("src/server/coze-ppt/coze-ppt-run.ts");
   const deterministicSource = readSource("src/server/agent-runtime/deterministic-runtime.ts");
 
   assert.match(validationSource, /range_merged_pages/);
   assert.match(validationSource, /第\\s\*\(\\d\{1,2\}\)\\s\*\[-—~至到\]/);
   assert.match(validationSource, /PPT 设计稿未逐页完整/);
-  assert.match(runnerSource, /input\.capabilityId === "ppt_design"[\s\S]*validatePptDesignDraftForCoze/);
+  assert.match(runnerSource, /input\.capabilityId === "ppt_design"[\s\S]*status: "failed"[\s\S]*errorCategory: "validation"/);
+  assert.match(directorAdapterSource, /validatePptDesignPackage\(designPackage\)/);
+  assert.doesNotMatch(directorAdapterSource, /validatePptDesignPackageForProviderProduction\(designPackage\)/);
+  assert.match(providerAdapterSource, /validatePptDesignPackageForProviderProduction\(packageValue as PptDesignPackage\)/);
   assert.match(cozeSource, /validatePptDesignDraftForCoze\(input\.artifact\.markdownContent\)/);
   const pptDesignBlock = deterministicSource.match(/ppt_design:[\s\S]*?intro_video_plan:/)?.[0] ?? deterministicSource;
   assert.doesNotMatch(pptDesignBlock, /第 4-8 页/);

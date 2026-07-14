@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 
-import type { AgentToolInvocationEnvelope } from "./agent-tool-invocation";
+import type { AgentToolArtifactRef, AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import type { AgentToolRouterResult } from "./agent-tool-router";
 import type { AgentToolId, AgentToolPolicyOutcome } from "./agent-tool-types";
 
@@ -18,6 +18,7 @@ export type PersistedAgentToolReport = {
   assistantSummary: string;
   structuredOutput: Record<string, unknown> | null;
   policyOutcome: AgentToolPolicyOutcome | null;
+  approvedArtifactRefs: AgentToolArtifactRef[];
   inputHash: string;
   actionDigest: string;
   createdAt: string;
@@ -46,6 +47,7 @@ export function createPersistedAgentToolReport(
     policyOutcome: result.status === "succeeded" && "policyOutcome" in result && result.policyOutcome
       ? structuredClone(result.policyOutcome)
       : null,
+    approvedArtifactRefs: structuredClone(envelope.approvedArtifactRefs),
     inputHash: envelope.inputHash,
     actionDigest: envelope.actionDigest,
   };

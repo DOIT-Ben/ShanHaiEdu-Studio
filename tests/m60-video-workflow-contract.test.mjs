@@ -36,7 +36,8 @@ test("M60 registers the complete video workflow node and capability chain", () =
     assert.match(plannerSource, new RegExp(`"${nodeKey}"`));
   }
 
-  assert.match(registrySource, /id: "creative_theme_generate"[\s\S]*upstreamCapabilities: \["knowledge_anchor_extract"\]/);
+  assert.match(registrySource, /id: "knowledge_anchor_extract"[\s\S]*upstreamCapabilities: \["requirement_spec"\]/);
+  assert.match(registrySource, /id: "creative_theme_generate"[\s\S]*upstreamCapabilities: \["requirement_spec"\]/);
   assert.match(registrySource, /id: "video_script_generate"[\s\S]*upstreamCapabilities: \["creative_theme_generate"\]/);
   assert.match(registrySource, /id: "storyboard_generate"[\s\S]*upstreamCapabilities: \["video_script_generate"\]/);
   assert.match(registrySource, /id: "asset_image_generate"[\s\S]*upstreamCapabilities: \["asset_brief_generate"\]/);
@@ -63,10 +64,13 @@ test("M60 runtime guidance requires structured video pre-artifacts before segmen
     assert.match(guidanceSource, new RegExp(`${task}: \\{`));
   }
 
-  for (const requiredTerm of ["知识锚点", "创意主题", "视频脚本", "分镜", "资产", "每镜头时长", "课堂边界约束", "只拼接"]) {
+  for (const requiredTerm of ["最小课程锚点", "独立创意", "视频脚本", "分镜", "资产", "每镜头时长", "课堂边界约束", "只拼接"]) {
     assert.match(guidanceSource, new RegExp(requiredTerm));
     assert.match(openaiSource, new RegExp(requiredTerm));
   }
+
+  assert.doesNotMatch(openaiSource, /按知识锚点、创意主题/);
+  assert.doesNotMatch(guidanceSource, /知识锚点是否来自结构化教案/);
 
   for (const teacherVisibleSource of [guidanceSource, deterministicSource, openaiSource]) {
     assert.doesNotMatch(teacherVisibleSource, /provider 限制|视频 provider|调用视频 provider/);

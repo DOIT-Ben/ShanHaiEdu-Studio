@@ -6,6 +6,8 @@ import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentState, Ma
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { createDeterministicMainConversationAgent, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
 import { runMainAgentControlledReActLoop } from "./main-agent-controlled-react-loop";
+import { projectMainAgentRequestContext } from "./main-agent-request-context";
+import { mainAgentRoundBudgetPauseSummary } from "./main-agent-run-pause";
 import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
 import type { OpenAIReasoningEffort } from "@/server/openai-compatible-config";
 
@@ -62,7 +64,8 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "final_package",
 ];
 const capabilityIdEnum = getCapabilityDefinitions().map((capability) => capability.id);
-const defaultMainAgentTimeoutMs = 60_000;
+const repeatableOuterCapabilityIds = new Set<CapabilityId>(["ppt_page_repair", "video_segment_generate"]);
+const defaultMainAgentTimeoutMs = 180_000;
 const minimumMainAgentTimeoutMs = 10_000;
 
 export class OpenAIMainConversationAgent implements MainConversationAgent {
@@ -99,11 +102,63 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
         assistantText = response.assistantText;
       }
       try {
-        return normalizeModelTurn(parseMainAgentOutput(assistantText), input);
+        let turn = normalizeModelTurn(parseMainAgentOutput(assistantText), input);
+        if (input.replanDirective?.reason === "completion_contract_unsatisfied" &&
+            !turn.toolPlan &&
+            turn.state !== "failed_blocked" &&
+            turn.state !== "failed_retryable") {
+          const availableCapabilityIds = outerToolPlanCapabilityIds(input);
+          if (availableCapabilityIds.length === 0) {
+            throw new MainAgentExecutionError("output_parse", "completion_contract_no_available_tool");
+          }
+          const repairResponse = await adapter.createResponse(buildCompletionContractRepairRequest(
+            input,
+            availableCapabilityIds,
+            strategy?.reasoningEffort ?? this.reasoningEffort,
+          ));
+          if (repairResponse.diagnostics.status === "failed") {
+            throw new MainAgentExecutionError("direct_response", "completion_contract_repair_failed", repairResponse.diagnostics.errorMessage);
+          }
+          if (!repairResponse.assistantText.trim()) {
+            throw new MainAgentExecutionError("direct_response", "completion_contract_repair_empty");
+          }
+          turn = normalizeModelTurn(parseMainAgentOutput(repairResponse.assistantText), input);
+          if (!turn.toolPlan || !turn.shouldRunToolNow) {
+            throw new MainAgentExecutionError("output_parse", "completion_contract_repair_invalid");
+          }
+        }
+        if (input.replanDirective?.reason === "tool_failed" &&
+            input.replanDirective.repairAction === "fix_inputs" &&
+            input.replanDirective.reliableDefaultsAvailable === true &&
+            !turn.toolPlan) {
+          const availableCapabilityIds = outerToolPlanCapabilityIds(input);
+          if (availableCapabilityIds.length === 0) {
+            throw new MainAgentExecutionError("output_parse", "tool_failure_repair_no_available_tool");
+          }
+          const repairResponse = await adapter.createResponse(buildToolFailureRepairRequest(
+            input,
+            availableCapabilityIds,
+            strategy?.reasoningEffort ?? this.reasoningEffort,
+          ));
+          if (repairResponse.diagnostics.status === "failed") {
+            throw new MainAgentExecutionError("direct_response", "tool_failure_repair_failed", repairResponse.diagnostics.errorMessage);
+          }
+          if (!repairResponse.assistantText.trim()) {
+            throw new MainAgentExecutionError("direct_response", "tool_failure_repair_empty");
+          }
+          turn = normalizeModelTurn(parseMainAgentOutput(repairResponse.assistantText), input);
+          if (!turn.toolPlan || !turn.shouldRunToolNow) {
+            throw new MainAgentExecutionError("output_parse", "tool_failure_repair_invalid");
+          }
+        }
+        return turn;
       } catch (error) {
-        throw error instanceof MainAgentExecutionError ? error : new MainAgentExecutionError("output_parse", "invalid_output", errorMessage(error));
+        throw error instanceof MainAgentExecutionError
+          ? error
+          : new MainAgentExecutionError("output_parse", classifyMainAgentOutputError(error), errorMessage(error));
       }
     } catch (error) {
+      if (isRecoverableAgentToolLoopPause(error)) return recoverableAgentToolLoopPauseTurn();
       this.onFailureDiagnostic?.(toMainAgentFailureDiagnostic(error));
       return {
         assistantMessage: {
@@ -120,6 +175,9 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
 }
 
 export function createMainConversationAgentFromEnv(env: OpenAICompatibleEnv = process.env): MainConversationAgent {
+  if (env.NODE_ENV !== "production" && env.SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT === "1") {
+    return createDeterministicMainConversationAgent();
+  }
   if (env.NODE_ENV === "test" && env.SHANHAI_MAIN_AGENT_FORCE_MODEL !== "1") {
     return createDeterministicMainConversationAgent();
   }
@@ -206,6 +264,9 @@ function unavailableTurnFromPlan(input: { toolPlan: CapabilityToolPlan; status: 
 }
 
 function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffort: OpenAIReasoningEffort = "medium") {
+  const outerCapabilityIds = outerToolPlanCapabilityIds(input);
+  const nativeToolControlPlane = Boolean(input.agentToolLoop?.tools.length);
+  const requestContext = projectMainAgentRequestContext(input.conversationContext);
   return {
     reasoning: { effort: reasoningEffort },
     instructions: [
@@ -222,40 +283,35 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       "如果用户只给年级、学科、片段想法或问候，也要自然回应，不要复述系统门禁。",
       "用户只输入问候或极短社交语时，按轻量问候处理：回复限制为一到两句，先自然回应，再只追问年级、学科或课题中的一个最容易回答的信息。此时不得返回 toolPlan、deliveryPlan 或 shouldRunToolNow=true，也不要列出教案、PPT、图片、视频或材料包流程。",
       "你会收到最近对话和可能存在的 pendingDeliveryPlan。短回复如“开始”“好”“可以”“继续”要结合上下文理解。",
-      "如果收到 contextPackage，它是本轮可信上下文边界；只把 approved artifact 作为下游可信输入，needs_review 或 failed 只能作为待确认/风险状态。",
+      "如果收到 contextPackage，它是本轮上下文边界；产物能否用于下游，以 agentWorldState.trustedInputs 和 capabilityAvailability 为准，不要仅凭 needs_review 要求教师确认。",
       "如果 contextPackage.summaryValidation.status=failed，不要使用 sessionSummary 作事实依据，只使用最近消息、节点状态和 artifact 状态。",
-      "如果收到 agentWorldState，它是当前项目事实状态；trustedInputs 才能作为下游可信输入，draftArtifacts 只能作为待教师确认内容。",
+      "如果收到 agentWorldState，它是当前项目事实状态；trustedInputs 包含教师已批准产物和内部验证审查通过且下游可用的产物，可以继续内部工作；draftArtifacts 不能作为可信下游输入。教师签收是独立状态。",
       "如果收到 capabilityAvailability，不要把 provider_unavailable 或 needs_approved_inputs 的能力当成可立即执行；对教师只说自然语言，不输出 status、capabilityId、provider、runtimeKind 等工程词。",
       "你可以调用提供的只读专业Agent Tool获取规划或审查意见。Agent Tool不会创建文件或批准业务操作；收到结果后必须继续判断，不要照抄工具结论。",
-      "需要真实生成或写入产物时，最终仍通过toolPlan提出一个业务能力并等待服务端HumanGate；不得在只读Agent Tool循环中直接调用媒体或打包能力。",
-      "如果专业Agent Tool返回返修、阻塞或证据不足，结合finding和最小修复改计划、定点返修或请求教师，不要原样重复调用。",
-      "PPT质量主线必须按逐页四层设计、风险样张、样张审查、教师批准、全量资产、可编辑组装、整套审查和页级返修推进；已有合格产物要复用，不得强制从头重跑。",
-      "PPT样张候选完成后，先调用delivery_critic_review，domain=ppt且stage=ppt_sample_review，targetLocators必须包含绑定当前样张artifactId的artifact locator；Critic通过只表示审查证据成立，必须停下等待教师明确批准，不能自行调用全量资产。",
-      "只有当前样张审查通过且教师批准形成可信样张输入后，才可提出ppt_full_assets或ppt_full_deck业务计划。",
-      "完整PPT候选完成后，调用delivery_critic_review，domain=ppt且stage=ppt_full_review；若finding定位到具体pageId，只提出ppt_page_repair并把这些pageId放入inputDraft.pageIds，不得重做未受影响页面。",
-      "PPT Critic的失败finding必须带page locator和design、visual、provenance或readability维度；证据不足时停止下游并补审查，不得猜测通过。",
-      "视频必须先让独立创意短片成立，再使用唯一最小课程锚点回接课程；小学生受众不等于儿童主角、教师、教室或课堂活动，不能从PPT逐页叙事直接反推视频。",
-      "Video Director形成Concept Selection候选后，先调用delivery_critic_review，domain=video且stage=course_anchor；六个硬门任一失败或证据不足时不得提出图片、逐镜头视频、拼接或最终包业务计划。",
-      "课程锚点Critic通过只形成审查证据，必须等待教师明确批准当前创意版本；只有审查通过且教师批准后，才可推进Beat、Storyboard、视频资产和逐镜头生成。",
-      "每次提出video_segment_generate都必须只指定一个镜头，并把唯一目标shotId放入inputDraft.shotIds；初次生成也要逐镜头分别计划，不得一次提交多个镜头或省略shotIds。",
-      "完整视频候选必须调用delivery_critic_review，domain=video且stage=video_final_review；实际MP4、时间线、采样帧、字幕或转写、音轨证据不完整时不得猜测通过。",
-      "成片finding定位shot或frame_range时，只提出video_segment_generate并把目标shotId放入inputDraft.shotIds；定位track或timeline时把trackIds或timeRanges放入inputDraft，只返修受影响单元，不重做整片。",
-      "只有当前教案、完整PPT、课堂视觉图、受控旁白和最终视频都已通过审查并由教师批准时，才可提出final_package。此时必须在inputDraft.classroomRunSpecDraft中给出课堂运行顺序：先播放独立导入视频，再提出唯一回接问题，然后打开PPT、组织教学，最后才揭示答案；courseAnchor必须复用当前已批准旁白中的原文，不得自行改写。courseVersionId和reviewBatchId由服务端计算，不得由你填写。",
-      "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
+      "需要生成或写入产物时，选择已注册的高层业务 Tool；业务 Tool 会提供其领域规则、输入和质量约束。不得猜测或复述未加载领域的流程。",
+      "服务端会依据任务授权、预算和副作用决定是否需要 HumanGate。标准范围内的内部工作可以连续推进；遇到无授权、超范围、不可逆动作或明确检查点时，说明影响并等待唯一的待决决定。",
+      "如果intentGrant.standardWorkAuthorized=true且TaskBrief已给出明确目标，标准范围内不得要求教师再次确认需求规格、大纲、设计候选或其他可逆内部节点；应继续读取Observation并自主推进，只有服务端返回真实HumanGate时才等待教师。",
+      "每次 Tool 返回后，先读取 Observation 与当前世界状态，再选择继续、局部返修、上游返修、请求教师、暂停或完成。不要重复相同的阻塞调用。",
+      "Tool 失败后，如果 Observation 没有表明缺少真实用户选择、授权、预算或存在外发/破坏性副作用，不得要求教师回复“继续”来恢复内部工作；应自主修正输入、选择其他当前合格 Tool 或 Replan。重试预算耗尽时诚实暂停并保留恢复入口，不得循环调用或生成 fallback 成果。",
+      "如果 replanDirective.reason=completion_contract_unsatisfied，说明 TaskBrief 仍有未满足交付；不要声称任务完成。应自主选择一个当前 available 的高层业务 Tool，或在确有缺失输入/真实决策门时明确等待。",
+      nativeToolControlPlane
+        ? "本轮由原生 function-call 循环独占 Tool 选择、下一步、重试和停止权。最终 JSON 不得再返回 toolPlan 或 deliveryPlan，也不得要求兼容层继续执行下一 Tool。"
+        : "如果用户是在确认 pendingDeliveryPlan，请返回 shouldRunToolNow=true，并复用 pendingDeliveryPlan 的 toolPlan 和 deliveryPlan。",
       "不要输出工程词、底层字段名、schema、provider、node_id、storage、debug、local path 或密钥。",
       "返回内容必须严格符合 JSON 结构。",
     ].join("\n"),
     input: JSON.stringify({
       userMessage: input.userMessage,
       responseStyle: input.responseStyle ?? "pragmatic",
+      taskBrief: input.taskBrief ?? null,
+      intentGrant: input.intentGrant ?? null,
       projectContext: input.projectContext ?? {},
-      contextPackage: input.conversationContext?.contextPackage ?? null,
-      agentWorldState: input.conversationContext?.agentWorldState ?? null,
-      capabilityAvailability: input.conversationContext?.capabilityAvailability ?? [],
-      conversationContext: input.conversationContext ?? {},
+      ...requestContext,
       replanDirective: input.replanDirective ?? null,
       availableArtifactKinds: input.availableArtifactKinds,
-      availableCapabilities: getCapabilityDefinitions().map((capability) => ({
+      availableCapabilities: (nativeToolControlPlane ? [] : getCapabilityDefinitions())
+        .filter((capability) => outerCapabilityIds.includes(capability.id))
+        .map((capability) => ({
         id: capability.id,
         label: capability.userLabel,
         description: capability.description,
@@ -266,8 +322,9 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
       })),
       outputGuidance: {
         noTool: "聊天、追问或探索时不返回 toolPlan。",
-        toolPlan: "需要推进产物时返回最合适 capabilityId。完整材料包可返回 deliveryPlan.mode=full。",
-        confirmation: "会写入 artifact 的动作通常应 shouldRunToolNow=false 并等待教师确认。",
+        toolPlan: nativeToolControlPlane ? "本轮必须返回 null；Tool 选择只通过 function call。" : "需要推进产物时返回最合适 capabilityId。完整材料包可返回 deliveryPlan.mode=full。",
+        confirmation: "不要自行决定确认门；服务端会根据任务授权和副作用执行 HumanGate。",
+        completion: "只有 TaskBrief 的 requestedOutputs 已由可信产物满足，才可返回 succeeded 且不带 toolPlan。",
       },
     }),
     text: {
@@ -275,7 +332,131 @@ function buildMainAgentRequest(input: MainConversationAgentInput, reasoningEffor
         type: "json_schema" as const,
         name: "shanhai_main_agent_turn",
         strict: true,
-        schema: mainAgentOutputSchema,
+        schema: nativeToolControlPlane ? buildNativeControlPlaneOutputSchema() : buildMainAgentOutputSchema(outerCapabilityIds),
+      },
+    },
+  };
+}
+
+function buildNativeControlPlaneOutputSchema() {
+  return {
+    ...mainAgentOutputSchema,
+    properties: {
+      ...mainAgentOutputSchema.properties,
+      shouldRunToolNow: { type: "boolean", const: false },
+      toolPlan: { type: "null" },
+      deliveryPlan: { type: "null" },
+    },
+  };
+}
+
+function outerToolPlanCapabilityIds(input: MainConversationAgentInput): CapabilityId[] {
+  const availability = input.conversationContext?.capabilityAvailability ?? [];
+  const candidates = availability.length > 0
+    ? availability.filter((entry) => entry.status === "available").map((entry) => entry.capabilityId)
+    : getCapabilityDefinitions().map((capability) => capability.id);
+  const completedArtifactKinds = input.replanDirective
+    ? new Set(input.availableArtifactKinds)
+    : new Set<string>();
+  return candidates.filter((capabilityId) => {
+    if (repeatableOuterCapabilityIds.has(capabilityId)) return true;
+    return !completedArtifactKinds.has(getCapabilityDefinition(capabilityId).artifactKind);
+  });
+}
+
+function buildMainAgentOutputSchema(availableCapabilityIds: CapabilityId[]) {
+  return {
+    ...mainAgentOutputSchema,
+    properties: {
+      ...mainAgentOutputSchema.properties,
+      toolPlan: {
+        ...mainAgentOutputSchema.properties.toolPlan,
+        properties: {
+          ...mainAgentOutputSchema.properties.toolPlan.properties,
+          capabilityId: { type: "string", enum: availableCapabilityIds },
+        },
+      },
+    },
+  };
+}
+
+function buildCompletionContractRepairRequest(
+  input: MainConversationAgentInput,
+  availableCapabilityIds: CapabilityId[],
+  reasoningEffort: OpenAIReasoningEffort,
+) {
+  const base = buildMainAgentRequest(input, reasoningEffort);
+  const schema = {
+    ...mainAgentOutputSchema,
+    properties: {
+      ...mainAgentOutputSchema.properties,
+      state: {
+        type: "string",
+        enum: ["planning_tools", "running_tool", "continuing_workflow"],
+      },
+      shouldRunToolNow: { type: "boolean", const: true },
+      toolPlan: {
+        ...mainAgentOutputSchema.properties.toolPlan,
+        type: "object",
+        properties: {
+          ...mainAgentOutputSchema.properties.toolPlan.properties,
+          capabilityId: { type: "string", enum: availableCapabilityIds },
+        },
+      },
+    },
+  };
+  return {
+    ...base,
+    instructions: `${base.instructions}\n这是完成合同修复请求。TaskBrief 仍有未满足交付，你必须从当前 available 的高层业务 Tool 中自主选择一个最合适的下一步。不得返回无 Tool 的聊天、确认偏好或完成声明；HumanGate 由服务端判断。`,
+    text: {
+      format: {
+        type: "json_schema" as const,
+        name: "shanhai_main_agent_completion_repair",
+        strict: true,
+        schema,
+      },
+    },
+  };
+}
+
+function buildToolFailureRepairRequest(
+  input: MainConversationAgentInput,
+  availableCapabilityIds: CapabilityId[],
+  reasoningEffort: OpenAIReasoningEffort,
+) {
+  const base = buildMainAgentRequest(input, reasoningEffort);
+  const schema = buildRequiredToolSchema(availableCapabilityIds);
+  return {
+    ...base,
+    instructions: `${base.instructions}\n这是内部失败修复请求。最近 Tool 的校验失败要求 fix_inputs，且项目、TaskBrief 或可信上游已经提供可靠默认。你必须自行修正输入并从当前 available 的高层业务 Tool 中选择下一步；不得再次询问教师已知或可推断的年级、学科、课题、页数、教材版本、页码或例题照片。不得降低质量门，HumanGate 仍由服务端判断。`,
+    text: {
+      format: {
+        type: "json_schema" as const,
+        name: "shanhai_main_agent_tool_failure_repair",
+        strict: true,
+        schema,
+      },
+    },
+  };
+}
+
+function buildRequiredToolSchema(availableCapabilityIds: CapabilityId[]) {
+  return {
+    ...mainAgentOutputSchema,
+    properties: {
+      ...mainAgentOutputSchema.properties,
+      state: {
+        type: "string",
+        enum: ["planning_tools", "running_tool", "continuing_workflow"],
+      },
+      shouldRunToolNow: { type: "boolean", const: true },
+      toolPlan: {
+        ...mainAgentOutputSchema.properties.toolPlan,
+        type: "object",
+        properties: {
+          ...mainAgentOutputSchema.properties.toolPlan.properties,
+          capabilityId: { type: "string", enum: availableCapabilityIds },
+        },
       },
     },
   };
@@ -291,8 +472,14 @@ async function runMainAgentToolLoop(
     request,
     tools: options.tools,
     allowedToolNames: options.allowedToolNames,
+    refreshTools: options.refreshTools,
     dispatch: options.dispatch,
     maxToolRounds: options.maxToolRounds,
+    checkpointSeed: options.checkpointSeed,
+    getCheckpointSeed: options.getCheckpointSeed,
+    onContextTelemetry: options.onContextTelemetry,
+    onRejectedToolCall: options.onRejectedToolCall,
+    onBudgetExhausted: options.onBudgetExhausted,
   });
   if (result.status !== "completed") throw new MainAgentExecutionError("agent_tool_loop", result.reason, result.diagnosticMessage);
   if (!result.assistantText.trim()) throw new MainAgentExecutionError("agent_tool_loop", "empty_output");
@@ -308,6 +495,25 @@ class MainAgentExecutionError extends Error {
     super(diagnostic || reason);
     this.name = "MainAgentExecutionError";
   }
+}
+
+function isRecoverableAgentToolLoopPause(error: unknown): error is MainAgentExecutionError {
+  return error instanceof MainAgentExecutionError &&
+    error.phase === "agent_tool_loop" &&
+    error.reason === "tool_round_limit_reached";
+}
+
+function recoverableAgentToolLoopPauseTurn(): MainAgentTurn {
+  return {
+    assistantMessage: {
+      body: mainAgentRoundBudgetPauseSummary(),
+    },
+    state: "failed_blocked",
+    quickReplies: [{ label: "继续处理", prompt: "继续当前任务", recommended: true }],
+    recommendedOptions: [],
+    shouldRunToolNow: false,
+    runtimeKind: "openai",
+  };
 }
 
 function toMainAgentFailureDiagnostic(error: unknown): MainAgentFailureDiagnostic {
@@ -335,14 +541,30 @@ function sanitizeFailureSummary(value: string): string {
 }
 
 function parseMainAgentOutput(outputText: string | undefined): StructuredMainAgentOutput {
-  if (!outputText) throw new Error("Missing model output");
-  const parsed = JSON.parse(outputText) as StructuredMainAgentOutput;
-  if (!parsed.assistantMessage || typeof parsed.assistantMessage.body !== "string" || !parsed.assistantMessage.body.trim()) {
-    throw new Error("Invalid main agent message");
+  if (!outputText) throw new MainAgentOutputError("missing_field", "Missing model output");
+  let parsed: StructuredMainAgentOutput;
+  try {
+    parsed = JSON.parse(outputText) as StructuredMainAgentOutput;
+  } catch {
+    throw new MainAgentOutputError("bad_json", "Invalid JSON output");
   }
-  if (!isMainAgentState(parsed.state)) throw new Error("Invalid main agent state");
-  if (parsed.toolPlan && !isCapabilityId(parsed.toolPlan.capabilityId)) throw new Error("Invalid capability id");
+  if (!parsed.assistantMessage || typeof parsed.assistantMessage.body !== "string" || !parsed.assistantMessage.body.trim()) {
+    throw new MainAgentOutputError("missing_field", "Missing main agent message");
+  }
+  if (!isMainAgentState(parsed.state)) throw new MainAgentOutputError("validation_failed", "Invalid main agent state");
+  if (parsed.toolPlan && !isCapabilityId(parsed.toolPlan.capabilityId)) throw new MainAgentOutputError("validation_failed", "Invalid capability id");
   return parsed;
+}
+
+class MainAgentOutputError extends Error {
+  constructor(readonly reason: "bad_json" | "missing_field" | "validation_failed", message: string) {
+    super(message);
+    this.name = "MainAgentOutputError";
+  }
+}
+
+function classifyMainAgentOutputError(error: unknown) {
+  return error instanceof MainAgentOutputError ? error.reason : "validation_failed";
 }
 
 function normalizeModelTurn(output: StructuredMainAgentOutput, input: MainConversationAgentInput): MainAgentTurn {
@@ -350,9 +572,11 @@ function normalizeModelTurn(output: StructuredMainAgentOutput, input: MainConver
     return primaryScopeBoundaryTurn();
   }
 
-  const toolPlan = output.toolPlan ? buildModelToolPlan(output.toolPlan, input.userMessage) : undefined;
-  const availability = toolPlan
-    ? input.conversationContext?.capabilityAvailability?.find((entry) => entry.capabilityId === toolPlan.capabilityId)
+  const nativeToolControlPlane = Boolean(input.agentToolLoop?.tools.length);
+  const toolPlan = !nativeToolControlPlane && output.toolPlan ? buildModelToolPlan(output.toolPlan, input.userMessage) : undefined;
+  const plannedCapabilityId = toolPlan?.capabilityId;
+  const availability = plannedCapabilityId
+    ? input.conversationContext?.capabilityAvailability?.find((entry) => entry.capabilityId === plannedCapabilityId)
     : undefined;
   if (toolPlan && availability && availability.status !== "available") {
     return unavailableTurnFromPlan({
@@ -371,7 +595,7 @@ function normalizeModelTurn(output: StructuredMainAgentOutput, input: MainConver
     recommendedOptions: normalizeRecommendedOptions(output.recommendedOptions),
     toolPlan,
     deliveryPlan,
-    shouldRunToolNow: output.shouldRunToolNow === true,
+    shouldRunToolNow: nativeToolControlPlane ? false : output.shouldRunToolNow === true,
     runtimeKind: "openai",
   };
 }

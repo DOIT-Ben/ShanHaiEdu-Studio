@@ -272,7 +272,7 @@ function pauseDecision(
 ) {
   return {
     allowed: false,
-    nextAction: reason === "repeated_failure" ? "ask_teacher" as const : "pause" as const,
+    nextAction: "pause" as const,
     reasonCodes: [reason],
     checkpoint: createRunCheckpoint({
       projectId: input.projectId,

@@ -1,7 +1,8 @@
 import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capability-availability";
-import { getCapabilityDefinition } from "@/server/capabilities/capability-registry";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
 import { getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
+import { actionRiskForTool, evaluateActionPolicy } from "@/server/guards/action-policy";
+import type { IntentGrant, PendingDecision } from "./task-contract";
 
 export type ConversationControlDecisionKind =
   | "confirm_active_offer"
@@ -30,14 +31,19 @@ export type ConversationControlPendingPlan = {
   teacherRequest: string;
   toolPlan: CapabilityToolPlan;
   deliveryPlan?: DeliveryPlan;
+  intentGrant?: IntentGrant;
+  pendingDecision?: PendingDecision;
 };
 
 export function resolveConversationControl(input: {
   userMessage: string;
   pendingPlan: ConversationControlPendingPlan | null;
   receivedConfirmedActionId?: string;
+  receivedActorUserId?: string;
   agentTurn: MainAgentTurn;
   capabilityAvailability: CapabilityAvailabilityEntry[];
+  intentGrant?: IntentGrant;
+  externalProviderCallsUsed?: number;
 }): { decision: ConversationControlDecision; turn: MainAgentTurn } {
   const targetCapabilityId = resolveRequestedCapability(input.userMessage);
   const pendingCapabilityId = input.pendingPlan?.toolPlan.capabilityId;
@@ -96,7 +102,7 @@ export function resolveConversationControl(input: {
         pendingPlanStatus: "superseded",
         advanceIntentEpoch: true,
       },
-      turn: buildCapabilityTurn(targetCapabilityId, input.userMessage, input.capabilityAvailability, input.agentTurn.runtimeKind),
+      turn: normalizeExecutionPolicy(input.agentTurn, input.intentGrant, input.externalProviderCallsUsed),
     };
   }
 
@@ -163,6 +169,19 @@ export function resolveConversationControl(input: {
     };
   }
 
+  if (input.pendingPlan?.pendingDecision && input.receivedActorUserId &&
+      input.pendingPlan.pendingDecision.actorUserId !== input.receivedActorUserId) {
+    return {
+      decision: { kind: "ordinary_message", reasonCode: "pending_action_actor_mismatch", targetCapabilityId: pendingCapabilityId },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: "当前确认属于另一位成员发起的任务，请由原发起人确认或重新发起。" },
+        state: "awaiting_confirmation",
+        shouldRunToolNow: false,
+      },
+    };
+  }
+
   if (input.pendingPlan && input.receivedConfirmedActionId && input.receivedConfirmedActionId !== input.pendingPlan.actionId) {
     return {
       decision: { kind: "ordinary_message", reasonCode: "mismatched_confirmed_action_id", targetCapabilityId: pendingCapabilityId },
@@ -193,8 +212,9 @@ export function resolveConversationControl(input: {
     };
   }
 
-  if (input.pendingPlan && isExplicitConfirmation(input.userMessage, pendingCapabilityId)) {
-    const requiresHumanGate = toolRequiresHumanGate(pendingCapabilityId!);
+  if (input.pendingPlan && (isExplicitConfirmation(input.userMessage, pendingCapabilityId) ||
+      (input.pendingPlan.intentGrant?.standardWorkAuthorized && isTaskControlConfirmation(input.userMessage)))) {
+    const requiresHumanGate = requiresHumanGateForPendingPlan(input.pendingPlan, pendingCapabilityId!, input.externalProviderCallsUsed);
     return {
       decision: {
         kind: "confirm_active_offer",
@@ -206,35 +226,46 @@ export function resolveConversationControl(input: {
         ...input.agentTurn,
         assistantMessage: { body: input.pendingPlan.toolPlan.reasonForUser },
         state: requiresHumanGate && !input.receivedConfirmedActionId ? "awaiting_confirmation" : "running_tool",
-        toolPlan: input.pendingPlan.toolPlan,
+        toolPlan: { ...input.pendingPlan.toolPlan, requiresConfirmation: requiresHumanGate },
         deliveryPlan: input.pendingPlan.deliveryPlan,
         shouldRunToolNow: !requiresHumanGate || Boolean(input.receivedConfirmedActionId),
       },
     };
   }
 
-  if (input.pendingPlan && isContinuationSelection(input.userMessage) && toolRequiresHumanGate(pendingCapabilityId!)) {
+  if (input.pendingPlan && isContinuationSelection(input.userMessage) && requiresHumanGateForPendingPlan(input.pendingPlan, pendingCapabilityId!, input.externalProviderCallsUsed)) {
     return {
       decision: { kind: "clarify_offer", reasonCode: "high_cost_continuation_requires_bound_confirmation", targetCapabilityId: pendingCapabilityId },
       turn: {
         ...input.agentTurn,
         assistantMessage: { body: `${input.pendingPlan.toolPlan.reasonForUser}这一步会生成真实文件或调用外部生成能力，请使用当前确认选项明确授权后开始。` },
         state: "awaiting_confirmation",
-        toolPlan: input.pendingPlan.toolPlan,
+        toolPlan: { ...input.pendingPlan.toolPlan, requiresConfirmation: false },
         deliveryPlan: input.pendingPlan.deliveryPlan,
         shouldRunToolNow: false,
       },
     };
   }
 
-  if (targetCapabilityId && (!input.agentTurn.toolPlan || input.agentTurn.toolPlan.capabilityId !== targetCapabilityId)) {
+  if (input.pendingPlan && isContinuationSelection(input.userMessage) && input.pendingPlan.intentGrant?.standardWorkAuthorized) {
     return {
-      decision: { kind: "switch_to_capability", reasonCode: "direct_capability_request", targetCapabilityId },
-      turn: buildCapabilityTurn(targetCapabilityId, input.userMessage, input.capabilityAvailability, input.agentTurn.runtimeKind),
+      decision: {
+        kind: "confirm_active_offer",
+        reasonCode: "continue_active_standard_task",
+        targetCapabilityId: pendingCapabilityId,
+      },
+      turn: {
+        ...input.agentTurn,
+        assistantMessage: { body: input.pendingPlan.toolPlan.reasonForUser },
+        state: "running_tool",
+        toolPlan: input.pendingPlan.toolPlan,
+        deliveryPlan: input.pendingPlan.deliveryPlan,
+        shouldRunToolNow: true,
+      },
     };
   }
 
-  const turn = normalizeExecutionPolicy(input.agentTurn);
+  const turn = normalizeExecutionPolicy(input.agentTurn, input.intentGrant, input.externalProviderCallsUsed);
   return {
     decision: {
       kind: "ordinary_message",
@@ -247,68 +278,44 @@ export function resolveConversationControl(input: {
 
 export function toolRequiresHumanGate(capabilityId: CapabilityId): boolean {
   const tool = getToolDefinitionByCapabilityId(capabilityId);
-  return tool.requiresHumanGate || tool.adapterKind === "provider" || tool.adapterKind === "package" || tool.sideEffectLevel === "external_call" || tool.sideEffectLevel === "package_write";
+  return tool.requiresHumanGate || actionRiskForTool(tool) === "external_generation";
 }
 
-function normalizeExecutionPolicy(turn: MainAgentTurn): MainAgentTurn {
+function requiresHumanGateForPendingPlan(plan: ConversationControlPendingPlan, capabilityId: CapabilityId, externalProviderCallsUsed = 0) {
+  if (!plan.intentGrant) return toolRequiresHumanGate(capabilityId);
+  const tool = getToolDefinitionByCapabilityId(capabilityId);
+  return evaluateActionPolicy({
+    risk: actionRiskForTool(tool),
+    intentGrant: plan.intentGrant,
+    externalProviderCallsUsed,
+  }).kind === "human_gate";
+}
+
+export function normalizeExecutionPolicy(turn: MainAgentTurn, intentGrant?: IntentGrant, externalProviderCallsUsed = 0): MainAgentTurn {
   if (!turn.toolPlan || turn.toolPlan.missingInputs.length > 0) return turn;
-  const requiresHumanGate = toolRequiresHumanGate(turn.toolPlan.capabilityId);
+  const tool = getToolDefinitionByCapabilityId(turn.toolPlan.capabilityId);
+  if (!intentGrant && actionRiskForTool(tool) === "internal" && tool.adapterKind === "internal_capability" && !tool.requiresHumanGate) {
+    return turn;
+  }
+  const requiresHumanGate = evaluateActionPolicy({
+    risk: actionRiskForTool(tool),
+    intentGrant,
+    externalProviderCallsUsed,
+  }).kind === "human_gate";
   const toolPlan = { ...turn.toolPlan, requiresConfirmation: requiresHumanGate };
 
   if (requiresHumanGate && turn.shouldRunToolNow) {
     return { ...turn, state: "awaiting_confirmation", toolPlan, shouldRunToolNow: false };
   }
-  return turn;
+  if (!requiresHumanGate && !turn.shouldRunToolNow && isExecutionReadyState(turn.state)) {
+    return { ...turn, state: "running_tool", toolPlan, shouldRunToolNow: true };
+  }
+  return { ...turn, toolPlan };
 }
 
-function buildCapabilityTurn(
-  capabilityId: CapabilityId,
-  teacherRequest: string,
-  availabilityEntries: CapabilityAvailabilityEntry[],
-  runtimeKind: MainAgentTurn["runtimeKind"],
-): MainAgentTurn {
-  const capability = getCapabilityDefinition(capabilityId);
-  const availability = availabilityEntries.find((entry) => entry.capabilityId === capabilityId);
-  const available = !availability || availability.status === "available";
-  const requiresHumanGate = toolRequiresHumanGate(capabilityId);
-  const toolPlan: CapabilityToolPlan = {
-    planId: `${capabilityId}:conversation-control`,
-    capabilityId,
-    reasonForUser: available ? `我可以为你${capability.userLabel}。` : availability.reasonForUser,
-    internalReason: "conversation_control_direct_capability_request",
-    inputDraft: { teacherGoal: teacherRequest },
-    missingInputs: availability?.missingApprovedInputs ?? [],
-    upstreamPlan: [],
-    nextSuggestedCapabilities: [],
-    requiresConfirmation: available && requiresHumanGate,
-    expectedArtifactKind: capability.artifactKind,
-  };
-
-  if (!available) {
-    return {
-      assistantMessage: { body: availability.reasonForUser },
-      state: availability.status === "provider_unavailable" || availability.status === "blocked" ? "failed_blocked" : "collecting_inputs",
-      quickReplies: [],
-      recommendedOptions: [],
-      toolPlan,
-      shouldRunToolNow: false,
-      runtimeKind,
-    };
-  }
-
-  return {
-    assistantMessage: {
-      body: requiresHumanGate
-        ? `${toolPlan.reasonForUser}这一步会生成真实文件或调用外部生成能力，需要你明确确认后开始。`
-        : toolPlan.reasonForUser,
-    },
-    state: requiresHumanGate ? "awaiting_confirmation" : "running_tool",
-    quickReplies: requiresHumanGate ? [{ label: "确认开始", prompt: `确认${capability.userLabel}。`, recommended: true }] : [],
-    recommendedOptions: [],
-    toolPlan,
-    shouldRunToolNow: !requiresHumanGate,
-    runtimeKind,
-  };
+function isExecutionReadyState(state: MainAgentTurn["state"]) {
+  return state === "awaiting_confirmation" || state === "planning_tools" ||
+    state === "running_tool" || state === "continuing_workflow";
 }
 
 function resolveRequestedCapability(text: string): CapabilityId | undefined {
@@ -365,6 +372,10 @@ function isExplicitResume(text: string): boolean {
 function isContinuationSelection(text: string): boolean {
   const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
   return /^(继续|接着做|继续下一步|继续推进|往下做|按计划继续)$/.test(normalized);
+}
+
+function isTaskControlConfirmation(text: string): boolean {
+  return /^确定[。.!！]?$/.test(text.trim());
 }
 
 function isActiveOfferRevision(text: string): boolean {

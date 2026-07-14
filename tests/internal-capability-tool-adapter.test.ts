@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { executeInternalCapabilityTool } from "@/server/tools/internal-capability-tool-adapter";
 import { getToolDefinition } from "@/server/tools/tool-registry";
+import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
 
 const projectContext = {
   grade: "五年级",
@@ -64,6 +65,10 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       projectContext,
       approvedArtifacts: [],
       sourceMessageId: "message-a",
+      taskInput: {
+        teacherGoal: "五年级数学百分数公开课，约 10 页",
+        targetPageCount: 10,
+      },
     });
 
     expect(runtimeCalledWith).toMatchObject({
@@ -73,6 +78,10 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       projectContext,
       approvedArtifacts: [],
       sourceMessageId: "message-a",
+      taskInput: {
+        teacherGoal: "五年级数学百分数公开课，约 10 页",
+        targetPageCount: 10,
+      },
     });
     expect(runtimeCalledWith).toMatchObject({
       runId: expect.any(String),
@@ -178,6 +187,77 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
     });
   });
 
+  it("reuses a current server-bound Director result when the Main Agent selected that path", async () => {
+    let runtimeCalls = 0;
+    const result = await executeInternalCapabilityTool({
+      tool: getToolDefinition("create_ppt_design_draft"),
+      runtime: {
+        async run() {
+          runtimeCalls += 1;
+          throw new Error("generic ppt_design runtime must not run");
+        },
+      },
+      projectId: "project-a",
+      userMessage: "生成 PPT 设计稿",
+      projectContext,
+      pptDirectorPlan: {
+        invocationId: "ppt-director-bound-1",
+        projectId: "project-a",
+        intentEpoch: 2,
+        structuredOutput: validPptDirectorOutput(),
+        approvedArtifactRefs: [{ artifactId: "artifact_textbook_evidence", kind: "textbook_evidence", digest: "evidence-digest" }],
+      },
+      intentEpoch: 2,
+    });
+
+    expect(runtimeCalls).toBe(0);
+    expect(result).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        structuredContent: { directorInvocationId: "ppt-director-bound-1" },
+      },
+    });
+  });
+
+  it("runs the real ppt_design capability when no Director result was selected", async () => {
+    let runCapabilityCalls = 0;
+    const result = await executeInternalCapabilityTool({
+      tool: getToolDefinition("create_ppt_design_draft"),
+      runtime: fakeRuntime(),
+      projectId: "project-a",
+      userMessage: "生成 PPT 设计稿",
+      projectContext,
+    }, {
+      runCapability: async () => {
+        runCapabilityCalls += 1;
+        return {
+          status: "succeeded",
+          artifactDraft: {
+            nodeKey: "ppt_design_draft",
+            kind: "ppt_design_draft",
+            title: "百分数逐页设计",
+            summary: "真实模型逐页设计候选",
+            markdownContent: "# 逐页设计",
+            structuredContent: { providerStatus: "real", generationMode: "model_generated" },
+          },
+          assistantSummary: "已形成可信逐页设计候选。",
+          providerStatus: "real",
+        };
+      },
+    });
+
+    expect(runCapabilityCalls).toBe(1);
+    expect(result).toMatchObject({
+      status: "succeeded",
+      artifactDraft: {
+        kind: "ppt_design_draft",
+        structuredContent: { providerStatus: "real", generationMode: "model_generated" },
+      },
+    });
+  });
+
   it("can surface needs_input results through dependency injection without changing the production runner", async () => {
     const result = await executeInternalCapabilityTool(
       {
@@ -208,7 +288,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
         artifactCreated: false,
         retryPolicy: {
           retryable: false,
-          nextAction: "ask_teacher",
+          nextAction: "fix_inputs",
         },
       },
       budgetEvent: {

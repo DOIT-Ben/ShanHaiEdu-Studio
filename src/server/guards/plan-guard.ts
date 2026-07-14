@@ -2,6 +2,8 @@ import { getCapabilityDefinition } from "@/server/capabilities/capability-regist
 import type { CapabilityId } from "@/server/capabilities/types";
 import { isConfirmedHumanGateAction } from "@/server/guards/human-gate";
 import { getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
+import { actionRiskForTool, evaluateActionPolicy } from "@/server/guards/action-policy";
+import type { IntentGrant } from "@/server/conversation/task-contract";
 
 export type PlanGuardStatus = "allowed" | "needs_confirmation" | "blocked";
 
@@ -11,6 +13,9 @@ export function evaluateToolPlan(input: {
   hasHumanConfirmation?: boolean;
   expectedActionId?: string;
   confirmedActionId?: string;
+  intentGrant?: IntentGrant;
+  externalProviderCallsUsed?: number;
+  expectedScope?: Pick<IntentGrant, "projectId" | "intentEpoch" | "intensity">;
 }): { status: PlanGuardStatus; reason: string } {
   let capability;
 
@@ -24,14 +29,19 @@ export function evaluateToolPlan(input: {
   }
 
   const tool = getToolDefinitionByCapabilityId(capability.id);
-  const requiresHumanConfirmation =
-    tool.requiresHumanGate ||
-    tool.adapterKind === "provider" ||
-    tool.adapterKind === "package" ||
-    tool.sideEffectLevel === "external_call" ||
-    tool.sideEffectLevel === "package_write";
+  const actionRisk = actionRiskForTool(tool);
+  const taskGrantDecision = evaluateActionPolicy({
+    risk: actionRisk,
+    intentGrant: input.intentGrant,
+    externalProviderCallsUsed: input.externalProviderCallsUsed,
+    expectedScope: input.expectedScope,
+  });
+  const legacyInternalWithoutGrant = !input.intentGrant &&
+    actionRisk === "internal" &&
+    tool.adapterKind === "internal_capability" &&
+    !tool.requiresHumanGate;
 
-  if (requiresHumanConfirmation) {
+  if (!legacyInternalWithoutGrant && taskGrantDecision.kind !== "allow") {
     const hasConfirmedAction =
       input.hasHumanConfirmation === true &&
       typeof input.expectedActionId === "string" &&

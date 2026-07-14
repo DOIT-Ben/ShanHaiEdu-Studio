@@ -10,7 +10,7 @@ export function StageProgress({ activeIndex = 2, compact = false }: { activeInde
           const active = index === activeIndex;
           const done = index < activeIndex;
           return (
-            <div key={stage} className={cn("flex shrink-0 items-center gap-2.5", compact ? "min-w-[42px] lg:flex-none" : "min-w-[108px] lg:flex-1")}>
+            <div key={stage} aria-label={`第 ${index + 1} 步：${stage}`} className={cn("flex shrink-0 items-center gap-2.5", compact ? "min-w-[42px] lg:flex-none" : "min-w-[42px] sm:min-w-[108px] lg:flex-1")}>
               <div
                 className={cn(
                   "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-medium transition-colors",
@@ -22,7 +22,7 @@ export function StageProgress({ activeIndex = 2, compact = false }: { activeInde
                 {index + 1}
               </div>
               {(!compact || active) && (
-                <div className={cn("min-w-0 whitespace-nowrap text-sm", active ? "font-medium text-foreground" : "text-muted-foreground")}>
+                <div className={cn("min-w-0 whitespace-nowrap text-sm", !compact && !active && "hidden sm:block", active ? "font-medium text-foreground" : "text-muted-foreground")}>
                   {stage}
                 </div>
               )}

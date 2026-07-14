@@ -12,6 +12,7 @@ import {
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 import { buildPptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
+import type { ArtifactRecord } from "@/server/workbench/types";
 
 describe("V1 Stage 2A runtime contracts", () => {
   it("projects every registered executable tool into a contract without forcing a next node", () => {
@@ -65,6 +66,51 @@ describe("V1 Stage 2A runtime contracts", () => {
     });
 
     expect(report.overallStatus).toBe("passed");
+  });
+
+  it("accepts an internally validated downstream-eligible artifact for Provider preconditions without teacher approval", () => {
+    const tool = getToolDefinitions().find((definition) => definition.capabilityId === "coze_ppt")!;
+    const artifact: ArtifactRecord = {
+      id: "artifact-internally-eligible-design",
+      projectId: "project-internally-eligible",
+      nodeKey: "ppt_design_draft",
+      kind: "ppt_design_draft",
+      title: "内部审查通过的逐页设计",
+      status: "needs_review",
+      summary: "尚未由教师签收，但已通过内部验证与审查。",
+      markdownContent: "# 逐页设计",
+      structuredContent: {
+        artifactQualityState: {
+          validationStatus: "passed",
+          reviewStatus: "passed",
+          downstreamEligibility: "eligible",
+        },
+      },
+      version: 1,
+      isApproved: false,
+      createdAt: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+
+    const report = validateToolPreconditions({
+      tool,
+      projectId: artifact.projectId,
+      artifactRefs: [{
+        kind: artifact.kind,
+        artifactId: artifact.id,
+        title: artifact.title,
+        summary: artifact.summary,
+        markdownContent: artifact.markdownContent,
+        structuredContent: artifact.structuredContent,
+      }],
+      resolvedArtifacts: [artifact],
+    });
+
+    expect(report.overallStatus).toBe("passed");
+    expect(report.gates).toContainEqual(expect.objectContaining({
+      gateId: "required_input:ppt_design_draft",
+      status: "passed",
+    }));
   });
 
   it("fails a mismatched output kind and node before persistence", () => {

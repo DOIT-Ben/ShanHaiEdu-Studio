@@ -5,6 +5,7 @@ import type { CapabilityId, CapabilityToolPlan, DeliveryPlan } from "./types";
 export type CapabilityPlannerInput = {
   userMessage: string;
   availableArtifactKinds: string[];
+  intentGrant?: { standardWorkAuthorized: boolean };
   projectContext?: {
     grade?: string | null;
     subject?: string | null;
@@ -37,12 +38,12 @@ const fullDeliveryStepIds: CapabilityId[] = [
 
 export function planCapabilityForRequest(input: CapabilityPlannerInput): CapabilityToolPlan | null {
   const text = input.userMessage.trim();
-  if (isCasualChat(text) || isExplorationOnly(text)) return null;
+  if (isCasualChat(text) || isExplorationOnlyRequest(text)) return null;
 
   if (wantsPptPageRepair(text)) {
     const required = ["pptx_artifact", "ppt_design_draft", "image_prompts"];
     const missing = required.filter((kind) => !input.availableArtifactKinds.includes(kind));
-    return buildPlan("ppt_page_repair", text, missing, [], required, input.capabilityAvailability);
+    return buildPlan("ppt_page_repair", text, missing, [], required, input.capabilityAvailability, input.intentGrant);
   }
 
   if (wantsFullDelivery(text)) {
@@ -55,6 +56,7 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
       nextSuggestedCapabilities,
       artifactKindsBefore(fullDeliveryStepIds, capabilityId),
       input.capabilityAvailability,
+      input.intentGrant,
     );
   }
 
@@ -68,33 +70,33 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
     const imageBundleCount = input.availableArtifactKinds.filter((kind) => kind === "image_prompts").length;
 
     if (hasPptDesign && wantsConcretePptx && wantsQualityPpt) {
-      if (imageBundleCount === 0) return buildPlan("ppt_sample_assets", text, [], ["ppt_key_samples"], ["ppt_design_draft"], input.capabilityAvailability);
-      if (imageBundleCount === 1) return buildPlan("ppt_key_samples", text, [], ["ppt_full_assets"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
-      if (imageBundleCount === 2) return buildPlan("ppt_full_assets", text, [], ["ppt_full_deck"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
-      return buildPlan("ppt_full_deck", text, [], [], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability);
+      if (imageBundleCount === 0) return buildPlan("ppt_sample_assets", text, [], ["ppt_key_samples"], ["ppt_design_draft"], input.capabilityAvailability, input.intentGrant);
+      if (imageBundleCount === 1) return buildPlan("ppt_key_samples", text, [], ["ppt_full_assets"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability, input.intentGrant);
+      if (imageBundleCount === 2) return buildPlan("ppt_full_assets", text, [], ["ppt_full_deck"], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability, input.intentGrant);
+      return buildPlan("ppt_full_deck", text, [], [], ["ppt_design_draft", "image_prompts"], input.capabilityAvailability, input.intentGrant);
     }
 
     if (hasPptDesign && wantsConcretePptx) {
-      return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"], input.capabilityAvailability);
+      return buildPlan("coze_ppt", text, [], [], ["ppt_design_draft"], input.capabilityAvailability, input.intentGrant);
     }
 
     if (hasPptOutline && wantsConcretePptx) {
-      return buildPlan("ppt_design", text, [], ["coze_ppt"], ["ppt_draft"], input.capabilityAvailability);
+      return buildPlan("ppt_design", text, [], ["coze_ppt"], ["ppt_draft"], input.capabilityAvailability, input.intentGrant);
     }
 
     if (!hasRequirementSpec) {
-      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "ppt_design"], [], input.capabilityAvailability);
+      return buildPlan("requirement_spec", text, missingInputs, ["ppt_outline", "ppt_design"], [], input.capabilityAvailability, input.intentGrant);
     }
 
-    return buildPlan("ppt_outline", text, missingInputs, ["ppt_design"], [], input.capabilityAvailability);
+    return buildPlan("ppt_outline", text, missingInputs, ["ppt_design"], [], input.capabilityAvailability, input.intentGrant);
   }
 
   if (wantsLessonPlan(text)) {
-    return buildPlan("lesson_plan", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["ppt_outline"], [], input.capabilityAvailability);
+    return buildPlan("lesson_plan", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["ppt_outline"], [], input.capabilityAvailability, input.intentGrant);
   }
 
   if (wantsRequirementSpec(text)) {
-    return buildPlan("requirement_spec", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["lesson_plan", "ppt_outline"], [], input.capabilityAvailability);
+    return buildPlan("requirement_spec", text, normalizeSingleSubjectGap(missingLessonInputs(text, input.projectContext)), ["lesson_plan", "ppt_outline"], [], input.capabilityAvailability, input.intentGrant);
   }
 
   return null;
@@ -102,7 +104,7 @@ export function planCapabilityForRequest(input: CapabilityPlannerInput): Capabil
 
 export function planDeliveryForRequest(input: CapabilityPlannerInput): DeliveryPlan | null {
   const text = input.userMessage.trim();
-  if (isCasualChat(text) || isExplorationOnly(text) || !wantsFullDelivery(text)) return null;
+  if (isCasualChat(text) || isExplorationOnlyRequest(text) || !wantsFullDelivery(text)) return null;
 
   const currentStepId = firstMissingDeliveryStep(fullDeliveryStepIds, input.availableArtifactKinds);
   const currentPlan = planCapabilityForRequest(input);
@@ -162,6 +164,7 @@ function buildPlan(
   nextSuggestedCapabilities: CapabilityId[],
   upstreamAvailable: string[],
   capabilityAvailability?: CapabilityAvailabilityEntry[],
+  intentGrant?: { standardWorkAuthorized: boolean },
 ): CapabilityToolPlan {
   const capability = getCapabilityDefinition(capabilityId);
   const availability = capabilityAvailability?.find((entry) => entry.capabilityId === capabilityId);
@@ -196,7 +199,7 @@ function buildPlan(
     missingInputs,
     upstreamPlan: [],
     nextSuggestedCapabilities,
-    requiresConfirmation: missingInputs.length === 0 && capability.requiresConfirmation,
+    requiresConfirmation: missingInputs.length === 0 && capability.requiresConfirmation && !intentGrant?.standardWorkAuthorized,
     expectedArtifactKind: capability.artifactKind,
   };
 }
@@ -205,8 +208,10 @@ function isCasualChat(text: string): boolean {
   return ["你好", "您好", "hi", "hello", "在吗", "谢谢"].includes(text.toLowerCase());
 }
 
-function isExplorationOnly(text: string): boolean {
-  return /聊聊|想法|创意|怎么设计|怎么上/.test(text) && !/帮我做|生成|做一个|做份|输出/.test(text);
+export function isExplorationOnlyRequest(text: string): boolean {
+  const explicitDeliverable = /完整材料包|交付包|最终整包|需求规格|教案|PPT|课件|课堂图片|导入视频|视频脚本|分镜|资产说明|片段规划|课程锚点/i.test(text);
+  const explicitExecution = /帮我做|请做|制作|生成|做一个|做份|完成|输出/.test(text);
+  return /聊聊|想法|创意|怎么设计|怎么上/.test(text) && !explicitDeliverable && !explicitExecution;
 }
 
 function wantsPpt(text: string): boolean {
@@ -222,7 +227,7 @@ function wantsLessonPlan(text: string): boolean {
 }
 
 function wantsRequirementSpec(text: string): boolean {
-  return /备课|公开课|需求|整理/.test(text);
+  return /备课|公开课|需求|整理|视频脚本|分镜|资产说明|片段规划|课程锚点/.test(text);
 }
 
 function wantsFullDelivery(text: string): boolean {

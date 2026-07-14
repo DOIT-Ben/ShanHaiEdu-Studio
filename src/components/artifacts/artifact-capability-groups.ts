@@ -22,7 +22,7 @@ const groupByKind: Record<ArtifactKind, ArtifactCapabilityGroupId> = {
   requirement_spec: "lesson",
   textbook_evidence: "lesson",
   lesson_plan: "lesson",
-  knowledge_anchor_extract: "lesson",
+  knowledge_anchor_extract: "video",
   ppt_outline: "ppt",
   ppt_draft: "ppt",
   ppt_design_draft: "ppt",

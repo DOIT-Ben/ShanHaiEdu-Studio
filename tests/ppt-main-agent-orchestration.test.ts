@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { OpenAIMainConversationAgent } from "@/server/conversation/model-main-conversation-agent";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
+import { getToolDefinitionByCapabilityId } from "@/server/tools/tool-registry";
 
 describe("V1-6 PPT Main Agent orchestration", () => {
-  it("instructs the Main Agent to keep Critic, HumanGate, full production, and page repair separate", async () => {
+  it("keeps PPT production rules at the business Tool boundary instead of the Main Agent prompt", async () => {
     const client = fakeClient({
       assistantMessage: { body: "第 6 页需要局部返修。" },
       state: "awaiting_confirmation",
@@ -24,9 +25,15 @@ describe("V1-6 PPT Main Agent orchestration", () => {
 
     const turn = await agent.respond({ userMessage: "按审查意见修复课件。", availableArtifactKinds: ["pptx_artifact"] });
 
-    expect(client.lastInstructions).toContain("样张审查通过且教师批准");
-    expect(client.lastInstructions).toContain("不能自行调用全量资产");
-    expect(client.lastInstructions).toContain("只提出ppt_page_repair");
+    expect(client.lastInstructions).toContain("业务 Tool 会提供其领域规则、输入和质量约束");
+    expect(client.lastInstructions).not.toContain("样张审查通过且教师批准");
+    expect(client.lastInstructions).not.toContain("不能自行调用全量资产");
+    expect(client.lastInstructions).not.toContain("只提出ppt_page_repair");
+    expect(getToolDefinitionByCapabilityId("ppt_page_repair")).toMatchObject({
+      description: expect.stringContaining("只返修教师明确指定的页面"),
+      requiredArtifactKinds: ["pptx_artifact", "ppt_design_draft", "image_prompts"],
+      producedArtifactKind: "pptx_artifact",
+    });
     expect(turn.toolPlan?.inputDraft).toMatchObject({ pageIds: ["page_06"] });
   });
 });

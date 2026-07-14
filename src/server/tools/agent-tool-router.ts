@@ -3,6 +3,7 @@ import { createToolObservation, isToolObservation } from "@/server/capabilities/
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { prisma } from "@/server/db/client";
 import { assertExecutionIdentityCanWriteProject } from "@/server/execution/execution-identity";
+import { isArtifactStructuredContentDownstreamEligible } from "@/server/quality/artifact-quality-state";
 
 import { getAgentToolDefinition, getAgentToolDefinitionByTransportName } from "./agent-tool-registry";
 import type {
@@ -353,14 +354,17 @@ async function defaultAuthorize(
       where: {
         projectId: envelope.projectId,
         id: { in: envelope.approvedArtifactRefs.map((ref) => ref.artifactId) },
-        status: "approved",
-        isApproved: true,
+        status: { in: ["needs_review", "approved"] },
       },
     });
     if (artifacts.length !== envelope.approvedArtifactRefs.length) return false;
     return envelope.approvedArtifactRefs.every((ref) => {
       const artifact = artifacts.find((candidate) => candidate.id === ref.artifactId);
       if (!artifact || artifact.kind !== ref.kind || artifact.version !== ref.version) return false;
+      const structuredContent = parseStructuredContent(artifact.structuredContentJson);
+      const trusted = (artifact.status === "approved" && artifact.isApproved) ||
+        (artifact.status === "needs_review" && !artifact.isApproved && isArtifactStructuredContentDownstreamEligible(structuredContent));
+      if (!trusted) return false;
       return hashPersistedArtifact(artifact) === ref.digest;
     });
   } catch {

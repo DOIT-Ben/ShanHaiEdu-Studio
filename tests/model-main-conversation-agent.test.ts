@@ -1,9 +1,223 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMainConversationAgentFromEnv, OpenAIMainConversationAgent, resolveMainAgentTimeoutMs } from "@/server/conversation/model-main-conversation-agent";
 import { createDeterministicMainConversationAgent } from "@/server/conversation/main-conversation-agent";
+import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
+import { createTaskBrief } from "@/server/conversation/task-contract";
 
 describe("M55-C model-first main conversation agent", () => {
+  it("keeps the Main Agent prompt domain-neutral and delegates delivery specifics to registered Tools", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "我会先根据当前材料判断下一步。" },
+      state: "chatting", quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    await agent.respond({ userMessage: "继续", availableArtifactKinds: [] });
+
+    expect(client.lastPayload?.instructions).toContain("高层业务 Tool");
+    expect(client.lastPayload?.instructions).toContain("每次 Tool 返回后");
+    expect(client.lastPayload?.instructions).not.toMatch(/PPT质量主线|课程锚点|video_segment_generate|classroomRunSpecDraft|final_package/);
+  });
+
+  it("passes TaskBrief and IntentGrant into the native Tool control plane and forbids routine confirmation", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "继续处理任务。" },
+      state: "chatting", quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+      toolPlan: null,
+      deliveryPlan: null,
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+    const taskBrief = createTaskBrief({
+      taskId: "task-native-contract",
+      projectId: "project-native-contract",
+      intentEpoch: 0,
+      goal: "请做五年级数学百分数公开课PPT。",
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: "message-native-contract",
+    });
+    const intentGrant = {
+      schemaVersion: "intent-grant.v1" as const,
+      taskId: taskBrief.taskId,
+      projectId: taskBrief.projectId,
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard" as const,
+      budgetPolicyVersion: "v1-standard",
+      maxCostCredits: null,
+      maxExternalProviderCalls: null,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+
+    await agent.respond({
+      userMessage: taskBrief.goal,
+      availableArtifactKinds: [],
+      taskBrief,
+      intentGrant,
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_requirement_spec" }],
+        allowedToolNames: ["create_requirement_spec"],
+        dispatch: async () => ({ status: "succeeded", observation: { status: "succeeded", reasonCodes: ["ok"] } }),
+      },
+    } as MainConversationAgentInput);
+
+    expect(client.lastPayload?.instructions).toContain("不得要求教师再次确认");
+    expect(client.lastPayload?.instructions).toContain("不得要求教师回复“继续”");
+    expect(client.lastPayload?.instructions).toContain("重试预算耗尽时诚实暂停");
+    expect(JSON.parse(client.lastPayload?.input as string)).toMatchObject({
+      taskBrief: { digest: taskBrief.digest, requestedOutputs: ["ppt"] },
+      intentGrant: { taskId: taskBrief.taskId, standardWorkAuthorized: true },
+    });
+  });
+
+  it("repairs an incomplete no-Tool response by requiring the product Main Agent to choose an available capability", async () => {
+    const outputs = [
+      {
+        assistantMessage: { body: "当前步骤完成。" },
+        state: "chatting",
+        quickReplies: [],
+        recommendedOptions: [],
+        shouldRunToolNow: false,
+      },
+      {
+        assistantMessage: { body: "继续整理教案。" },
+        state: "running_tool",
+        quickReplies: [],
+        recommendedOptions: [],
+        shouldRunToolNow: true,
+        toolPlan: {
+          capabilityId: "lesson_plan",
+          reasonForUser: "继续整理教案。",
+          missingInputs: [],
+          nextSuggestedCapabilities: [],
+          requiresConfirmation: false,
+          inputDraft: { teacherGoal: null, notes: null, classroomRunSpecDraft: null },
+        },
+        deliveryPlan: { mode: "none" },
+      },
+    ];
+    const payloads: Array<Record<string, any>> = [];
+    const client = {
+      responses: {
+        async create(payload: Record<string, any>) {
+          payloads.push(payload);
+          return { output_text: JSON.stringify(outputs.shift()) };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "请完成百分数公开课教案。",
+      availableArtifactKinds: ["requirement_spec"],
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          { capabilityId: "lesson_plan", status: "available", requiresConfirmation: true, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+        ],
+      },
+      replanDirective: {
+        reason: "completion_contract_unsatisfied",
+        previousActionKey: "requirement_spec:requirement_spec",
+        observationIds: ["observation-1"],
+        remainingRequestedOutputs: ["lesson_plan"],
+      },
+    });
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[1].instructions).toContain("完成合同修复请求");
+    expect(payloads[1].text.format.schema.properties.toolPlan).toMatchObject({
+      type: "object",
+      properties: { capabilityId: { enum: ["lesson_plan"] } },
+    });
+    expect(turn).toMatchObject({
+      state: "running_tool",
+      shouldRunToolNow: true,
+      toolPlan: { capabilityId: "lesson_plan" },
+    });
+  });
+
+  it("repairs a validation-failure question with reliable defaults instead of asking for known lesson details again", async () => {
+    const outputs = [
+      {
+        assistantMessage: { body: "请补充教材版本、页码和例题照片。" },
+        state: "needs_input",
+        quickReplies: [],
+        recommendedOptions: [],
+        shouldRunToolNow: false,
+      },
+      {
+        assistantMessage: { body: "我会沿用已知年级、课题和约 10 页要求，修正输入后重新生成大纲。" },
+        state: "running_tool",
+        quickReplies: [],
+        recommendedOptions: [],
+        shouldRunToolNow: true,
+        toolPlan: {
+          capabilityId: "ppt_outline",
+          reasonForUser: "修正输入后重新生成大纲。",
+          missingInputs: [],
+          nextSuggestedCapabilities: [],
+          requiresConfirmation: false,
+          inputDraft: {
+            teacherGoal: "五年级数学百分数公开课，约 10 页",
+            targetPageCount: 10,
+            reliableDefaultPolicy: "use_general_curriculum_context",
+          },
+        },
+        deliveryPlan: { mode: "none" },
+      },
+    ];
+    const payloads: Array<Record<string, any>> = [];
+    const client = {
+      responses: {
+        async create(payload: Record<string, any>) {
+          payloads.push(payload);
+          return { output_text: JSON.stringify(outputs.shift()) };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "请做五年级数学百分数公开课完整材料包，包括约 10 页 PPT。",
+      availableArtifactKinds: ["requirement_spec", "lesson_plan"],
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          { capabilityId: "ppt_outline", status: "available", requiresConfirmation: true, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+        ],
+      },
+      replanDirective: {
+        reason: "tool_failed",
+        previousActionKey: "ppt_outline:ppt_draft",
+        observationIds: ["observation-ppt-outline"],
+        repairAction: "fix_inputs",
+        reliableDefaultsAvailable: true,
+      },
+    });
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[1].instructions).toContain("可靠默认");
+    expect(payloads[1].instructions).toContain("不得再次询问教师");
+    expect(payloads[1].text.format.schema.properties.toolPlan).toMatchObject({
+      type: "object",
+      properties: { capabilityId: { enum: ["ppt_outline"] } },
+    });
+    expect(turn).toMatchObject({
+      state: "running_tool",
+      shouldRunToolNow: true,
+      toolPlan: {
+        capabilityId: "ppt_outline",
+        inputDraft: expect.objectContaining({ targetPageCount: 10 }),
+      },
+    });
+  });
+
   it("keeps a greeting short and does not start a delivery plan", async () => {
     const client = fakeResponsesClient({
       assistantMessage: {
@@ -38,6 +252,22 @@ describe("M55-C model-first main conversation agent", () => {
     expect(diagnostics).toEqual([expect.objectContaining({ phase: "direct_response", reason: "adapter_failed", errorName: "MainAgentExecutionError" })]);
     expect(JSON.stringify(diagnostics)).not.toContain(unsafeUrl);
     expect(JSON.stringify(diagnostics)).not.toContain(unsafeCredential);
+  });
+
+  it.each([
+    ["bad_json", "{not-json"],
+    ["missing_field", JSON.stringify({ state: "chatting" })],
+    ["validation_failed", JSON.stringify({ assistantMessage: { body: "收到" }, state: "invalid_state" })],
+  ] as const)("classifies Main Agent %s output failures without executing a Tool", async (reason, outputText) => {
+    const client = { responses: { async create() { return { output_text: outputText }; } } } as OpenAIResponsesClient;
+    const diagnostics: unknown[] = [];
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model", onFailureDiagnostic: (event) => diagnostics.push(event) });
+
+    const turn = await agent.respond({ userMessage: "请做五年级数学百分数 PPT", availableArtifactKinds: [] });
+
+    expect(turn).toMatchObject({ state: "failed_retryable", shouldRunToolNow: false, runtimeKind: "openai" });
+    expect(turn.toolPlan).toBeUndefined();
+    expect(diagnostics).toEqual([expect.objectContaining({ phase: "output_parse", reason })]);
   });
 
   it("uses the same short greeting in deterministic fallback mode", async () => {
@@ -293,8 +523,11 @@ describe("M55-C model-first main conversation agent", () => {
       expect.objectContaining({ capabilityId: "lesson_plan", status: "available" }),
       expect.objectContaining({ capabilityId: "asset_image_generate", status: "provider_unavailable" }),
     ]);
+    expect(requestInput).not.toHaveProperty("conversationContext");
+    expect(requestInput.conversationControl).toEqual({ pendingDeliveryPlan: null });
+    expect(requestInput.conversationWindow).toBeNull();
     expect(requestInput.availableCapabilities).toContainEqual(expect.objectContaining({ id: "lesson_plan", availability: "available" }));
-    expect(requestInput.availableCapabilities).toContainEqual(expect.objectContaining({ id: "asset_image_generate", availability: "provider_unavailable" }));
+    expect(requestInput.availableCapabilities).not.toContainEqual(expect.objectContaining({ id: "asset_image_generate" }));
     expect(client.lastPayload?.instructions).toContain("contextPackage");
     expect(client.lastPayload?.instructions).toContain("summaryValidation.status=failed");
     expect(client.lastPayload?.instructions).toContain("agentWorldState");
@@ -346,6 +579,57 @@ describe("M55-C model-first main conversation agent", () => {
       },
     });
     expect(turn.assistantMessage.body).toContain("暂时不可用");
+  });
+
+  it("does not replace a model-selected unavailable Tool with a server-chosen prerequisite", async () => {
+    const client = fakeResponsesClient({
+      assistantMessage: { body: "还需要补充年级、课题和导入情境。" },
+      state: "collecting_inputs",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "video_script_generate",
+        reasonForUser: "可以只做视频脚本。",
+        missingInputs: [],
+        nextSuggestedCapabilities: [],
+        requiresConfirmation: false,
+      },
+    });
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+    const availability = [
+      ["requirement_spec", "available", []],
+      ["lesson_plan", "needs_approved_inputs", ["requirement_spec"]],
+      ["knowledge_anchor_extract", "needs_approved_inputs", ["requirement_spec"]],
+      ["creative_theme_generate", "needs_approved_inputs", ["requirement_spec"]],
+      ["video_script_generate", "needs_approved_inputs", ["creative_theme_generate"]],
+    ].map(([capabilityId, status, missingApprovedInputs]) => ({
+      capabilityId,
+      status,
+      requiresConfirmation: true,
+      missingApprovedInputs,
+      reasonForModel: String(status),
+      reasonForUser: "前置内容尚未完成。",
+    })) as NonNullable<MainConversationAgentInput["conversationContext"]>["capabilityAvailability"];
+
+    const turn = await agent.respond({
+      userMessage: "只做五年级数学百分数的机械信标独立创意导入视频脚本，不做 PPT、图片、成片或打包。",
+      intentGrant: { standardWorkAuthorized: true },
+      availableArtifactKinds: [],
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      conversationContext: { recentMessages: [], capabilityAvailability: availability },
+    });
+
+    expect(turn).toMatchObject({
+      state: "collecting_inputs",
+      shouldRunToolNow: false,
+      toolPlan: {
+        capabilityId: "video_script_generate",
+        missingInputs: [],
+        nextSuggestedCapabilities: [],
+      },
+    });
+    expect(turn.assistantMessage.body).toBe("前置内容尚未完成。");
   });
 
   it("preserves all model quick replies without truncating them", async () => {
@@ -444,8 +728,8 @@ describe("M55-C model-first main conversation agent", () => {
     const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
     const turn = await agent.respond({ userMessage: "生成最终材料包", availableArtifactKinds: [] });
 
-    expect(client.lastPayload?.instructions).toContain("inputDraft.classroomRunSpecDraft");
-    expect(client.lastPayload?.instructions).toContain("courseVersionId和reviewBatchId由服务端计算");
+    expect(client.lastPayload?.instructions).not.toContain("inputDraft.classroomRunSpecDraft");
+    expect(client.lastPayload?.instructions).not.toContain("courseVersionId和reviewBatchId由服务端计算");
     const inputDraftSchema = (client.lastPayload as any).text.format.schema.properties.toolPlan.properties.inputDraft;
     expect(inputDraftSchema.required).toContain("classroomRunSpecDraft");
     expect(turn.toolPlan?.inputDraft).toMatchObject({ classroomRunSpecDraft });
@@ -495,6 +779,22 @@ describe("M55-C model-first main conversation agent", () => {
     expect(turn.assistantMessage.body).not.toMatch(/硬编码|主模型|模型通道|schema|provider|debug|local path/i);
   });
 
+  it("allows an explicit deterministic Main Agent fixture only outside production", async () => {
+    const fixtureAgent = createMainConversationAgentFromEnv({
+      NODE_ENV: "development",
+      SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+    });
+    const fixtureTurn = await fixtureAgent.respond({ userMessage: "你好", availableArtifactKinds: [] });
+    expect(fixtureTurn).toMatchObject({ state: "chatting", runtimeKind: "deterministic" });
+
+    const productionAgent = createMainConversationAgentFromEnv({
+      NODE_ENV: "production",
+      SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+    });
+    const productionTurn = await productionAgent.respond({ userMessage: "你好", availableArtifactKinds: [] });
+    expect(productionTurn).toMatchObject({ state: "failed_retryable", runtimeKind: "openai" });
+  });
+
   it("continues an existing pending delivery plan even when model config is missing", async () => {
     const agent = createMainConversationAgentFromEnv({ NODE_ENV: "development" });
 
@@ -530,10 +830,10 @@ describe("M55-C model-first main conversation agent", () => {
   });
 
   it("uses a longer configurable timeout for model-first planning", () => {
-    expect(resolveMainAgentTimeoutMs({})).toBe(60_000);
+    expect(resolveMainAgentTimeoutMs({})).toBe(180_000);
     expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "45000" })).toBe(45_000);
-    expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "1000" })).toBe(60_000);
-    expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "not-a-number" })).toBe(60_000);
+    expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "1000" })).toBe(180_000);
+    expect(resolveMainAgentTimeoutMs({ MAIN_AGENT_TIMEOUT_MS: "not-a-number" })).toBe(180_000);
   });
 
   it("uses a read-only Agent Tool and replans in the same model turn", async () => {
@@ -577,8 +877,12 @@ describe("M55-C model-first main conversation agent", () => {
     } as OpenAIResponsesClient;
     const dispatch = vi.fn(async () => ({
       status: "succeeded" as const,
-      modelOutput: { decision: "plan", nextToolIntents: ["assemble_ppt_key_samples"] },
-      observationId: "observation-1",
+      observation: {
+        observationId: "observation-1",
+        status: "succeeded" as const,
+        reasonCodes: ["agent_tool_succeeded"],
+        advisoryNextToolIntents: ["assemble_ppt_key_samples"],
+      },
     }));
     const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
 
@@ -597,12 +901,120 @@ describe("M55-C model-first main conversation agent", () => {
     expect(payloads[1].input).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "function_call_output", call_id: "call-1" }),
     ]));
+    expect(turn).toMatchObject({ shouldRunToolNow: false, runtimeKind: "openai" });
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.deliveryPlan).toBeUndefined();
+  });
+
+  it("presents tool-round budget exhaustion as a saved pause instead of a Provider outage", async () => {
+    const responses = [
+      {
+        output_text: "",
+        output: [{
+          id: "item-1",
+          type: "function_call",
+          call_id: "call-1",
+          name: "create_requirement_spec",
+          arguments: JSON.stringify({ revision: 1 }),
+        }],
+      },
+      {
+        output_text: "",
+        output: [{
+          id: "item-2",
+          type: "function_call",
+          call_id: "call-2",
+          name: "create_lesson_plan",
+          arguments: JSON.stringify({ revision: 2 }),
+        }],
+      },
+    ];
+    let responseIndex = 0;
+    const client = {
+      responses: {
+        async create() {
+          return responses[Math.min(responseIndex++, responses.length - 1)];
+        },
+      },
+    } as OpenAIResponsesClient;
+    const onBudgetExhausted = vi.fn();
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "继续完成当前材料包",
+      availableArtifactKinds: [],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_requirement_spec" }],
+        allowedToolNames: ["create_requirement_spec", "create_lesson_plan"],
+        maxToolRounds: 1,
+        dispatch: async () => ({
+          status: "succeeded",
+          observation: { observationId: "observation-1", status: "succeeded", reasonCodes: ["business_tool_succeeded"] },
+        }),
+        onBudgetExhausted,
+      },
+    });
+
+    expect(onBudgetExhausted).toHaveBeenCalledOnce();
     expect(turn).toMatchObject({
-      state: "awaiting_confirmation",
-      toolPlan: { capabilityId: "ppt_key_samples" },
+      state: "failed_blocked",
       shouldRunToolNow: false,
       runtimeKind: "openai",
+      assistantMessage: { body: expect.stringContaining("当前进度已保存") },
     });
+    expect(turn.assistantMessage.body).not.toContain("服务暂时不可用");
+  });
+
+  it("exposes every currently qualified high-level Tool without hiding ppt_design behind Director", async () => {
+    const payloads: Record<string, any>[] = [];
+    const finalOutput = {
+      assistantMessage: { title: null, body: "逐页设计已由业务工具保存，继续准备样张。" },
+      state: "continuing_workflow",
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      toolPlan: null,
+      deliveryPlan: null,
+    };
+    const client = {
+      responses: {
+        async create(payload: Record<string, unknown>) {
+          payloads.push(payload);
+          return { output_text: JSON.stringify(finalOutput), output: [] };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    await agent.respond({
+      userMessage: "继续完成PPT",
+      availableArtifactKinds: ["ppt_draft", "video_segment_generate"],
+      conversationContext: {
+        recentMessages: [],
+        capabilityAvailability: [
+          { capabilityId: "ppt_outline", status: "available", requiresConfirmation: false, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+          { capabilityId: "ppt_design", status: "available", requiresConfirmation: false, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+          { capabilityId: "ppt_sample_assets", status: "available", requiresConfirmation: false, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+          { capabilityId: "video_segment_generate", status: "available", requiresConfirmation: false, missingApprovedInputs: [], reasonForModel: "available", reasonForUser: "可以继续。" },
+        ],
+      },
+      replanDirective: {
+        reason: "tool_succeeded",
+        previousActionKey: "ppt_outline:ppt_draft",
+        observationIds: ["observation-outline"],
+      },
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_ppt_design_draft" }],
+        allowedToolNames: ["ppt_director_plan_or_repair", "create_ppt_design_draft"],
+        dispatch: async () => ({ status: "succeeded", observation: { status: "succeeded", reasonCodes: ["ok"] } }),
+      },
+    });
+
+    const requestInput = JSON.parse(String(payloads[0].input));
+    expect(requestInput.availableCapabilities).toEqual([]);
+    expect(payloads[0].tools).toEqual([expect.objectContaining({ name: "create_ppt_design_draft" })]);
+    expect(payloads[0].text.format.schema.properties.toolPlan).toEqual({ type: "null" });
+    expect(payloads[0].text.format.schema.properties.deliveryPlan).toEqual({ type: "null" });
   });
 });
 

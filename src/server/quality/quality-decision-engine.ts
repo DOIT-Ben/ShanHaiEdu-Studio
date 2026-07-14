@@ -21,7 +21,7 @@ export function decideQuality(input: {
   const validations = [...input.validationReports].sort((a, b) => a.reportDigest.localeCompare(b.reportDigest));
   const critic = input.criticReport ?? null;
   const reasonCodes = new Set<string>();
-  let nextAction: QualityDecision["nextAction"] = "await_teacher_approval";
+  let nextAction: QualityDecision["nextAction"] = "continue_downstream";
 
   const reportTargetMismatch = validations.some((report) =>
     report.target.targetDigest !== input.target.artifactDigest ||
