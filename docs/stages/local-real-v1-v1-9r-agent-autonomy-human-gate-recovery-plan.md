@@ -2,7 +2,7 @@
 
 更新时间：2026-07-13
 
-状态：`Accepted / next / blocks V1-9 real E2E and V1-10 public cutover`
+状态：`Accepted / R0-R4 complete / R5 in progress / blocks V1-9 real E2E and V1-10 public cutover`
 
 关联测试：`docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md`
 
@@ -10,7 +10,7 @@
 
 在不推翻现有 PPT、视频、质量、执行安全和发布底座的前提下，恢复产品 Main Agent 的任务理解、业务 Tool 选择、连续执行、Observation/Replan、失败恢复和自然语言打断能力，并把 HumanGate 从“逐节点许可器”改为“真实决策与风险边界”。
 
-V1-9R 完成后，一名教师给出明确的完整 PPT、视频或整包目标时，产品必须把该请求视为对标准范围内可逆内部工作的任务级授权。Main Agent 应自主选择并连续调用必要的高层业务 Tool，内部 Director、Critic、Validator 和 Quality Gate 自动工作；只有不可推断的方向选择、超出授权的费用或强度、外发发布、权限变化、覆盖删除等真实边界才打断教师。
+V1-9R 完成后，一名教师给出明确的完整 PPT、视频或整包目标时，产品必须把该请求视为对标准范围内可逆内部工作的任务级授权。Main Agent 应看到全部当前合格的高层业务 Tool，自主选择并连续调用必要能力，读取每次成功或失败的具体 Observation 后决定 continue、repair、换 Tool 或 Replan。Director、Critic、Validator 和 Quality Gate 按任务和领域需要参与，不由服务端固化为机械必经节点；只有不可推断的方向选择、超出授权的费用或强度、外发发布、权限变化、覆盖删除等真实边界才打断教师。
 
 本阶段不以“减少安全约束”为目标，而是把约束放回正确责任层：
 
@@ -108,7 +108,7 @@ Observe user message + active TaskBrief + WorldState
 | V1-9R2 | ActionPolicy 与 HumanGate 重分级 | 把“全部确认”改为按副作用和授权判断；统一 `PendingDecision`；分离质量、下游可用和教师签收 | 明确的一句话任务在标准范围内零例行确认；真实风险仍稳定阻断 | 1 天 |
 | V1-9R3 | 业务 Tool 连续 ReAct | 把白名单高层业务 Tool 注册给 Main Agent；Tool 后自动 Observe/Replan；异步任务持久化恢复；保持 Guard 强制执行 | Main Agent 自主走完 PPT 安全链并能定点返修，不靠固定点击序列 | 1-1.5 天 |
 | V1-9R4 | 真实失败与关键体验 | 禁止生产静默 deterministic 成功；分类错误、有限重试和运行记录；修 Markdown、历史卡片、强度同步、窄屏截断和持久处理状态 | 错误可诊断可恢复；四项截图问题和强度错位回归关闭 | 0.5-1 天 |
-| V1-9R5 | 产品黑盒与双用户回归 | 一句话 PPT、完整材料包、按需局部任务、自然语言暂停/改道、两个用户不同项目并行 | 外部 Codex 介入编排次数为 0；任务、授权、费用、强度和产物不串线 | 0.5-1 天 |
+| V1-9R5 | 自主控制面验收 | 一句话PPT最低可信设计候选、完整材料包规划、动态Tool轨迹、Observation/Replan、失败恢复、暂停/改道/局部任务、桌面、两个用户不同项目并行 | R-A01至R-A18、R-U01至R-U06有证据；外部Codex介入编排次数为0；任务、授权、费用、强度和产物不串线 | 0.5-1 天 |
 
 V1-9R0至R5形成工程恢复候选，估算4-6个集中开发日。随后单独恢复V1-9真实E2E和V1-10发布收口；两人邀请制V1总估算为6-10个自然日。Provider、外部审核或教师签收等待不计入工程工时；真实成片出现新P0时增加1-2天做责任层修复和定点复验。前两天的阶段目标是得到“一句话发起、无需反复确认、自动推进到可信PPT候选”的确定性候选版。
 
@@ -126,10 +126,29 @@ V1-9R0 -> V1-9R1 -> V1-9R2 -> V1-9R3 -> V1-9R5
 - V1-9R3与V1-9R4可以并行开发，但两者都是V1-9R5关闭前置；R5的历史成果、强度同步和浏览器验收不得在R4未通过时完成。
 - PPT、视频和最终包生产 Tool 不重写；只修其对 Main Agent 的注册、输入信封、Observation、授权和可恢复边界。
 - V1-9R5 全部确定性与浏览器门通过前，不运行新的真实整包 Provider E2E。V1-9和V1-10各自形成独立closeout，不用V1-9R工程恢复证据替代真实包、教师签收或生产切流证据。
+- V1发布前真实浏览器验收只运行桌面视口。390px不作为关闭R5、进入V1-9、V1-10候选验收或发布V1的门禁；既有窄屏自动化与历史证据保留，后续不再新增390px真实黑盒。
+
+### 8.1 V1-9R5责任边界
+
+- R5验收自主控制面，不验证偶然满足全部生产内容Schema的单次Director结果。`ppt_design_draft`只要求真实模型来源、完整任务语义、证据绑定、最低结构有效并可供下游使用。
+- R5不验证真实可编辑PPTX、完整图片、MP4、ZIP或整包production gate；这些只在R5关闭后的唯一一次V1-9真实Provider全链路验证。
+- Main Agent可发现全部当前合格的高层业务Tool并自主决定调用顺序；测试只断言目标覆盖、合法选择、Observation/Replan和动态轨迹，不断言固定Tool顺序。
+- 服务端不得指定固定下一Tool，也不得把Director或Critic设为所有任务的机械前置。确定性Guard继续负责文件真实性、血缘、版本、权限、费用、授权和副作用。
+- Tool校验失败时，`ValidationReport.reasonCode`和具体Observation必须返回Main Agent，使其可修输入、换合法路径或Replan；同一Tool连续失败不得自动转成`ask_teacher`。
+- 只有缺少真实用户选择、授权、预算，或存在外发、权限变化、覆盖删除等破坏性副作用时才进入HumanGate。重试预算耗尽时诚实暂停、持久化阻塞原因和恢复入口，不循环调用，也不生成fallback成果。
+- 当前DeepSeek Director运行只作为诊断证据；若失败来自V1-9生产级内容Schema，不做等价重跑，先修R5最低可信合同与V1-9 production gate的责任边界。
+
+### 8.2 V1-9R5单轮ReAct上下文收敛
+
+真实桌面出现 Main Agent continuation 180 秒超时后，R5增加一个仓内责任切片：保留既有跨轮`ContextPackage`，将同一次原生function-call循环从原始历史累加改为确定性`react-checkpoint.v1`。每次Tool后先持久化Observation，再只向下一轮重放原始压缩上下文、当前检查点和最近一次call/output配对；不得继续携带旧reasoning、旧function call、旧function output或完整Tool structuredOutput。
+
+检查点必须绑定TaskBrief digest、IntentEpoch、plan revision、强度和IntentGrant授权摘要，并保留当前Tool集合、Observation reasonCode、Artifact/Report引用、重复失败聚合与恢复引用。压缩只改变模型可见运输，不删除Conversation Log、Artifact、Observation、Report或RunCheckpoint。当前采用无状态紧凑重放，不把第三方`previous_response_id`作为正确性前置。
+
+同时消除Main Agent初始请求中`contextPackage/agentWorldState/capabilityAvailability`与完整`conversationContext`的重复传输，并记录不含正文的请求字符数、token估算、轮次、检查点大小、Tool数和耗时。详细合同以`docs\architecture\decisions\2026-07-14-adr-main-agent-react-checkpoint-compaction.md`为准。
 
 ## 9. 范围边界
 
-V1-9R本阶段必须完成：Main Agent业务Tool自主选择与连续执行、任务级授权、HumanGate风险分级、自然语言上下文决策、失败真实性、关键UI回归和双用户回归。真实整包、教师签收和生产切流分别属于后续V1-9与V1-10，不得用本阶段自动化证据替代。
+V1-9R本阶段必须完成：Main Agent业务Tool自主选择与连续执行、任务级授权、HumanGate风险分级、自然语言上下文决策、失败真实性、关键UI回归和双用户回归。R5的一句话PPT终点是可信的结构化设计候选；完整材料包终点是正确的任务范围、规划、授权和可恢复动态轨迹。真实整包、教师签收和生产切流分别属于后续V1-9与V1-10，不得用本阶段自动化证据替代。
 
 本阶段明确不做：
 
@@ -160,7 +179,8 @@ V1-9R0至R5只有同时满足以下条件才可关闭并恢复V1-9真实E2E：
 4. “继续、确定、暂停、换个方向、只做某一部分”均基于活动任务和 decision 解释，不丢失原始目标。
 5. 任何 Runtime 失败都不会产出可被误认成功的 `deterministic_draft`；错误有 run、输入摘要、分类、重试和恢复证据。
 6. 两名教师不同项目同时运行时，TaskBrief、IntentGrant、PendingDecision、IntentEpoch、强度、任务、费用和产物完全隔离。
-7. 全量测试、构建、桌面和390px浏览器通过；外部Codex在产品任务运行中的编排介入次数为0。
+7. R-A01至R-A18、R-U01至R-U06、全量测试、构建和桌面浏览器通过；外部Codex在产品任务运行中的编排介入次数为0。390px不属于V1发布前退出门。
+8. R5轨迹由Main Agent动态选择Tool，不存在服务端forced-next-tool、Director/Critic机械前置或重复失败默认`ask_teacher`；预算耗尽有诚实暂停和持久恢复入口。
 
 V1整体完成还必须按独立阶段补齐：
 

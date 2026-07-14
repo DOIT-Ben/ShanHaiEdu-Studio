@@ -1,6 +1,6 @@
 # Local Real MVP 当前主线状态
 
-更新时间：2026-07-13（V1-9R Main Agent自主编排与HumanGate恢复）
+更新时间：2026-07-14（V1-9R仓内控制面通过，R5仅待Provider完整Main Agent与结构化文本链路健康）
 
 ## 1. 当前主线
 
@@ -12,7 +12,17 @@ V1 交付质量与邀请制上线
 
 目标：在现有 Local Real MVP 代码基线上，让两名受邀教师通过可暂停、改道和局部返修的 Main Agent，真实获得可上课的教案、可编辑 PPTX、课堂视觉图、完整导入视频和版本一致的最终材料包；产品内智能体自主完成规划、Tool调用、课程锚点审查、HumanGate、Quality Gate和返修，外部Codex只负责工程实现与阶段末黑盒验收。
 
-当前阶段：`V1-9R0 next`。V1-9A至V1-9G的媒体/Runtime/最终包前置硬化和V1-10A至V1-10G的部署/恢复底座继续保留；但最新真实对话证明Main Agent自主编排与HumanGate产品体验不通过，V1-9真实Provider E2E、正式公网切流和教师签收全部暂停，必须先关闭V1-9R0至V1-9R5。
+当前阶段：`V1-9R5 in progress / autonomous control-plane acceptance`。V1-9R0至R4已按对应计划和测试完成，不重做；V1-9A至V1-9G的媒体/Runtime/最终包前置硬化和V1-10A至V1-10G的部署/恢复底座继续保留。当前只关闭Main Agent自主选择高层业务Tool、动态Observe/Replan、失败恢复、暂停/改道/局部任务、桌面体验和两用户隔离；V1发布前不再运行390px真实黑盒。V1-9真实Provider E2E、正式公网切流和教师签收仍暂停。
+
+2026-07-14最新仓内结论：`ppt_design`已按ADR分成R5紧凑语义候选与V1-9生产设计包。R5模型只生成`ppt-design-candidate.v1`的TaskBrief digest、完整目标语义、可信Artifact证据绑定、教学目标、叙事和连续逐页候选；服务端只计算candidate digest并验证最低结构，不确定性补全PageSpec、可编辑层、样张计划或production checks。缺少正式`pptDesignPackage`时，真实媒体Tool继续失败关闭。
+
+本轮新鲜仓级门为：候选定向`3 files / 35 tests`、控制面扩大回归`16 files / 203 tests`、Node`284/284`、单worker排除独立互动课件Stage7在途冲突后Vitest`127 files / 960 tests`、TypeScript、生产构建14页面和`git diff --check`全部通过；构建仍只有既有5条动态文件模式警告。Runner证据隔离测试`8/8`，每次真实黑盒现在把脱敏snapshot写入该次独立run目录并记录非敏感Provider通道。
+
+primary桌面运行`test-results\m67-e2e-47140-1784026423599\`证明Main Agent检查点压缩有效：一句话PPT三次Main Agent请求约`8.6k-10.2k tokens`，响应约`4.7-6.5s`，先自主选择并完成`create_requirement_spec`，再选择`create_ppt_outline`；后者的结构化文本Runtime单次180秒timeout，Observation保存`reasonCodes=[timeout,tool_execution_not_succeeded]`和`minimalNextAction=repair_upstream`，随后诚实暂停。A/B前置场景仍为0媒体GenerationJob、0外部Codex编排介入。
+
+fallback ledger的最小Responses探针成功后，显式选择fallback执行桌面`test-results\m67-e2e-61104-1784027400662\`；两名教师的首轮真实Main Agent请求均在约1.0-1.1秒返回`403 Your request was blocked`。两次请求各约`8.7k tokens`并携带1个合格业务Tool，尚未产生Tool选择、Artifact或GenerationJob。该证据证明“最小Responses成功”不等于真实Main Agent工具请求健康；责任层仍是Provider访问/风控或兼容边界，不是1M上下文、SQLite、UI、Tool资格或PPT候选本地Schema。
+
+当前权威状态：**仓内控制面通过，R5唯一剩余阻塞是同一Provider通道稳定完成带Tool的Main Agent Responses及后续结构化文本业务调用，并补齐真实桌面证据**。不再做等价最小探针或浏览器重跑；桌面未通过，R5未关闭，不创建closeout且不得进入V1-9。390px不属于V1发布前门禁。显式离线fixture仍只证明仓内合同，不能冒充真实Main Agent或R5整体通过。
 
 最新状态纠偏：V1-4只可表述为“底层安全合同完成 / 产品验收失败 / P0 reopen”；V1-3、V1-6、V1-7的组件与领域合同保留，但业务Tool连续自主调用重新验收；V1-5的强度贯穿和UI同步按P1重开。不能再要求教师多点一次确认来继续旧路线。
 
@@ -107,29 +117,29 @@ V1 交付质量与邀请制上线
 
 当前优先级从高到低：
 
-1. V1-9R0：把本次38条真实失败对话转成脱敏红测试，废止“逐节点继续/批准”作为成功行为。
-2. V1-9R1/R2：贯通`TaskBrief + IntentGrant`，统一`PendingDecision`，用ActionPolicy把HumanGate收缩到真实风险与真实选择。
-3. V1-9R3：让Main Agent发现并连续调用白名单业务Tool，Tool后自动Observe/Replan，不再统一停回确认。
-4. V1-9R4/R5：禁止假fallback成功，关闭Markdown/历史成果/强度/窄屏问题，完成一句话任务和双用户黑盒回归。
-5. V1-9：只执行一次产品内真实整包，外部Codex成包后黑盒审核；V1-10先完成候选教师签收，再原子切流并复核注册关闭和生产关键路径。
+1. V1-9R5：完成自主控制面验收。Main Agent看到全部当前合格的高层业务Tool并自主形成动态轨迹；服务端不固定下一Tool，Director/Critic不作为机械必经节点；Tool成功或失败后的具体Observation与ValidationReport reasonCode返回Main Agent，由其continue、repair、换Tool或Replan。
+2. V1-9R5黑盒：一句话PPT只推进到真实模型来源、任务语义完整、证据绑定、最低结构有效且可供下游使用的设计候选；完整材料包只验证任务范围、规划、授权、Observation/Replan和双用户无串线，不调用真实图片、视频或整包Provider。
+3. V1-9R5体验与停止：标准任务零例行确认；暂停、改道、局部任务、桌面、R-A01至R-A18及R-U01至R-U06有证据；重复失败不默认`ask_teacher`，预算耗尽时诚实暂停并保存恢复入口；外部Codex运行中编排介入为0。390px沿用既有合同证据，不做新的真实运行。
+4. V1-9：R5关闭后只执行一次产品Main Agent自主编排的真实Provider全链路，验证真实可编辑PPTX、完整MP4、最小课程锚点、`ClassroomRunSpec`和版本一致ZIP，失败只返修受影响页面、镜头或版本。
+5. V1-10：真实全链路及外部黑盒审核通过后，进入候选环境、故障恢复、教师签收、原子切流和发布后验证；部署、生产写入和发布按当次授权门执行。
 
 ## 4. 下一阶段建议
 
 当前唯一恢复点：
 
 ```text
-V1-9R0：真实失败基线与旧验收语义纠偏
+V1-9R5：Main Agent自主控制面验收
 ```
 
 执行顺序：
 
-1. 从真实项目提取脱敏fixture，稳定复现“理解正确、Tool输入丢失、重复requirement spec、60秒失败和deterministic草稿”。
-2. 先写一句话PPT、继续、改道、风险HumanGate和无假fallback红测试，并识别与新产品目标冲突的旧断言。
-3. 红测试成立后，按V1-9R1至R5顺序修改控制面；不靠增加Prompt限制或让教师再确认一次规避根因。
-4. V1-9R5通过并形成恢复closeout前不调用新的真实整包Provider；V1-9运行中外部Codex介入编排次数必须为0。
-5. 保持既有`v1`、`v1.1.0-alpha`和其他历史标签不动；最终邀请制发布使用新的不可变标识。
+1. forced-next-tool、Director/Critic机械前置和同一Tool重复失败默认`ask_teacher`的代码责任边界已关闭；保留权限、预算、版本、血缘、费用和副作用确定性门禁。
+2. 当前等待同一Provider通道出现新的完整健康证据：既能接受带合格业务Tool与strict structured output的Main Agent Responses，又能完成随后结构化文本业务Tool；无Tool最小Responses、单段JSON或仅配置存在均不足以触发重跑。
+3. 有新的通道级健康变化后，不再单独重复最小探针，只跑一次隔离真实桌面；黑盒只断言模型自主选择Tool和形成动态轨迹，不断言固定Tool顺序，完整材料包场景不得调用真实图片、视频或整包Provider。桌面通过后直接收口R5其余证据，不再跑390px。
+4. R-A01至R-A18、R-U01至R-U06、暂停/改道/局部任务和两用户隔离全部有真实证据后才形成R5 closeout；外部Codex运行中编排介入次数必须为0。
+5. R5关闭后才执行唯一一次V1-9真实Provider全链路；当前按用户要求停在R5汇报点，保持既有`v1`、`v1.1.0-alpha`和其他历史标签不动。
 
-当前明确未关闭的上线门：Main Agent业务Tool连续自主调用、任务级授权、HumanGate职责分级、控制消息不丢任务、真实失败恢复、关键UI误导、受影响的双用户隔离和产品内真实E2E。真实E2E与外部黑盒审核P0=0后，先由至少一名真实教师在候选环境签收，再执行原子公网切流；切流后复核公开注册关闭、生产健康和教师关键路径。目标服务器运行、回滚、恢复、最小镜像和Provider配置底座已经关闭，只做受影响回归。
+当前仓内合同已关闭；唯一未关闭的V1-9R上线门是Provider在同一通道恢复完整Main Agent工具请求与结构化文本业务调用后，由产品Main Agent在真实桌面完成自主Tool轨迹、失败Observation/Replan、暂停/改道/局部任务和两用户隔离证据。该门关闭前不创建R5 closeout、不执行V1-9真实全链路。390px不属于V1发布前门禁。真实E2E与外部黑盒审核P0=0后，先由至少一名真实教师在候选环境签收，再执行原子公网切流；切流后复核公开注册关闭、生产健康和教师关键路径。目标服务器运行、回滚、恢复、最小镜像和Provider配置底座已经关闭，只做受影响回归。
 
 V1 Agent 与交付质量设计、Contracts、Prompts 和实验依据已经迁入项目，统一入口：
 

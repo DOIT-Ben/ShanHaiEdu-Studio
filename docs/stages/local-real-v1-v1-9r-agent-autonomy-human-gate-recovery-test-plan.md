@@ -18,8 +18,8 @@
 
 | 编号 | 场景 | 输入/动作 | 通过标准 |
 |---|---|---|---|
-| R-A01 | 一句话 PPT | 教师只发一次明确 PPT 目标 | 建立一个 TaskBrief 和一个活动计划；标准预算内自动推进到可信 PPT 候选；需求稿、大纲、设计稿、样张不逐节点打断 |
-| R-A02 | 一句话完整材料包 | 教师明确请求教案、PPT、导入视频和整包 | Main Agent 自主选择必要高层 Tool；内部审查与返修自动执行；只有真实风险产生 PendingDecision |
+| R-A01 | 一句话 PPT | 教师只发一次明确 PPT 目标 | 建立一个 TaskBrief 和一个活动计划；标准预算内由Main Agent自主推进到真实模型来源、任务语义完整、证据绑定、最低结构有效且可供下游使用的结构化设计候选；不要求最终PPTX，需求稿、大纲、设计稿、样张不逐节点打断 |
+| R-A02 | 一句话完整材料包 | 教师明确请求教案、PPT、导入视频和整包 | Main Agent自主形成任务范围、规划和必要高层Tool动态轨迹，正确处理授权、Observation/Replan和真实风险PendingDecision；R5不调用真实图片、视频或整包Provider |
 | R-A03 | 按需局部任务 | “只做视频脚本，不做 PPT 和成片” | 计划只包含目标范围；未授权媒体 Tool 调用为 0；系统不强迫补齐整包 |
 | R-A04 | 控制消息不丢目标 | 活动任务中发送“确定”“继续” | 控制消息解析到活动任务或 PendingDecision；TaskBrief 原目标、教材、约束和强度保持不变；不生成新的空 requirement spec |
 | R-A05 | 自然语言改道 | 样张阶段说“把叙事改成投篮命中率，不要原方案” | IntentEpoch 或计划 revision 递增；只失效受影响下游；迟到旧结果不得提升；Main Agent 自动 Replan |
@@ -28,13 +28,13 @@
 | R-A08 | 标准任务授权 | 明确请求完整PPT/视频，当前预算策略和积分上限已向教师披露并被账号接受，预计费用在绑定版本内 | `IntentGrant`记录披露版本、上限和必要可逆内部动作；不为每个Tool创建actionId或确认卡 |
 | R-A09 | 未披露/超预算/最高强度 | 没有有效预算披露、策略版本变化、预计超出授权或进入最高强度 | 产生唯一typed PendingDecision，说明积分与影响；确认前零付费调用；拒绝后不循环提示 |
 | R-A10 | 外发/破坏性动作 | 发布、邀请、权限变化、覆盖或删除 | 必须显式 HumanGate；action 与 actor/project/intent/plan 绑定，过期或改道后不可重放 |
-| R-A11 | Tool 连续 ReAct | Director/业务 Tool/Critic 返回成功或返修 finding | Main Agent 同一任务内 Observe 后继续、定点 repair 或 Replan；服务端不统一强制回到 awaiting_confirmation |
-| R-A12 | 业务 Tool 可发现性 | 给出 PPT、视频和整包三类目标 | Main Agent 只能发现白名单高层业务 Tool；能选到所需 Tool；裸 Provider、数据库、密钥和状态提升不可见 |
+| R-A11 | Tool 连续 ReAct | 任一合格高层业务Tool返回成功、校验失败或返修finding | Main Agent读取具体Observation后自主continue、repair、换Tool或Replan；服务端不固定下一Tool、不统一强制回到awaiting_confirmation，Director/Critic不作为机械必经节点 |
+| R-A12 | 业务 Tool 可发现性 | 给出 PPT、视频和整包三类目标 | Main Agent可看到全部当前合格的白名单高层业务Tool并自主选择所需Tool；裸Provider、数据库、密钥和状态提升不可见；断言合法动态轨迹而非固定Tool顺序 |
 | R-A13 | 输入信封完整 | Tool 执行任一计划步骤 | Tool 收到 actor/project/task、TaskBrief digest、完整结构化输入、IntentEpoch、plan revision、强度快照、授权和幂等键 |
 | R-A14 | 质量与签收分离 | 内部版本 Validator/Critic 通过但教师尚未签收 | 合格内部版本可供下游继续；教师签收仍为独立状态；不把任一状态冒充另一状态 |
 | R-A15 | Runtime 超时 | 注入超时或断网 | 保存分类错误与 Run/Observation；在预算内有限重试；不产生 deterministic 成果；可从原 TaskBrief 恢复 |
-| R-A16 | 解析/校验失败 | 注入坏 JSON、缺字段或错误 artifact | 错误类型可区分；无成功状态提升；Main Agent 可修输入、换合法路径或在预算耗尽时暂停 |
-| R-A17 | 循环停止 | 连续返回相同 blocking finding | 精确重复达到预算后停止，展示真实阻塞和最小下一步；不得重复付费或无限询问“是否继续” |
+| R-A16 | 解析/校验失败 | 注入坏 JSON、缺字段或错误 artifact | `ValidationReport.reasonCode`和具体Observation返回Main Agent；无成功状态提升；Main Agent可修输入、换合法路径或Replan；失败不自动转成`ask_teacher` |
+| R-A17 | 循环停止 | 连续返回相同 blocking finding | 精确重复达到预算后停止，诚实暂停并持久化阻塞原因和恢复入口；不得重复付费、循环调用、无限询问“是否继续”或生成fallback成果 |
 | R-A18 | 双用户隔离 | 两个账号在不同项目同时运行并分别改道/调强度 | TaskBrief、IntentGrant、PendingDecision、IntentEpoch、run/job、费用、artifact 和消息完全隔离 |
 
 ## 3. 产品体验回归
@@ -84,12 +84,28 @@
 - 生产路径没有“捕获异常后生成 deterministic 成果”的可达成功分支。
 - R-U01 至 R-U06 自动化通过；1366x768 和 390x844 真实浏览器完成关键路径。
 
-### V1-9R5 双用户产品门
+### V1-9R5 自主控制面验收门
 
-- 两个受邀账号在不同项目同时发起任务，其中一个改道、另一个保持原计划。
-- 一个任务失败恢复、一个任务继续执行，状态、费用和产物不串线。
-- 至少覆盖：一句话 PPT、按需局部任务、自然语言改道、真实风险 HumanGate、历史 artifact 打开和强度同步。
-- 外部 Codex 运行中选择 Tool、批准中间产物或决定返修的次数为 0。
+- Main Agent看到全部当前合格的高层业务Tool并自主决定调用顺序；黑盒断言目标覆盖、合法选择、具体Observation和动态轨迹，不断言固定Tool顺序。
+- 服务端不固定下一Tool，Director/Critic不作为机械必经节点；Tool成功或失败后由Main Agent自主continue、repair、换Tool或Replan。
+- 一句话PPT只需推进到真实模型来源、任务语义完整、证据绑定、最低结构有效且可供下游使用的结构化设计候选，不要求真实PPTX、完整图片、MP4或ZIP。
+- 完整材料包场景只验证任务范围、规划、授权、Observation/Replan和无串线，不调用真实图片、视频或整包Provider。
+- 同一Tool连续失败必须返回`ValidationReport.reasonCode`和Observation；只有缺少真实用户选择、授权、预算或存在外发/破坏性副作用时进入HumanGate，重试耗尽则诚实暂停并保存恢复入口。
+- 两个受邀账号在不同项目同时发起任务，其中一个改道、另一个保持原计划；一个任务失败恢复、一个任务继续执行，状态、费用和产物不串线。
+- 至少覆盖：一句话PPT、完整材料包规划、按需局部任务、自然语言暂停/改道、真实风险HumanGate、历史artifact打开、强度同步和桌面。390px不属于V1发布前真实黑盒门，R-U05继续由既有自动化与历史窄屏证据覆盖。
+- 当前DeepSeek Director运行只作诊断证据；若失败来自V1-9 production Schema，不做等价Provider重跑，先修合同责任边界。
+- R-A01至R-A18、R-U01至R-U06逐项有证据；外部Codex运行中选择Tool、批准中间产物或决定返修的次数为0。
+
+### V1-9R5 单轮ReAct上下文压缩专项门
+
+- 先写红测试证明第3次continuation仍包含第1次raw reasoning、旧function call或旧Tool output；实现后这些旧项必须消失，只保留原始压缩输入、`react-checkpoint.v1`和最近一次call/output配对。
+- 检查点确定性保留TaskBrief digest、task/project、IntentEpoch、plan revision、强度、授权与预算摘要、当前Tool集合、Observation reasonCode、Artifact/Report引用和重复失败事实。
+- Tool返回超长structuredOutput或Provider返回超长reasoning时，continuation请求不得按原始长度累加；超过软预算时折叠最旧轮次，但不得丢失最近Observation、失败reasonCode和恢复引用。
+- Main Agent初始请求不得重复发送顶层权威上下文和包含同一对象的完整`conversationContext`；没有`ContextPackage`时仍保留最近消息兼容窗口。
+- 每轮脱敏遥测包含请求字符数、token估算、轮次、检查点大小、Observation数、Tool数和耗时；不得包含用户正文、reasoning、Tool输出、URL、路径或凭据。
+- 压缩后仍断言模型动态选择合法Tool、Observation先持久化、失败可换Tool/Replan、重复失败诚实暂停；不得引入固定Tool顺序、HumanGate扩大或fallback成果。
+- 本专项仓内通过后只允许重新运行一次真实桌面；桌面通过即可进入R5其余证据收口，不再运行390px。离线测试不得写成R5整体通过，也不得调用真实图片、视频、PPTX、ZIP或整包Provider。
+- 隔离 runner 的外层 Playwright 命令时限必须大于该 spec 自身的最长测试时限并保留清理余量；不得由外层先杀死仍在正常轮询的真实任务，再误报为产品或 Provider 超时。
 
 ### V1-9 真实产品 E2E 门
 

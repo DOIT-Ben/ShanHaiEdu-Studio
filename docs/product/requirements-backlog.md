@@ -37,7 +37,7 @@
   - 生产路径禁止 deterministic/degraded fallback 冒充成功；超时、解析和校验错误可分类、可有限重试、可恢复。
   - 修复裸 Markdown、历史成果引用消失、强度状态错位、窄屏文字裁切和持久处理状态。
   - 两名教师不同项目并行时，TaskBrief、IntentGrant、PendingDecision、IntentEpoch、强度、费用、任务和产物完全隔离。
-- 验收：一句话 PPT 与完整材料包不再逐节点确认；自然语言暂停、改道和局部任务正确；没有有效预算披露时零付费调用，真正风险仍零越权；产品 Main Agent 独立生成同一版本的结构化教案、真实 PPTX、课堂视觉图、完整 MP4、`ClassroomRunSpec`及manifest/hash一致ZIP；外部 Codex 只做成包后黑盒审核；P0=0、全量测试/构建/桌面与390px通过、至少一名教师签收。
+- 验收：一句话 PPT 与完整材料包不再逐节点确认；自然语言暂停、改道和局部任务正确；没有有效预算披露时零付费调用，真正风险仍零越权；产品 Main Agent 独立生成同一版本的结构化教案、真实 PPTX、课堂视觉图、完整 MP4、`ClassroomRunSpec`及manifest/hash一致ZIP；外部 Codex 只做成包后黑盒审核；P0=0、全量测试/构建/桌面通过、至少一名教师签收。V1发布前不运行新的390px真实黑盒，既有窄屏合同证据保留，V1发布后另行安排。
 - 阶段计划：`docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-plan.md`。
 - 测试计划：`docs\stages\local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md`。
 - 版本关系：V1-4 重标为“底层合同完成 / 产品验收失败 / P0 reopen”；V1-3/V1-6/V1-7 重新验收产品内连续自主编排；V1-5 重开强度贯穿和状态同步；V1-8、V1-9A-G、V1-10A-G 的独立底座证据保留。
