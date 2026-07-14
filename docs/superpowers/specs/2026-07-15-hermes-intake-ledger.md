@@ -2,6 +2,7 @@
 
 - 台账版本：0.1.0
 - 分支：\`intake-hermes\`
+- 当前模式：\`planning_only\`
 - 基线：\`main@fd2521f1b558b36f2680a661f9d2eaf34ffa584e\`
 - 状态：仅设计与研究；生产实现尚未授权
 - 日期：2026-07-15
@@ -109,6 +110,7 @@
 - H00：\`docs/superpowers/specs/2026-07-15-hermes-intake-design.md\`
 - H01：\`docs/superpowers/specs/2026-07-15-hermes-memory-intake-design.md\`
 - Intake Ledger：\`docs/superpowers/specs/2026-07-15-hermes-intake-ledger.md\`
+- 主线隔离策略：\`docs/superpowers/specs/2026-07-15-hermes-mainline-planning-policy.md\`
 
 后续 H02–H09 每项使用独立设计文件，不追加成单个超大总览文档。
 
@@ -116,4 +118,4 @@
 
 当前只完成 H00 与 H01/HM-0 的设计提交。未修改生产代码、数据库、Prompt、Runtime、ToolRouter 或 Provider 配置。
 
-下一动作是项目负责人评审 H01 记忆系统设计。只有 H01 设计明确批准后，才为 HM-1 编写实施计划。
+当前分支锁定为 \`planning_only\`。H01 即使通过设计评审，也只进入 \`design_approved\`，不立即编写 HM-1 实施计划。允许继续逐项编写 H02–H09 的未来设计；任何实施计划必须等待主线阶段稳定、同步新基线、完成 Architecture Drift Review，并再次获得项目负责人明确授权。
