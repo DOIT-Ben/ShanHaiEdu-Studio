@@ -215,7 +215,7 @@ Runtime Router 的输入必须来自服务端绑定状态，至少包括：
 - runtimeKind；
 - TaskBrief 和输出 Contract；
 - allowedTools；
--预算和截止时间；
+- 预算和截止时间；
 - approvedArtifactRefs；
 - ExecutionEnvelope 或对应授权证明。
 
