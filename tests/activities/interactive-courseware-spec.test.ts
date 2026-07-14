@@ -1,9 +1,43 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { PrismaClient } from "@/generated/prisma/client";
 import {
   validateInteractiveCoursewareSpec,
   type InteractiveCoursewareSpec,
 } from "@/server/activities/interactive-courseware-spec";
+import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
+
+const root = process.cwd();
+const stageRoot = path.join(root, ".tmp", "interactive-courseware-tests");
+const databasePath = path.join(stageRoot, `courseware-${randomUUID()}.db`);
+const databaseUrl = `file:${databasePath.replaceAll("\\", "/")}`;
+
+let client: PrismaClient;
+
+beforeAll(() => {
+  mkdirSync(stageRoot, { recursive: true });
+  const initialized = spawnSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
+    cwd: root,
+    env: { ...process.env, DATABASE_URL: databaseUrl, SHANHAI_DB_INIT_SKIP_DOTENV: "1" },
+    encoding: "utf8",
+  });
+  if (initialized.status !== 0) {
+    throw new Error(initialized.stderr || initialized.stdout || "Interactive courseware test database initialization failed.");
+  }
+  client = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: databaseUrl }) });
+});
+
+afterAll(async () => {
+  await client?.$disconnect();
+  for (const suffix of ["", "-shm", "-wal"]) rmSync(`${databasePath}${suffix}`, { force: true });
+});
 
 function createValidSpec(): InteractiveCoursewareSpec {
   return {
@@ -136,7 +170,7 @@ describe("interactive courseware spec", () => {
   });
 
   it("persists only a validated spec as a versioned project artifact", async () => {
-    const service = createWorkbenchService();
+    const service = createWorkbenchService(createPrismaWorkbenchRepository(client));
     const project = await service.createProject({ title: "Interactive courseware persistence" });
     const artifact = await service.saveInteractiveCoursewareSpec(project.id, { spec: createValidSpec() });
     const snapshot = await service.getProjectSnapshot(project.id);
