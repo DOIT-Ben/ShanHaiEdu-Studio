@@ -1,6 +1,6 @@
 # Hermes Intake 分阶段吸收台账
 
-- 台账版本：0.2.0
+- 台账版本：0.3.0
 - 分支：\`intake-hermes\`
 - 当前模式：\`planning_only\`
 - 基线：\`main@fd2521f1b558b36f2680a661f9d2eaf34ffa584e\`
@@ -38,7 +38,7 @@
 | H04 | Provider 响应归一化与 Failover | \`researching\` | 尚未建立设计版本 | H02 | 定义统一 Response、Usage、Failure |
 | H05 | 安全多工具并行 | \`researching\` | 尚未建立设计版本 | H02、H04 | 完成幂等、资源范围和预算预留设计 |
 | H06 | Codex App Server Runtime | \`researching\` | 尚未建立设计版本 | H01、H02、H04 | Native 基线、事件协议和 Memory Package 可用 |
-| H07 | 专项子智能体委派 | \`researching\` | 尚未建立设计版本 | H01、H02、H06 | TaskBrief、预算和结果契约稳定 |
+| H07 | 专项子智能体委派 | \`design_review\` | 0.1.0 | H01、H02、H06 | 评审父等待、DelegatedRun、结果合同和恢复不变量 |
 | H08 | 轨迹、回放与评估 | \`researching\` | 尚未建立设计版本 | H02 | 统一 Event 可持久化和脱敏 |
 | H09 | Gateway、后台任务与定时执行 | \`researching\` | 尚未建立设计版本 | H02、H07 | 多入口身份和 Session 隔离完成 |
 
@@ -74,7 +74,23 @@
 
 不得绕过 RT-1 至 RT-4 直接接入 Codex 或子智能体；RT-5 不等于 Codex 默认启用。
 
-## 6. 每个阶段的提交序列
+## 6. H07 Codex 子智能体耐久委派子阶段
+
+| 阶段 | 交付物 | 入口条件 | 退出条件 |
+| --- | --- | --- | --- |
+| H07-0 | 父等待与 Codex 子智能体委派设计 | H00/H01/H02 设计存在 | 项目负责人评审通过 |
+| H07-1 | ParentRun/DelegatedRun/Result Contract 实施计划 | 主线稳定、Drift Review、明确授权 | 计划和合同测试获批 |
+| H07-2 | Fake Runtime 父等待与耐久恢复 | H07-1 通过 | 无 Codex 依赖也能验证状态机、Outbox 和去重 |
+| H07-3 | Codex Runtime 绑定 | H06 Adapter 与 H02 Event 可用 | Codex 通过同一 DelegatedRun Contract |
+| H07-4 | 只读 MCP Gateway | H07-3 通过 | 服务端上下文、工具白名单和越权测试通过 |
+| H07-5 | Staging 写入与结果合同 | H07-4 通过 | 候选、验证、IntentEpoch 和 Fence 测试通过 |
+| H07-6 | 故障恢复与副作用对账 | H07-5 通过 | 崩溃、超时、重复投递、未知结果测试通过 |
+| H07-7 | 安全并行候选 | H05 与 H07-6 通过 | 另写设计并再次批准，不属于第一版 |
+
+第一版每个 ParentRun 同时最多一个活动 DelegatedRun；父执行保存 Checkpoint 后进入 awaiting_delegated_result，等待期间不占用 Worker，Codex 完成事件持久化后再恢复父执行。不得把“父等待”实现成阻塞线程，也不得在第一版混入父子并行或多子智能体。
+
+
+## 7. 每个阶段的提交序列
 
 每个阶段按以下顺序提交：
 
@@ -97,7 +113,7 @@
 - 不把多个 Intake 的实现混在同一提交；
 - 所有提交保持在 \`intake-hermes\`，直到项目负责人决定集成策略。
 
-## 7. 当前提交记录
+## 8. 当前提交记录
 
 | Commit | 内容 | 类型 |
 | --- | --- | --- |
@@ -105,10 +121,11 @@
 | \`ed0a7b923c75303468b2fb74a1fa5a725f74e119\` | H00 文档格式修正 | H00 评审前修正 |
 | \`b569024fd51a3ac38b9f7306e99437f4242a4bc3\` | Hermes 记忆系统吸收设计 | H01/HM-0 规格 |
 | \`90de9c9e42a8a0099f9d901a8122760fb5d55036\` | Runtime Event、Thread/Turn 生命周期与中断恢复设计 | H02/RT-0 规格 |
+| \`60fdb361d136c5e5d364f2fff3ae9e618f8a3fa7\` | Codex 父等待子智能体耐久委派设计 | H07/H07-0 规格 |
 
 本台账自身的版本由该文件 Git 历史跟踪，不在正文中自引用当前 Commit SHA。
 
-## 8. 分支纪律
+## 9. 分支纪律
 
 - \`main\` 保持不变；
 - 所有 Hermes Intake 设计、计划、测试、实现和验收只进入 \`intake-hermes\`；
@@ -120,18 +137,19 @@
 - 不自动删除 \`intake-hermes\`；
 - 合入前默认保留阶段提交历史，不执行 squash。
 
-## 9. 设计文档索引
+## 10. 设计文档索引
 
 - H00：\`docs/superpowers/specs/2026-07-15-hermes-intake-design.md\`
 - H01：\`docs/superpowers/specs/2026-07-15-hermes-memory-intake-design.md\`
 - H02：\`docs/superpowers/specs/2026-07-15-hermes-runtime-event-turn-lifecycle-design.md\`
+- H07：\`docs/superpowers/specs/2026-07-15-hermes-codex-child-agent-delegation-design.md\`
 - Intake Ledger：\`docs/superpowers/specs/2026-07-15-hermes-intake-ledger.md\`
 - 主线隔离策略：\`docs/superpowers/specs/2026-07-15-hermes-mainline-planning-policy.md\`
 
 后续 H02–H09 每项使用独立设计文件，不追加成单个超大总览文档。
 
-## 10. 当前停止点
+## 11. 当前停止点
 
-当前已完成 H00、H01/HM-0 与 H02/RT-0 的设计提交。未修改生产代码、数据库、Prompt、Runtime、ToolRouter 或 Provider 配置。
+当前已完成 H00、H01/HM-0、H02/RT-0 与 H07/H07-0 的设计提交。未修改生产代码、数据库、Prompt、Runtime、ToolRouter 或 Provider 配置。
 
 当前分支锁定为 \`planning_only\`。H01 即使通过设计评审，也只进入 \`design_approved\`，不立即编写 HM-1 实施计划。允许继续逐项编写 H02–H09 的未来设计；任何实施计划必须等待主线阶段稳定、同步新基线、完成 Architecture Drift Review，并再次获得项目负责人明确授权。
