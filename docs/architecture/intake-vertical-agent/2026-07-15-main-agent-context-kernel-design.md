@@ -1,6 +1,6 @@
 # ShanHai 垂类主智能体与上下文内核设计
 
-- 设计版本：0.1.0
+- 设计版本：0.2.0
 - Intake 编号：VA02
 - 状态：`design_review`
 - 模式：`planning_only`
@@ -23,6 +23,25 @@
 领域模型和决策权自有
 + Agent Loop / Event / Compaction / Runtime 机制复用
 ```
+
+### 1.1 双 Intake 对齐决策
+
+本设计拥有产品与控制语义：教师任务如何形成 ParentRun、何时委派、给子任务什么上下文、什么结果可被业务接受。`intake-hermes` 拥有运行机制：Memory、Runtime Event、Attempt、Lease/Fence、恢复以及 Codex App Server 适配。
+
+首版联合开发切片采用：
+
+```text
+ShanHai ParentRun
+-> 创建一个叶子 DelegatedRun
+-> 父任务进入 awaiting_delegated_result 并释放执行资源
+-> Codex 子 Loop 完成后持久化 completed_candidate
+-> 事件耐久唤醒父任务
+-> 父任务重建上下文并作出 AcceptanceDecision
+```
+
+ParentRun、DelegatedRun 和 CodexTurn 是三个不同层级的对象。Runtime Thread 只是一项可失效的外部绑定，不是业务事实。首版同时最多一个活动子任务，不启用 fan-out 或 Council。
+
+完整边界以 `2026-07-15-hermes-vertical-joint-integration-contract.md` 为准。
 
 ## 2. 从垂类项目得到的设计启发
 
@@ -139,17 +158,19 @@ TaskBrief
 
 ### 3.5 Runtime and Delegation Router
 
-在 Turn/Node 开始前选择唯一执行后端：
+Router 按执行通道和控制作用域选择唯一 Loop 所有者：
 
 ```text
 确定性校验或文件处理 -> Deterministic Worker
-常规模型任务 -> Native/OpenAI Runtime
-复杂受限多步任务 -> Codex Runtime
+ParentRun 常规模型任务 -> Native/OpenAI Parent Loop
+边界明确的复杂任务 -> 独立 DelegatedRun + Codex Child Loop
 边界明确的专业任务 -> Specialized Subagent
-Skill 声明的创意协作 -> Council Runtime
+未来 Skill 声明的创意协作 -> Council Runtime
 ```
 
-选择后，本 Turn/Node 不再让第二套 Agent Loop 同时规划工具。
+“同一 Turn/Node 一个主 Agent Loop”不是指整个项目只能存在一个 Loop，而是同一执行通道不能由两套 Loop 共同推进。ParentRun 可以创建拥有独立任务、上下文和写入作用域的 DelegatedRun；父子不得同时规划同一业务任务或写入同一可变目标。
+
+首版父任务到达依赖屏障后进入 `awaiting_delegated_result`。该等待必须耐久化并释放 Worker、模型线程和数据库事务，不能用进程内 Promise 代表。实现时复用或泛化主线已有 TurnJob、Lease、Fence 和事件机制，禁止新建第二套生命周期。
 
 ### 3.6 Result Synthesizer
 
@@ -160,6 +181,8 @@ Skill 声明的创意协作 -> Council Runtime
 - 隐藏 Provider、路径、Schema 等工程细节；
 - 给出受业务状态支持的下一步。
 
+Codex 或其他子智能体的协议完成只形成 `ChildResultEnvelope` 和 `completed_candidate`。Result Synthesizer 必须区分“运行完成”“候选结果已持久化”“Validator 通过”和“业务已接受”；只有父任务的 AcceptanceDecision 才能接受、返修、拒绝、标记陈旧或重新规划。
+
 ## 4. 上下文分层
 
 | 层级 | 内容 | 生命周期 |
@@ -168,7 +191,7 @@ Skill 声明的创意协作 -> Council Runtime
 | Project Context | 课程、教材、教师决策、有效 Artifact | 项目级 |
 | Task Context | TaskBrief、Skill、Contract、预算和工具 | Turn/Node 级 |
 | Working Context | 本轮计划、Tool Observation、临时推理 | Runtime 级 |
-| Raw Evidence | 原始消息、ToolResult、文件、ValidationReport | 永久审计级 |
+| Raw Evidence | 原始消息、ToolResult、文件、ValidationReport | 按租户、隐私、法律和审计策略治理 |
 
 压缩只能改变 Working Context 和 Session Summary，不能覆盖 Raw Evidence、Project 事实、Artifact 或授权证明。
 
@@ -176,9 +199,11 @@ Skill 声明的创意协作 -> Council Runtime
 
 ### 5.1 三类记录
 
-- Conversation Log：完整原始对话，永久保留；
+- Conversation Log：权威原始对话记录，按租户、隐私、法律和产品策略配置保留、导出、删除与审计；
 - Turn Snapshot：单次执行的结构化快照和事件索引；
 - Project Summary：已确认事实、当前状态和开放问题的可重建摘要。
+
+Conversation Log、Raw Evidence、Session Summary 和长期 Memory 是不同数据类别。“可审计”不等于“默认永久保存”；具体保留与遗忘机制由 Hermes H01 Memory 设计统一定义。
 
 ### 5.2 恢复顺序
 
@@ -208,8 +233,11 @@ FeedbackEvent
 flowchart TD
     A["Persist User Message"] --> B["Build TaskBrief and WorldState"]
     B --> C["Compose ContextPackage"]
-    C --> D["Select Runtime or Delegation"]
-    D --> E["Persist ToolResult / Artifact / Validation"]
+    C --> D{"Select execution lane"}
+    D -->|Parent Loop| E["Persist ToolResult / Artifact / Validation"]
+    D -->|DelegatedRun| F["Persist child task and await durably"]
+    F --> G["Persist ChildResultEnvelope"]
+    G --> B
     E --> B
 ```
 
@@ -235,7 +263,10 @@ flowchart TD
 - 每个教师请求默认启用多Agent；
 - 让生成 Agent 同时担任最终质量裁判；
 - 将 Context Summary 当作项目事实；
-- 为接入 Codex、LangGraph 或 Agents SDK 新建第二业务控制面。
+- 为接入 Codex、LangGraph 或 Agents SDK 新建第二业务控制面；
+- 把 Codex Thread/CodexTurn 当成 ParentRun 或 DelegatedRun；
+- 父任务在 `awaiting_delegated_result` 时继续推进同一业务任务；
+- 子智能体直接向教师提问、批准 HumanGate 或把候选结果提升为正式 Artifact。
 
 ## 9. 验收方向
 
