@@ -1,6 +1,6 @@
 # 垂类智能体 Intake 主线隔离与未来规划策略
 
-- 策略版本：0.1.0
+- 策略版本：0.2.0
 - 模式：`planning_only`
 - 分支：`intake-vertical-agent`
 - 研究基线：`main@fd2521f1b558b36f2680a661f9d2eaf34ffa584e`
@@ -58,7 +58,8 @@ docs/architecture/intake-vertical-agent/
 - Main Agent、Runtime、Context、Skill、ToolRouter、Workflow 或 Artifact 边界发生重构；
 - 项目负责人指定新的规划基线；
 - 准备为某个 Intake 编写实施计划；
-- `intake-hermes` 完成与本分支直接相关的 H01/H02/H05/H07 设计。
+- `intake-hermes` 完成或修订与本分支直接相关的 H01/H02/H03/H05/H07 设计；
+- 准备把两条 Intake 共同转入一份开发规划包。
 
 ## 6. Architecture Drift Review
 
@@ -85,6 +86,32 @@ docs/architecture/intake-vertical-agent/
 - `absorbed_by_hermes_intake`：复用 Hermes Intake 结果；
 - `obsolete`：记录原因后停止。
 
+### 6.1 双 Intake 联合吸收流程
+
+未来不能把 `intake-hermes` 和 `intake-vertical-agent` 原样合并进 `main`。两者首先是研究与设计输入，联合吸收流程固定为：
+
+```text
+main 阶段稳定
+-> 记录新基线
+-> 分别同步两个 Intake
+-> 联合 Architecture Drift Review
+-> 标记主线已吸收、兼容、破坏性漂移或过时项
+-> 删除重复机制并统一术语、状态和事件
+-> 形成一份目标架构与开发规划包
+-> 项目负责人逐项批准设计
+-> 仅为获批的最小切片编写实施计划
+-> 实施计划再次批准后才进入代码
+```
+
+联合规划包必须明确：
+
+- `intake-vertical-agent` 拥有产品语义、委派决策、Context 和业务验收；
+- `intake-hermes` 拥有 Memory、Event、Attempt、Lease/Fence、恢复和 Codex Adapter 机制；
+- 届时 `main` 拥有 Project、Artifact、QualityDecision、HumanGate、费用和交付事实；
+- ParentRun、DelegatedRun、Attempt、RuntimeThreadBinding、CodexTurn、ChildResultEnvelope 与 AcceptanceDecision 只有一套共享定义；
+- 已有 TurnJob、Lease、Fence 和事件机制优先复用或泛化，不复制第二套；
+- 首版保持一个父任务耐久等待一个叶子 Codex 子任务，不夹带 fan-out 或 Council。
+
 ## 7. 实施解锁条件
 
 设计进入 `design_approved` 仍不代表可以实现。实施计划必须同时满足：
@@ -92,9 +119,12 @@ docs/architecture/intake-vertical-agent/
 1. 项目负责人指定当前主线阶段稳定；
 2. 本分支同步到指定新基线；
 3. 完成 Architecture Drift Review；
-4. 与 `intake-hermes` 的重叠机制完成合并审查；
-5. 设计根据漂移结果修订并再次批准；
-6. 项目负责人明确授权编写某一 Intake 的实施计划。
+4. 与 `intake-hermes` 完成联合漂移审查和术语、状态、事件统一；
+5. 形成单一目标架构与开发规划包，标明已吸收、过时和待实现项；
+6. 设计根据漂移结果修订并再次批准；
+7. 主线执行实体与 ParentRun/DelegatedRun/Attempt 的映射获得确认；
+8. Fake Child Adapter、Native 对照路径、合同测试、失败注入和回退标准进入规划；
+9. 项目负责人明确授权编写某一最小切片的实施计划。
 
 生产实现只有在实施计划再次批准后才能开始。
 
@@ -106,11 +136,13 @@ docs/architecture/intake-vertical-agent/
 - 不强推或重写已评审历史；
 - 不混入其他功能分支改动；
 - 主线同步必须留下可审计提交；
+- 两条 Intake 可以互相引用合同，但不能在各自分支复制并实施同一运行机制；
+- 联合吸收使用新的、经批准的实施分支或项目负责人指定路径，不把两个规划分支直接堆叠合并；
 - 未经明确授权不创建合入 `main` 的 PR；
 - 不自动删除本分支；
 - 规划提交和未来实现提交严格分离。
 
 ## 9. 当前停止点
 
-当前完成首轮设计沉淀和远程分支建立。后续等待项目负责人评审；不进入生产实现。
+当前完成首轮设计沉淀、远程分支建立和双 Intake 联合规划对齐。后续等待项目负责人评审；主线稳定后先做联合 Architecture Drift Review，不直接进入生产实现。
 
