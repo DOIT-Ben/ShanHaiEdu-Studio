@@ -1,6 +1,6 @@
 # ShanHai 垂类智能体 Intake 分阶段台账
 
-- 台账版本：0.1.0
+- 台账版本：0.2.0
 - 分支：`intake-vertical-agent`
 - 当前模式：`planning_only`
 - 基线：`main@fd2521f1b558b36f2680a661f9d2eaf34ffa584e`
@@ -31,30 +31,34 @@
 | --- | --- | --- | --- | --- |
 | VA00 | 总体架构与开源吸收 | `design_review` | 无 | 评审领域内核与开源边界 |
 | VA01 | 五平面与商业十二系统校准 | `design_review` | VA00 | 确认系统3、6、8、11、12的新边界 |
-| VA02 | 垂类主智能体与上下文内核 | `design_review` | VA00 | 评审 TaskBrief、WorldState、ContextPackage 与 Router |
-| VA03 | 生产型子智能体与并发 | `design_review` | VA02、Hermes H02 | 评审委派合同、生命周期、预算和 fan-out/fan-in |
-| VA04 | Skill 驱动 Council | `design_review` | VA03、Skill Registry | 评审 Skill/架构边界与 CouncilPlan |
-| VA05 | Runtime Event、恢复与统一 Adapter | `researching` | Hermes H02、VA03 | 与 `intake-hermes` 合并事实，避免重复设计 |
-| VA06 | 记忆、反馈与教师风格 | `researching` | Hermes H01、VA02 | 明确 FeedbackEvent 和 Memory Proposal 边界 |
-| VA07 | 多Agent质量评测与成本基线 | `researching` | VA03、VA04 | 固定课程集、指标和对照组完成设计 |
-| VA08 | 商用队列、Worker 与分布式并发 | `researching` | VA03、系统8/11 | 主线拓扑稳定并完成容量目标复核 |
+| VA02 | 垂类主智能体与上下文内核 | `design_review` | VA00、Hermes H01/H02/H03 | 评审 ParentRun、ContextPackage、父等待与验收边界 |
+| VA03 | 生产型子智能体与并发 | `design_review` | VA02、Hermes H02/H04/H06/H07 | 先评审一个父等待的叶子 Codex Worker，不先开放 fan-out |
+| VA04 | Skill 驱动 Council | `design_review` | VA03、Hermes H05/H07、Skill Registry | 评审 Skill/架构边界、HumanGate 约束与 CouncilPlan |
+| VA05 | Runtime Event、恢复与统一 Adapter | `researching` | Hermes H02/H04/H06/H07、VA03 | 复用 Hermes 事实，禁止另建生命周期 |
+| VA06 | 记忆、反馈与教师风格 | `researching` | Hermes H01/H03、VA02 | 明确 FeedbackEvent 和 Memory Proposal 边界 |
+| VA07 | 多Agent质量评测与成本基线 | `researching` | VA03、VA04、Hermes H08 | 固定课程集、指标和 Native 对照组完成设计 |
+| VA08 | 商用队列、Worker 与分布式并发 | `researching` | VA03、Hermes H09、系统8/11 | 主线拓扑稳定并完成容量目标复核 |
+| VA09 | 双 Intake 联合合同与开发规划入口 | `design_review` | VA02、VA03、Hermes H01/H02/H07 | 主线稳定后执行联合漂移审查并形成统一开发规划包 |
 
 `design_review` 不等于批准实现；`researching` 不表示已经选择某个框架。
 
 ## 4. 建议实施顺序
 
 ```text
-VA02 合同稳定
--> VA05 Runtime Event / Recovery 稳定
--> VA03 单一受限 Worker
--> VA03 固定 fan-out/fan-in
+主线稳定 + 两条 Intake 联合 Architecture Drift Review
+-> 统一 ParentRun / DelegatedRun / Attempt / Event 合同
+-> Fake Child Adapter + Native 对照路径
+-> VA03 父等待的单一叶子 Worker
+-> Codex App Server 绑定
+-> 独立 Reviewer
+-> VA03 固定两个分支的 fan-out/fan-in
 -> VA04 Skill -> CouncilPlan 编译
 -> VA04 离线 Council PoC
 -> VA07 质量成本评测
 -> VA08 商用灰度
 ```
 
-不得跳过 Runtime Event、持久化、幂等和恢复，直接实现生产多Agent并发。
+不得跳过 Runtime Event、持久化、幂等、Lease/Fence 和恢复，直接实现生产多Agent并发。首版每个 ParentRun 同时最多一个活动 DelegatedRun，结果以 `completed_candidate` 返回父任务验收。
 
 ## 5. 分阶段提交序列
 
@@ -74,13 +78,15 @@ VA02 合同稳定
 
 | 本分支能力 | Hermes Intake 依赖 |
 | --- | --- |
-| VA02 Context Kernel | H01 Memory、H02 Runtime Event |
-| VA03 子智能体生命周期 | H02 Turn/Run Lifecycle、H04 Failure、H08 Trace |
+| VA02 Context Kernel | H01 Memory、H02 Runtime Event、H03 Session/Compaction |
+| VA03 子智能体生命周期 | H02 Turn/Run Lifecycle、H04 Failure、H06 Runtime Adapter、H07 Codex Delegation |
 | VA04 Council | H02 Event、H05 Safe Parallel、H07 Delegation |
-| VA05 Runtime Adapter | H02、H04、H06 Codex Runtime |
-| VA06 记忆反馈 | H01 Memory Intake |
+| VA05 Runtime Adapter | H02、H04、H06、H07 |
+| VA06 记忆反馈 | H01 Memory、H03 Compaction |
+| VA07 评测 | H08 Trace/Evaluation |
+| VA08 分布式执行 | H09 演进规划与届时主线基础设施 |
 
-若两个分支对同一机制定义冲突，先执行联合 Architecture Drift Review，不在两个分支各自实现一套。
+若两个分支对同一机制定义冲突，先执行联合 Architecture Drift Review，不在两个分支各自实现一套。产品语义由本分支归口，运行机制由 Hermes Intake 归口，Project/Artifact/Quality/费用事实由届时主线归口。
 
 ## 7. 当前设计文件
 
@@ -89,8 +95,11 @@ VA02 合同稳定
 - VA03/VA04：`2026-07-15-skill-driven-subagent-council-design.md`
 - Ledger：`2026-07-15-vertical-agent-intake-ledger.md`
 - Planning Policy：`2026-07-15-vertical-agent-mainline-planning-policy.md`
+- VA09 联合合同：`2026-07-15-hermes-vertical-joint-integration-contract.md`
 
 ## 8. 当前停止点
 
-本分支已完成首轮架构文档，不修改生产代码。下一动作只能是项目负责人评审、提出修订意见或批准某一设计进入 `design_approved`。未经新的明确授权，不编写实施计划。
+本分支已完成首轮架构文档和双 Intake 对齐，不修改生产代码。当前首版候选切片是“父任务耐久等待一个叶子 Codex 子任务”，但仍处于 `design_review`。
+
+下一动作只能是项目负责人继续评审，或在主线阶段稳定后指定新基线并启动双 Intake 联合 Architecture Drift Review。未经该审查、设计批准和新的明确授权，不编写生产实施计划。
 
