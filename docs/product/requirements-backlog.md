@@ -1,6 +1,6 @@
 # ShanHaiEdu 未完成需求总账
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 本文件只记录尚未完成、延期或未来需求。已完成阶段和历史证据不在此重复列举。
 
@@ -8,7 +8,7 @@
 
 | ID | 未完成项 | 完成条件 | 当前边界 |
 |---|---|---|---|
-| P0-08 | V1.0智能体原子Tool控制面重构 | Main Agent成为唯一编排者；旧工作流拆为原子Tool、Tool级Skill和质量规则；TaskBrief、ExecutionEnvelope、Observation和事件合同贯通；assistant-ui投影真实步骤；旧控制路径退出生产入口 | 当前只实施仓内规格、红测试、控制面、合同和桌面文本交互；不运行真实交付物Provider或V1-9 |
+| P0-08 | V1.0智能体原子Tool控制面整改 | 8项P1和7项P2全部进入Go/No-Go；HumanGate可恢复、控制抢先提交、持久授权复核、非固定DAG、局部TaskBrief、逐Provider调用预算、Observation原子事实、消息顺序/去重/等待态和schema readiness全部通过 | 严格按唯一五阶段修复主线执行；不运行真实交付物Provider或V1-9 |
 | P0-05 | 重构关闭后由用户执行并验收唯一V1-9真实产品链路 | V1.0重构全部Go/No-Go通过后，按最新已验收合同重新生成plan、manifest和runId并完成桌面真实全链路与产物验收 | 重构前旧V1-9 plan/test-plan、manifest和runId只作历史证据；当前不创建或恢复 |
 | P0-06 | V1签收与发布门 | V1-9通过后完成教师签收、候选环境、恢复、原子切流和发布后验证 | 部署与生产写入另取当次授权 |
 
@@ -22,7 +22,7 @@
 - 不调用真实图片、视频、PPTX、ZIP或V1-9整包Provider。
 - 不创建manifest/runId，不启动390px真实黑盒，不进入教师签收、部署、生产写入或公网切流。
 - 不使用mock、placeholder、deterministic fallback或degraded结果冒充成功。
-- 不做无关重构、批量格式化、commit、push、部署或标签移动。
+- 不做无关重构或批量格式化；本轮每阶段只创建本地整改提交，不push、不部署、不移动标签。
 
 ## 3. 已接受未来需求
 

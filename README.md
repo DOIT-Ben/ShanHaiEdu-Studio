@@ -18,7 +18,7 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 4. `docs\mainlines\current-mainline-status.md`
 5. `docs\stages\README.md`
 
-当前状态：R5历史验收保留；V1-9尚未启动，先关闭主线状态中列出的4个Runner/installed-tree完整性缺口。V1发布前不新增390px真实黑盒，不重跑R5，也不以离线fixture冒充真实产品链路。
+当前状态：**REMEDIATION IN PROGRESS / CONTRACT RED / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；当前按审查问题执行唯一五阶段修复主线。R5整体尚未关闭，V1-9尚未启动；V1发布前不新增390px真实黑盒，不调用本轮范围外的媒体或整包Provider，也不以离线fixture冒充真实产品链路。
 
 ## 文档分区
 

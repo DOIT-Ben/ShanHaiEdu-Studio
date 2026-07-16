@@ -1,8 +1,10 @@
 # ShanHaiEdu 当前架构入口
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 本目录只保留当前架构不变量、V1.0重构设计和已接受ADR。历史架构包、早期五平面/十二系统材料和已被覆盖的ADR已归档。
+
+当前实现尚未完全满足本架构：HumanGate恢复、控制抢先提交、Tool独立资格、局部TaskBrief、Provider逐调用预算、持久授权复核、Observation原子事实和消息投影仍处于整改中。唯一实施路线和验收门以`..\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan为准；不得把目标架构文本当作已实现证据。
 
 ## 当前设计基线
 

@@ -1,6 +1,6 @@
 # ShanHaiEdu 文档权威入口
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 本页是活动文档唯一导航。历史材料已集中到 `docs\archive\`，默认不参与搜索、规划和验收判断。
 
@@ -37,13 +37,13 @@
 | 总账 | `product\requirements-backlog.md` | 未完成、延期和未来需求 |
 | 主线 | `mainlines\current-mainline-status.md` | 当前事实、五层状态、阻塞和下一动作 |
 | 架构 | `architecture\README.md`、`architecture\V1.0 重构设计.md` | 当前智能体原子 Tool 架构与已接受ADR |
-| 阶段 | `stages\README.md` | V1.0智能体原子 Tool 重构的唯一活动阶段及Go/No-Go |
+| 阶段 | `stages\README.md` | V1.0智能体原子Tool整改的唯一活动阶段、问题矩阵及Go/No-Go |
 | Provider合同 | `contracts\provider-ledger-runtime-contract.md` | API台账到运行时的非敏感绑定边界 |
 | 前端 | `ui\README.md` | assistant-ui工作台与视觉证据入口 |
 
 ## 4. 未来工作
 
-已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。V1-9真实全链路在本次重构关闭后才可重新规划；重构前的旧V1-9 plan/test-plan已归档，不得恢复执行。Roadmap不自动取得执行权；进入主线前必须重新对照需求基线和当前状态。
+已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。V1-9真实全链路在本次整改Go/No-Go通过后才可重新规划；整改前的旧V1-9 plan/test-plan已归档，不得恢复执行。Roadmap不自动取得执行权；进入主线前必须重新对照需求基线和当前状态。
 
 ## 5. 历史与证据
 

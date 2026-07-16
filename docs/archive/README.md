@@ -13,4 +13,6 @@
 
 2026-07-16 V1.0智能体重构权威切换入口：`2026-07-16-v1-agent-refactor-authority-switch\README.md`。该目录保存切换前活动权威、Streaming阶段和旧V1-9计划原文；只作审计证据，不得恢复为活动入口。
 
+2026-07-17整改基线入口：`2026-07-17-remediation-baseline\README.md`。该目录保存整改前规则快照和已失效的阶段closeout；其中的“已关闭”结论不再控制当前开发。
+
 既有archive内容和规则备份在本轮保持原位不变。

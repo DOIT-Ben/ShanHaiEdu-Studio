@@ -1,157 +1,129 @@
-# V1.0 Main Agent唯一编排与工作流原子Tool化重构计划
+# V1.0 Main Agent唯一编排与原子Tool控制面整改计划
 
-日期：2026-07-16
-状态：reopened / dialogue checkpoint and truthful progress projection in progress
+日期：2026-07-17
 
-## 1. 目标
+状态：REMEDIATION IN PROGRESS / CONTRACT RED
 
-按照 `..\architecture\V1.0 重构设计.md` 和当前ADR，把现有多套控制设计收敛为：
+整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`
 
-- Main Agent唯一决定业务Tool、下一步、重试、Replan和停止；
-- 旧工作流能力拆为原子Tool、Tool级Skill和质量规则；
-- 服务端只负责硬合同、安全、真实性、原子提交和恢复；
-- assistant-ui实时投影真实文本、Tool、Observation、失败、Artifact和恢复状态。
+## 1. 目标与边界
 
-本阶段关闭仓内控制面一致性和桌面文本交互，不运行真实图片、视频、PPTX、ZIP或完整材料包Provider。
+本计划是当前唯一修复主线。目标是让现有实现真正满足`..\architecture\V1.0 重构设计.md`，而不是新增竞争架构。
 
-## 2. 权威合同
+本轮处理现有审查确认的8项P1和7项P2，按根因从控制与授权、任务语义、事实提交、消息投影到健康恢复依次修复。每阶段先红测试、后最小实现、再真实验证和本地提交。
 
-- 需求基线：`..\product\current-requirements-baseline.md`
-- 设计：`..\architecture\V1.0 重构设计.md`
-- ADR：`..\architecture\decisions\2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md`
-- 测试门：`v1-agent-atomic-tool-refactor-test-plan.md`
+本轮不运行真实图片、视频、PPTX、ZIP或整包Provider，不进入V1-9、教师签收、部署或390px真实黑盒，不做无关重构。
 
-旧Streaming和旧V1-9 plan/test-plan已归档，不参与实现判断。
+## 2. 当前统一状态
 
-## 3. 实施切片
+### 已实现
 
-### Slice 0：控制权清单与红测试
+- assistant-ui、MessagePart和AgentEventEnvelope已有生产接入基础，固定五阶段与legacy会话入口已退出。
+- native function-call是生产消息路由，TaskBrief、IntentEpoch、ExecutionEnvelope和原子事实表已有实现基础。
+- 单Tool真实需求规格回合成功；模糊改道讨论未误触Tool或IntentEpoch。
+- 最终包下载已存在正式package asset反向绑定边界。
 
-- 定位所有Tool选择、下一步、重试、停止、HumanGate和Artifact提升入口。
-- 为六组P1编写会失败的特征测试。
-- 建立静态与运行时单一编排者断言。
-- 删除固定Tool顺序和“逐节点确认即成功”的旧测试预期。
+### 尚未满足设计
 
-完成条件：每个已知旧控制路径都有失败测试和明确责任层。
+| ID | 级别 | 已确认问题 | 根因/责任层 |
+|---|---|---|---|
+| RMD-P1-01 | P1 | native HumanGate只写checkpoint，不创建可确认的PendingDecision/actionId | 控制面恢复合同 |
+| RMD-P1-02 | P1 | 暂停、取消、改道只排队，不能抢先失效在途Envelope | 消息入口与IntentEpoch |
+| RMD-P1-03 | P1 | Tool Registry仍强制`requirement_spec`旧依赖链 | Tool资格模型 |
+| RMD-P1-04 | P1 | TaskBrief输出粒度把局部PPT/视频/图片扩张为完整交付 | 任务语义与完成合同 |
+| RMD-P1-05 | P1 | PPT批量资产N次Provider请求只计一次预算且无逐调用事实 | Provider调用原子性 |
+| RMD-P1-06 | P1 | 编辑quick reply仍携带旧`confirmedActionId` | 客户端动作绑定 |
+| RMD-P1-07 | P1 | 同turn文本与Tool事件被重排为活动在前、合并文本在后 | 消息投影排序 |
+| RMD-P1-08 | P1 | 任意旧Tool失败可遮蔽不同原因的最终`run_failed` | 失败身份与去重 |
+| RMD-P2-01 | P2 | 客户端仍含固定“正在理解/正在组织...”伪等待文案 | 等待态投影 |
+| RMD-P2-02 | P2 | 任意completed projection会隐藏真实等待提示 | 等待态生命周期 |
+| RMD-P2-03 | P2 | Dispatcher blocked路径持久化与返回的Observation ID不一致 | Observation身份 |
+| RMD-P2-04 | P2 | 失败Tool的ValidationReport digest返回模型但报告未持久化 | 原子失败提交 |
+| RMD-P2-05 | P2 | ToolInvocation不复核持久化IntentGrant，旧授权Envelope存在窗口 | 授权真源 |
+| RMD-P2-06 | P2 | Provider未配置时native intake抛内部错误，绕过教师安全回复 | 入口错误恢复 |
+| RMD-P2-07 | P2 | `/api/health`不检查新增列和控制面表 | schema readiness |
 
-### Slice 1：TaskBrief与跨轮语义
+### 已废弃方案
 
-- 开放式识别年级、学科、教材和局部任务，不限制1至6年级。
-- 贯通requested outputs、排除项、强度、预算和结构化输入。
-- 删除所有Tool统一硬编码的“逐页PPT设计稿”输出。
-- 无pending plan改道也更新IntentEpoch或等价revision。
-- 迟到旧TaskBrief、旧epoch和旧plan结果禁止提升。
+- 固定DAG、forced-next-tool、宏节点自动推进和工作流defaults控制任务范围。
+- outer `toolPlan`/`deliveryPlan`作为第二编排者。
+- 固定五阶段UI、正文关键词推断状态和伪进度文案。
+- 用closeout、旧R5、旧测试数字、fixture或health 200替代当前Go/No-Go。
 
-完成条件：一句话PPT、局部视频脚本、改道和旧结果隔离的离线合同通过。
+## 3. 唯一修复路线
 
-### Slice 2：原子Tool合同与资格
+### 阶段A：控制与授权
 
-- 盘点需求、教案、PPT和视频前段全部高层业务能力。
-- 为每个Tool定义单一动作、输入、输出、风险、费用、副作用、幂等和最低真实性合同。
-- 明确交付任务首轮暴露能够创建第一个Artifact的合格Tool。
-- Director/Critic只在存在可信审查目标时暴露。
-- Skill仅在Main Agent选定Tool后按绑定策略加载。
+涉及：RMD-P1-01、P1-02、P1-06、P2-05。
 
-完成条件：Tool资格只判断当前事实和可信输入，不用“尚未有产物”禁止创建首个产物。
+修改范围：消息POST入口、turn queue/control store、HumanGate恢复、ExecutionEnvelope权威校验、quick reply提交合同。
 
-### Slice 3：单一编排者
+验收：
 
-- 以原生function-call + Observation + ReAct作为唯一生产循环。
-- 移除外层`toolPlan`/`deliveryPlan`的选择、执行、重试和停止权。
-- Capability Planner和兼容层只可提供候选描述、校验或展示。
-- Tool成功或失败后先提交Observation，再由同一Main Agent决定continue、repair、换Tool、Replan或暂停。
-- 对现有Responses Runtime与OpenAI Agents SDK做隔离A/B；A/B只比较运输、恢复和遥测，不允许两者同时编排同一turn。
+- HumanGate原子创建PendingDecision/actionId并可由同一task恢复。
+- 控制消息先持久化并提升epoch/revision，在途旧结果不能提升。
+- 编辑后的quick reply不携带旧action确认。
+- invocation开始前复核数据库中的当前IntentGrant；旧授权调用为0。
 
-完成条件：静态依赖和运行轨迹都证明只有一个业务编排者。
+### 阶段B：任务语义与Tool边界
 
-### Slice 4：统一执行网关与原子提交
+涉及：RMD-P1-03、P1-04、P1-05。
 
-- 所有执行型Tool强制经过ToolExecutionGateway。
-- ExecutionEnvelope核验actor、project、task、TaskBrief digest、IntentEpoch、plan revision、强度、授权、预算、action digest和幂等键。
-- ToolInvocation、ValidationReport、Observation、Artifact和事件在同一结果边界提交。
-- 失败先保存reasonCode、finding和恢复入口，Artifact为0。
-- 重试预算耗尽时可信暂停，不循环、不fallback、不默认`ask_teacher`。
+修改范围：TaskBrief schema、requested outputs、完成合同、Tool Registry资格、PPT资产批量执行与Provider调用事实。
 
-完成条件：不存在绕过Envelope、先提升Artifact后补Observation或失败被吞掉的生产入口。
+验收：
 
-### Slice 5：控制先提交与隔离恢复
+- 合法局部任务可直接选择对应原子Tool，不强制需求规格前置。
+- PPT大纲、分镜、资产说明等局部输出能成为终态，不扩张为PPTX/成片/真实图片。
+- 每个真实Provider子调用独立计预算、持久化submission和结果；部分失败可恢复且不重复扣费。
 
-- 暂停、取消、改道先持久化，再允许任何Tool继续。
-- 有无pending plan使用同一控制顺序。
-- Provider submission、submission_unknown、retry和checkpoint均可恢复且不重复扣费。
-- 同一项目一个有效写者；用户、项目、任务、预算、epoch和Artifact完全隔离。
+### 阶段C：Observation与消息投影
 
-完成条件：暂停、无pending改道、迟到结果和双用户并发测试通过。
+涉及：RMD-P1-07、P1-08、P2-01、P2-02、P2-03、P2-04。
 
-### Slice 6：assistant-ui真实步骤投影
+修改范围：Dispatcher、失败原子提交、stream projection、message adapter/renderers、等待态与失败去重。
 
-- 普通回复使用真实文本流。
-- Tool、Observation、Artifact和HumanGate使用结构化MessagePart。
-- 同一turn形成有序活动轨迹，Artifact达到最低真实性门后立即可见。
-- 失败显示具体Tool、步骤、原因和恢复动作。
-- 刷新通过事件游标和有界回放恢复，终态消息只提交一次。
-- 删除固定五阶段、大节点终态和正文关键词推断状态的UI路径。
+验收：
 
-完成条件：桌面真实文本交互能看到及时回复、步骤进度、失败位置、Artifact入口和恢复状态。
+- 返回给调用方/模型的Observation和ValidationReport均可由同一持久ID解析。
+- 同turn文本、Tool、Observation和Artifact按真实发生顺序投影。
+- 失败按原因和终态身份去重，不由旧失败遮蔽新`run_failed`。
+- 无持久化活动事实时只显示中性等待与真实耗时；completed历史投影不隐藏当前等待。
 
-### Slice 7：旧生产路径退出
+### 阶段D：健康与恢复
 
-- 删除forced-next-tool。
-- 删除重复失败默认`ask_teacher`。
-- 删除approve后的`advanceM2AfterApproval`和DeterministicRuntime自动推进。
-- 删除工作流defaults对任务范围和下一步的控制。
-- 删除无正式package asset时的现场拼包。
-- 删除deterministic、placeholder、Markdown fallback和degraded成功路径。
-- 只有消费者、测试和运行时引用均为0后才删除旧代码。
+涉及：RMD-P2-06、P2-07。
 
-完成条件：旧路径搜索、特征测试和运行轨迹均为0命中。
+修改范围：native intake错误边界、provider readiness映射、health schema检查。
 
-### Slice 8：扩大验证与关闭
+验收：
 
-- 运行全部六组P1、控制面扩大回归和已有无fallback/隔离合同。
-- 运行TypeScript和生产构建。
-- 检查Git diff、隐私、密钥、残留进程和活动文档引用。
-- 启动真实桌面环境，只验收Main Agent文本和标准内部Tool轨迹；不调用真实交付物Provider。
-- 更新主线状态，形成closeout；随后停止，等待用户制定V1-9新运行。
+- Provider未配置时返回教师安全、可恢复的结构化失败，不泄露内部错误。
+- health检查当前代码依赖的关键表、列和控制面表；缺任一项返回非ready及机器可读原因。
+
+### 阶段E：扩大回归与真实桌面
+
+涉及：全部RMD问题。
+
+修改范围：仅测试、验证记录和当前权威文档，不新增业务范围。
+
+验收：
+
+- Node合同、独立SQLite单worker Vitest、TypeScript、Lint（若项目脚本存在）、生产构建、`git diff --check`全部通过。
+- 本地服务从当前HEAD启动，health与核心桌面对话流程通过。
+- 至少覆盖普通对话、局部单Tool、HumanGate恢复、在途控制、失败恢复和刷新后顺序；不调用本轮禁止的媒体/整包Provider。
+- 活动README、架构、需求、主线、计划、测试和代码口径一致。
 
 ## 4. 实施纪律
 
-- 每个缺陷先红后绿；只运行受影响测试，再扩大回归。
-- 不为通过旧测试放宽生产合同；过时断言应删除或改为行为特征。
-- 同一责任层连续两轮没有新证据时，记录事实、失败点和恢复入口，转向其他不依赖项。
-- 不做无关重构、依赖升级、批量格式化、commit、push、部署或标签移动。
-- 保留全部用户在途改动，不触碰真实SQLite、WAL/SHM、Artifact、旧run、Skill projection或凭据。
+- 每阶段只解决列出的RMD问题；发现新问题先记入当前plan/test-plan再决定是否阻塞。
+- 每个缺陷先保存红测试证据；测试必须使用显式隔离SQLite和受限worker。
+- 不使用mock、fallback、假数据、硬编码成功结果，不删除测试或降低校验标准。
+- 每阶段同步代码、测试和文档，验证后单独本地提交；不push。
+- 不查询或清理审查期间可能写入的默认SQLite，除非用户另行明确授权。
 
-## 5. 完成标准
+## 5. 完成定义
 
-1. 明确交付任务首轮合格Tool集合不为空。
-2. 只有Main Agent拥有业务Tool编排权。
-3. TaskBrief、ExecutionEnvelope、Observation和跨轮语义完整贯通。
-4. Tool结果先原子提交，再由同一Main Agent继续判断。
-5. 暂停、改道、迟到结果和双用户隔离通过。
-6. 旧M2推进、现场拼包、forced-next-tool和fallback成功路径关闭。
-7. assistant-ui桌面步骤级体验通过，V1前不跑390px。
-8. contract、executor、model orchestration、product E2E和release证据分层准确。
+只有`v1-agent-atomic-tool-refactor-test-plan.md`全部Go门通过，且阶段E真实验证完成，才可把状态改为`REMEDIATION VERIFIED`并形成新的closeout。当前过期closeout不得恢复。
 
-完成本阶段不等于V1-9或发布通过。V1-9必须在本阶段关闭后重新制定计划，并由用户运行唯一真实全链路。
-
-## 6. 关闭结果
-
-- Slice 0至Slice 8的仓内责任已经关闭，详细证据见`v1-agent-atomic-tool-refactor-closeout.md`。
-- assistant-ui成为唯一生产会话Runtime；固定阶段、legacy会话切换和无消费者M2自动推进实现已删除。
-- Node合同383/383、Vitest 1492/1492、TypeScript、生产构建和`git diff --check`通过。
-- 桌面只读验收通过；本轮未调用新的模型请求或真实交付物Provider，未运行390px。
-- 后继V1-9未启动，等待用户验收后重新制定计划。
-
-## 7. 重新打开的原子修正
-
-真实桌面新任务证明原关闭结论遗漏了教师协作与步骤可见性：标准授权提示词禁止 Main Agent 在语义边界主动校准；步骤只显示短标签，无输入依据和真实耗时；一次失败会重复投影。
-
-本修正按以下顺序执行：
-
-1. 先写 `DialogueCheckpoint`、自然语言恢复、真实步骤详情和失败去重红测试。
-2. 注册 `request_teacher_decision` 控制 Tool，由同一 Main Agent 自主选择；服务端只校验、持久化和暂停。
-3. 扩展 MessagePart 与 AgentEventEnvelope 投影目的、输入依据、预期输出、真实耗时、Observation 和唯一恢复入口。
-4. 定向回归后运行控制面扩大回归、TypeScript、生产构建和桌面复验。
-
-修正期间不运行390px，不调用真实图片、视频、PPTX、ZIP或整包Provider，不进入V1-9。
+完成本整改仍不自动等于R5、V1-9或release通过；Provider连续多轮稳定性和后续真实产品链路必须分别取证。

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "shanhaiedu.archive-manifest.v1",
+  "createdAt": "2026-07-17T02:33:50+08:00",
+  "reason": "Archive the invalidated closeout and preserve the pre-remediation AGENTS.md before aligning active authority.",
+  "entries": [
+    {
+      "source": "AGENTS.md",
+      "target": "docs/archive/2026-07-17-remediation-baseline/pre-remediation/AGENTS.md",
+      "bytes": 7904,
+      "sha256": "f75040d701818459d0abaffcbe93ebfed326b24ab8d4dc0ccdc99d01cbff8753"
+    },
+    {
+      "source": "docs/stages/v1-agent-atomic-tool-refactor-closeout.md",
+      "target": "docs/archive/2026-07-17-remediation-baseline/v1-agent-atomic-tool-refactor-closeout.md",
+      "bytes": 4206,
+      "sha256": "5d8ecbdf1cd3ffd965d253ed6629d923578e3f9313d1bf41fc3696350f513518"
+    }
+  ]
+}
