@@ -11,6 +11,7 @@ import { createWorkbenchService } from "@/server/workbench/service";
 import { executeRecoverableVideoTask } from "@/server/video-generation/video-generation-run";
 import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 
 const root = process.cwd();
 const temporaryRoot = path.join(root, ".tmp", "v1-8-two-user");
@@ -129,7 +130,7 @@ describe("V1-8 two invited users concurrency and recovery", () => {
     ]);
   });
 
-  it("keeps task grants and pending decisions isolated when one teacher changes direction", async () => {
+  it("keeps task grants isolated without routine pending decisions when one teacher changes direction", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousToken = process.env.COZE_API_TOKEN;
     const previousRunUrl = process.env.COZE_PPT_RUN_URL;
@@ -164,8 +165,9 @@ describe("V1-8 two invited users concurrency and recovery", () => {
           };
         },
       };
-      const turnA = createConversationTurnService({ service: serviceA, runtime: new DeterministicRuntime(), agent: providerAgent });
-      const turnB = createConversationTurnService({ service: serviceB, runtime: new DeterministicRuntime(), agent: providerAgent });
+      const controlPlaneStore = createControlPlaneStore(clientA);
+      const turnA = createConversationTurnService({ service: serviceA, runtime: new DeterministicRuntime(), agent: providerAgent, controlPlaneStore });
+      const turnB = createConversationTurnService({ service: serviceB, runtime: new DeterministicRuntime(), agent: providerAgent, controlPlaneStore });
 
       await Promise.all([
         turnA.createTurn(projectA.id, { role: "teacher", content: "生成真实 PPTX" }),
@@ -176,8 +178,18 @@ describe("V1-8 two invited users concurrency and recovery", () => {
       const decisionA = latestPendingDecision(snapshotA);
       const decisionB = latestPendingDecision(snapshotB);
 
-      expect(decisionA).toMatchObject({ projectId: projectA.id, kind: "budget_disclosure", status: "canceled", intentEpoch: 0 });
-      expect(decisionB).toMatchObject({ projectId: projectB.id, kind: "budget_disclosure", status: "pending", intentEpoch: 0 });
+      expect(decisionA).toBeUndefined();
+      expect(decisionB).toBeUndefined();
+      const taskMessageA = snapshotA.messages.find((message) => message.role === "teacher" && message.content === "生成真实 PPTX")!;
+      const taskMessageB = snapshotB.messages.find((message) => message.role === "teacher" && message.content === "生成真实 PPTX")!;
+      expect(taskMessageA.metadata).toMatchObject({
+        taskBrief: { projectId: projectA.id, intentEpoch: 0 },
+        intentGrant: { projectId: projectA.id, intentEpoch: 0, maxExternalProviderCalls: 2 },
+      });
+      expect(taskMessageB.metadata).toMatchObject({
+        taskBrief: { projectId: projectB.id, intentEpoch: 0 },
+        intentGrant: { projectId: projectB.id, intentEpoch: 0, maxExternalProviderCalls: 2 },
+      });
       expect(snapshotA.project.intentEpoch).toBe(1);
       expect(snapshotB.project.intentEpoch).toBe(0);
       expect(JSON.stringify(snapshotA.messages)).not.toContain(projectB.id);

@@ -193,6 +193,18 @@ button {
   animation: shanhai-typing-pulse 900ms ease-in-out infinite;
 }
 
+[data-agent-progress-step] {
+  animation: agent-progress-step-in 200ms var(--ease-out) both;
+}
+
+[data-agent-stream-caret] {
+  animation: agent-stream-caret 900ms steps(1, end) infinite;
+}
+
+[data-message-part="artifact-ref"] {
+  animation: agent-artifact-arrive 220ms var(--ease-out) both;
+}
+
 @keyframes shanhai-typing-pulse {
   0%,
   80%,
@@ -204,6 +216,21 @@ button {
     opacity: 1;
     transform: translateY(-2px) scale(1);
   }
+}
+
+@keyframes agent-progress-step-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes agent-stream-caret {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+
+@keyframes agent-artifact-arrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes artifact-preview-in {
@@ -241,7 +268,10 @@ button {
   .artifact-preview-popover,
   .sheet-overlay,
   .sheet-content-right,
-  .typing-dot {
+  .typing-dot,
+  [data-agent-progress-step],
+  [data-agent-stream-caret],
+  [data-message-part="artifact-ref"] {
     animation: none;
   }
 }

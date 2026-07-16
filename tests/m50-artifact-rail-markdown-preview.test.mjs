@@ -20,13 +20,14 @@ test("MediaWorkbench restores the compact desktop artifact rail while keeping th
 
 test("Conversation transcript can show generated artifacts inline", () => {
   const workbenchSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
-  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
+  const transcriptSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
+  const rendererSource = readSource("src/components/conversation/assistant-ui/MessagePartRenderers.tsx");
 
   assert.match(workbenchSource, /artifacts: ArtifactItem\[\]/);
-  assert.match(workbenchSource, /<ChatTranscript[\s\S]*artifacts=\{artifacts\}/);
-  assert.match(transcriptSource, /artifacts\?: ArtifactItem\[\]/);
+  assert.match(workbenchSource, /<ShanHaiAssistantRuntime[\s\S]*artifacts=\{artifacts\}/);
+  assert.match(transcriptSource, /artifacts: ArtifactItem\[\]/);
   assert.match(transcriptSource, /data-teacher-artifact-card/);
-  assert.match(transcriptSource, /已整理出一版备课成果/);
+  assert.match(rendererSource, /shanhai\.artifact-ref/);
 });
 
 test("MarkdownPreview renders markdown structure instead of plain text blobs", () => {

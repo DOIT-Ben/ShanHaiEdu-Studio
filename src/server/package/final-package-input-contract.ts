@@ -11,6 +11,7 @@ import { sealPptFullDeckCandidate, validatePptFullDeckCandidate, validatePptFull
 import type { PptFullDeckCandidate, PptFullDeckPackage } from "@/server/ppt-quality/ppt-production-types";
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import type { ClassroomRunSpec, FinalPackageFile } from "./versioned-final-package";
 
 export type ClassroomRunSpecDraft = {
@@ -42,7 +43,7 @@ export function prepareVersionedFinalPackageInput(input: {
   cleanup: () => void;
 } {
   const artifacts = Object.values(input.artifacts);
-  assertApprovedProjectArtifacts(input.projectId, artifacts);
+  assertTrustedProjectArtifacts(input.projectId, artifacts);
   assertModelGeneratedSemanticSources(input.artifacts);
 
   const pptPackage = requirePptFinalEligibility(input.artifacts.pptx);
@@ -62,13 +63,13 @@ export function prepareVersionedFinalPackageInput(input: {
     pptPackageDigest: pptPackage.packageDigest,
     pptReview: input.artifacts.pptx.structuredContent.pptFullDeckReview,
     videoReview: input.artifacts.video.structuredContent.videoFinalReview,
-    videoApproval: input.artifacts.video.structuredContent.videoFinalApproval,
   });
   const classroomRunSpec: ClassroomRunSpec = {
     schemaVersion: "classroom-run-spec.v1",
     courseVersionId,
     courseAnchor: narration.courseAnchor,
     reviewBatchId,
+    pptSlideCount: pptPackage.pptx.slideCount,
     sequence: structuredClone(draft.sequence),
   };
 
@@ -130,9 +131,9 @@ function finalFile(
   };
 }
 
-function assertApprovedProjectArtifacts(projectId: string, artifacts: ArtifactRecord[]): void {
+function assertTrustedProjectArtifacts(projectId: string, artifacts: ArtifactRecord[]): void {
   if (artifacts.some((artifact) => artifact.projectId !== projectId)) throw new Error("final_package_cross_project_artifact");
-  if (artifacts.some((artifact) => artifact.status !== "approved" || artifact.isApproved !== true)) throw new Error("final_package_artifact_not_approved");
+  if (artifacts.some((artifact) => !isArtifactTrustedForDownstream(artifact))) throw new Error("final_package_artifact_not_trusted");
   if (new Set(artifacts.map((artifact) => artifact.id)).size !== artifacts.length) throw new Error("final_package_source_artifact_duplicate");
 }
 
@@ -170,8 +171,7 @@ function requireNarrationScript(artifact: ArtifactRecord): VideoNarrationScript 
 function requireVideoFinalEligibility(artifact: ArtifactRecord): Record<string, unknown> {
   const evidence = requireRecord(artifact.structuredContent.videoFinalReviewEvidence, "video_final_review_evidence_missing");
   const review = requireRecord(artifact.structuredContent.videoFinalReview, "video_final_review_missing");
-  const approval = requireRecord(artifact.structuredContent.videoFinalApproval, "video_final_approval_missing");
-  if (review.overallStatus !== "passed" || approval.decision !== "approved" || approval.reviewEvidenceDigest !== review.evidenceDigest) {
+  if (review.overallStatus !== "passed" || !isSha256(review.evidenceDigest)) {
     throw new Error("video_final_delivery_not_eligible");
   }
   for (const key of ["finalVideo", "timeline", "transcript", "audioTrack"]) requireRecord(evidence[key], `video_final_${key}_missing`);

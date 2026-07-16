@@ -48,17 +48,8 @@ test("deploy demo preflight exposes a production-like one-command readiness gate
   assert.doesNotMatch(script, /readFileSync\([^)]*\.env/);
   assert.doesNotMatch(script, /console\.log\(process\.env/);
 
-  const localRunbook = readFileSync(path.join(root, "docs", "runbooks", "local-real-mvp-production-readiness.md"), "utf8");
-  const liveRunbook = readFileSync(path.join(root, "docs", "runbooks", "live-deployment-demo-handoff.md"), "utf8");
-  for (const runbook of [localRunbook, liveRunbook]) {
-    assert.match(runbook, /password[^\n]*401/i);
-    assert.match(runbook, /local[^\n]*200/i);
-    assert.match(runbook, /SHANHAI_TRUST_PROXY=1/);
-    assert.match(runbook, /覆盖[^\n]*(?:不能|不要|而非)追加/);
-    assert.match(runbook, /SHANHAI_BOOTSTRAP_ADMIN_CONFIRM[^\n]*CREATE_ADMIN/);
-  }
-  const localGate = localRunbook.slice(localRunbook.indexOf("上线前检查命令"));
-  const serverSteps = liveRunbook.slice(liveRunbook.indexOf("服务器部署顺序"));
-  assert.ok(localGate.indexOf("bootstrap-admin.mjs") < localGate.indexOf("preflight:production"));
-  assert.ok(serverSteps.indexOf("bootstrap-admin.mjs") < serverSteps.indexOf("preflight:production"));
+  const releaseRoadmap = readFileSync(path.join(root, "docs", "roadmap", "release", "README.md"), "utf8");
+  assert.match(releaseRoadmap, /当前V1\.0智能体原子Tool重构关闭、重新规划并通过唯一V1-9真实全链路后/);
+  assert.match(releaseRoadmap, /不得提前启动/);
+  assert.match(releaseRoadmap, /部署、生产写入、教师签收或公网切流/);
 });

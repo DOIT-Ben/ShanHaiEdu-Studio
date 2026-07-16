@@ -10,7 +10,35 @@ export type PptDesignCandidatePagePlan = {
   primaryVisualBrief: string;
 };
 
-export type PptDesignCandidateInput = {
+export type PptDesignCandidateSemanticEvidence = {
+  evidenceId: string;
+  pageRefs: string[];
+  claims: string[];
+};
+
+export type PptDesignSemanticCandidate = {
+  schemaVersion: "ppt-design-semantic-candidate.v1";
+  goalSummary: string;
+  brief: {
+    grade: string;
+    subject: string;
+    topic: string;
+    audience: string;
+    useCase: "public_lesson" | "competition_lesson" | "ordinary_lesson";
+    targetSlideCount: number;
+  };
+  evidenceBindings: PptDesignCandidateSemanticEvidence[];
+  objectives: Array<{ objectiveId: string; statement: string; evidenceRefs: string[] }>;
+  narrative: {
+    openingTension: string;
+    learningProgression: string[];
+    closingResolution: string;
+  };
+  pagePlans: PptDesignCandidatePagePlan[];
+  downstreamUse: "production_design_expansion";
+};
+
+export type PptDesignCandidateV1Input = {
   schemaVersion: "ppt-design-candidate.v1";
   taskBriefDigest: string;
   goalSummary: string;
@@ -33,7 +61,21 @@ export type PptDesignCandidateInput = {
   downstreamUse: "production_design_expansion";
 };
 
-export type PptDesignCandidate = PptDesignCandidateInput & {
+export type PptDesignCandidateInput = PptDesignCandidateV1Input;
+
+export type PptDesignCandidateEvidenceBindingV2 = EvidenceBinding & {
+  sourceArtifactVersion: number;
+};
+
+export type PptDesignCandidateV2Input = Omit<
+  PptDesignCandidateV1Input,
+  "schemaVersion" | "evidenceBindings"
+> & {
+  schemaVersion: "ppt-design-candidate.v2";
+  evidenceBindings: PptDesignCandidateEvidenceBindingV2[];
+};
+
+export type PptDesignCandidate = (PptDesignCandidateV1Input | PptDesignCandidateV2Input) & {
   candidateDigest: string;
 };
 
@@ -60,12 +102,115 @@ export function createPptDesignCandidateProjection(input: PptDesignCandidateInpu
   return { candidate };
 }
 
+export function projectAuthoritativePptDesignCandidate(input: {
+  semanticCandidate: unknown;
+  taskBriefDigest: string;
+  sourceArtifact: {
+    artifactId: string;
+    version: number;
+    digest: string;
+    sourceType: EvidenceBinding["sourceType"];
+  };
+}): { candidate: PptDesignCandidate } {
+  const semantic = normalizePptDesignSemanticCandidate(input.semanticCandidate);
+  if (!digestPattern.test(input.taskBriefDigest)) {
+    throw new Error("ppt_design_task_binding_missing");
+  }
+  if (
+    !input.sourceArtifact.artifactId.trim() ||
+    !Number.isInteger(input.sourceArtifact.version) ||
+    input.sourceArtifact.version < 1 ||
+    !digestPattern.test(input.sourceArtifact.digest)
+  ) {
+    throw new Error("ppt_design_evidence_binding_missing");
+  }
+  const candidateInput: PptDesignCandidateV2Input = {
+    ...semantic,
+    schemaVersion: "ppt-design-candidate.v2",
+    taskBriefDigest: input.taskBriefDigest,
+    evidenceBindings: semantic.evidenceBindings.map((binding) => ({
+      ...binding,
+      sourceArtifactId: input.sourceArtifact.artifactId,
+      sourceArtifactVersion: input.sourceArtifact.version,
+      sourceType: input.sourceArtifact.sourceType,
+      digest: input.sourceArtifact.digest,
+    })),
+  };
+  const candidate: PptDesignCandidate = {
+    ...candidateInput,
+    candidateDigest: hashRunInput(candidateInput),
+  };
+  const validation = validatePptDesignCandidate(candidate);
+  if (!validation.valid) {
+    throw new Error(`ppt_design_candidate_invalid:${validation.issues.join(",")}`);
+  }
+  return { candidate };
+}
+
+export function normalizePptDesignSemanticCandidate(input: unknown): PptDesignSemanticCandidate {
+  if (!isRecord(input)) throw new Error("ppt_design_candidate_semantics_invalid");
+  if (!["ppt-design-semantic-candidate.v1", "ppt-design-candidate.v1", "ppt-design-candidate.v2"].includes(String(input.schemaVersion ?? ""))) {
+    throw new Error("ppt_design_candidate_semantics_invalid:schema_version_invalid");
+  }
+  const bindings = Array.isArray(input.evidenceBindings)
+    ? input.evidenceBindings.map((binding) => {
+        if (!isRecord(binding)) return binding;
+        return {
+          evidenceId: binding.evidenceId,
+          pageRefs: binding.pageRefs,
+          claims: binding.claims,
+        };
+      })
+    : input.evidenceBindings;
+  const semantic = {
+    schemaVersion: "ppt-design-semantic-candidate.v1" as const,
+    goalSummary: input.goalSummary,
+    brief: input.brief,
+    evidenceBindings: bindings,
+    objectives: input.objectives,
+    narrative: input.narrative,
+    pagePlans: input.pagePlans,
+    downstreamUse: input.downstreamUse,
+  } as unknown as PptDesignSemanticCandidate;
+  const validation = validatePptDesignSemanticCandidate(semantic);
+  if (!validation.valid) {
+    throw new Error(`ppt_design_candidate_semantics_invalid:${validation.issues.join(",")}`);
+  }
+  return structuredClone(semantic);
+}
+
+export function validatePptDesignSemanticCandidate(input: PptDesignSemanticCandidate): PptDesignCandidateValidation {
+  const issues: string[] = [];
+  if (!isRecord(input) || input.schemaVersion !== "ppt-design-semantic-candidate.v1") {
+    return { valid: false, issues: ["schema_version_invalid"] };
+  }
+  validateCandidateSemantics(input, issues);
+  return { valid: issues.length === 0, issues: [...new Set(issues)] };
+}
+
 export function validatePptDesignCandidate(input: PptDesignCandidate): PptDesignCandidateValidation {
   const issues: string[] = [];
-  if (!isRecord(input) || input.schemaVersion !== "ppt-design-candidate.v1") {
+  if (!isRecord(input) || (input.schemaVersion !== "ppt-design-candidate.v1" && input.schemaVersion !== "ppt-design-candidate.v2")) {
     return { valid: false, issues: ["schema_version_invalid"] };
   }
   if (!digestPattern.test(input.taskBriefDigest)) issues.push("task_brief_digest_invalid");
+  validateCandidateSemantics(input, issues);
+  if (input.schemaVersion === "ppt-design-candidate.v2" && input.evidenceBindings.some((binding) =>
+    !Number.isInteger(binding.sourceArtifactVersion) || binding.sourceArtifactVersion < 1)) {
+    issues.push("evidence_binding_version_invalid");
+  }
+
+  const { candidateDigest: _digest, ...semantic } = input;
+  if (!digestPattern.test(input.candidateDigest) || hashRunInput(semantic) !== input.candidateDigest) {
+    issues.push("candidate_digest_invalid");
+  }
+  return { valid: issues.length === 0, issues: [...new Set(issues)] };
+}
+
+function validateCandidateSemantics(
+  input: PptDesignSemanticCandidate | PptDesignCandidate,
+  issues: string[],
+) {
   requireText(input.goalSummary, "goal_summary_missing", issues);
   if (!isRecord(input.brief)) issues.push("brief_missing");
   if (!Number.isInteger(input.brief?.targetSlideCount) || input.brief.targetSlideCount < 1 || input.brief.targetSlideCount > 60) {
@@ -74,18 +219,38 @@ export function validatePptDesignCandidate(input: PptDesignCandidate): PptDesign
   for (const value of [input.brief?.grade, input.brief?.subject, input.brief?.topic, input.brief?.audience]) {
     requireText(value, "brief_semantics_incomplete", issues);
   }
-
-  const evidenceIds = validateEvidenceBindings(input.evidenceBindings, issues);
+  const evidenceIds = "taskBriefDigest" in input
+    ? validateEvidenceBindings(input.evidenceBindings, issues)
+    : validateSemanticEvidenceBindings(input.evidenceBindings, issues);
   const objectiveIds = validateObjectives(input.objectives, evidenceIds, issues);
   validateNarrative(input.narrative, issues);
   validatePages(input, objectiveIds, issues);
   if (input.downstreamUse !== "production_design_expansion") issues.push("downstream_use_invalid");
+}
 
-  const { candidateDigest: _digest, ...semantic } = input;
-  if (!digestPattern.test(input.candidateDigest) || hashRunInput(semantic) !== input.candidateDigest) {
-    issues.push("candidate_digest_invalid");
+function validateSemanticEvidenceBindings(
+  bindings: PptDesignCandidateSemanticEvidence[],
+  issues: string[],
+) {
+  const evidenceIds = new Set<string>();
+  if (!Array.isArray(bindings) || bindings.length === 0) {
+    issues.push("evidence_bindings_missing");
+    return evidenceIds;
   }
-  return { valid: issues.length === 0, issues: [...new Set(issues)] };
+  for (const binding of bindings) {
+    if (!isRecord(binding) || typeof binding.evidenceId !== "string" || !binding.evidenceId.trim() || evidenceIds.has(binding.evidenceId)) {
+      issues.push("evidence_binding_id_invalid");
+    } else {
+      evidenceIds.add(binding.evidenceId);
+    }
+    if (!Array.isArray(binding.pageRefs) || binding.pageRefs.length === 0 || binding.pageRefs.some((ref) => typeof ref !== "string" || !ref.trim())) {
+      issues.push("evidence_binding_page_refs_invalid");
+    }
+    if (!Array.isArray(binding.claims) || binding.claims.length === 0 || binding.claims.some((claim) => typeof claim !== "string" || !claim.trim())) {
+      issues.push("evidence_binding_claims_missing");
+    }
+  }
+  return evidenceIds;
 }
 
 function validateEvidenceBindings(bindings: EvidenceBinding[], issues: string[]) {
@@ -134,7 +299,7 @@ function validateNarrative(narrative: PptDesignCandidate["narrative"], issues: s
   }
 }
 
-function validatePages(input: PptDesignCandidate, objectiveIds: Set<string>, issues: string[]) {
+function validatePages(input: PptDesignSemanticCandidate | PptDesignCandidate, objectiveIds: Set<string>, issues: string[]) {
   const pages = Array.isArray(input.pagePlans) ? input.pagePlans : [];
   if (pages.length !== input.brief?.targetSlideCount) issues.push("page_count_mismatch");
   const narrativeJobs = new Set<string>();

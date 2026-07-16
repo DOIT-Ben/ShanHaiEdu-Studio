@@ -1,32 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { POST as postProjectRoute } from "@/app/api/workbench/projects/route";
 import { POST as postApproveArtifact } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/approve/route";
-import { GET as getSnapshotRoute } from "@/app/api/workbench/projects/[projectId]/snapshot/route";
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
-import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("Local Real MVP M2 approval compatibility", () => {
   it("does not generate the next node when an artifact is approved", async () => {
-    const projectResponse = await postProjectRoute(new Request("http://localhost/api/workbench/projects", { method: "POST" }));
-    const projectBody = await projectResponse.json();
-    const projectId = projectBody.project.id;
-
-    await createRequirement(projectId, "我想要生成一个小学五年级关于百分数这个知识点的公开课 PPT。");
-
-    const requirementSnapshotResponse = await getSnapshotRoute(new Request("http://localhost"), {
-      params: Promise.resolve({ projectId }),
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "M2 approval compatibility" });
+    const requirement = await service.saveArtifact(project.id, {
+      nodeKey: "requirement_spec",
+      kind: "requirement_spec",
+      title: "离线需求规格",
+      status: "needs_review",
+      summary: "仅验证批准路由不会自动生成下一节点。",
+      markdownContent: "# 离线需求规格",
     });
-    const requirementSnapshot = await requirementSnapshotResponse.json();
-    const requirement = requirementSnapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "requirement_spec");
 
     const requirementApproveResponse = await postApproveArtifact(new Request("http://localhost", { method: "POST" }), {
-      params: Promise.resolve({ projectId, artifactId: requirement.id }),
+      params: Promise.resolve({ projectId: project.id, artifactId: requirement.id }),
     });
-    const textbookSnapshotResponse = await getSnapshotRoute(new Request("http://localhost"), {
-      params: Promise.resolve({ projectId }),
-    });
-    const textbookSnapshot = await textbookSnapshotResponse.json();
+    const textbookSnapshot = await service.getProjectSnapshot(project.id);
     const textbook = textbookSnapshot.artifacts.find((artifact: { nodeKey: string }) => artifact.nodeKey === "textbook_evidence");
 
     expect(requirementApproveResponse.status).toBe(200);
@@ -34,14 +26,3 @@ describe("Local Real MVP M2 approval compatibility", () => {
     expect(textbookSnapshot.artifacts.map((artifact: { nodeKey: string }) => artifact.nodeKey)).toEqual(["requirement_spec"]);
   });
 });
-
-async function createRequirement(projectId: string, content: string) {
-  const service = createWorkbenchService();
-  const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
-  const planningBody = await turnService.createTurn(projectId, { role: "teacher", content });
-  await turnService.createTurn(projectId, {
-    role: "teacher",
-    content: "确认开始",
-    confirmedActionId: `human:${projectId}:requirement_spec:${planningBody.assistantMessage?.id}`,
-  });
-}

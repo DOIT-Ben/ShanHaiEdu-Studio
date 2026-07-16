@@ -70,11 +70,10 @@ function presentationBriefSchema(): JsonSchema {
 function evidenceBindingSchema(): JsonSchema {
   return objectSchema({
     evidence_id: text(),
-    source_artifact_id: text(),
+    source_artifact_kind: text(),
     source_type: { type: "string", enum: ["textbook", "curriculum_standard", "teacher_material"] },
     page_refs: textArray(),
     claims: textArray(1),
-    digest: text(),
   });
 }
 

@@ -286,8 +286,17 @@ async function assertLatestMessageClearsComposer(page: Page) {
   await expect.poll(async () => page.evaluate(() => {
     const anchor = document.querySelector<HTMLElement>("[data-chat-scroll-anchor]");
     const composer = document.querySelector<HTMLElement>("[data-composer-surface]");
-    if (!anchor || !composer) return false;
-    return anchor.getBoundingClientRect().bottom <= composer.getBoundingClientRect().top;
+    if (!composer) return false;
+    const composerTop = composer.getBoundingClientRect().top;
+    if (anchor) return anchor.getBoundingClientRect().bottom <= composerTop;
+
+    const assistantViewport = document.querySelector<HTMLElement>("[data-assistant-ui-scroll-viewport]");
+    const messages = assistantViewport?.querySelectorAll<HTMLElement>("[data-message-role]");
+    const latestMessage = messages?.item((messages?.length ?? 0) - 1);
+    if (!assistantViewport || !latestMessage) return false;
+    const latestBounds = latestMessage.getBoundingClientRect();
+    const viewportBounds = assistantViewport.getBoundingClientRect();
+    return latestBounds.bottom <= composerTop && latestBounds.bottom >= viewportBounds.top;
   }), { timeout: 8_000, intervals: [100, 250, 500] }).toBe(true);
 }
 

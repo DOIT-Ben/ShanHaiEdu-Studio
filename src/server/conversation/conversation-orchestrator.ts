@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
+import { extractEducationGrade, extractEducationSubject, extractEducationTopic } from "@/server/education-context";
 
 export type ConversationIntent = "chat" | "clarify" | "start_requirement";
 export type ConversationRuntimeKind = "openai" | "deterministic";
@@ -172,7 +173,7 @@ export function buildOpenAIConversationRequest(input: ConversationInput, model: 
     model,
     reasoning: { effort: reasoningEffort },
     instructions: [
-      "你是 ShanHaiEdu 小学公开课备课工作台的对话智能体。",
+      "你是 ShanHaiEdu 备课工作台的对话智能体，默认角色语境偏向小学，但这不是年级、学科或学段的能力门禁。",
       "你的任务是先理解教师消息，而不是每句话都启动生成。",
       "把输入分成三类：chat 表示普通寒暄或陪聊；clarify 表示信息不足需要追问；start_requirement 表示教师明确要开始备课材料生成。",
       "只有教师明确提供备课意图、课题、年级、教材、教案、PPT、导入视频等信号时，才使用 start_requirement。",
@@ -293,18 +294,16 @@ function isExplicitLessonWorkRequest(content: string, artifactRefs: string[]) {
 }
 
 function extractGrade(text: string): string | undefined {
-  const match = text.match(/([一二三四五六1-6])年级/);
-  return match ? `${match[1]}年级` : undefined;
+  return extractEducationGrade(text);
 }
 
 function extractSubject(text: string): string | undefined {
-  for (const subject of ["数学", "语文", "英语", "科学", "道德与法治"]) {
-    if (text.includes(subject)) return subject;
-  }
-  return undefined;
+  return extractEducationSubject(text);
 }
 
 function extractTopic(text: string): string | undefined {
+  const contextualTopic = extractEducationTopic(text);
+  if (contextualTopic) return contextualTopic;
   for (const marker of ["百分数", "分数", "小数", "乘法", "除法", "面积", "周长"]) {
     if (text.includes(marker)) return marker;
   }

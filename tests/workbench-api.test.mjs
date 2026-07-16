@@ -185,6 +185,21 @@ function loadWorkbenchApiModule(options = {}) {
         setWorkbenchCsrfRequired: () => {},
       };
     }
+    if (id === "@/lib/conversation-message-contract") {
+      const contractPath = path.join(root, "src", "lib", "conversation-message-contract.ts");
+      if (cache.has(contractPath)) return cache.get(contractPath).exports;
+      const contractModule = { exports: {} };
+      cache.set(contractPath, contractModule);
+      vm.runInNewContext(compileModule(contractPath), {
+        module: contractModule,
+        exports: contractModule.exports,
+        require: requireStub,
+        URL,
+        structuredClone,
+        console,
+      });
+      return contractModule.exports;
+    }
     if (id === "@/lib/workbench-mappers") {
       const mapperPath = path.join(root, "src", "lib", "workbench-mappers.ts");
       if (cache.has(mapperPath)) return cache.get(mapperPath).exports;
@@ -292,7 +307,7 @@ test("API client uses the shared workbench contract paths", async () => {
     role: "teacher",
     content: "我想做百分数公开课",
     reference: "导入视频方案：生活情境",
-    artifactRefs: ["导入视频方案：生活情境"],
+    artifactRefs: [],
   });
   assert.equal(calls[3].url, "https://example.test/api/workbench/projects/project-a/snapshot");
   assert.equal(calls[4].url, "https://example.test/api/workbench/projects/project-a/artifacts/intro-video-plan/approve");

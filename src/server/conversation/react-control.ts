@@ -10,12 +10,12 @@ export type ReActNextAction = "continue" | "repair_unit" | "repair_upstream" | "
 export type AgentObservation = {
   observationId: string;
   projectId: string;
-  source: "tool" | "validation" | "quality" | "budget" | "teacher_revision";
+  source: "tool" | "validation" | "quality" | "budget" | "teacher_revision" | "external_audit";
   status: "succeeded" | "failed" | "needs_input" | "repair" | "blocked" | "inconclusive";
   actionKey: string;
   inputHash: string;
   reasonCodes: string[];
-  reportRefs: Array<{ kind: "validation" | "critic" | "quality_decision"; id: string; digest: string }>;
+  reportRefs: Array<{ kind: "validation" | "critic" | "quality_decision" | "external_acceptance"; id: string; digest: string }>;
   targetLocators: TargetLocator[];
   responsibleStage?: string;
   minimalNextAction: Exclude<ReActNextAction, "finish">;
@@ -29,7 +29,7 @@ export type RunCheckpoint = {
   projectId: string;
   planVersion: number;
   status: "paused";
-  reason: "budget_exhausted" | "repeated_failure" | "teacher_requested_pause";
+  reason: "adapter_failed" | "budget_exhausted" | "repeated_failure" | "teacher_requested_pause" | "completion_contract_unsatisfied" | "dialogue_checkpoint_required" | "human_gate_required" | "external_acceptance_repair_required";
   actionKey?: string;
   inputHash?: string;
   observationRefs: string[];
@@ -322,7 +322,15 @@ function isRunCheckpoint(value: unknown): value is RunCheckpoint {
     typeof value.projectId === "string" &&
     Number.isInteger(value.planVersion) && Number(value.planVersion) >= 0 &&
     value.status === "paused" &&
-    (value.reason === "budget_exhausted" || value.reason === "repeated_failure" || value.reason === "teacher_requested_pause") &&
+    (
+      value.reason === "budget_exhausted" ||
+      value.reason === "adapter_failed" ||
+      value.reason === "repeated_failure" ||
+      value.reason === "teacher_requested_pause" ||
+      value.reason === "completion_contract_unsatisfied" ||
+      value.reason === "human_gate_required" ||
+      value.reason === "external_acceptance_repair_required"
+    ) &&
     (value.actionKey === undefined || typeof value.actionKey === "string") &&
     (value.inputHash === undefined || typeof value.inputHash === "string") &&
     Array.isArray(value.observationRefs) && value.observationRefs.every((ref) => typeof ref === "string") &&
@@ -330,7 +338,7 @@ function isRunCheckpoint(value: unknown): value is RunCheckpoint {
 }
 
 function isObservationSource(value: unknown): value is AgentObservation["source"] {
-  return value === "tool" || value === "validation" || value === "quality" || value === "budget" || value === "teacher_revision";
+  return value === "tool" || value === "validation" || value === "quality" || value === "budget" || value === "teacher_revision" || value === "external_audit";
 }
 
 function isObservationStatus(value: unknown): value is AgentObservation["status"] {
@@ -339,7 +347,7 @@ function isObservationStatus(value: unknown): value is AgentObservation["status"
 
 function isReportRef(value: unknown): value is AgentObservation["reportRefs"][number] {
   return isRecord(value) &&
-    (value.kind === "validation" || value.kind === "critic" || value.kind === "quality_decision") &&
+    (value.kind === "validation" || value.kind === "critic" || value.kind === "quality_decision" || value.kind === "external_acceptance") &&
     typeof value.id === "string" &&
     typeof value.digest === "string";
 }

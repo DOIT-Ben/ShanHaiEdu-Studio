@@ -4,7 +4,7 @@ import { runCapabilityWithAgentRuntime } from "@/server/capabilities/capability-
 import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import { appendToolObservationMetadata, createToolObservation, readActiveToolObservationsFromMessages, readToolObservationsFromMetadata, type ToolObservation, type ToolObservationKind } from "@/server/capabilities/tool-observation";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } from "@/server/capabilities/types";
-import { buildAgentHarnessBudgetEvent, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
+import { buildAgentHarnessBudgetEvent, countSubmittedExternalProviderCalls, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
 import { normalizeExecutionPolicy, resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
@@ -30,14 +30,17 @@ import {
   discloseStandardTaskBudget,
   evaluateActionPolicy,
   STANDARD_BUDGET_POLICY_VERSION,
-  STANDARD_TASK_MAX_EXTERNAL_PROVIDER_CALLS,
 } from "@/server/guards/action-policy";
+import { resolveBudgetUpgrade, resolveStandardTaskBudget } from "@/server/guards/task-budget-policy";
+import { resolveProjectSemanticScope } from "./project-semantic-scope";
 import { evaluateToolPlan } from "@/server/guards/plan-guard";
 import { routeToolCall } from "@/server/tools/tool-router";
+import { executeThroughToolGateway } from "@/server/tools/tool-execution-gateway";
 import { getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
 import { isVerifiedProviderToolSuccess, type ToolExecutionResult } from "@/server/tools/tool-types";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
+import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
 import { analyzePptRevisionImpact } from "@/server/ppt-quality/ppt-impact-analysis";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
@@ -46,12 +49,31 @@ import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invo
 import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { readAgentToolReportsFromMessages } from "@/server/tools/agent-tool-report";
 import type { PptDirectorPlanBinding } from "@/server/ppt-quality/ppt-director-design-adapter";
-import { createDeterministicMainConversationAgent, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
+import {
+  createDeterministicMainConversationAgent,
+  type MainAgentTaskIntakeDecision,
+  type MainConversationAgent,
+  type MainConversationAgentInput,
+} from "./main-conversation-agent";
 import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
-import { createTaskBrief, isPendingDecision, withPendingDecisionStatus, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
+import { resolveMainAgentToolDefinition } from "@/server/tools/main-agent-tool-registry";
+import { createExecutionEnvelope, createTaskBrief, hasValidTaskBrief, isPendingDecision, withPendingDecisionStatus, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
+import { createTaskBriefFromProposal, proposeDeterministicTaskBriefFixture } from "./task-intake";
+import { resolvePreAgentControl, type PreAgentControlDecision } from "./turn-intake-control";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
+import type { MainAgentProgressEvent, MainAgentProgressSink } from "./main-agent-stream-projection";
+import { createControlPlaneStore } from "./control-plane-store";
+import {
+  createConfiguredBusinessToolSkillRuntime,
+  type BusinessToolSkillRuntime,
+} from "@/server/skills/business-tool-skill-runtime";
+import { buildSemanticContextSnapshot, type SemanticContextSnapshot } from "./context-semantic-snapshot";
+import { findRemainingRequestedOutputs } from "./task-completion-contract";
+import { collectPersistentTeacherActivityParts } from "@/lib/teacher-agent-events";
+import { answerDialogueCheckpoint, isDialogueCheckpoint, type DialogueCheckpoint } from "./dialogue-checkpoint";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
+type ControlPlaneStore = ReturnType<typeof createControlPlaneStore>;
 
 type PendingDeliveryPlanMetadata = {
   status: "pending" | "paused" | "confirmed" | "canceled" | "superseded";
@@ -71,69 +93,135 @@ type PendingDeliveryPlanSnapshot = PendingDeliveryPlanMetadata & {
   messageMetadata: Record<string, unknown>;
 };
 
-function resolveActiveTaskBrief(messages: ConversationMessageRecord[], message: ConversationMessageRecord, project: ProjectRecord): TaskBrief | undefined {
-  if (isTaskControlMessage(message.content) || typeof message.metadata.confirmedActionId === "string") {
+async function resolveActiveTaskBrief(input: {
+  messages: ConversationMessageRecord[];
+  message: ConversationMessageRecord;
+  project: ProjectRecord;
+  agent: MainConversationAgent;
+  requireStructuredIntake: boolean;
+  forceProposal?: boolean;
+  onProgress?: MainAgentProgressSink;
+  activeTask?: TaskBrief;
+}): Promise<{
+  taskBrief?: TaskBrief;
+  precomputedTurn?: MainAgentTurn;
+  control?: PreAgentControlDecision;
+  replacementProposal?: Parameters<typeof createTaskBriefFromProposal>[0]["proposal"];
+}> {
+  const { messages, message, project } = input;
+  const messageTaskBrief = message.metadata.taskBrief;
+  if (!input.forceProposal && isTaskBrief(messageTaskBrief) &&
+      messageTaskBrief.projectId === project.id &&
+      messageTaskBrief.intentEpoch === (project.intentEpoch ?? 0) &&
+      messageTaskBrief.sourceMessageId === message.id) {
+    return { taskBrief: messageTaskBrief };
+  }
+  if (!input.forceProposal && (isTaskControlMessage(message.content) || typeof message.metadata.confirmedActionId === "string")) {
     for (const candidate of [...messages].reverse()) {
       const brief = candidate.metadata.taskBrief;
-      if (isTaskBrief(brief) && brief.projectId === project.id && brief.intentEpoch === (project.intentEpoch ?? 0)) return brief;
+      if (isTaskBrief(brief) && brief.projectId === project.id && brief.intentEpoch === (project.intentEpoch ?? 0)) {
+        return { taskBrief: brief };
+      }
     }
-    return undefined;
+    return {};
   }
-  if (!/PPT|课件|教案|视频|材料包|公开课/i.test(message.content)) return undefined;
-  const taskScope = inferTaskScope(message.content);
-  return createTaskBrief({
+
+  let decision: MainAgentTaskIntakeDecision;
+  if (input.agent.intakeTask) {
+    decision = await input.agent.intakeTask({
+      userMessage: message.content,
+      responseStyle: message.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
+      generationIntensity: project.generationIntensity ?? "standard",
+      projectContext: {
+        grade: project.grade,
+        subject: project.subject,
+        topic: project.lessonTopic,
+      },
+      activeTask: input.activeTask,
+      recentMessages: messages.map((candidate) => ({ role: candidate.role, content: candidate.content })).slice(-8),
+      onProgress: input.onProgress,
+    });
+  } else {
+    if (input.requireStructuredIntake) {
+      throw new Error("Native Main Agent control plane requires structured task intake.");
+    }
+    const proposal = proposeDeterministicTaskBriefFixture(message.content, project);
+    decision = proposal ? { kind: "task", proposal } : { kind: "conversation" };
+  }
+
+  if (decision.kind === "control") {
+    return { control: decision.control, replacementProposal: decision.replacementProposal };
+  }
+  if (decision.kind !== "task") {
+    return { ...(decision.turn ? { precomputedTurn: decision.turn } : {}) };
+  }
+  const projectConstraints = [project.grade, project.subject, project.lessonTopic]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .map((value) => value.trim());
+  const taskBrief = createTaskBriefFromProposal({
+    proposal: {
+      ...decision.proposal,
+      goal: message.content.trim(),
+      constraints: [...new Set([...decision.proposal.constraints, ...projectConstraints])],
+    },
     taskId: `task:${message.id}`,
     projectId: project.id,
     intentEpoch: project.intentEpoch ?? 0,
-    goal: message.content,
-    requestedOutputs: taskScope.requestedOutputs,
-    constraints: [],
-    excludedOutputs: taskScope.excludedOutputs,
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: message.id,
   });
+  return { taskBrief };
 }
 
 function isTaskControlMessage(content: string) {
-  return /^(继续|确定|确认|开始|暂停|恢复|取消|确认开始|继续下一步|继续推进|按这个计划推进|确认需求并生成大纲)(?:[，,].*)?[。.!！]?$/.test(content.trim());
+  const normalized = content.trim();
+  if (/^(继续|确定|确认|开始|暂停|恢复|取消|确认开始|继续下一步|继续推进|按这个计划推进|确认需求并生成大纲)(?:[，,].*)?[。.!！]?$/.test(normalized)) return true;
+  return /^(?:继续|恢复|接着)(?:刚才|之前|当前|上次|这个|该)(?!.*(?:新的|改成|改做|换成|转为|只做|不要做|不做)).{0,80}$/.test(normalized);
 }
 
 function createStandardIntentGrant(brief: TaskBrief): IntentGrant {
-  return {
+  return discloseStandardTaskBudget({
     schemaVersion: "intent-grant.v1", taskId: brief.taskId, projectId: brief.projectId, intentEpoch: brief.intentEpoch,
     standardWorkAuthorized: true, intensity: brief.generationIntensity, budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
     maxCostCredits: null, maxExternalProviderCalls: null, requiredCheckpoints: [], expiresAt: null,
-  };
+  }, brief);
 }
 
-function inferTaskScope(goal: string): { requestedOutputs: string[]; excludedOutputs: string[] } {
-  const negativeClauses = [...goal.matchAll(/(?:不(?:做|要|生成|需要|包含|打包)|不要|无需)[^，,。；;！!\n]*/gi)]
-    .map((match) => match[0]);
-  const positiveGoal = negativeClauses.reduce((text, clause) => text.replace(clause, " "), goal);
-  const excludedOutputs = inferOutputsFromText(negativeClauses.join(" "), { includeVideoWhenScriptMentioned: true });
-  const requestedOutputs = inferOutputsFromText(positiveGoal, { includeVideoWhenScriptMentioned: false })
-    .filter((output) => !excludedOutputs.includes(output));
-
-  return {
-    requestedOutputs: requestedOutputs.length ? requestedOutputs : ["lesson_plan"],
-    excludedOutputs,
-  };
-}
-
-function inferOutputsFromText(text: string, options: { includeVideoWhenScriptMentioned: boolean }): string[] {
-  const hasVideoScript = /视频脚本|导入脚本/i.test(text);
-  return [
-    /教案/i.test(text) ? "lesson_plan" : null,
-    /PPT|课件/i.test(text) ? "ppt" : null,
-    hasVideoScript ? "video_script" : null,
-    /图片|图像|素材图|生图/i.test(text) ? "image" : null,
-    /成片/i.test(text) || (options.includeVideoWhenScriptMentioned ? /视频/i.test(text) : /视频/i.test(text) && !hasVideoScript) ? "video" : null,
-    /材料包|交付包|整包|打包/i.test(text) ? "package" : null,
-  ].filter((value): value is string => Boolean(value));
+function ensureStandardTaskBudgetDisclosure(grant: IntentGrant, brief: TaskBrief): IntentGrant {
+  if (!grant.standardWorkAuthorized || grant.maxCostCredits !== null) return grant;
+  const needsTaskScopedDisclosure =
+    (grant.budgetPolicyVersion === STANDARD_BUDGET_POLICY_VERSION && grant.maxExternalProviderCalls === null) ||
+    (grant.budgetPolicyVersion === "v1-standard" && grant.maxExternalProviderCalls === 3);
+  return needsTaskScopedDisclosure
+    ? discloseStandardTaskBudget({
+        ...grant,
+        budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
+        maxExternalProviderCalls: null,
+      }, brief)
+    : grant;
 }
 
 function isTaskBrief(value: unknown): value is TaskBrief {
   return typeof value === "object" && value !== null && (value as TaskBrief).schemaVersion === "task-brief.v1";
+}
+
+async function resolveQueuedTaskBriefBinding(input: {
+  message: ConversationMessageRecord;
+  project: ProjectRecord;
+  controlPlaneStore: ControlPlaneStore;
+}): Promise<TaskBrief | undefined> {
+  const candidate = input.message.metadata.taskBrief;
+  if (candidate === undefined) return undefined;
+  if (!isTaskBrief(candidate) || !hasValidTaskBrief(candidate) || candidate.projectId !== input.project.id ||
+      candidate.intentEpoch !== (input.project.intentEpoch ?? 0) || candidate.sourceMessageId !== input.message.id) {
+    throw new Error("queued_task_brief_binding_invalid");
+  }
+  const aggregate = await input.controlPlaneStore.getTaskAggregate(candidate.projectId, candidate.intentEpoch);
+  if (!aggregate || aggregate.taskBrief.taskId !== candidate.taskId || aggregate.taskBrief.digest !== candidate.digest ||
+      !["active", "paused_recovery"].includes(aggregate.status)) {
+    throw new Error("queued_task_brief_binding_invalid");
+  }
+  return candidate;
 }
 
 function findTaskBriefForIntent(messages: ConversationMessageRecord[], projectId: string, intentEpoch: number) {
@@ -142,14 +230,6 @@ function findTaskBriefForIntent(messages: ConversationMessageRecord[], projectId
     if (isTaskBrief(brief) && brief.projectId === projectId && brief.intentEpoch === intentEpoch) return brief;
   }
   return undefined;
-}
-
-function isTaskRedirectWithoutPendingPlan(content: string, previousBrief: TaskBrief | undefined, activePlanCount: number) {
-  if (!previousBrief || activePlanCount > 0 || !/(?:改成|改做|换成|只做|不做|不要|无需)/.test(content)) return false;
-  if (!/PPT|课件|教案|视频|材料包|公开课/i.test(content)) return false;
-  const nextScope = inferTaskScope(content);
-  return JSON.stringify([...nextScope.requestedOutputs].sort()) !== JSON.stringify([...previousBrief.requestedOutputs].sort())
-    || JSON.stringify([...nextScope.excludedOutputs].sort()) !== JSON.stringify([...previousBrief.excludedOutputs].sort());
 }
 
 function isIntentGrant(value: unknown): value is IntentGrant {
@@ -174,15 +254,6 @@ const toolRouterCapabilityIds = new Set<CapabilityId>(
   listToolDefinitions().flatMap((tool) => tool.capabilityId ? [tool.capabilityId] : []),
 );
 const MAX_AUTONOMOUS_BUSINESS_TOOL_ROUNDS = getCapabilityDefinitions().length + 5;
-const taskOutputArtifactKinds: Record<string, ReadonlySet<ArtifactKind>> = {
-  lesson_plan: new Set(["lesson_plan"]),
-  ppt: new Set(["pptx_artifact"]),
-  video_script: new Set(["video_script_generate"]),
-  image: new Set(["image_prompts"]),
-  video: new Set(["concat_only_assemble"]),
-  package: new Set(["final_delivery"]),
-};
-
 export type ConversationTurnInput = {
   role?: "teacher" | "assistant" | "system";
   content: string;
@@ -213,11 +284,19 @@ export type ConversationTurnServiceOptions = {
   executionFence?: ProjectExecutionFence;
   generationIntensityOverride?: GenerationIntensity;
   enableTaskGrantAutonomy?: boolean;
+  enableNativeToolControlPlane?: boolean;
+  controlPlaneStore?: ControlPlaneStore;
+  businessSkillRuntime?: BusinessToolSkillRuntime;
+  businessSkillRuntimeMode?: "optional" | "required";
 };
 
 export function createConversationTurnService(options: ConversationTurnServiceOptions) {
   const agent = options.agent ?? createDeterministicMainConversationAgent();
   const toolRouter = options.toolRouter ?? routeToolCall;
+  const controlPlaneStore = options.controlPlaneStore ?? createControlPlaneStore();
+  const businessSkillRuntime = options.businessSkillRuntime ?? createConfiguredBusinessToolSkillRuntime();
+  const businessSkillRuntimeMode = options.businessSkillRuntimeMode ??
+    (process.env.SHANHAI_SKILL_RUNTIME_MODE?.trim().toLowerCase() === "required" ? "required" : "optional");
 
   return {
     async createTurn(projectId: string, input: ConversationTurnInput): Promise<MessageTurnResponse> {
@@ -250,6 +329,11 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         executionFence: options.executionFence,
         generationIntensityOverride: options.generationIntensityOverride,
         enableTaskGrantAutonomy: options.enableTaskGrantAutonomy,
+        enableNativeToolControlPlane: options.enableNativeToolControlPlane,
+        controlPlaneStore,
+        businessSkillRuntime,
+        businessSkillRuntimeMode,
+        executionSource: "new_message",
       });
     },
 
@@ -275,6 +359,11 @@ export function createConversationTurnService(options: ConversationTurnServiceOp
         executionFence: options.executionFence,
         generationIntensityOverride: options.generationIntensityOverride,
         enableTaskGrantAutonomy: options.enableTaskGrantAutonomy,
+        enableNativeToolControlPlane: options.enableNativeToolControlPlane,
+        controlPlaneStore,
+        businessSkillRuntime,
+        businessSkillRuntimeMode,
+        executionSource: "queued_message",
       });
     },
   };
@@ -295,6 +384,11 @@ async function executeTeacherMessageTurn(input: {
   executionFence?: ProjectExecutionFence;
   generationIntensityOverride?: GenerationIntensity;
   enableTaskGrantAutonomy?: boolean;
+  enableNativeToolControlPlane?: boolean;
+  controlPlaneStore: ControlPlaneStore;
+  businessSkillRuntime?: BusinessToolSkillRuntime;
+  businessSkillRuntimeMode: "optional" | "required";
+  executionSource: "new_message" | "queued_message";
 }): Promise<MessageTurnResponse> {
   const teacherContent = input.teacherContent;
   const reference = input.reference;
@@ -304,31 +398,156 @@ async function executeTeacherMessageTurn(input: {
     ? { ...storedProject, generationIntensity: input.generationIntensityOverride }
     : storedProject;
   const messages = await input.service.getMessages(input.projectId);
+  const queuedTaskBrief = input.executionSource === "queued_message"
+    ? await resolveQueuedTaskBriefBinding({
+        message: input.triggerMessage,
+        project,
+        controlPlaneStore: input.controlPlaneStore,
+      })
+    : undefined;
   const activePlans = findActiveDeliveryPlans(messages);
+  let progressTaskBrief = queuedTaskBrief;
+  const onProgress = createMainAgentProgressWriter({
+    projectId: input.projectId,
+    teacherMessageId: input.triggerMessage.id,
+    projectIntentEpoch: project.intentEpoch ?? 0,
+    controlPlaneStore: input.controlPlaneStore,
+    getTaskBrief: () => progressTaskBrief,
+  });
   const previousIntentEpoch = project.intentEpoch ?? 0;
   const previousTaskBrief = findTaskBriefForIntent(messages, project.id, previousIntentEpoch);
-  let redirectImpact: Record<string, unknown> | undefined;
-  if (isTaskRedirectWithoutPendingPlan(teacherContent, previousTaskBrief, activePlans.length)) {
-    const nextIntentEpoch = await input.service.advanceProjectIntentEpoch(input.projectId, previousIntentEpoch);
-    project = { ...project, intentEpoch: nextIntentEpoch };
-    const payload = {
-      decisionKind: "redirect_without_pending_plan",
-      reasonCode: "teacher_redirected_without_pending_plan",
-      previousIntentEpoch,
-      nextIntentEpoch,
-      impactScope: "upstream",
-      preservedArtifacts: true,
-    };
-    redirectImpact = { ...payload, impactDigest: hashRunInput(payload) };
+  const preAgentControl = queuedTaskBrief ? undefined : resolvePreAgentControl(teacherContent, {
+    hasActiveTask: Boolean(previousTaskBrief),
+    hasPendingPlan: activePlans.length > 0,
+  });
+  if (preAgentControl) {
+    return commitPreAgentControlTurn({
+      service: input.service,
+      project,
+      messages,
+      activePlans,
+      triggerMessage: input.triggerMessage,
+      control: preAgentControl,
+      previousTaskBrief,
+      controlPlaneStore: input.controlPlaneStore,
+    });
   }
-  const taskBrief = resolveActiveTaskBrief(messages, input.triggerMessage, project);
+  let answeredDialogueCheckpoint: DialogueCheckpoint | undefined;
+  if (previousTaskBrief) {
+    const previousAggregate = await input.controlPlaneStore.getTaskAggregate(project.id, previousIntentEpoch);
+    const previousSnapshot = previousAggregate
+      ? await input.controlPlaneStore.getLatestSemanticSnapshot({
+          projectId: project.id,
+          taskId: previousTaskBrief.taskId,
+          intentEpoch: previousIntentEpoch,
+          maxPlanRevision: previousAggregate.plan.revision,
+        })
+      : null;
+    const pendingDialogue = previousSnapshot?.snapshot.pendingDecision;
+    if (previousAggregate?.status === "paused_recovery" && isDialogueCheckpoint(pendingDialogue) && pendingDialogue.status === "pending") {
+      answeredDialogueCheckpoint = answerDialogueCheckpoint(pendingDialogue, {
+        responseMessageId: input.triggerMessage.id,
+        responseText: teacherContent,
+      });
+    }
+  }
+  const taskIntake = queuedTaskBrief
+    ? { taskBrief: queuedTaskBrief }
+    : answeredDialogueCheckpoint && previousTaskBrief
+      ? { taskBrief: previousTaskBrief }
+    : await resolveActiveTaskBrief({
+        messages,
+        message: input.triggerMessage,
+        project,
+        agent: input.agent,
+        requireStructuredIntake: input.enableNativeToolControlPlane === true,
+        activeTask: previousTaskBrief,
+        onProgress,
+      });
+  if (taskIntake.control) {
+    return commitPreAgentControlTurn({
+      service: input.service,
+      project,
+      messages,
+      activePlans,
+      triggerMessage: input.triggerMessage,
+      control: taskIntake.control,
+      replacementProposal: taskIntake.replacementProposal,
+      previousTaskBrief,
+      controlPlaneStore: input.controlPlaneStore,
+    });
+  }
+  const pendingTaskContext = resolveActiveDeliveryPlan(activePlans, input.confirmedActionId);
+  const taskBrief = taskIntake.taskBrief ?? pendingTaskContext?.taskBrief;
+  progressTaskBrief = taskBrief;
   let intentGrant = taskBrief
-    ? resolveActiveIntentGrant(messages, taskBrief) ?? createStandardIntentGrant(taskBrief)
+    ? ensureStandardTaskBudgetDisclosure(
+        resolveActiveIntentGrant(messages, taskBrief) ?? pendingTaskContext?.intentGrant ?? createStandardIntentGrant(taskBrief),
+        taskBrief,
+      )
     : undefined;
+  let taskAggregate: Awaited<ReturnType<ControlPlaneStore["getTaskAggregate"]>> = null;
+  let taskEventSequence = 0;
   if (taskBrief) {
+    const existingAggregate = await input.controlPlaneStore.getTaskAggregate(taskBrief.projectId, taskBrief.intentEpoch);
+    const resumesSameTask = existingAggregate?.status === "paused_recovery" &&
+      existingAggregate.taskBrief.taskId === taskBrief.taskId &&
+      existingAggregate.taskBrief.digest === taskBrief.digest;
+    taskAggregate = await input.controlPlaneStore.upsertTaskAggregate({
+      taskBrief,
+      intentGrant: intentGrant!,
+      plan: existingAggregate ? {
+        ...existingAggregate.plan,
+        status: resumesSameTask ? "active" : existingAggregate.plan.status,
+      } : {
+        planId: activePlans[0]?.toolPlan.planId ?? `plan:${taskBrief.taskId}`,
+        revision: 0,
+        status: "active",
+      },
+      status: resumesSameTask ? "active" : existingAggregate?.status ?? "active",
+      checkpoint: existingAggregate?.checkpoint ?? null,
+    });
+    const taskEvent = await input.controlPlaneStore.appendEvent({
+      eventId: crypto.randomUUID(),
+      projectId: taskBrief.projectId,
+      taskId: taskBrief.taskId,
+      runId: `turn:${input.triggerMessage.id}`,
+      intentEpoch: taskBrief.intentEpoch,
+      kind: existingAggregate ? "task_updated" : "task_created",
+      visibility: "internal",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        taskBriefDigest: taskBrief.digest,
+        planRevision: taskAggregate.plan.revision,
+      },
+    });
+    taskEventSequence = taskEvent.sequence;
+    if (!existingAggregate) {
+      const scopeProjection = taskScopeTeacherProjection(taskBrief);
+      const scopeOccurredAt = new Date().toISOString();
+      const scopeEvent = await input.controlPlaneStore.appendEvent({
+        eventId: crypto.randomUUID(),
+        projectId: taskBrief.projectId,
+        taskId: taskBrief.taskId,
+        runId: `turn:${input.triggerMessage.id}`,
+        intentEpoch: taskBrief.intentEpoch,
+        kind: "activity_updated",
+        visibility: "teacher",
+        occurredAt: scopeOccurredAt,
+        payload: {
+          activityId: `turn:${input.triggerMessage.id}:task-scope`,
+          label: "本轮目标已明确",
+          status: "completed",
+          purpose: taskBrief.goal,
+          inputSummary: scopeProjection.inputSummary,
+          expectedOutput: scopeProjection.expectedOutput,
+          finishedAt: scopeOccurredAt,
+        },
+      });
+      taskEventSequence = scopeEvent.sequence;
+    }
     input.triggerMessage = await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
       ...input.triggerMessage.metadata,
-      ...(redirectImpact ? { conversationControlImpact: redirectImpact } : {}),
       taskBrief,
       intentGrant,
     });
@@ -339,7 +558,9 @@ async function executeTeacherMessageTurn(input: {
   const artifacts = await input.service.getArtifacts(input.projectId);
   const generationJobs = await input.service.getGenerationJobs(input.projectId);
   const turnJobs = await input.service.getConversationTurnJobs(input.projectId);
-  const availableArtifactKinds = artifacts.map((artifact) => artifact.kind);
+  const availableArtifactKinds = artifacts
+    .filter((artifact) => isArtifactTrustedForDownstream(artifact) && (!taskBrief || isArtifactBoundToTask(artifact, taskBrief)))
+    .map((artifact) => artifact.kind);
 
   const pendingPlan = resolveActiveDeliveryPlan(activePlans, input.confirmedActionId);
   const toolObservations = readActiveToolObservationsFromMessages(messages);
@@ -348,11 +569,50 @@ async function executeTeacherMessageTurn(input: {
   const runCheckpoint = readLatestRunCheckpointFromMessages(messages);
   const budgetEvents = readBudgetEventsForCurrentIntent(messages, project.intentEpoch ?? 0);
   const externalProviderCallsUsed = countExternalProviderCalls(budgetEvents);
-  const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
+  let semanticSnapshot: SemanticContextSnapshot | undefined;
+  if (taskBrief && taskAggregate) {
+    semanticSnapshot = buildSemanticContextSnapshot({
+      taskBrief,
+      plan: taskAggregate.plan,
+      pendingDecision: answeredDialogueCheckpoint ?? (pendingPlan?.pendingDecision
+        ? structuredClone(pendingPlan.pendingDecision) as unknown as Record<string, unknown>
+        : null),
+      trustedArtifactRefs: artifacts
+        .filter((artifact) => isArtifactTrustedForDownstream(artifact) && isArtifactBoundToTask(artifact, taskBrief))
+        .map((artifact) => ({
+          artifactId: artifact.id,
+          kind: artifact.kind,
+          version: artifact.version,
+          digest: hashArtifactDraft({
+            nodeKey: artifact.nodeKey,
+            kind: artifact.kind,
+            title: artifact.title,
+            summary: artifact.summary,
+            markdownContent: artifact.markdownContent,
+            structuredContent: artifact.structuredContent,
+          }),
+          taskId: taskBrief.taskId,
+          taskBriefDigest: taskBrief.digest,
+          intentEpoch: taskBrief.intentEpoch,
+          bindingSource: artifact.taskBriefDigest
+            ? "tool_execution" as const
+            : artifact.origin === "teacher_input" ? "current_intent_teacher_input" as const : "current_intent_compatibility" as const,
+        })),
+      observationRefs: agentObservations.map((observation) => ({
+        observationId: observation.observationId,
+        reasonCodes: observation.reasonCodes,
+        intentEpoch: taskBrief.intentEpoch,
+      })),
+      recentMessages: messages.map((message) => ({ role: message.role, content: message.content })),
+    });
+    await input.controlPlaneStore.saveSemanticSnapshot(semanticSnapshot, taskEventSequence);
+  }
+  const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts, taskBrief });
   const capabilityAvailability = buildCapabilityAvailability({
     capabilityDefinitions: getCapabilityDefinitions(),
     artifacts,
     providerAvailability: resolveRuntimeProviderAvailability(),
+    taskBrief,
   });
   if (activePlans.length > 1 && !input.confirmedActionId && isGenericContinuationRequest(teacherContent)) {
     const labels = activePlans.slice(0, 3).map((plan) => getCapabilityDefinition(plan.toolPlan.capabilityId).userLabel);
@@ -381,6 +641,8 @@ async function executeTeacherMessageTurn(input: {
   }
   const agentWorldState = buildAgentWorldState({
     project,
+    taskBrief: taskBrief ?? null,
+    taskPlanRevision: taskAggregate?.plan.revision ?? null,
     workflowNodes,
     artifacts,
     generationJobs,
@@ -393,29 +655,50 @@ async function executeTeacherMessageTurn(input: {
     runCheckpoint,
   });
 
-  const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond({
+  const nativeToolControlPlaneOwnsTurn = input.enableNativeToolControlPlane === true;
+  const nativeToolLoop = nativeToolControlPlaneOwnsTurn && taskBrief ? createMainAgentToolLoopOptions({
+    service: input.service,
+    runtime: input.runtime,
+    project,
+    triggerMessage: input.triggerMessage,
+    artifacts,
+    identity: input.executionIdentity,
+    fence: input.executionFence,
+    executor: input.agentToolExecutor,
+    intentGrant,
+    taskBrief,
+    externalProviderCallsUsed,
+    planRevision: taskAggregate?.plan.revision,
+    resumeCheckpoint: taskAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1" &&
+      (taskBrief?.sourceMessageId === input.triggerMessage.id || Boolean(answeredDialogueCheckpoint))
+      ? taskAggregate.checkpoint
+      : undefined,
+    controlPlaneStore: input.controlPlaneStore,
+    businessSkillRuntime: input.businessSkillRuntime,
+    businessSkillRuntimeMode: input.businessSkillRuntimeMode,
+  }) : undefined;
+  const rawAgentResponse = taskIntake.precomputedTurn ?? await input.agent.respond({
     userMessage: teacherContent,
+    toolControlPlane: nativeToolControlPlaneOwnsTurn ? "native" : "outer",
     responseStyle: input.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
     generationIntensity: project.generationIntensity,
     taskBrief,
     intentGrant: input.enableTaskGrantAutonomy ? intentGrant : undefined,
     availableArtifactKinds,
     projectContext: toMainAgentProjectContext(project),
-    conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
-    agentToolLoop: createMainAgentToolLoopOptions({
-      service: input.service,
-      runtime: input.runtime,
-      project,
-      triggerMessage: input.triggerMessage,
-      artifacts,
-      identity: input.executionIdentity,
-      fence: input.executionFence,
-      executor: input.agentToolExecutor,
-      intentGrant,
-      taskBrief,
-      externalProviderCallsUsed,
-    }),
-  }), capabilityAvailability);
+    conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan, semanticSnapshot),
+    agentToolLoop: nativeToolLoop,
+    onProgress,
+  });
+  if (nativeToolLoop) {
+    input.triggerMessage = (await input.service.getMessages(input.projectId))
+      .find((message) => message.id === input.triggerMessage.id) ?? input.triggerMessage;
+    if (taskBrief) {
+      taskAggregate = await input.controlPlaneStore.getTaskAggregate(input.projectId, taskBrief.intentEpoch)
+        ?? taskAggregate;
+    }
+  }
+  const rawAgentTurn = applyCapabilityAvailabilityToTurn(rawAgentResponse, capabilityAvailability);
   const controlResolution = resolveConversationControl({
     userMessage: teacherContent,
     pendingPlan,
@@ -427,17 +710,102 @@ async function executeTeacherMessageTurn(input: {
     externalProviderCallsUsed,
   });
   const agentTurn = controlResolution.turn;
+  let runtimeFailureMetadata: Record<string, unknown> | undefined;
+  if (agentTurn.failure) {
+    const failureObservation = createAgentObservation({
+      projectId: input.projectId,
+      source: "tool",
+      status: "failed",
+      actionKey: `main_agent_runtime:${input.triggerMessage.id}`,
+      inputHash: hashRunInput({
+        taskId: taskBrief?.taskId ?? null,
+        taskBriefDigest: taskBrief?.digest ?? null,
+        intentEpoch: project.intentEpoch ?? 0,
+        sourceMessageId: input.triggerMessage.id,
+      }),
+      reasonCodes: [agentTurn.failure.reasonCode],
+      reportRefs: [],
+      targetLocators: [],
+      responsibleStage: "main_agent_runtime",
+      minimalNextAction: "pause",
+      teacherSafeSummary: agentTurn.failure.summary,
+    });
+    runtimeFailureMetadata = appendAgentObservationMetadata({
+      ...input.triggerMessage.metadata,
+      mainAgentFailure: agentTurn.failure,
+      recovery: {
+        errorId: failureObservation.observationId,
+        reasonCode: agentTurn.failure.reasonCode,
+        summary: agentTurn.failure.summary,
+        kind: "resume",
+        label: "服务恢复后继续当前任务",
+      },
+    }, failureObservation);
+    input.triggerMessage = await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
+      ...input.triggerMessage.metadata,
+      ...runtimeFailureMetadata,
+    });
+    if (taskBrief) {
+      if (intentGrant) {
+        const committedFailure = await input.controlPlaneStore.commitRunFailure({
+          taskBrief,
+          intentGrant,
+          observation: {
+            observationId: failureObservation.observationId,
+            status: failureObservation.status,
+            reasonCodes: failureObservation.reasonCodes,
+            payload: structuredClone(failureObservation) as unknown as Record<string, unknown>,
+          },
+          event: {
+            eventId: crypto.randomUUID(),
+            projectId: input.projectId,
+            taskId: taskBrief.taskId,
+            runId: `turn:${input.triggerMessage.id}`,
+            intentEpoch: taskBrief.intentEpoch,
+            kind: "run_failed",
+            visibility: "internal",
+            occurredAt: new Date().toISOString(),
+            payload: {
+              reasonCode: agentTurn.failure.reasonCode,
+              retryability: agentTurn.failure.retryability,
+              category: agentTurn.failure.category,
+              observationId: failureObservation.observationId,
+              taskBriefDigest: taskBrief.digest,
+            },
+          },
+        });
+        taskAggregate = committedFailure.aggregate;
+      }
+    }
+  }
   const effectiveConfirmedActionId = input.confirmedActionId
     ?? (controlResolution.decision.usePendingActionId ? pendingPlan?.actionId : undefined);
-  const confirmedBudgetDisclosure = Boolean(pendingPlan) && pendingPlan?.actionId === effectiveConfirmedActionId &&
-    pendingPlan?.pendingDecision?.kind === "budget_disclosure";
-  if (confirmedBudgetDisclosure && intentGrant) {
-    intentGrant = discloseStandardTaskBudget(intentGrant);
-    await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
+  const confirmedBudgetDecision = pendingPlan?.actionId === effectiveConfirmedActionId &&
+    (pendingPlan?.pendingDecision?.kind === "budget_disclosure" || pendingPlan?.pendingDecision?.kind === "budget_upgrade")
+    ? pendingPlan.pendingDecision
+    : undefined;
+  if (confirmedBudgetDecision && intentGrant && taskBrief) {
+    intentGrant = confirmedBudgetDecision.kind === "budget_disclosure"
+      ? discloseStandardTaskBudget(intentGrant, taskBrief)
+      : {
+          ...intentGrant,
+          budgetPolicyVersion: confirmedBudgetDecision.budgetPolicyVersion,
+          maxCostCredits: confirmedBudgetDecision.maxCostCredits,
+          maxExternalProviderCalls: confirmedBudgetDecision.maxExternalProviderCalls,
+        };
+    const messageMetadata = {
       ...input.triggerMessage.metadata,
-      ...(taskBrief ? { taskBrief } : {}),
+      taskBrief,
       intentGrant,
+    };
+    await input.controlPlaneStore.commitIntentGrantWithMessage({
+      taskBrief,
+      intentGrant,
+      messageId: input.triggerMessage.id,
+      messageMetadata,
     });
+    input.triggerMessage = { ...input.triggerMessage, metadata: messageMetadata };
+    taskAggregate = taskAggregate ? { ...taskAggregate, intentGrant } : taskAggregate;
   }
   const effectivePendingPlan = pendingPlan && intentGrant
     ? { ...pendingPlan, intentGrant }
@@ -501,6 +869,62 @@ async function executeTeacherMessageTurn(input: {
     });
   }
 
+  if (nativeToolControlPlaneOwnsTurn && agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
+    const content = "当前任务编排状态需要重新同步，系统没有执行重复计划。";
+    const observation = createAgentObservation({
+      projectId: input.projectId,
+      source: "tool",
+      status: "blocked",
+      actionKey: "legacy_outer_tool_plan",
+      inputHash: hashRunInput({
+        taskId: taskBrief?.taskId,
+        intentEpoch: project.intentEpoch ?? 0,
+        toolPlan: agentTurn.toolPlan ?? pendingPlan?.toolPlan,
+      }),
+      reasonCodes: ["single_orchestrator_violation", "legacy_outer_tool_plan_rejected"],
+      reportRefs: [],
+      targetLocators: [],
+      responsibleStage: "orchestrator_runtime",
+      minimalNextAction: "repair_upstream",
+      teacherSafeSummary: content,
+    });
+    input.triggerMessage = await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
+      ...appendAgentObservationMetadata(input.triggerMessage.metadata, observation),
+      orchestrationMode: "native_function_loop_only",
+    });
+    if (taskBrief) {
+      await input.controlPlaneStore.appendEvent({
+        eventId: crypto.randomUUID(),
+        projectId: input.projectId,
+        taskId: taskBrief.taskId,
+        runId: `turn:${input.triggerMessage.id}`,
+        intentEpoch: taskBrief.intentEpoch,
+        kind: "run_failed",
+        visibility: "internal",
+        occurredAt: new Date().toISOString(),
+        payload: { reasonCode: "single_orchestrator_violation", observationId: observation.observationId },
+      });
+    }
+    const assistantMessage = await input.service.addMessage(input.projectId, {
+      role: "assistant",
+      content,
+      metadata: { orchestrationMode: "native_function_loop_only" },
+    });
+    return {
+      message: input.triggerMessage,
+      assistantMessage,
+      agentTurn: {
+        ...agentTurn,
+        assistantMessage: { body: content },
+        state: "failed_blocked",
+        shouldRunToolNow: false,
+        toolPlan: undefined,
+        deliveryPlan: undefined,
+        artifactRefs: [],
+      },
+    };
+  }
+
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
     return runPlannedArtifact({
       service: input.service,
@@ -531,9 +955,17 @@ async function executeTeacherMessageTurn(input: {
       executionIdentity: input.executionIdentity,
       executionFence: input.executionFence,
       enableTaskGrantAutonomy: input.enableTaskGrantAutonomy,
+      enableNativeToolControlPlane: input.enableNativeToolControlPlane,
+      controlPlaneStore: input.controlPlaneStore,
+      businessSkillRuntime: input.businessSkillRuntime,
+      businessSkillRuntimeMode: input.businessSkillRuntimeMode,
       intentGrant,
     });
   }
+  const persistentActivities = collectPersistentTeacherActivityParts(
+    await input.controlPlaneStore.listEvents(input.projectId),
+    `turn:${input.triggerMessage.id}`,
+  );
   const assistantMetadata = mergeMessageMetadata(
       createPendingDeliveryPlanMetadata(
         agentTurn,
@@ -543,7 +975,12 @@ async function executeTeacherMessageTurn(input: {
         externalProviderCallsUsed,
       ),
     createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
+    runtimeFailureMetadata,
     { conversationControlDecision: controlResolution.decision },
+    persistentActivities.length ? { agentActivities: persistentActivities } : undefined,
+    isDialogueCheckpoint(input.triggerMessage.metadata.dialogueCheckpoint)
+      ? { dialogueCheckpoint: input.triggerMessage.metadata.dialogueCheckpoint }
+      : undefined,
   );
   const assistantMessage = await addAssistantMessageWithPendingActionId(input.service, input.projectId, {
     role: "assistant",
@@ -553,11 +990,459 @@ async function executeTeacherMessageTurn(input: {
       project,
       intentGrant,
       externalProviderCallsUsed,
+      taskBrief,
     ),
     metadata: assistantMetadata,
   });
 
   return { message: input.triggerMessage, assistantMessage, agentTurn };
+}
+
+function createMainAgentProgressWriter(input: {
+  projectId: string;
+  teacherMessageId: string;
+  projectIntentEpoch: number;
+  controlPlaneStore: ControlPlaneStore;
+  getTaskBrief: () => TaskBrief | undefined;
+}): MainAgentProgressSink {
+  const runId = `turn:${input.teacherMessageId}`;
+  let toolSequence = 0;
+  const activeToolActivityIds = new Map<string, {
+    activityId: string;
+    startedAt: string;
+    purpose?: string;
+    inputSummary?: string[];
+    expectedOutput?: string;
+  }>();
+  let pendingText = "";
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let writeChain = Promise.resolve();
+
+  const enqueue = (progress: MainAgentProgressEvent) => {
+    writeChain = writeChain.then(async () => {
+      try {
+        const taskBrief = input.getTaskBrief();
+        const scope = {
+          projectId: input.projectId,
+          taskId: taskBrief?.taskId ?? `conversation-turn:${input.teacherMessageId}`,
+          runId,
+          intentEpoch: taskBrief?.intentEpoch ?? input.projectIntentEpoch,
+        };
+        const event = progressEventToAgentEvent(progress, scope, activeToolActivityIds, () => ++toolSequence);
+        if (event) await input.controlPlaneStore.appendEvent(event);
+      } catch {
+        // Progress projection must never become a second execution or failure path.
+      }
+    });
+  };
+
+  const flushText = () => {
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = undefined;
+    if (!pendingText) return;
+    const delta = pendingText;
+    pendingText = "";
+    enqueue({ type: "text_delta", delta });
+  };
+
+  return async (progress) => {
+    if (progress.type === "text_delta") {
+      pendingText += progress.delta;
+      if (pendingText.length >= 256) flushText();
+      else if (!flushTimer) flushTimer = setTimeout(flushText, 100);
+      return;
+    }
+    flushText();
+    enqueue(progress);
+    await writeChain;
+  };
+}
+
+function progressEventToAgentEvent(
+  progress: MainAgentProgressEvent,
+  scope: { projectId: string; taskId: string; runId: string; intentEpoch: number },
+  activeToolActivityIds: Map<string, {
+    activityId: string;
+    startedAt: string;
+    purpose?: string;
+    inputSummary?: string[];
+    expectedOutput?: string;
+  }>,
+  nextToolSequence: () => number,
+): Parameters<ControlPlaneStore["appendEvent"]>[0] | null {
+  const base = {
+    eventId: crypto.randomUUID(),
+    ...scope,
+    occurredAt: new Date().toISOString(),
+  };
+  if (progress.type === "response_started") {
+    return {
+      ...base,
+      kind: "text_started",
+      visibility: "teacher",
+      payload: { status: "running" },
+    };
+  }
+  if (progress.type === "text_delta") {
+    return {
+      ...base,
+      kind: "text_delta",
+      visibility: "teacher",
+      payload: { text: progress.delta },
+    };
+  }
+  if (progress.type === "step_started") {
+    const activityId = `${scope.runId}:tool:${nextToolSequence()}`;
+    activeToolActivityIds.set(progress.toolName, {
+      activityId,
+      startedAt: base.occurredAt,
+      ...(progress.purpose ? { purpose: progress.purpose } : {}),
+      ...(progress.inputSummary?.length ? { inputSummary: [...progress.inputSummary] } : {}),
+      ...(progress.expectedOutput ? { expectedOutput: progress.expectedOutput } : {}),
+    });
+    return {
+      ...base,
+      kind: "tool_started",
+      visibility: "teacher",
+      payload: {
+        activityId,
+        label: `正在${capabilityTeacherLabel(progress.toolName)}`,
+        status: "running",
+        ...(progress.purpose ? { purpose: progress.purpose } : {}),
+        ...(progress.inputSummary?.length ? { inputSummary: [...progress.inputSummary] } : {}),
+        ...(progress.expectedOutput ? { expectedOutput: progress.expectedOutput } : {}),
+        startedAt: base.occurredAt,
+      },
+    };
+  }
+  if (progress.type === "step_observed") {
+    const active = activeToolActivityIds.get(progress.toolName);
+    const activityId = active?.activityId ?? `${scope.runId}:tool:${nextToolSequence()}`;
+    activeToolActivityIds.delete(progress.toolName);
+    const status = progress.status === "succeeded" ? "succeeded"
+      : progress.status === "needs_input" ? "blocked"
+      : progress.status;
+    return {
+      ...base,
+      kind: "tool_observed",
+      visibility: "teacher",
+      payload: {
+        activityId,
+        label: toolObservationLabel(progress.toolName, progress.status, progress.summary),
+        status,
+        ...(progress.observationId ? { observationId: progress.observationId } : {}),
+        ...(progress.reasonCodes[0] ? { reasonCode: progress.reasonCodes[0] } : {}),
+        ...(progress.nextAction ? { nextAction: progress.nextAction } : {}),
+        ...(progress.artifactRefs?.length ? { artifactRefs: structuredClone(progress.artifactRefs) } : {}),
+        ...(progress.summary ? { observationSummary: progress.summary } : {}),
+        ...(active?.purpose ? { purpose: active.purpose } : {}),
+        ...(active?.inputSummary?.length ? { inputSummary: [...active.inputSummary] } : {}),
+        ...(active?.expectedOutput ? { expectedOutput: active.expectedOutput } : {}),
+        ...(active?.startedAt ? {
+          startedAt: active.startedAt,
+          finishedAt: base.occurredAt,
+          durationMs: Math.max(0, Date.parse(base.occurredAt) - Date.parse(active.startedAt)),
+        } : {}),
+      },
+    };
+  }
+  if (progress.type === "response_completed") {
+    return {
+      ...base,
+      kind: "activity_updated",
+      visibility: "internal",
+      payload: {
+        activityId: `${scope.runId}:response-metrics`,
+        label: "Main Agent response metrics",
+        status: "completed",
+        usage: progress.usage,
+        telemetry: progress.telemetry,
+      },
+    };
+  }
+  return {
+    ...base,
+    kind: "activity_updated",
+    visibility: "teacher",
+    payload: {
+      activityId: `${scope.runId}:response`,
+      label: progress.summary,
+      status: "failed",
+    },
+  };
+}
+
+export function capabilityTeacherLabel(toolName: string) {
+  try {
+    return resolveMainAgentToolDefinition(toolName).label;
+  } catch {
+    try {
+      return getCapabilityDefinition(toolName as CapabilityId).userLabel;
+    } catch {
+      return "执行当前步骤";
+    }
+  }
+}
+
+const taskOutputTeacherLabels: Record<string, string> = {
+  requirement_spec: "需求规格",
+  lesson_plan: "公开课教案",
+  ppt: "PPT 结构候选",
+  ppt_outline: "PPT 结构候选",
+  pptx: "可编辑 PPTX",
+  video_script: "视频脚本",
+  image: "图片资产",
+  video: "视频成片",
+  package: "完整材料包",
+};
+
+function taskScopeTeacherProjection(taskBrief: TaskBrief) {
+  const requested = [...new Set(taskBrief.requestedOutputs.map(taskOutputTeacherLabel))];
+  const excluded = [...new Set(taskBrief.excludedOutputs.map(taskOutputTeacherLabel))];
+  const requestedLabel = requested.join("、") || "当前任务成果";
+  return {
+    inputSummary: [
+      `交付范围：${requestedLabel}`,
+      ...(excluded.length ? [`明确不包含：${excluded.join("、")}`] : []),
+    ],
+    expectedOutput: `可继续审阅的${requestedLabel}`,
+  };
+}
+
+function taskOutputTeacherLabel(output: string) {
+  return taskOutputTeacherLabels[output] ?? output;
+}
+
+function toolObservationLabel(
+  toolName: string,
+  status: Extract<MainAgentProgressEvent, { type: "step_observed" }>["status"],
+  summary?: string,
+) {
+  if (summary?.trim()) return summary.trim();
+  const label = capabilityTeacherLabel(toolName);
+  if (status === "succeeded") return `${label}已完成，正在判断下一步`;
+  if (status === "repair" || status === "inconclusive") return `${label}需要调整，正在重新规划`;
+  if (status === "needs_input" || status === "blocked") return `${label}暂时无法继续`;
+  return `${label}未完成，已保存失败位置`;
+}
+
+async function commitPreAgentControlTurn(input: {
+  service: WorkbenchService;
+  project: ProjectRecord;
+  messages: ConversationMessageRecord[];
+  activePlans: PendingDeliveryPlanSnapshot[];
+  triggerMessage: ConversationMessageRecord;
+  control: PreAgentControlDecision;
+  replacementProposal?: Parameters<typeof createTaskBriefFromProposal>[0]["proposal"];
+  previousTaskBrief?: TaskBrief;
+  controlPlaneStore: ControlPlaneStore;
+}): Promise<MessageTurnResponse> {
+  const previousIntentEpoch = input.project.intentEpoch ?? 0;
+  const pendingStatus = input.control.kind === "pause"
+    ? "paused"
+    : input.control.kind === "cancel" ? "canceled" : "superseded";
+  for (const plan of input.activePlans) {
+    await updatePendingPlanStatus(input.service, input.project.id, plan, pendingStatus);
+  }
+
+  const nextIntentEpoch = input.control.advanceIntentEpoch
+    ? await input.service.advanceProjectIntentEpoch(input.project.id, previousIntentEpoch)
+    : previousIntentEpoch;
+  const nextProject = { ...input.project, intentEpoch: nextIntentEpoch };
+  const controlArtifacts = input.control.kind === "redirect"
+    ? await input.service.getArtifacts(input.project.id)
+    : [];
+  const domainImpact = input.control.kind === "redirect"
+    ? resolveDomainRevisionImpact(input.control.userMessage, controlArtifacts)
+    : null;
+  const impactScope = input.control.kind === "redirect"
+    ? domainImpact?.nextAction === "repair_unit" ? "unit" : "upstream"
+    : "task";
+  const controlReasonCode = input.control.kind === "redirect" && input.activePlans.length === 0
+    ? "teacher_redirected_without_pending_plan"
+    : input.control.reasonCode;
+  const observation = createAgentObservation({
+    projectId: input.project.id,
+    source: "teacher_revision",
+    status: input.control.kind === "redirect" ? "repair" : "needs_input",
+    actionKey: `${input.control.kind}:${input.previousTaskBrief?.taskId ?? "active-task"}`,
+    inputHash: hashRunInput({
+      control: input.control.kind,
+      previousIntentEpoch,
+      nextIntentEpoch,
+      userMessage: input.control.userMessage,
+    }),
+    reasonCodes: [controlReasonCode],
+    reportRefs: [],
+    targetLocators: [],
+    responsibleStage: "turn_intake_control",
+    minimalNextAction: input.control.kind === "redirect" ? "repair_upstream" : "pause",
+    teacherSafeSummary: controlAcknowledgement(input.control.kind),
+  });
+  const retainedTaskBrief = input.control.kind === "redirect" ? undefined : input.previousTaskBrief;
+  const retainedIntentGrant = retainedTaskBrief
+    ? ensureStandardTaskBudgetDisclosure(
+        resolveActiveIntentGrant(input.messages, retainedTaskBrief) ?? createStandardIntentGrant(retainedTaskBrief),
+        retainedTaskBrief,
+      )
+    : undefined;
+  let metadata: Record<string, unknown> = appendAgentObservationMetadata({
+    ...input.triggerMessage.metadata,
+    ...(retainedTaskBrief ? { taskBrief: retainedTaskBrief } : {}),
+    ...(retainedIntentGrant ? { intentGrant: retainedIntentGrant } : {}),
+    conversationControlImpact: {
+      decisionKind: input.control.kind,
+      reasonCode: controlReasonCode,
+      previousIntentEpoch,
+      nextIntentEpoch,
+      persistedBeforeAgent: true,
+      impactScope,
+      preservedArtifacts: true,
+      supersededPlanIds: input.activePlans.map((plan) => plan.toolPlan.planId),
+      domainImpact,
+    },
+  }, observation);
+  if (input.control.kind === "pause") {
+    metadata = appendRunCheckpointMetadata(metadata, createRunCheckpoint({
+      projectId: input.project.id,
+      planVersion: nextIntentEpoch,
+      reason: "teacher_requested_pause",
+      actionKey: observation.actionKey,
+      inputHash: observation.inputHash,
+      observationRefs: [observation.observationId],
+    }));
+  } else {
+    metadata = clearRunCheckpointMetadata(metadata);
+  }
+
+  let triggerMessage = await input.service.updateMessageMetadata(
+    input.project.id,
+    input.triggerMessage.id,
+    metadata,
+  );
+
+  if (input.previousTaskBrief) {
+    const previousIntentGrant = ensureStandardTaskBudgetDisclosure(
+      resolveActiveIntentGrant(input.messages, input.previousTaskBrief) ?? createStandardIntentGrant(input.previousTaskBrief),
+      input.previousTaskBrief,
+    );
+    const previousAggregate = await input.controlPlaneStore.getTaskAggregate(input.project.id, previousIntentEpoch);
+    const checkpoint = input.control.kind === "pause" && metadata.agentRunCheckpoint && typeof metadata.agentRunCheckpoint === "object"
+      ? metadata.agentRunCheckpoint as Record<string, unknown>
+      : previousAggregate?.checkpoint ?? null;
+    await input.controlPlaneStore.upsertTaskAggregate({
+      taskBrief: input.previousTaskBrief,
+      intentGrant: previousIntentGrant,
+      plan: previousAggregate ? { ...previousAggregate.plan, status: pendingStatus } : {
+        planId: input.activePlans[0]?.toolPlan.planId ?? `plan:${input.previousTaskBrief.taskId}`,
+        revision: 0,
+        status: pendingStatus,
+      },
+      status: pendingStatus,
+      checkpoint,
+    });
+    await input.controlPlaneStore.appendEvent({
+      eventId: crypto.randomUUID(),
+      projectId: input.project.id,
+      taskId: input.previousTaskBrief.taskId,
+      runId: `turn:${input.triggerMessage.id}`,
+      intentEpoch: previousIntentEpoch,
+      kind: "task_updated",
+      visibility: "internal",
+      occurredAt: new Date().toISOString(),
+      payload: { control: input.control.kind, observationId: observation.observationId },
+    });
+  }
+
+  if (input.control.kind === "redirect") {
+    if (!input.replacementProposal) {
+      throw new Error("A Main Agent redirect decision requires a replacement TaskBrief proposal.");
+    }
+    const projectConstraints = [input.project.grade, input.project.subject, input.project.lessonTopic]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .map((value) => value.trim());
+    const nextTaskBrief = createTaskBriefFromProposal({
+      proposal: {
+        ...input.replacementProposal,
+        goal: input.control.userMessage.trim(),
+        constraints: [...new Set([...input.replacementProposal.constraints, ...projectConstraints])],
+      },
+      taskId: `task:${input.triggerMessage.id}`,
+      projectId: input.project.id,
+      intentEpoch: nextIntentEpoch,
+      generationIntensity: input.project.generationIntensity ?? "standard",
+      sourceMessageId: input.triggerMessage.id,
+    });
+      const nextIntentGrant = createStandardIntentGrant(nextTaskBrief);
+      metadata = {
+        ...triggerMessage.metadata,
+        taskBrief: nextTaskBrief,
+        intentGrant: nextIntentGrant,
+      };
+      triggerMessage = await input.service.updateMessageMetadata(
+        input.project.id,
+        input.triggerMessage.id,
+        metadata,
+      );
+      await input.controlPlaneStore.upsertTaskAggregate({
+        taskBrief: nextTaskBrief,
+        intentGrant: nextIntentGrant,
+        plan: {
+          planId: `plan:${nextTaskBrief.taskId}`,
+          revision: 0,
+          status: "active",
+        },
+        status: "active",
+        checkpoint: null,
+      });
+      await input.controlPlaneStore.appendEvent({
+        eventId: crypto.randomUUID(),
+        projectId: input.project.id,
+        taskId: nextTaskBrief.taskId,
+        runId: `turn:${input.triggerMessage.id}`,
+        intentEpoch: nextIntentEpoch,
+        kind: "task_created",
+        visibility: "internal",
+        occurredAt: new Date().toISOString(),
+        payload: {
+          control: input.control.kind,
+          controlObservationId: observation.observationId,
+          taskBriefDigest: nextTaskBrief.digest,
+        },
+      });
+  }
+
+  const content = controlAcknowledgement(input.control.kind);
+  const assistantMessage = await input.service.addMessage(input.project.id, {
+    role: "assistant",
+    content,
+    metadata: {
+      conversationControlDecision: {
+        kind: input.control.kind,
+        reasonCode: controlReasonCode,
+        persistedBeforeAgent: true,
+      },
+    },
+  });
+  const agentTurn: MainAgentTurn = {
+    assistantMessage: { body: content },
+    state: input.control.kind === "redirect" ? "collecting_inputs" : "chatting",
+    quickReplies: [],
+    recommendedOptions: [],
+    shouldRunToolNow: false,
+    runtimeKind: "openai",
+  };
+  return {
+    message: triggerMessage,
+    assistantMessage,
+    agentTurn,
+  };
+}
+
+function controlAcknowledgement(kind: PreAgentControlDecision["kind"]) {
+  if (kind === "pause") return "已暂停当前任务，并保存了恢复位置。";
+  if (kind === "cancel") return "已取消当前任务，旧结果不会继续提升。";
+  return "已保存新的任务方向，旧计划不会继续执行。";
 }
 
 function enrichToolPlanWithTaskContext(
@@ -631,6 +1516,10 @@ async function runPlannedArtifact(input: {
   executionIdentity?: ExecutionIdentitySnapshot;
   executionFence?: ProjectExecutionFence;
   enableTaskGrantAutonomy?: boolean;
+  enableNativeToolControlPlane?: boolean;
+  controlPlaneStore: ControlPlaneStore;
+  businessSkillRuntime?: BusinessToolSkillRuntime;
+  businessSkillRuntimeMode: "optional" | "required";
   intentGrant?: IntentGrant;
   autonomousToolRoundsUsed?: number;
 }): Promise<MessageTurnResponse> {
@@ -963,6 +1852,7 @@ async function runPlannedArtifact(input: {
     summary: result.artifactDraft.summary,
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
+    origin: "tool_result",
   });
   const successObservation = createSucceededAgentObservation({
     projectId: input.project.id,
@@ -1049,6 +1939,22 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   const pptDirectorPlan = toolPlan.capabilityId === "ppt_design"
     ? await resolvePersistedPptDirectorPlan(input)
     : undefined;
+  const toolDefinition = getToolDefinitionByCapabilityId(toolPlan.capabilityId);
+  const executionBoundary = await resolveCompatibilityToolExecutionBoundary({
+    input,
+    toolName: toolDefinition.id,
+    arguments: toolPlan.inputDraft,
+  });
+  if (executionBoundary.status === "failed") {
+    return finalizeFailedToolRouterResult({
+      input,
+      toolPlan,
+      result: buildToolExecutionBoundaryFailureResult(input, toolPlan, toolDefinition, executionBoundary.reasonCode),
+      actionKey,
+      actionInputHash,
+      jobId: null,
+    });
+  }
 
   const videoUnitId = toolPlan.capabilityId === "video_segment_generate" ? resolveSingleVideoShotId(toolPlan.inputDraft) : undefined;
   const generationJob = toolPlan.capabilityId === "video_segment_generate" && !videoUnitId
@@ -1056,118 +1962,138 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     : resolveProviderGenerationJob(toolPlan.capabilityId, input.artifacts);
   let jobId: string | null = null;
   let activeGenerationJob: Awaited<ReturnType<WorkbenchService["startGenerationJobForExecution"]>> | null = null;
-  if (generationJob) {
-    const queuedJob = await input.service.createGenerationJob(input.project.id, {
-      kind: generationJob.kind,
-      sourceArtifactId: generationJob.sourceArtifact.id,
-      capabilityId: toolPlan.capabilityId,
-      ...(videoUnitId ? { unitId: videoUnitId } : {}),
-      sourceArtifactIds: input.artifacts.filter(isArtifactTrustedForDownstream).map((artifact) => artifact.id),
-      inputSnapshot: {
-        userInstruction,
-        toolInput: structuredClone(toolPlan.inputDraft),
-        artifacts: input.artifacts.filter(isArtifactTrustedForDownstream).map((artifact) => ({
-          id: artifact.id,
-          kind: artifact.kind,
-          nodeKey: artifact.nodeKey,
-          version: artifact.version,
-          updatedAt: artifact.updatedAt,
-        })),
-      },
-    });
-    jobId = queuedJob.id;
-    const recovered = queuedJob.status === "succeeded" && queuedJob.resultArtifactId
-      ? { artifact: await input.service.getArtifact(input.project.id, queuedJob.resultArtifactId) }
-      : await input.service.resumeStagedGenerationResult(input.project.id, jobId);
-    if (recovered) {
-      const artifact = recovered.artifact;
-      const assistantMessage = await input.service.addMessage(input.project.id, {
-        role: "assistant",
-        content: `已复用当前输入对应的${artifact.title}，没有重复调用生成服务。`,
-        artifactRefs: [artifact.id],
-        metadata: clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, createSucceededAgentObservation({
-          projectId: input.project.id,
-          actionKey,
-          inputHash: actionInputHash,
+  const gatewayResult = await executeThroughToolGateway<MessageTurnResponse | ToolExecutionResult>({
+    request: executionBoundary.request,
+    current: executionBoundary.current,
+    executionEnvelope: executionBoundary.executionEnvelope,
+    execute: async ({ executionEnvelope }) => {
+      if (generationJob) {
+        const queuedJob = await input.service.createGenerationJob(input.project.id, {
+          kind: generationJob.kind,
+          sourceArtifactId: generationJob.sourceArtifact.id,
           capabilityId: toolPlan.capabilityId,
-          artifactKind: artifact.kind,
-          artifactId: artifact.id,
-        }))),
-      });
-      return {
-        message: input.triggerMessage,
-        assistantMessage,
-        artifact,
-        agentTurn: {
-          ...plannedTurn,
-          assistantMessage: { body: assistantMessage.content },
-          state: "succeeded",
-          shouldRunToolNow: false,
-          artifactRefs: [artifact.id],
-        },
-      };
-    }
-    activeGenerationJob = await input.service.startGenerationJobForExecution(input.project.id, jobId);
-    if (activeGenerationJob.job.status === "submission_unknown") {
-      const content = "生成任务的恢复信息需要核对，系统没有自动重复提交。";
-      const assistantMessage = await input.service.addMessage(input.project.id, {
-        role: "assistant",
-        content,
-        metadata: appendAgentObservationMetadata(undefined, createAgentObservation({
-          projectId: input.project.id,
-          source: "tool",
-          status: "inconclusive",
-          actionKey,
-          inputHash: actionInputHash,
-          reasonCodes: ["submission_unknown"],
-          reportRefs: [],
-          targetLocators: [],
-          responsibleStage: toolPlan.capabilityId,
-          minimalNextAction: "pause",
-          teacherSafeSummary: content,
-        })),
-      });
-      return {
-        message: input.triggerMessage,
-        assistantMessage,
-        agentTurn: {
-          ...plannedTurn,
-          assistantMessage: { body: content },
-          state: "failed_blocked",
-          shouldRunToolNow: false,
-          artifactRefs: [],
-        },
-      };
-    }
-  }
+          ...(videoUnitId ? { unitId: videoUnitId } : {}),
+          sourceArtifactIds: input.artifacts.filter(isArtifactTrustedForDownstream).map((artifact) => artifact.id),
+          inputSnapshot: {
+            userInstruction,
+            toolInput: structuredClone(toolPlan.inputDraft),
+            artifacts: input.artifacts.filter(isArtifactTrustedForDownstream).map((artifact) => ({
+              id: artifact.id,
+              kind: artifact.kind,
+              nodeKey: artifact.nodeKey,
+              version: artifact.version,
+              updatedAt: artifact.updatedAt,
+            })),
+          },
+        });
+        jobId = queuedJob.id;
+        const recovered = queuedJob.status === "succeeded" && queuedJob.resultArtifactId
+          ? { artifact: await input.service.getArtifact(input.project.id, queuedJob.resultArtifactId) }
+          : await input.service.resumeStagedGenerationResult(input.project.id, jobId);
+        if (recovered) {
+          const artifact = recovered.artifact;
+          const assistantMessage = await input.service.addMessage(input.project.id, {
+            role: "assistant",
+            content: `已复用当前输入对应的${artifact.title}，没有重复调用生成服务。`,
+            artifactRefs: [artifact.id],
+            metadata: clearRunCheckpointMetadata(appendAgentObservationMetadata(undefined, createSucceededAgentObservation({
+              projectId: input.project.id,
+              actionKey,
+              inputHash: actionInputHash,
+              capabilityId: toolPlan.capabilityId,
+              artifactKind: artifact.kind,
+              artifactId: artifact.id,
+            }))),
+          });
+          return {
+            message: input.triggerMessage,
+            assistantMessage,
+            artifact,
+            agentTurn: {
+              ...plannedTurn,
+              assistantMessage: { body: assistantMessage.content },
+              state: "succeeded",
+              shouldRunToolNow: false,
+              artifactRefs: [artifact.id],
+            },
+          };
+        }
+        activeGenerationJob = await input.service.startGenerationJobForExecution(input.project.id, jobId);
+        if (activeGenerationJob.job.status === "submission_unknown") {
+          const content = "生成任务的恢复信息需要核对，系统没有自动重复提交。";
+          const assistantMessage = await input.service.addMessage(input.project.id, {
+            role: "assistant",
+            content,
+            metadata: appendAgentObservationMetadata(undefined, createAgentObservation({
+              projectId: input.project.id,
+              source: "tool",
+              status: "inconclusive",
+              actionKey,
+              inputHash: actionInputHash,
+              reasonCodes: ["submission_unknown"],
+              reportRefs: [],
+              targetLocators: [],
+              responsibleStage: toolPlan.capabilityId,
+              minimalNextAction: "pause",
+              teacherSafeSummary: content,
+            })),
+          });
+          return {
+            message: input.triggerMessage,
+            assistantMessage,
+            agentTurn: {
+              ...plannedTurn,
+              assistantMessage: { body: content },
+              state: "failed_blocked",
+              shouldRunToolNow: false,
+              artifactRefs: [],
+            },
+          };
+        }
+      }
 
-  let result = await input.toolRouter({
-    capabilityId: toolPlan.capabilityId,
-    projectId: input.project.id,
-    project: input.project,
-    userInstruction,
-    toolInput: toolPlan.inputDraft,
-    runtime: input.runtime,
-    projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
-    approvedArtifacts,
-    artifactRefs,
-    resolvedArtifacts: executionArtifacts,
-    sourceMessageId: input.triggerMessage.id,
-    executionInputHash: activeGenerationJob?.job.inputHash ?? actionInputHash,
-    executionIntentEpoch: activeGenerationJob?.job.intentEpoch ?? input.project.intentEpoch ?? 0,
-    pptDirectorPlan,
-    generationTaskLifecycle: activeGenerationJob ? {
-      providerTaskId: activeGenerationJob.providerTaskId,
-      onTaskAccepted: async (providerTaskId) => {
-        await input.service.recordGenerationProviderTask(input.project.id, activeGenerationJob!.job.id, { providerTaskId });
-      },
-      onPoll: async () => {
-        await input.service.recordGenerationPoll(input.project.id, activeGenerationJob!.job.id);
-      },
-    } : undefined,
+      return input.toolRouter({
+        toolName: toolDefinition.id,
+        capabilityId: toolPlan.capabilityId,
+        projectId: input.project.id,
+        project: input.project,
+        userInstruction,
+        toolInput: toolPlan.inputDraft,
+        runtime: input.runtime,
+        projectContext: toAgentRuntimeProjectContext(input.project, generationUserMessage),
+        approvedArtifacts,
+        artifactRefs,
+        resolvedArtifacts: executionArtifacts,
+        sourceMessageId: input.triggerMessage.id,
+        executionInputHash: activeGenerationJob?.job.inputHash ?? actionInputHash,
+        executionIntentEpoch: activeGenerationJob?.job.intentEpoch ?? input.project.intentEpoch ?? 0,
+        executionEnvelope,
+        pptDirectorPlan,
+        generationTaskLifecycle: activeGenerationJob ? {
+          providerTaskId: activeGenerationJob.providerTaskId,
+          onTaskAccepted: async (providerTaskId) => {
+            await input.service.recordGenerationProviderTask(input.project.id, activeGenerationJob!.job.id, { providerTaskId });
+          },
+          onPoll: async () => {
+            await input.service.recordGenerationPoll(input.project.id, activeGenerationJob!.job.id);
+          },
+        } : undefined,
+      });
+    },
   });
+  if ("message" in gatewayResult) return gatewayResult;
+  if (!("toolId" in gatewayResult)) {
+    return finalizeFailedToolRouterResult({
+      input,
+      toolPlan,
+      result: buildToolExecutionBoundaryFailureResult(input, toolPlan, toolDefinition, gatewayResult.reasonCode),
+      actionKey,
+      actionInputHash,
+      jobId,
+    });
+  }
+  let result = gatewayResult;
 
-  const toolDefinition = getToolDefinitionByCapabilityId(toolPlan.capabilityId);
   if (result.status === "succeeded" && toolDefinition.adapterKind === "provider" && !isVerifiedProviderToolSuccess(result)) {
     result = buildUnverifiedProviderResult(input, toolPlan);
   }
@@ -1176,57 +2102,7 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   }
 
   if (result.status !== "succeeded") {
-    if (jobId) {
-      if ("errorCategory" in result && result.errorCategory === "submission_unknown") {
-        await input.service.markGenerationSubmissionUnknown(input.project.id, jobId, result.observation.teacherSafeSummary);
-      } else {
-        await input.service.failGenerationJob(input.project.id, jobId, { errorMessage: result.observation.teacherSafeSummary });
-      }
-    }
-    const budgetEvent = normalizeToolRouterBudgetEvent(result, toolPlan);
-    const failedTurn: MainAgentTurn = {
-      ...plannedTurn,
-      assistantMessage: { body: result.observation.teacherSafeSummary },
-      state: result.status === "needs_input" ? "needs_input" : result.status === "retryable_failed" ? "failed_retryable" : "failed_blocked",
-      shouldRunToolNow: false,
-      artifactRefs: [],
-    };
-    const failureObservation = createAgentObservationFromToolObservation({
-      projectId: input.project.id,
-      actionKey,
-      inputHash: actionInputHash,
-      observation: result.observation,
-      validationReport: result.validationReport,
-      status: result.status === "needs_input" ? "needs_input" : "failed",
-      reasonCodes: [
-        result.observation.kind,
-        ...("errorCategory" in result && result.errorCategory ? [result.errorCategory] : []),
-      ],
-    });
-    const failureMetadata = {
-      ...appendToolObservationMetadata(undefined, result.observation),
-      ...appendAgentObservationMetadata(undefined, failureObservation),
-      agentHarnessBudgetEvent: budgetEvent,
-    };
-    if (plannedTurn.runtimeKind === "openai") {
-      return replanAfterBusinessToolResult({
-        input,
-        reason: "tool_failed",
-        actionKey,
-        observationIds: [failureObservation.observationId],
-        resultMetadata: failureMetadata,
-        result,
-      });
-    }
-    const assistantMessage = await input.service.addMessage(input.project.id, {
-      role: "assistant",
-      content: result.observation.teacherSafeSummary,
-      metadata: {
-        ...failureMetadata,
-        orchestrationMode: "single_tool_test_runtime",
-      },
-    });
-    return { message: input.triggerMessage, assistantMessage, agentTurn: failedTurn, result };
+    return finalizeFailedToolRouterResult({ input, toolPlan, result, actionKey, actionInputHash, jobId });
   }
   if (!result.validationReport) {
     throw new Error("ToolRouter succeeded without a ValidationReport.");
@@ -1240,6 +2116,7 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     summary: result.artifactDraft.summary,
     markdownContent: result.artifactDraft.markdownContent ?? "",
     structuredContent: result.artifactDraft.structuredContent,
+    origin: "tool_result" as const,
     validationReport: result.validationReport,
   };
   const artifact = jobId
@@ -1316,6 +2193,163 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
   };
 }
 
+async function resolveCompatibilityToolExecutionBoundary(input: {
+  input: Parameters<typeof runPlannedArtifact>[0];
+  toolName: string;
+  arguments: Record<string, unknown>;
+}) {
+  const turnInput = input.input;
+  const intentEpoch = turnInput.project.intentEpoch ?? 0;
+  const identity = turnInput.executionIdentity ?? turnInput.service.getExecutionIdentity();
+  if (!identity?.actorUserId.trim()) {
+    return { status: "failed" as const, reasonCode: "execution_identity_required" };
+  }
+  const aggregate = await turnInput.controlPlaneStore.getTaskAggregate(turnInput.project.id, intentEpoch);
+  if (!aggregate) {
+    return { status: "failed" as const, reasonCode: "task_aggregate_required" };
+  }
+
+  const intensity = turnInput.project.generationIntensity ?? aggregate.taskBrief.generationIntensity;
+  const actionArguments = structuredClone(input.arguments);
+  try {
+    const executionEnvelope = createExecutionEnvelope({
+      actorUserId: identity.actorUserId,
+      taskBrief: aggregate.taskBrief,
+      planRevision: aggregate.plan.revision,
+      intensity,
+      intentGrant: aggregate.intentGrant,
+      action: { toolName: input.toolName, arguments: actionArguments },
+    });
+    return {
+      status: "ready" as const,
+      executionEnvelope,
+      request: {
+        toolName: input.toolName,
+        projectId: turnInput.project.id,
+        intentEpoch,
+        arguments: actionArguments,
+      },
+      current: {
+        actorUserId: identity.actorUserId,
+        projectId: turnInput.project.id,
+        taskId: aggregate.taskBrief.taskId,
+        intentEpoch,
+        planRevision: aggregate.plan.revision,
+        intensity,
+        taskBriefDigest: aggregate.taskBrief.digest,
+      },
+    };
+  } catch {
+    return { status: "failed" as const, reasonCode: "execution_envelope_invalid" };
+  }
+}
+
+function buildToolExecutionBoundaryFailureResult(
+  input: Parameters<typeof runPlannedArtifact>[0],
+  toolPlan: CapabilityToolPlan,
+  toolDefinition: ReturnType<typeof getToolDefinitionByCapabilityId>,
+  reasonCode: string,
+): Exclude<ToolExecutionResult, { status: "succeeded" }> {
+  return {
+    status: "failed",
+    toolId: toolDefinition.id,
+    capabilityId: toolPlan.capabilityId,
+    observation: createToolObservation({
+      projectId: input.project.id,
+      sourceMessageId: input.triggerMessage.id,
+      capabilityId: toolPlan.capabilityId,
+      expectedArtifactKind: toolDefinition.producedArtifactKind,
+      kind: "tool_failed",
+      teacherSafeSummary: "这一步的任务执行信息不完整，我会保存当前进度并按最新任务重新规划。",
+      internalReasonSanitized: reasonCode,
+      retryPolicy: { retryable: false, nextAction: "skip_or_replan" },
+    }),
+    artifactCreated: false,
+    errorCategory: reasonCode,
+    reasonCode,
+    budgetEvent: buildAgentHarnessBudgetEvent({
+      capabilityId: toolPlan.capabilityId,
+      expectedArtifactKind: toolDefinition.producedArtifactKind,
+      status: "failed",
+      kind: "tool_failed",
+      providerSubmitted: false,
+    }),
+  };
+}
+
+async function finalizeFailedToolRouterResult(input: {
+  input: Parameters<typeof runPlannedArtifact>[0];
+  toolPlan: CapabilityToolPlan;
+  result: Exclude<ToolExecutionResult, { status: "succeeded" }>;
+  actionKey: string;
+  actionInputHash: string;
+  jobId: string | null;
+}): Promise<MessageTurnResponse> {
+  const turnInput = input.input;
+  const errorCategory = "errorCategory" in input.result ? input.result.errorCategory : undefined;
+  if (input.jobId) {
+    if (errorCategory === "submission_unknown") {
+      await turnInput.service.markGenerationSubmissionUnknown(
+        turnInput.project.id,
+        input.jobId,
+        input.result.observation.teacherSafeSummary,
+      );
+    } else {
+      await turnInput.service.failGenerationJob(turnInput.project.id, input.jobId, {
+        errorMessage: input.result.observation.teacherSafeSummary,
+      });
+    }
+  }
+  const budgetEvent = normalizeToolRouterBudgetEvent(input.result, input.toolPlan);
+  const failedTurn: MainAgentTurn = {
+    ...turnInput.plannedTurn,
+    assistantMessage: { body: input.result.observation.teacherSafeSummary },
+    state: input.result.status === "needs_input"
+      ? "needs_input"
+      : input.result.status === "retryable_failed"
+        ? "failed_retryable"
+        : "failed_blocked",
+    shouldRunToolNow: false,
+    artifactRefs: [],
+  };
+  const failureObservation = createAgentObservationFromToolObservation({
+    projectId: turnInput.project.id,
+    actionKey: input.actionKey,
+    inputHash: input.actionInputHash,
+    observation: input.result.observation,
+    validationReport: input.result.validationReport,
+    status: input.result.status === "needs_input" ? "needs_input" : "failed",
+    reasonCodes: [
+      input.result.observation.kind,
+      ...(errorCategory ? [errorCategory] : []),
+    ],
+  });
+  const failureMetadata = {
+    ...appendToolObservationMetadata(undefined, input.result.observation),
+    ...appendAgentObservationMetadata(undefined, failureObservation),
+    agentHarnessBudgetEvent: budgetEvent,
+  };
+  if (turnInput.plannedTurn.runtimeKind === "openai") {
+    return replanAfterBusinessToolResult({
+      input: turnInput,
+      reason: "tool_failed",
+      actionKey: input.actionKey,
+      observationIds: [failureObservation.observationId],
+      resultMetadata: failureMetadata,
+      result: input.result,
+    });
+  }
+  const assistantMessage = await turnInput.service.addMessage(turnInput.project.id, {
+    role: "assistant",
+    content: input.result.observation.teacherSafeSummary,
+    metadata: {
+      ...failureMetadata,
+      orchestrationMode: "single_tool_test_runtime",
+    },
+  });
+  return { message: turnInput.triggerMessage, assistantMessage, agentTurn: failedTurn, result: input.result };
+}
+
 async function resolvePersistedPptDirectorPlan(
   input: Parameters<typeof runPlannedArtifact>[0],
 ): Promise<PptDirectorPlanBinding | undefined> {
@@ -1341,6 +2375,7 @@ async function resolvePersistedPptDirectorPlan(
     approvedArtifactRefs: report.approvedArtifactRefs.map((ref) => ({
       artifactId: ref.artifactId,
       kind: ref.kind,
+      version: ref.version,
       digest: ref.digest,
     })),
   };
@@ -1389,19 +2424,33 @@ async function replanAfterBusinessToolResult(input: {
           : null,
       }
     : undefined;
+  const replanTaskAggregate = await turnInput.controlPlaneStore.getTaskAggregate(
+    turnInput.project.id,
+    project.intentEpoch ?? 0,
+  );
   const workflowNodes = await turnInput.service.getNodes(turnInput.project.id);
   const artifacts = await turnInput.service.getArtifacts(turnInput.project.id);
   const generationJobs = await turnInput.service.getGenerationJobs(turnInput.project.id);
   const turnJobs = await turnInput.service.getConversationTurnJobs(turnInput.project.id);
   const pendingPlan = findPendingDeliveryPlan(messages);
-  const contextPackage = buildConversationContextPackage({ project, messages, workflowNodes, artifacts });
+  const authoritativeReplanTaskBrief = replanTaskBrief ?? replanTaskAggregate?.taskBrief;
+  const contextPackage = buildConversationContextPackage({
+    project,
+    messages,
+    workflowNodes,
+    artifacts,
+    taskBrief: authoritativeReplanTaskBrief,
+  });
   const capabilityAvailability = buildCapabilityAvailability({
     capabilityDefinitions: getCapabilityDefinitions(),
     artifacts,
     providerAvailability: resolveRuntimeProviderAvailability(),
+    taskBrief: replanTaskBrief,
   });
   const agentWorldState = buildAgentWorldState({
     project,
+    taskBrief: authoritativeReplanTaskBrief ?? null,
+    taskPlanRevision: replanTaskAggregate?.plan.revision ?? null,
     workflowNodes,
     artifacts,
     generationJobs,
@@ -1415,13 +2464,16 @@ async function replanAfterBusinessToolResult(input: {
   });
   const replanAgentInput: MainConversationAgentInput = {
     userMessage: turnInput.generationUserMessage,
+    toolControlPlane: turnInput.enableNativeToolControlPlane ? "native" : "outer",
     responseStyle: turnInput.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
     generationIntensity: project.generationIntensity,
     intentGrant: turnInput.enableTaskGrantAutonomy ? replanIntentGrant : undefined,
-    availableArtifactKinds: artifacts.map((artifact) => artifact.kind),
+    availableArtifactKinds: artifacts
+      .filter((artifact) => isArtifactTrustedForDownstream(artifact) && Boolean(replanTaskBrief && isArtifactBoundToTask(artifact, replanTaskBrief)))
+      .map((artifact) => artifact.kind),
     projectContext: toMainAgentProjectContext(project),
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan),
-    agentToolLoop: createMainAgentToolLoopOptions({
+    agentToolLoop: turnInput.enableNativeToolControlPlane ? createMainAgentToolLoopOptions({
       service: turnInput.service,
       runtime: turnInput.runtime,
       project,
@@ -1433,7 +2485,11 @@ async function replanAfterBusinessToolResult(input: {
       intentGrant: replanIntentGrant,
       taskBrief: replanTaskBrief,
       externalProviderCallsUsed: countExternalProviderCalls(readBudgetEventsForCurrentIntent(messages, project.intentEpoch ?? 0)),
-    }),
+      planRevision: replanTaskAggregate?.plan.revision,
+      controlPlaneStore: turnInput.controlPlaneStore,
+      businessSkillRuntime: turnInput.businessSkillRuntime,
+      businessSkillRuntimeMode: turnInput.businessSkillRuntimeMode,
+    }) : undefined,
     replanDirective: {
       reason: input.reason,
       previousActionKey: input.actionKey,
@@ -1708,6 +2764,7 @@ function appendPendingDecisionNotice(
   project: ProjectRecord,
   intentGrant?: IntentGrant,
   externalProviderCallsUsed = 0,
+  taskBrief?: TaskBrief,
 ) {
   if (agentTurn.state !== "awaiting_confirmation" || !agentTurn.toolPlan?.requiresConfirmation) return content;
   const tool = getToolDefinitionByCapabilityId(agentTurn.toolPlan.capabilityId);
@@ -1724,8 +2781,9 @@ function appendPendingDecisionNotice(
   });
   if (policy.kind !== "human_gate") return content;
   const description = describeActionPolicyHumanGate(policy.reason);
-  if (policy.reason === "budget_not_disclosed") {
-    return `${content}\n\n${description.question}${description.impactSummary} 当前标准范围最多调用 ${STANDARD_TASK_MAX_EXTERNAL_PROVIDER_CALLS} 次外部生成能力；目前没有可靠积分计量，因此不会显示虚构积分。`;
+  if (policy.reason === "budget_not_disclosed" && taskBrief) {
+    const budget = resolveStandardTaskBudget(taskBrief);
+    return `${content}\n\n${description.question}${description.impactSummary} 当前任务标准范围最多调用 ${budget.maxExternalProviderCalls} 次外部生成能力；目前没有可靠积分计量，因此不会显示虚构积分。`;
   }
   return `${content}\n\n${description.question}${description.impactSummary}`;
 }
@@ -1781,16 +2839,6 @@ function buildApprovedArtifactInputs(artifacts: ArtifactRecord[]) {
     summary: artifact.summary,
     markdown: artifact.markdownContent,
   }));
-}
-
-function findRemainingRequestedOutputs(taskBrief: TaskBrief, artifacts: ArtifactRecord[]): string[] {
-  const trustedKinds = new Set(
-    artifacts.filter(isArtifactTrustedForDownstream).map((artifact) => artifact.kind),
-  );
-  return taskBrief.requestedOutputs.filter((output) => {
-    const satisfyingKinds = taskOutputArtifactKinds[output];
-    return !satisfyingKinds || ![...satisfyingKinds].some((kind) => trustedKinds.has(kind));
-  });
 }
 
 function buildProviderArtifactRefs(artifacts: ArtifactRecord[]) {
@@ -2186,6 +3234,11 @@ function createPendingDecisionForPendingPlan(
     },
   });
   if (decision.kind !== "human_gate") return undefined;
+  const standardBudget = resolveStandardTaskBudget(taskBrief);
+  const upgradeBudget = resolveBudgetUpgrade({
+    taskBrief,
+    currentMaxExternalProviderCalls: pendingPlan.intentGrant?.maxExternalProviderCalls,
+  });
   return createPendingDecisionForAction({
     action: risk,
     decision,
@@ -2198,9 +3251,14 @@ function createPendingDecisionForPendingPlan(
     intentGrant: pendingPlan.intentGrant,
     disclosedBudget: decision.reason === "budget_not_disclosed"
       ? {
-          budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
+          budgetPolicyVersion: standardBudget.policyVersion,
           maxCostCredits: null,
-          maxExternalProviderCalls: STANDARD_TASK_MAX_EXTERNAL_PROVIDER_CALLS,
+          maxExternalProviderCalls: standardBudget.maxExternalProviderCalls,
+        }
+      : decision.reason === "budget_upgrade" ? {
+          budgetPolicyVersion: upgradeBudget.policyVersion,
+          maxCostCredits: null,
+          maxExternalProviderCalls: upgradeBudget.maxExternalProviderCalls,
         }
       : undefined,
   });
@@ -2305,17 +3363,7 @@ function findCurrentIntentBoundary(messages: ConversationMessageRecord[], intent
 }
 
 function countExternalProviderCalls(events: ReturnType<typeof readAgentHarnessBudgetEventsFromMessages>) {
-  return events.filter((event) => {
-    if (event.status === "blocked" || event.kind === "provider_unavailable" || event.kind === "blocked_by_policy" || event.kind === "retry_exhausted") {
-      return false;
-    }
-    try {
-      const tool = getToolDefinitionByCapabilityId(event.capabilityId as CapabilityId);
-      return actionRiskForTool(tool) === "external_generation";
-    } catch {
-      return false;
-    }
-  }).length;
+  return countSubmittedExternalProviderCalls(events);
 }
 
 function isGenericContinuationRequest(text: string) {
@@ -2349,24 +3397,11 @@ function toMainAgentProjectContext(project: ProjectRecord) {
 }
 
 function toAgentRuntimeProjectContext(project: ProjectRecord, teacherGoal: string): AgentProjectContext {
+  const scope = resolveProjectSemanticScope(project, teacherGoal);
   return {
-    grade: project.grade ?? inferGrade(teacherGoal) ?? "五年级",
-    subject: project.subject ?? inferSubject(teacherGoal) ?? "数学",
-    topic: project.lessonTopic ?? inferTopic(teacherGoal) ?? "待确认课题",
+    ...scope,
     textbookVersion: project.textbookVersion ?? undefined,
     teacherGoal,
     requestedOutputs: ["需求规格", "教案", "PPT 大纲", "导入视频方案"],
   };
-}
-
-function inferGrade(text: string) {
-  return text.match(/[一二三四五六1-6]年级/)?.[0] ?? null;
-}
-
-function inferSubject(text: string) {
-  return text.match(/数学|语文|英语|科学|道德与法治/)?.[0] ?? null;
-}
-
-function inferTopic(text: string) {
-  return text.match(/百分数|分数|小数|周长|面积|乘法|除法|课题/)?.[0] ?? null;
 }

@@ -30,7 +30,7 @@ const agentToolDefinitions: AgentToolDefinition[] = [
     transportName: "video_director_plan_or_repair",
     agentProfileId: "video_director",
     label: "规划或返修导入视频",
-    description: "根据课程锚点和可信视频材料提出独立创意、节拍、分镜或定点返修建议。",
+    description: "先保证短片脱离教材仍成立，再以唯一最小课程锚点回接课程任务，并基于可信视频材料提出节拍、分镜或定点返修建议。",
     inputContract: { id: "video-director-input", version: "v1" },
     outputContract: { id: "video-director-result", version: "v1" },
     inputSchema: directorInputSchema("targetShotIds"),

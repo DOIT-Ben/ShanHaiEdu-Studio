@@ -33,7 +33,7 @@ export function buildDeterministicSessionSummary(input: {
     ...input.artifacts.map((artifact) => `- ${artifact.title}：${artifact.kind}，状态 ${artifact.status}，approved=${artifact.isApproved}`),
     "",
     "## Open Decisions",
-    "- 若存在 needs_review 产物，需要教师确认后继续。",
+    "- needs_review 只记录成果当前状态，不自动阻断后续工作；是否需要教师判断由 Main Agent 根据当前语义边界决定。",
     "",
     "## Guardrails",
     ...guardrails.map((guardrail) => `- ${guardrail}`),

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as postImageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { seedArtifactRouteTask } from "../../../../tests/support/artifact-route-task-fixture";
 import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
@@ -23,6 +24,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
+    const { taskBrief } = await seedArtifactRouteTask(project, ["image_prompts"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -91,9 +93,14 @@ describe("Local Real MVP M19 image artifact adapter", () => {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
     expect(routeToolCall).toHaveBeenCalledWith(expect.objectContaining({
-      capabilityId: "image_asset",
+      toolName: "generate_classroom_image",
       projectId: project.id,
-      project,
+      project: expect.objectContaining({ id: project.id }),
+      executionEnvelope: expect.objectContaining({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        taskBriefDigest: taskBrief.digest,
+      }),
       artifactRefs: [{
         kind: "ppt_draft",
         artifactId: approvedSourceArtifact.id,
@@ -141,6 +148,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
   ])("does not save an image artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "Image provider truth gate" });
+    await seedArtifactRouteTask(project, ["image_prompts"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -204,6 +212,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
   it("does not save an image artifact and fails the job when ToolRouter fails", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M64-R image ToolRouter failure" });
+    await seedArtifactRouteTask(project, ["image_prompts"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",

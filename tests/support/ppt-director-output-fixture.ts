@@ -68,11 +68,10 @@ export function validPptDirectorOutput(): Record<string, unknown> {
     presentation_brief: snakeBrief(design),
     evidence_bindings: design.evidenceBindings.map((item) => ({
       evidence_id: item.evidenceId,
-      source_artifact_id: item.sourceArtifactId,
+      source_artifact_kind: item.sourceType === "textbook" ? "textbook_evidence" : "ppt_draft",
       source_type: item.sourceType,
       page_refs: item.pageRefs,
       claims: item.claims,
-      digest: item.digest,
     })),
     learning_objectives: design.objectives.map((item) => ({
       objective_id: item.objectiveId,

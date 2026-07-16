@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { actionRiskForTool, createPendingDecisionForAction, evaluateActionPolicy } from "@/server/guards/action-policy";
-import type { IntentGrant } from "@/server/conversation/task-contract";
+import { actionRiskForTool, createPendingDecisionForAction, discloseStandardTaskBudget, evaluateActionPolicy } from "@/server/guards/action-policy";
+import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 
 const grant: IntentGrant = {
   schemaVersion: "intent-grant.v1", taskId: "task-1", projectId: "project-1", intentEpoch: 0,
-  standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "v1-standard",
-  maxCostCredits: null, maxExternalProviderCalls: 3, requiredCheckpoints: [], expiresAt: null,
+  standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "v1-standard-task-scope.v1",
+  maxCostCredits: null, maxExternalProviderCalls: 2, requiredCheckpoints: [], expiresAt: null,
 };
 
 describe("V1-9R2 ActionPolicy", () => {
@@ -22,7 +22,7 @@ describe("V1-9R2 ActionPolicy", () => {
 
   it("requires one HumanGate for missing authorization and every real risk", () => {
     expect(evaluateActionPolicy({ risk: "external_generation" })).toEqual({ kind: "human_gate", reason: "missing_grant" });
-    for (const risk of ["budget_upgrade", "highest_intensity", "publish", "permission_change", "destructive", "material_choice"] as const) {
+    for (const risk of ["budget_upgrade", "highest_intensity", "publish", "permission_change", "destructive"] as const) {
       expect(evaluateActionPolicy({ risk, intentGrant: grant })).toMatchObject({ kind: "human_gate" });
     }
   });
@@ -41,19 +41,48 @@ describe("V1-9R2 ActionPolicy", () => {
       risk: "external_generation",
       intentGrant: { ...grant, budgetPolicyVersion: "v1-stale" },
     })).toEqual({ kind: "human_gate", reason: "budget_not_disclosed" });
+    expect(evaluateActionPolicy({
+      risk: "external_generation",
+      intentGrant: { ...grant, budgetPolicyVersion: "v1-standard", maxExternalProviderCalls: 3 },
+    })).toEqual({ kind: "human_gate", reason: "budget_not_disclosed" });
   });
 
   it("allows external calls below the disclosed task limit and gates the first call beyond it", () => {
     expect(evaluateActionPolicy({
       risk: "external_generation",
       intentGrant: grant,
-      externalProviderCallsUsed: 2,
+      externalProviderCallsUsed: 1,
     })).toEqual({ kind: "allow", reason: "within_task_grant" });
     expect(evaluateActionPolicy({
       risk: "external_generation",
       intentGrant: grant,
-      externalProviderCallsUsed: 3,
+      externalProviderCallsUsed: 2,
     })).toEqual({ kind: "human_gate", reason: "budget_upgrade" });
+  });
+
+  it("discloses the TaskBrief-scoped bound instead of a global three-call limit", () => {
+    const brief = createTaskBrief({
+      taskId: grant.taskId,
+      projectId: grant.projectId,
+      intentEpoch: grant.intentEpoch,
+      goal: "完成完整材料包。",
+      requestedOutputs: ["lesson_plan", "ppt", "image", "video", "package"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: grant.intensity,
+      sourceMessageId: "message-1",
+    });
+    const disclosed = discloseStandardTaskBudget({
+      ...grant,
+      budgetPolicyVersion: null,
+      maxExternalProviderCalls: null,
+    }, brief);
+
+    expect(disclosed).toMatchObject({
+      budgetPolicyVersion: expect.stringMatching(/^v1-standard-task-scope\./),
+      maxExternalProviderCalls: expect.any(Number),
+    });
+    expect(disclosed.maxExternalProviderCalls).toBeGreaterThanOrEqual(19);
   });
 
   it("turns every blocking policy reason into one typed, action-bound pending decision", () => {
@@ -65,7 +94,6 @@ describe("V1-9R2 ActionPolicy", () => {
       ["publish", grant, "publish", "publish"],
       ["permission_change", grant, "permission_change", "permission_change"],
       ["destructive", grant, "destructive", "destructive"],
-      ["material_choice", grant, "material_choice", "material_choice"],
     ] as const;
 
     for (const [risk, intentGrant, reason, kind] of cases) {

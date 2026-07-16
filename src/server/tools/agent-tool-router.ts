@@ -2,7 +2,10 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { createToolObservation, isToolObservation } from "@/server/capabilities/tool-observation";
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { prisma } from "@/server/db/client";
-import { assertExecutionIdentityCanWriteProject } from "@/server/execution/execution-identity";
+import {
+  assertExecutionIdentityCanWriteProject,
+  ExecutionIdentityRejectedError,
+} from "@/server/execution/execution-identity";
 import { isArtifactStructuredContentDownstreamEligible } from "@/server/quality/artifact-quality-state";
 
 import { getAgentToolDefinition, getAgentToolDefinitionByTransportName } from "./agent-tool-registry";
@@ -87,6 +90,19 @@ export type AgentToolRouterDependencies = {
   executor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
 };
 
+type AgentToolAuthorizationDecision =
+  | { authorized: true }
+  | {
+      authorized: false;
+      errorCategory: AgentToolRouterFailedResult["errorCategory"];
+      reasonCode: string;
+      retryable: boolean;
+    };
+
+type AgentToolReferenceDecision =
+  | { valid: true }
+  | { valid: false; reasonCode: string };
+
 export async function routeAgentToolCall(
   envelope: AgentToolInvocationEnvelope,
   dependencies: AgentToolRouterDependencies = {},
@@ -113,19 +129,35 @@ export async function routeAgentToolCall(
 
   const bindingIssues = validateInvocationBindings(envelope, tool);
   if (bindingIssues.length > 0) {
-    return failed(envelope, "agent_tool_arguments_invalid", `Agent Tool invocation binding failed: ${bindingIssues.join(",")}`, false);
+    return failed(
+      envelope,
+      "agent_tool_arguments_invalid",
+      `Agent Tool invocation binding failed: ${bindingIssues.join(",")}`,
+      false,
+      { reasonCode: bindingIssues[0], reasonDetails: bindingIssues },
+    );
   }
 
-  const authorize = dependencies.authorize ?? ((candidateEnvelope: AgentToolInvocationEnvelope) =>
-    defaultAuthorize(dependencies.authorizationDb ?? prisma, candidateEnvelope));
-  let authorized = false;
-  try {
-    authorized = await authorize(envelope, tool);
-  } catch {
-    authorized = false;
+  let authorization: AgentToolAuthorizationDecision;
+  if (dependencies.authorize) {
+    try {
+      authorization = await dependencies.authorize(envelope, tool)
+        ? { authorized: true }
+        : authorizationDenied("authorization_denied");
+    } catch {
+      authorization = authorizationCheckUnavailable();
+    }
+  } else {
+    authorization = await defaultAuthorize(dependencies.authorizationDb ?? prisma, envelope);
   }
-  if (!authorized) {
-    return failed(envelope, "agent_tool_unauthorized", "Agent Tool invocation is not authorized for this project.", false);
+  if (!authorization.authorized) {
+    return failed(
+      envelope,
+      authorization.errorCategory,
+      `Agent Tool preflight rejected the invocation: ${authorization.reasonCode}.`,
+      authorization.retryable,
+      { reasonCode: authorization.reasonCode },
+    );
   }
 
   if (!dependencies.executor) {
@@ -138,7 +170,7 @@ export async function routeAgentToolCall(
     if (!result) {
       return failed(envelope, "agent_tool_execution_failed", "Agent Tool executor returned an invalid result.", false);
     }
-    if (result.status !== "succeeded") return result;
+    if (result.status !== "succeeded") return normalizeExecutorFailure(envelope, result);
 
     const outputValidation = validateJsonSchemaValue(result.structuredOutput, tool.outputSchema);
     if (!outputValidation.valid) {
@@ -323,52 +355,74 @@ function criticReviewOutcome(
 async function defaultAuthorize(
   db: AgentToolAuthorizationDatabase,
   envelope: AgentToolInvocationEnvelope,
-): Promise<boolean> {
+): Promise<AgentToolAuthorizationDecision> {
   try {
-    await assertExecutionIdentityCanWriteProject(db, envelope.identity, envelope.projectId);
+    try {
+      await assertExecutionIdentityCanWriteProject(db, envelope.identity, envelope.projectId);
+    } catch (error) {
+      if (error instanceof ExecutionIdentityRejectedError) {
+        return authorizationDenied(`execution_identity_${error.code}`);
+      }
+      throw error;
+    }
     const project = await db.project.findUnique({
       where: { id: envelope.projectId },
       select: { intentEpoch: true },
     });
-    if (project?.intentEpoch !== envelope.intentEpoch) return false;
+    if (project?.intentEpoch !== envelope.intentEpoch) {
+      return invocationIntegrityDenied("intent_epoch_stale");
+    }
 
     const sourceMessage = await db.conversationMessage.findFirst({
       where: { id: envelope.sourceMessageId, projectId: envelope.projectId },
       select: { id: true },
     });
-    if (!sourceMessage) return false;
-
-    if (envelope.reviewTargetRef && !await authorizeReviewTarget(
-      db,
-      envelope.projectId,
-      envelope.reviewTargetRef,
-      isCourseAnchorReviewArguments(envelope.arguments)
-        ? COURSE_ANCHOR_REVIEW_ARTIFACT_KIND
-        : isVideoFinalReviewArguments(envelope.arguments) ? FINAL_VIDEO_REVIEW_ARTIFACT_KIND : null,
-    )) {
-      return false;
+    if (!sourceMessage) {
+      return invocationIntegrityDenied("source_message_not_in_project");
     }
 
-    if (envelope.approvedArtifactRefs.length === 0) return true;
+    if (envelope.reviewTargetRef) {
+      const reviewTarget = await authorizeReviewTarget(
+        db,
+        envelope.projectId,
+        envelope.reviewTargetRef,
+        isCourseAnchorReviewArguments(envelope.arguments)
+          ? COURSE_ANCHOR_REVIEW_ARTIFACT_KIND
+          : isVideoFinalReviewArguments(envelope.arguments) ? FINAL_VIDEO_REVIEW_ARTIFACT_KIND : null,
+      );
+      if (!reviewTarget.valid) return inputEligibilityDenied(reviewTarget.reasonCode);
+    }
+
+    if (envelope.approvedArtifactRefs.length === 0) return { authorized: true };
+    if (new Set(envelope.approvedArtifactRefs.map((ref) => ref.artifactId)).size !== envelope.approvedArtifactRefs.length) {
+      return inputEligibilityDenied("approved_artifact_ref_duplicate");
+    }
     const artifacts = await db.artifact.findMany({
       where: {
         projectId: envelope.projectId,
         id: { in: envelope.approvedArtifactRefs.map((ref) => ref.artifactId) },
-        status: { in: ["needs_review", "approved"] },
       },
     });
-    if (artifacts.length !== envelope.approvedArtifactRefs.length) return false;
-    return envelope.approvedArtifactRefs.every((ref) => {
+    if (artifacts.length !== envelope.approvedArtifactRefs.length) {
+      return inputEligibilityDenied("approved_artifact_ref_missing");
+    }
+    for (const ref of envelope.approvedArtifactRefs) {
       const artifact = artifacts.find((candidate) => candidate.id === ref.artifactId);
-      if (!artifact || artifact.kind !== ref.kind || artifact.version !== ref.version) return false;
+      if (!artifact) return inputEligibilityDenied("approved_artifact_ref_missing");
+      if (artifact.kind !== ref.kind) return inputEligibilityDenied("approved_artifact_kind_mismatch");
+      if (artifact.version !== ref.version) return inputEligibilityDenied("approved_artifact_version_mismatch");
       const structuredContent = parseStructuredContent(artifact.structuredContentJson);
+      if (!structuredContent) return inputEligibilityDenied("approved_artifact_content_invalid");
       const trusted = (artifact.status === "approved" && artifact.isApproved) ||
         (artifact.status === "needs_review" && !artifact.isApproved && isArtifactStructuredContentDownstreamEligible(structuredContent));
-      if (!trusted) return false;
-      return hashPersistedArtifact(artifact) === ref.digest;
-    });
+      if (!trusted) return inputEligibilityDenied("approved_artifact_not_trusted");
+      if (hashPersistedArtifact(artifact) !== ref.digest) {
+        return inputEligibilityDenied("approved_artifact_digest_mismatch");
+      }
+    }
+    return { authorized: true };
   } catch {
-    return false;
+    return authorizationCheckUnavailable();
   }
 }
 
@@ -377,26 +431,61 @@ async function authorizeReviewTarget(
   projectId: string,
   ref: AgentToolArtifactRef,
   expectedNodeKey: string | null,
-): Promise<boolean> {
+): Promise<AgentToolReferenceDecision> {
   const artifact = await db.artifact.findFirst({
     where: {
       id: ref.artifactId,
       projectId,
-      status: { in: ["needs_review", "approved"] },
     },
   });
-  if (!artifact || artifact.kind !== ref.kind || artifact.version !== ref.version) return false;
-  if (expectedNodeKey && artifact.nodeKey !== expectedNodeKey) return false;
-  if (artifact.status === "needs_review" && artifact.isApproved) return false;
-  if (artifact.status === "approved" && !artifact.isApproved) return false;
+  if (!artifact) return { valid: false, reasonCode: "review_target_not_found" };
+  if (artifact.kind !== ref.kind) return { valid: false, reasonCode: "review_target_kind_mismatch" };
+  if (artifact.version !== ref.version) return { valid: false, reasonCode: "review_target_version_mismatch" };
+  if (expectedNodeKey && artifact.nodeKey !== expectedNodeKey) {
+    return { valid: false, reasonCode: "review_target_node_mismatch" };
+  }
+  if ((artifact.status === "needs_review" && artifact.isApproved) ||
+      (artifact.status === "approved" && !artifact.isApproved) ||
+      (artifact.status !== "needs_review" && artifact.status !== "approved")) {
+    return { valid: false, reasonCode: "review_target_approval_state_invalid" };
+  }
+  if (!parseStructuredContent(artifact.structuredContentJson)) {
+    return { valid: false, reasonCode: "review_target_content_invalid" };
+  }
 
   const latest = await db.artifact.findFirst({
     where: { projectId, nodeKey: artifact.nodeKey },
     orderBy: { version: "desc" },
     select: { id: true, version: true },
   });
-  if (!latest || latest.id !== artifact.id || latest.version !== artifact.version) return false;
-  return hashPersistedArtifact(artifact) === ref.digest;
+  if (!latest || latest.id !== artifact.id || latest.version !== artifact.version) {
+    return { valid: false, reasonCode: "review_target_stale" };
+  }
+  if (hashPersistedArtifact(artifact) !== ref.digest) {
+    return { valid: false, reasonCode: "review_target_digest_mismatch" };
+  }
+  return { valid: true };
+}
+
+function authorizationDenied(reasonCode: string): AgentToolAuthorizationDecision {
+  return { authorized: false, errorCategory: "agent_tool_unauthorized", reasonCode, retryable: false };
+}
+
+function invocationIntegrityDenied(reasonCode: string): AgentToolAuthorizationDecision {
+  return { authorized: false, errorCategory: "invocation_integrity_failed", reasonCode, retryable: false };
+}
+
+function inputEligibilityDenied(reasonCode: string): AgentToolAuthorizationDecision {
+  return { authorized: false, errorCategory: "agent_tool_arguments_invalid", reasonCode, retryable: false };
+}
+
+function authorizationCheckUnavailable(): AgentToolAuthorizationDecision {
+  return {
+    authorized: false,
+    errorCategory: "agent_tool_unavailable",
+    reasonCode: "authorization_check_failed",
+    retryable: true,
+  };
 }
 
 function hashPersistedArtifact(artifact: {
@@ -621,6 +710,37 @@ function rebuildAgentToolExecutorResult(
   return result;
 }
 
+function normalizeExecutorFailure(
+  envelope: AgentToolInvocationEnvelope,
+  result: AgentToolExecutionFailedResult,
+): AgentToolExecutionFailedResult {
+  const retryable = result.observation.retryPolicy.retryable === true;
+  const errorCategory = retryable ? "agent_tool_unavailable" : "agent_tool_execution_failed";
+  const policy = failedObservationPolicy(errorCategory, retryable);
+
+  return {
+    status: result.status,
+    toolId: result.toolId,
+    invocationId: result.invocationId,
+    errorCategory,
+    observation: createToolObservation({
+      projectId: envelope.projectId,
+      sourceMessageId: envelope.sourceMessageId,
+      capabilityId: envelope.toolId,
+      errorCategory,
+      reasonCode: result.observation.reasonCode ?? (retryable
+        ? "agent_tool_executor_temporarily_unavailable"
+        : "agent_tool_executor_result_inconclusive"),
+      reasonDetails: result.observation.reasonDetails,
+      kind: policy.kind,
+      teacherSafeSummary: policy.teacherSafeSummary,
+      internalReasonSanitized: result.observation.internalReasonSanitized,
+      retryPolicy: { retryable, nextAction: policy.nextAction },
+    }),
+    artifactCreated: false,
+  };
+}
+
 function hasOnlyAllowedOwnKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Reflect.ownKeys(value).every((key) => typeof key === "string" && allowed.has(key));
 }
@@ -644,7 +764,9 @@ function failed(
   errorCategory: AgentToolRouterFailedResult["errorCategory"],
   internalReasonSanitized: string,
   retryable: boolean,
+  details: { reasonCode?: string; reasonDetails?: string[] } = {},
 ): AgentToolRouterFailedResult {
+  const policy = failedObservationPolicy(errorCategory, retryable);
   return {
     status: "failed",
     toolId: envelope.toolId,
@@ -654,16 +776,50 @@ function failed(
       projectId: envelope.projectId,
       sourceMessageId: envelope.sourceMessageId,
       capabilityId: envelope.toolId,
-      kind: "blocked_by_policy",
-      teacherSafeSummary: retryable
-        ? "这项专业审查暂时不可用，请稍后重试。"
-        : "这项专业审查当前不能执行，请重新确认任务。",
+      errorCategory,
+      reasonCode: details.reasonCode,
+      reasonDetails: details.reasonDetails,
+      kind: policy.kind,
+      teacherSafeSummary: policy.teacherSafeSummary,
       internalReasonSanitized,
       retryPolicy: {
         retryable,
-        nextAction: retryable ? "retry_later" : "ask_teacher",
+        nextAction: policy.nextAction,
       },
     }),
     artifactCreated: false,
+  };
+}
+
+function failedObservationPolicy(
+  errorCategory: AgentToolRouterFailedResult["errorCategory"],
+  retryable: boolean,
+) {
+  if (retryable) {
+    return {
+      kind: "tool_failed" as const,
+      nextAction: "retry_later" as const,
+      teacherSafeSummary: "这项专业审查暂时不可用，当前进度已经保存。",
+    };
+  }
+  if (errorCategory === "agent_tool_unauthorized") {
+    return {
+      kind: "blocked_by_policy" as const,
+      nextAction: "ask_teacher" as const,
+      teacherSafeSummary: "这项操作缺少当前任务所需的授权，尚未执行。",
+    };
+  }
+  if (errorCategory === "agent_tool_arguments_invalid" || errorCategory === "agent_tool_output_invalid" ||
+      errorCategory === "agent_tool_output_blocked" || errorCategory === "agent_tool_execution_failed") {
+    return {
+      kind: "quality_gate_failed" as const,
+      nextAction: "fix_inputs" as const,
+      teacherSafeSummary: "当前输入或审查结果没有通过校验，已返回重新调整。",
+    };
+  }
+  return {
+    kind: "tool_failed" as const,
+    nextAction: "skip_or_replan" as const,
+    teacherSafeSummary: "当前调用没有通过完整性校验，已返回重新规划。",
   };
 }

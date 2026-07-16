@@ -1,23 +1,56 @@
 import "dotenv/config";
 import Database from "better-sqlite3";
 import { spawn } from "node:child_process";
-import { randomBytes, scrypt as nodeScrypt } from "node:crypto";
+import { createHash, randomBytes, scrypt as nodeScrypt } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  createV1_9RunManifestV2Digest,
+  deriveV1_9ExternalCodexOrchestrationCount,
+  normalizeV1_9RunManifestV2,
+  normalizeV1_9RunState,
+} from "./lib/v1-9-e2e-contract.mjs";
+import { assertCurrentV1_9BaselineLock } from "./lib/v1-9-baseline-lock.mjs";
+import { sanitizeEvidenceText } from "./lib/evidence-sanitizer.mjs";
+import {
+  assertM67CanonicalOwnedDescendant,
+  assertM67FrozenRunStorageState,
+  cleanM67OwnedFrozenAppCaches,
+  prepareM67FrozenApp,
+  resolveM67FrozenAppRoot,
+  resolveM67FrozenPlaywrightSpecPath,
+  resolveM67FrozenRunIdentity,
+  verifyM67FrozenApp,
+  verifyM67FrozenAppBeforeCacheCleanup,
+} from "./lib/m67-frozen-app.mjs";
+import {
+  createRunnerShutdownAuthority,
+  installRunnerShutdownIpcHandler,
+} from "./lib/runner-shutdown-authority.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runId = `${process.pid}-${Date.now()}`;
-const tempRoot = path.join(root, "test-results", `m67-e2e-${runId}`);
+const configuredRunRoot = resolveRunRoot(process.env.M67_E2E_RUN_ROOT);
+const tempRoot = configuredRunRoot ?? path.join(root, "test-results", `m67-e2e-${runId}`);
 const databasePath = path.join(tempRoot, "m67.sqlite");
 const artifactRoot = path.join(tempRoot, "artifact-storage");
 const evidenceRoot = path.join(tempRoot, "evidence");
-const playwrightOutput = path.join(tempRoot, "playwright-output");
-const generatedConfigPath = path.join(tempRoot, "playwright.config.mjs");
-const isolatedAppRoot = path.join(tempRoot, "next-app");
-const preserveRunDirectory = process.env.M67_E2E_PRESERVE_RUN_DIR === "1";
+const playwrightOutput = path.join(tempRoot, `playwright-output-${runId}`);
+const generatedConfigPath = path.join(tempRoot, `playwright.config-${runId}.mjs`);
+const configuredFrozenAppRoot = resolveM67FrozenAppRoot(process.env.M67_E2E_FROZEN_APP_ROOT, tempRoot);
+const frozenRunIdentity = resolveM67FrozenRunIdentity(process.env, configuredFrozenAppRoot);
+const resumeExistingRun = frozenRunIdentity?.mode === "resume";
+const isolatedAppRoot = configuredFrozenAppRoot ?? path.join(tempRoot, `next-app-${runId}`);
+const frozenAppMarkerPath = configuredFrozenAppRoot
+  ? path.join(configuredFrozenAppRoot, ".m67-frozen-app.json")
+  : null;
+const frozenBaselineLock = resolveFrozenBaselineLock();
+const preserveRunDirectory = Boolean(configuredRunRoot) || process.env.M67_E2E_PRESERVE_RUN_DIR === "1";
 const requestedSpec = resolveRequestedSpec(process.env.M67_E2E_SPEC ?? "tests/e2e/beta-feedback-center.spec.ts");
+const playwrightSpecPath = resolveM67FrozenPlaywrightSpecPath(requestedSpec, configuredFrozenAppRoot);
 const requestedProjects = resolveRequestedProjects(process.env.M67_E2E_PROJECTS);
 const admin = {
   email: process.env.M67_E2E_ADMIN_EMAIL ?? "m67-admin@example.test",
@@ -42,26 +75,43 @@ const browserRestrictedPorts = new Set([
   3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080,
 ]);
 
-const ownedChildren = new Set();
 let nextServer;
 let cleanupPromise;
 let serverLogTail = [];
 const mainAgentFailureDiagnostics = [];
+let frozenAppPrepared = false;
+let terminalSummaryStatus = null;
+const shutdownAuthority = createRunnerShutdownAuthority({
+  postStop: verifyFrozenAppAfterOwnedProcessesStop,
+});
+const detachShutdownIpc = installRunnerShutdownIpcHandler(shutdownAuthority);
 
-process.once("SIGINT", () => void stopFromSignal(130));
-process.once("SIGTERM", () => void stopFromSignal(143));
+process.once("SIGINT", () => void stopFromSignal(130, "SIGINT"));
+process.once("SIGTERM", () => void stopFromSignal(143, "SIGTERM"));
 
 try {
+  assertM67FrozenRunStorageState({
+    identity: frozenRunIdentity,
+    databasePath,
+    artifactRoot,
+    appRoot: isolatedAppRoot,
+  });
+  assertFrozenBaselineCurrent();
   fs.mkdirSync(artifactRoot, { recursive: true });
   const port = await reservePort();
   const baseURL = `http://127.0.0.1:${port}`;
   const env = createEnvironment(baseURL, port);
 
   await runCommand(process.execPath, ["scripts/init-sqlite-schema.mjs"], env, 60_000);
-  await seedUsers(env);
+  if (!resumeExistingRun) await seedUsers(env);
   assertSeededUsers();
   writePlaywrightConfig(baseURL);
   prepareIsolatedNextApp();
+  frozenAppPrepared = Boolean(configuredFrozenAppRoot);
+  if (frozenAppPrepared) {
+    verifyFrozenAppIntegrity();
+    assertFrozenBaselineCurrent();
+  }
 
   nextServer = startNextServer(env, port);
   await waitForServer(baseURL, nextServer, 120_000);
@@ -71,7 +121,7 @@ try {
     [
       "node_modules/@playwright/test/cli.js",
       "test",
-      requestedSpec,
+      playwrightSpecPath,
       "--config",
       generatedConfigPath,
       ...requestedProjects.map((project) => `--project=${project}`),
@@ -80,16 +130,30 @@ try {
     env,
     resolvePlaywrightCommandTimeoutMs(requestedSpec, process.env.M67_E2E_TIMEOUT_MS),
   );
+  await stopNextServerAndVerifyFrozenApp("completed");
   writeSanitizedSummary("passed");
 } catch (error) {
+  let failure = error;
+  try {
+    await stopNextServerAndVerifyFrozenApp("failure");
+  } catch (shutdownError) {
+    failure = new AggregateError([error, shutdownError], "M67 shutdown integrity verification failed.");
+  }
   writeSanitizedSummary("failed");
-  console.error(error instanceof Error ? error.message : error);
+  console.error(sanitizeDiagnosticText(failure instanceof Error ? failure.message : failure));
   if (serverLogTail.length > 0) {
     console.error("M67 Next dev log tail:\n" + serverLogTail.join(""));
   }
   process.exitCode = 1;
 } finally {
-  await cleanup();
+  try {
+    await cleanup();
+  } catch (cleanupError) {
+    writeSanitizedSummary("failed");
+    console.error(sanitizeDiagnosticText(cleanupError instanceof Error ? cleanupError.message : cleanupError));
+    process.exitCode = 1;
+  }
+  detachShutdownIpc();
 }
 
 function createEnvironment(baseURL, port) {
@@ -123,6 +187,70 @@ function createEnvironment(baseURL, port) {
     } : {}),
     CI: "1",
   };
+}
+
+function resolveRunRoot(value) {
+  const normalized = String(value ?? "").trim().replaceAll("\\", "/");
+  if (!normalized) return null;
+  if (!/^test-results\/[a-z0-9._-]+$/i.test(normalized) || normalized.includes("..")) {
+    throw new Error("M67_E2E_RUN_ROOT must stay inside the repository test-results directory.");
+  }
+  const testResultsRoot = path.resolve(root, "test-results");
+  const resolved = path.resolve(root, normalized);
+  try {
+    return assertM67CanonicalOwnedDescendant(testResultsRoot, resolved, true);
+  } catch {
+    throw new Error("M67_E2E_RUN_ROOT must name an owned child directory of test-results.");
+  }
+}
+
+function resolveFrozenBaselineLock() {
+  if (!frozenRunIdentity) return null;
+  const configuredRepositoryRoot = String(process.env.SHANHAI_V1_9_REPOSITORY_ROOT ?? "").trim();
+  if (!configuredRepositoryRoot) throw new Error("M67 frozen repository root is required.");
+  try {
+    const expectedRoot = fs.realpathSync(root);
+    const configuredRoot = fs.realpathSync(path.resolve(configuredRepositoryRoot));
+    const normalizePath = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+    if (normalizePath(configuredRoot) !== normalizePath(expectedRoot)) {
+      throw new Error("M67 frozen repository root is invalid.");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "M67 frozen repository root is invalid.") throw error;
+    throw new Error("M67 frozen repository root is invalid.");
+  }
+  const configuredManifestPath = String(process.env.V1_9_E2E_MANIFEST_PATH ?? "").trim();
+  if (!configuredManifestPath) throw new Error("M67 frozen run manifest path is required.");
+  const manifestPath = path.resolve(configuredManifestPath);
+  if (path.dirname(manifestPath) !== path.resolve(tempRoot) || path.basename(manifestPath) !== "run-manifest.json") {
+    throw new Error("M67 frozen run manifest path is invalid.");
+  }
+  try {
+    assertM67CanonicalOwnedDescendant(tempRoot, manifestPath, false);
+    const manifestBytes = fs.readFileSync(manifestPath);
+    const fileDigest = createHash("sha256").update(manifestBytes).digest("hex");
+    const manifest = normalizeV1_9RunManifestV2(JSON.parse(manifestBytes.toString("utf8")));
+    const actualRelativeRunRoot = path.relative(root, tempRoot).replaceAll("\\", "/");
+    if (fileDigest !== frozenRunIdentity.manifestSha256 ||
+        createV1_9RunManifestV2Digest(manifest) !== frozenRunIdentity.manifestSha256 ||
+        manifest.runId !== frozenRunIdentity.runId ||
+        manifest.relativeRunRoot !== actualRelativeRunRoot) {
+      throw new Error("M67 frozen run manifest identity is invalid.");
+    }
+    return manifest.baselineLock;
+  } catch (error) {
+    if (error instanceof Error && error.message === "M67 frozen run manifest identity is invalid.") throw error;
+    throw new Error("M67 frozen run manifest identity is invalid.");
+  }
+}
+
+function assertFrozenBaselineCurrent() {
+  if (!frozenBaselineLock) return null;
+  const currentManifestBaselineLock = resolveFrozenBaselineLock();
+  if (JSON.stringify(currentManifestBaselineLock) !== JSON.stringify(frozenBaselineLock)) {
+    throw new Error("M67 frozen run manifest identity is invalid.");
+  }
+  return assertCurrentV1_9BaselineLock(currentManifestBaselineLock, { cwd: root, env: process.env });
 }
 
 async function seedUsers(env) {
@@ -196,7 +324,7 @@ function startNextServer(env, port) {
     process.execPath,
     [path.join(root, "node_modules/next/dist/bin/next"), "dev", isolatedAppRoot, "--hostname", "127.0.0.1", "--port", String(port)],
     {
-      cwd: root,
+      cwd: isolatedAppRoot,
       env,
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
@@ -210,27 +338,73 @@ function startNextServer(env, port) {
     child.m67SpawnError = error;
     capture(Buffer.from(`Next dev spawn failed: ${error.message}\n`));
   });
+  shutdownAuthority.track(child, { label: "m67-next-server" });
   return child;
 }
 
 function prepareIsolatedNextApp() {
-  fs.mkdirSync(isolatedAppRoot, { recursive: true });
-  for (const directory of ["src", "public"]) {
-    const source = path.join(root, directory);
-    if (fs.existsSync(source)) fs.cpSync(source, path.join(isolatedAppRoot, directory), { recursive: true });
+  const nextConfigContents = [
+    "const nextConfig = {",
+    "  reactStrictMode: true,",
+    '  allowedDevOrigins: ["127.0.0.1"],',
+    '  distDir: ".next-m67",',
+    "};",
+    "export default nextConfig;",
+    "",
+  ].join("\n");
+
+  if (!configuredFrozenAppRoot) {
+    fs.mkdirSync(isolatedAppRoot, { recursive: true });
+    for (const directory of ["src", "public"]) {
+      const source = path.join(root, directory);
+      if (fs.existsSync(source)) fs.cpSync(source, path.join(isolatedAppRoot, directory), { recursive: true });
+    }
+    for (const file of ["package.json", "tsconfig.json", "next-env.d.ts", "postcss.config.mjs"]) {
+      const source = path.join(root, file);
+      if (fs.existsSync(source)) fs.copyFileSync(source, path.join(isolatedAppRoot, file));
+    }
+    fs.writeFileSync(path.join(isolatedAppRoot, "next.config.mjs"), nextConfigContents, "utf8");
+    return;
   }
-  for (const file of ["package.json", "tsconfig.json", "next-env.d.ts", "postcss.config.mjs"]) {
-    const source = path.join(root, file);
-    if (fs.existsSync(source)) fs.copyFileSync(source, path.join(isolatedAppRoot, file));
-  }
-  fs.writeFileSync(path.join(isolatedAppRoot, "next.config.mjs"), `
-const nextConfig = {
-  reactStrictMode: true,
-  allowedDevOrigins: ["127.0.0.1"],
-  distDir: ".next-m67",
-};
-export default nextConfig;
-`, "utf8");
+
+  prepareM67FrozenApp({
+    sourceRoot: root,
+    runRoot: tempRoot,
+    appRoot: isolatedAppRoot,
+    markerPath: frozenAppMarkerPath,
+    identity: frozenRunIdentity,
+    requestedSpec,
+    nextConfigContents,
+    assertBaselineCurrent: assertFrozenBaselineCurrent,
+  });
+}
+
+function verifyFrozenAppIntegrity() {
+  if (!configuredFrozenAppRoot || !frozenAppMarkerPath) return null;
+  return verifyM67FrozenApp(createFrozenAppVerificationInput());
+}
+
+function createFrozenAppVerificationInput() {
+  return {
+    sourceRoot: root,
+    runRoot: tempRoot,
+    appRoot: isolatedAppRoot,
+    markerPath: frozenAppMarkerPath,
+    identity: frozenRunIdentity,
+    requestedSpec,
+  };
+}
+
+function stopNextServerAndVerifyFrozenApp(reason) {
+  return shutdownAuthority.shutdown({ reason });
+}
+
+function verifyFrozenAppAfterOwnedProcessesStop() {
+  if (!frozenAppPrepared) return;
+  verifyM67FrozenAppBeforeCacheCleanup(createFrozenAppVerificationInput());
+  cleanM67OwnedFrozenAppCaches(isolatedAppRoot, tempRoot);
+  verifyFrozenAppIntegrity();
+  assertFrozenBaselineCurrent();
 }
 
 async function waitForServer(baseURL, child, timeoutMs) {
@@ -252,7 +426,9 @@ async function waitForServer(baseURL, child, timeoutMs) {
 }
 
 function writePlaywrightConfig(baseURL) {
-  const testDir = path.join(root, "tests", "e2e");
+  const testDir = configuredFrozenAppRoot
+    ? path.join(isolatedAppRoot, "tests", "e2e")
+    : path.join(root, "tests", "e2e");
   const config = `
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
@@ -305,7 +481,7 @@ function resolveRequestedProjects(value) {
 
 function captureServerOutput(chunk) {
   const text = chunk.toString();
-  serverLogTail.push(text);
+  serverLogTail.push(sanitizeEvidenceText(text));
   if (serverLogTail.length > 80) serverLogTail = serverLogTail.slice(-80);
   for (const match of text.matchAll(/\[main-agent-failure\]\s+(\{[^\r\n]*\})/g)) {
     try {
@@ -328,18 +504,18 @@ function captureServerOutput(chunk) {
 }
 
 function sanitizeDiagnosticText(value) {
-  return String(value ?? "")
-    .replace(/Bearer\s+[^\s,;]+/gi, "[redacted]")
-    .replace(/\b(api[_-]?key|credential|token|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
-    .replace(/https?:\/\/[^\s,;)]+/gi, "[redacted-url]")
-    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[redacted]")
-    .replace(/\b[A-Za-z]:[\\/][^\s,;)]+/g, "[redacted-path]")
-    .slice(0, 600);
+  return sanitizeEvidenceText(value, { maxStringLength: 600 });
 }
 
 function writeSanitizedSummary(status) {
-  if (!requestedSpec.includes("v1-9r")) return;
-  const summaryPath = path.join(root, "test-results", "v1-9r-two-user-summary.json");
+  if (!requestedSpec.includes("v1-9")) return;
+  if (terminalSummaryStatus === "failed" || terminalSummaryStatus === status) return;
+  terminalSummaryStatus = status;
+  const uniqueProductRun = requestedSpec.includes("v1-9-unique-real-product");
+  const summaryPath = uniqueProductRun
+    ? path.join(tempRoot, "v1-9-summary.json")
+    : path.join(root, "test-results", "v1-9r-two-user-summary.json");
+  const orchestration = readV1_9OrchestrationLedger();
   fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
   fs.writeFileSync(summaryPath, JSON.stringify({
     status,
@@ -353,48 +529,69 @@ function writeSanitizedSummary(status) {
     preservedRunDirectory: preserveRunDirectory
       ? path.relative(root, tempRoot).replaceAll("\\", "/")
       : null,
-    externalCodexOrchestrationCount: 0,
+    externalCodexOrchestrationCount: orchestration.count,
+    externalCodexOrchestrationSource: orchestration.source,
     failureDiagnostics: mainAgentFailureDiagnostics,
   }, null, 2) + "\n", "utf8");
 }
 
+function readV1_9OrchestrationLedger() {
+  const configuredStatePath = process.env.V1_9_E2E_STATE_PATH?.trim();
+  if (configuredStatePath) {
+    const resolvedStatePath = path.resolve(configuredStatePath);
+    const stateRelative = path.relative(tempRoot, resolvedStatePath);
+    if (
+      !stateRelative ||
+      stateRelative.startsWith("..") ||
+      path.isAbsolute(stateRelative) ||
+      path.basename(resolvedStatePath) !== "run-state.json"
+    ) {
+      return { count: null, source: "run_state_path_rejected" };
+    }
+    try {
+      const state = normalizeV1_9RunState(JSON.parse(fs.readFileSync(resolvedStatePath, "utf8")));
+      return {
+        count: state.ledger.violations.filter((entry) => entry.orchestrationImpact === true).length,
+        source: "run_state_mutation_ledger",
+      };
+    } catch {
+      return { count: null, source: "run_state_unreadable" };
+    }
+  }
+
+  const configuredManifestPath = process.env.V1_9_E2E_MANIFEST_PATH?.trim();
+  if (!configuredManifestPath) return { count: null, source: "manifest_not_configured" };
+  const resolved = path.resolve(configuredManifestPath);
+  const relative = path.relative(tempRoot, resolved);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) || path.basename(resolved) !== "run-manifest.json") {
+    return { count: null, source: "manifest_path_rejected" };
+  }
+  try {
+    const manifest = JSON.parse(fs.readFileSync(resolved, "utf8"));
+    return {
+      count: deriveV1_9ExternalCodexOrchestrationCount(manifest),
+      source: "legacy_run_manifest_mutation_ledger",
+    };
+  } catch {
+    return { count: null, source: "manifest_unreadable" };
+  }
+}
+
 function resolveProviderChannel(env) {
-  if (env.OPENAI_API_KEY?.trim()) return "openai";
-  const channel = env.AGENT_BRAIN_CHANNEL?.trim().toLowerCase();
-  return ["primary", "third", "fallback"].includes(channel) ? channel : "primary";
+  const channel = env.AGENT_BRAIN_CHANNEL?.trim().toLowerCase() || "primary";
+  return ["primary", "third", "fallback"].includes(channel) ? channel : "invalid";
 }
 
 function runCommand(command, args, env, timeoutMs) {
-  const child = spawn(command, args, {
+  return shutdownAuthority.runCommand(command, args, {
     cwd: root,
     env,
     stdio: "inherit",
     shell: false,
     windowsHide: true,
-  });
-  ownedChildren.add(child);
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      void stopProcessTree(child).finally(() => reject(new Error(`${path.basename(command)} timed out after ${timeoutMs}ms.`)));
-    }, timeoutMs);
-    child.once("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once("exit", (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (code === 0) resolve();
-      else reject(new Error(`${path.basename(command)} ${args.join(" ")} exited with ${code ?? signal}.`));
-    });
-  }).finally(() => ownedChildren.delete(child));
+    timeoutMs,
+    label: path.basename(command),
+  }).then(() => undefined);
 }
 
 async function reservePort() {
@@ -421,8 +618,7 @@ async function reservePort() {
 function cleanup() {
   if (!cleanupPromise) {
     cleanupPromise = (async () => {
-      const activeChildren = new Set([nextServer, ...ownedChildren].filter(Boolean));
-      await Promise.all([...activeChildren].map((child) => stopProcessTree(child)));
+      await shutdownAuthority.shutdown({ reason: "cleanup" });
       if (!preserveRunDirectory) await removeOwnedTempRoot();
     })();
   }
@@ -441,34 +637,18 @@ async function removeOwnedTempRoot() {
   }
 }
 
-async function stopFromSignal(code) {
-  await cleanup();
-  process.exit(code);
-}
-
-async function stopProcessTree(child) {
-  if (!isOwnedProcess(child) || !child?.pid || child.exitCode !== null) return;
-  if (process.platform === "win32") {
-    await new Promise((resolve) => {
-      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      killer.once("error", () => resolve());
-      killer.once("exit", () => resolve());
-    });
-    return;
+async function stopFromSignal(code, signal) {
+  let failure;
+  try {
+    await shutdownAuthority.shutdown({ reason: "signal", signal });
+    if (!preserveRunDirectory) await removeOwnedTempRoot();
+  } catch (error) {
+    failure = error;
   }
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolve) => child.once("exit", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 3_000)),
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
-}
-
-function isOwnedProcess(child) {
-  return child === nextServer || ownedChildren.has(child);
+  writeSanitizedSummary("failed");
+  if (failure) console.error(sanitizeDiagnosticText(failure instanceof Error ? failure.message : failure));
+  detachShutdownIpc();
+  process.exit(code);
 }
 
 async function hashPassword(password) {

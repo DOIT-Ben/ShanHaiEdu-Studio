@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "authority-switch-archive.v1",
+  "createdAt": "2026-07-16T15:03:30+08:00",
+  "purpose": "Preserve the exact pre-switch authority and stage documents before V1.0 Main Agent atomic-tool refactor becomes active.",
+  "entries": [
+    {
+      "source": "AGENTS.md",
+      "archive": "pre-switch/AGENTS.md",
+      "bytes": 7463,
+      "sha256": "0969a28763396a36b91203a4563b30110729d3818b7ba80e41c6488dc7c590fe"
+    },
+    {
+      "source": "docs/README.md",
+      "archive": "pre-switch/docs/README.md",
+      "bytes": 2411,
+      "sha256": "4b2413862a4d255648674195c62ee09014430c9adc7df1395a4e7405431df186"
+    },
+    {
+      "source": "docs/product/current-requirements-baseline.md",
+      "archive": "pre-switch/docs/product/current-requirements-baseline.md",
+      "bytes": 6680,
+      "sha256": "71bafee0dd264c2b812a8e2f65164c448280c4f8fe099dd1ae756e7ed9eefa4d"
+    },
+    {
+      "source": "docs/product/requirements-backlog.md",
+      "archive": "pre-switch/docs/product/requirements-backlog.md",
+      "bytes": 2670,
+      "sha256": "44050ddf363289d1f87d521217b3933a8dc2f893abc176d081eddc168e02e8ab"
+    },
+    {
+      "source": "docs/mainlines/current-mainline-status.md",
+      "archive": "pre-switch/docs/mainlines/current-mainline-status.md",
+      "bytes": 6108,
+      "sha256": "01ef186c59f96bba87cdb8504b44c4e656e4c95893b4de7ea79731ebd21abc14"
+    },
+    {
+      "source": "docs/architecture/README.md",
+      "archive": "pre-switch/docs/architecture/README.md",
+      "bytes": 1803,
+      "sha256": "2f09c5c9315bd46e66c28409154ff610b96f47f994f6510b7acebe27775a80ed"
+    },
+    {
+      "source": "docs/architecture/decisions/README.md",
+      "archive": "pre-switch/docs/architecture/decisions/README.md",
+      "bytes": 949,
+      "sha256": "74f57884d59ece3154f78c3b2ab4621ff72be51b8fd85737e384c1c85b5a5ccf"
+    },
+    {
+      "source": "docs/stages/README.md",
+      "archive": "pre-switch/docs/stages/README.md",
+      "bytes": 1045,
+      "sha256": "e43e535336908dcac6e6e87a307d8facf1eef5fe310bb62625d46be540167bc7"
+    },
+    {
+      "source": "docs/stages/main-agent-streaming-assistant-ui-plan.md",
+      "archive": "pre-switch/docs/stages/main-agent-streaming-assistant-ui-plan.md",
+      "bytes": 2030,
+      "sha256": "63e34323c3a6bc9ea54f3b2c2f1292de2e1e67d0aec41677b5059faeab0412b0"
+    },
+    {
+      "source": "docs/stages/main-agent-streaming-assistant-ui-test-plan.md",
+      "archive": "pre-switch/docs/stages/main-agent-streaming-assistant-ui-test-plan.md",
+      "bytes": 1964,
+      "sha256": "07f68d536b5b324f1434cdb0ba1b983088acbfd033f10b6bf8ce9fe07f5b3426"
+    },
+    {
+      "source": "docs/stages/local-real-v1-v1-9-unique-real-product-e2e-plan.md",
+      "archive": "pre-switch/docs/stages/local-real-v1-v1-9-unique-real-product-e2e-plan.md",
+      "bytes": 3651,
+      "sha256": "4ab5ce8883629c37d0eab3871d7e7bc9393f219f4d54f031f1d5c927641ab1da"
+    },
+    {
+      "source": "docs/stages/local-real-v1-v1-9-unique-real-product-e2e-test-plan.md",
+      "archive": "pre-switch/docs/stages/local-real-v1-v1-9-unique-real-product-e2e-test-plan.md",
+      "bytes": 3709,
+      "sha256": "f8077e04ec4e6c45c648be5c0ddeedadf38cf93ae17792ff9f06c03fae0c8889"
+    }
+  ]
+}

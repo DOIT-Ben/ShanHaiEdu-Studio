@@ -1,0 +1,2 @@
+# Historical evidence is opt-in. Use rg --no-ignore with an explicit archive path for audits.
+docs/archive/

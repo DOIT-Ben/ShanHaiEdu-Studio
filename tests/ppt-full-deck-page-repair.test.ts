@@ -10,6 +10,7 @@ import { repairPptFullDeckPages } from "@/server/ppt-quality/ppt-full-deck-page-
 import { renderPptFullDeck } from "@/server/ppt-quality/ppt-full-deck-renderer";
 import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
 import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
+import { setMaterializedPptAssetFixtureEvidence } from "./support/ppt-sample-fixture";
 
 describe("V1 Stage 3C page-scoped full deck repair", () => {
   it("recomposes the deliverable while reusing unaffected page evidence", async () => {
@@ -45,12 +46,32 @@ describe("V1 Stage 3C page-scoped full deck repair", () => {
 async function materialize(manifest: ReturnType<typeof validPptFullProductionFixtures>["manifest"]) {
   for (const [index, entry] of manifest.entries.entries()) {
     const buffer = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 30 + index, g: 110, b: 150, alpha: entry.transparentBackground ? 0 : 1 } } }).png().toBuffer();
-    const stored = writeLocalArtifact({ category: "image-artifacts", fileName: entry.fileName, buffer });
-    entry.storageRef = stored.localOutput;
-    entry.sha256 = sha(buffer);
-    entry.bytes = buffer.length;
-    entry.width = 32;
-    entry.height = 32;
+    const normalizedFileName = entry.fileName;
+    const rawFileName = entry.rawAsset.fileName;
+    const normalizedStored = writeLocalArtifact({ category: "image-artifacts", fileName: normalizedFileName, buffer });
+    const rawStored = writeLocalArtifact({ category: "image-artifacts", fileName: rawFileName, buffer });
+    const sha256 = sha(buffer);
+    setMaterializedPptAssetFixtureEvidence({
+      entry,
+      rawAsset: {
+        fileName: rawFileName,
+        storageRef: rawStored.localOutput,
+        sha256,
+        bytes: buffer.length,
+        width: 32,
+        height: 32,
+        mime: "image/png",
+      },
+      normalizedAsset: {
+        fileName: normalizedFileName,
+        storageRef: normalizedStored.localOutput,
+        sha256,
+        bytes: buffer.length,
+        width: 32,
+        height: 32,
+        mime: "image/png",
+      },
+    });
   }
   const { manifestDigest: _digest, ...semantic } = manifest;
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);

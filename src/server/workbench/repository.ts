@@ -8,6 +8,7 @@ import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/cont
 import { guardFinish } from "@/server/conversation/react-control";
 import type { QualityDecision, ValidationReport } from "@/server/quality/quality-types";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { attachVerifiedArtifactApprovalEvidence, hasVerifiedArtifactApprovalEvidence } from "@/server/quality/artifact-truth-boundary";
 import { validatePptKeySampleSet, validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-validator";
 import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleSet, PptSampleApproval } from "@/server/ppt-quality/ppt-asset-types";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
@@ -21,6 +22,9 @@ import type {
   EnqueueMessageAndConversationTurnInput,
   EnqueueConversationTurnInput,
   FailConversationTurnInput,
+  RecoverConversationTurnInput,
+  RecoverConversationTurnAfterProviderHealthInput,
+  RecoverConversationTurnAfterContractRepairInput,
   CreateGenerationJobInput,
   FailGenerationJobInput,
   FinishConversationTurnInput,
@@ -140,6 +144,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             projectId,
             role: input.role,
             content: input.content,
+            partsJson: JSON.stringify(input.parts ?? []),
             artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
             metadataJson: JSON.stringify(input.metadata ?? {}),
           },
@@ -147,12 +152,20 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
-    async updateMessageMetadata(projectId: string, messageId: string, metadata: Record<string, unknown>) {
+    async updateMessageMetadata(
+      projectId: string,
+      messageId: string,
+      metadata: Record<string, unknown>,
+      parts?: import("@/lib/conversation-message-contract").MessagePart[],
+    ) {
       return client.$transaction(async (tx) => {
         await assertActiveProjectForWrite(tx, projectId);
         const result = await tx.conversationMessage.updateMany({
           where: { id: messageId, projectId },
-          data: { metadataJson: JSON.stringify(metadata) },
+          data: {
+            metadataJson: JSON.stringify(metadata),
+            ...(parts ? { partsJson: JSON.stringify(parts) } : {}),
+          },
         });
 
         if (result.count === 0) {
@@ -172,10 +185,13 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async saveArtifact(projectId: string, input: SaveArtifactInput) {
       return client.$transaction(async (tx) => {
-        await assertActiveProjectForWrite(tx, projectId);
+        const project = await assertActiveProjectForWrite(tx, projectId);
         if (input.validationReport) {
           assertPassedValidationReportForDraft(input.validationReport, input);
         }
+        const taskAggregate = await tx.taskAggregate.findUnique({
+          where: { projectId_intentEpoch: { projectId, intentEpoch: project.intentEpoch } },
+        });
         const latest = await tx.artifact.findFirst({
           where: { projectId, nodeKey: input.nodeKey },
           orderBy: { version: "desc" },
@@ -183,6 +199,11 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         const artifact = await tx.artifact.create({
           data: {
             projectId,
+            taskId: taskAggregate?.taskId ?? null,
+            taskBriefDigest: taskBriefDigestFromJson(taskAggregate?.taskBriefJson),
+            intentEpoch: project.intentEpoch,
+            planRevision: taskAggregate?.planRevision ?? null,
+            origin: input.origin ?? "teacher_input",
             nodeKey: input.nodeKey,
             kind: input.kind,
             title: input.title,
@@ -223,12 +244,55 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         if (!existing) {
           throw new Error(`Artifact not found: ${artifactId}`);
         }
+        if (existing.status === "approved" && existing.isApproved) {
+          if (!hasVerifiedArtifactApprovalEvidence({
+            id: existing.id,
+            projectId: existing.projectId,
+            taskId: existing.taskId,
+            taskBriefDigest: existing.taskBriefDigest,
+            intentEpoch: existing.intentEpoch,
+            planRevision: existing.planRevision,
+            origin: existing.origin as import("./types").ArtifactOrigin,
+            nodeKey: existing.nodeKey as import("./types").WorkflowNodeKey,
+            kind: existing.kind as import("./types").ArtifactKind,
+            title: existing.title,
+            status: existing.status as import("./types").ArtifactStatus,
+            summary: existing.summary,
+            markdownContent: existing.markdownContent,
+            structuredContent: parseStructuredContent(existing.structuredContentJson),
+            version: existing.version,
+            isApproved: existing.isApproved,
+            createdAt: existing.createdAt.toISOString(),
+            updatedAt: existing.updatedAt.toISOString(),
+          })) {
+            throw new Error("artifact_truth_not_approvable:approval_evidence_missing");
+          }
+          await tx.workflowNode.update({
+            where: { projectId_key: { projectId, key: existing.nodeKey } },
+            data: { status: "approved", approvedArtifactId: existing.id, staleReason: null },
+          });
+          return existing;
+        }
 
         const previousApproved = await tx.artifact.findFirst({
           where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
         });
         const shouldPropagateStale = previousApproved?.id !== artifactId;
-        const structuredContentWithApproval = attachArtifactApprovalEvidence(existing);
+        const validation = await tx.validationReportRecord.findUnique({
+          where: { artifactId: existing.id },
+          select: { overallStatus: true, reportDigest: true, targetDigest: true },
+        });
+        const structuredContentWithSpecializedApproval = attachArtifactApprovalEvidence(existing);
+        const structuredContentWithApproval = attachVerifiedArtifactApprovalEvidence({
+          nodeKey: existing.nodeKey as import("./types").WorkflowNodeKey,
+          kind: existing.kind as import("./types").ArtifactKind,
+          title: existing.title,
+          status: existing.status as import("./types").ArtifactStatus,
+          summary: existing.summary,
+          markdownContent: existing.markdownContent,
+          structuredContent: structuredContentWithSpecializedApproval,
+          origin: existing.origin as import("./types").ArtifactOrigin,
+        }, validation);
 
         await tx.artifact.updateMany({
           where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
@@ -294,7 +358,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput) {
       return client.$transaction(async (tx) => {
-        await assertActiveProjectForWrite(tx, projectId);
+        const project = await assertActiveProjectForWrite(tx, projectId);
         const existing = await tx.artifact.findFirst({
           where: { id: artifactId, projectId },
         });
@@ -317,6 +381,11 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         const artifact = await tx.artifact.create({
           data: {
             projectId,
+            taskId: null,
+            taskBriefDigest: null,
+            intentEpoch: project.intentEpoch + 1,
+            planRevision: null,
+            origin: "teacher_input",
             nodeKey: existing.nodeKey,
             kind: existing.kind,
             title: input.title ?? existing.title,
@@ -599,6 +668,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               projectId,
               role: input.role,
               content: input.content,
+              partsJson: JSON.stringify(input.parts ?? []),
               artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
               metadataJson: JSON.stringify(input.metadata ?? {}),
             },
@@ -743,10 +813,35 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         if (guard && !(await validateGuardForJob(tx, existing, guard))) {
           return quarantineTurnJob(tx, existing.id, "running", guard.fencingToken, "execution_fence_rejected", new Date());
         }
+        const finalStatus = input.status ?? "succeeded";
+        if (input.taskTerminal) {
+          const expectedTaskStatus = finalStatus === "succeeded" ? "completed" : "paused_recovery";
+          if (input.taskTerminal.status !== expectedTaskStatus ||
+              !requiredRecoveryText(input.taskTerminal.taskId) ||
+              !Number.isInteger(input.taskTerminal.intentEpoch) || input.taskTerminal.intentEpoch < 0 ||
+              !isSha256(input.taskTerminal.taskBriefDigest)) {
+            throw new Error("ConversationTurnJob task terminal state is invalid.");
+          }
+          const aggregate = await tx.taskAggregate.findUnique({
+            where: { projectId_intentEpoch: { projectId, intentEpoch: input.taskTerminal.intentEpoch } },
+          });
+          const aggregateTaskBrief = parseRecoveryRecord(aggregate?.taskBriefJson);
+          if (!aggregate || aggregate.taskId !== input.taskTerminal.taskId ||
+              aggregateTaskBrief.digest !== input.taskTerminal.taskBriefDigest) {
+            throw new Error("ConversationTurnJob task terminal state does not match TaskAggregate.");
+          }
+          await tx.taskAggregate.update({
+            where: { taskId: aggregate.taskId },
+            data: {
+              status: input.taskTerminal.status,
+              checkpointJson: JSON.stringify(input.taskTerminal.checkpoint),
+            },
+          });
+        }
         return tx.conversationTurnJob.update({
           where: { id: jobId },
           data: {
-            status: input.status ?? "succeeded",
+            status: finalStatus,
             assistantMessageId: input.assistantMessageId,
             errorCode: input.errorCode ?? null,
             errorMessage: input.errorMessage ?? null,
@@ -778,9 +873,181 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             assistantMessageId: input.assistantMessageId,
             errorCode: input.errorCode ?? null,
             errorMessage: input.errorMessage,
+            failureCategory: input.failureCategory ?? null,
+            failureRetryability: input.retryability ?? null,
+            failureEvidenceDigest: input.failureEvidenceDigest ?? null,
             lockedBy: null,
             lockedUntil: null,
             finishedAt: new Date(),
+          },
+        });
+      });
+    },
+
+    async requeueConversationTurnJobForRecovery(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnInput,
+    ) {
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing || existing.status !== "failed") return null;
+        const retryable = existing.failureRetryability === "retryable";
+        const legacyRetryable = input.allowLegacyTurnFailed === true && existing.failureRetryability === null && existing.errorCode === "turn_failed";
+        if (!retryable && !legacyRetryable) return null;
+        if (existing.attempts >= existing.maxAttempts) return null;
+        if (!/^[a-f0-9]{64}$/i.test(input.recoveryEvidenceDigest)) return null;
+        if (existing.recoveryEvidenceDigest === input.recoveryEvidenceDigest) return null;
+        if (existing.failureEvidenceDigest === input.recoveryEvidenceDigest) return null;
+        return tx.conversationTurnJob.update({
+          where: { id: existing.id },
+          data: {
+            status: "queued",
+            recoveryEvidenceDigest: input.recoveryEvidenceDigest.toLowerCase(),
+            lockedBy: null,
+            lockedUntil: null,
+            finishedAt: null,
+          },
+        });
+      });
+    },
+
+    async requeueConversationTurnJobAfterProviderHealth(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnAfterProviderHealthInput,
+    ) {
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        if (input.projectId !== projectId || input.jobId !== jobId ||
+            !requiredRecoveryText(input.teacherMessageId) || !requiredRecoveryText(input.taskId) ||
+            !requiredRecoveryText(input.expectedErrorCode) || !Number.isInteger(input.intentEpoch) || input.intentEpoch < 0 ||
+            !isSha256(input.recoveryEvidenceDigest)) return null;
+        const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing || existing.status !== "failed" ||
+            existing.failureRetryability !== "after_provider_health_change" ||
+            existing.teacherMessageId !== input.teacherMessageId ||
+            existing.errorCode !== input.expectedErrorCode ||
+            existing.attempts > existing.maxAttempts) return null;
+        const evidenceDigest = input.recoveryEvidenceDigest.toLowerCase();
+        if (existing.recoveryEvidenceDigest === evidenceDigest || existing.failureEvidenceDigest === evidenceDigest) return null;
+
+        const aggregate = await tx.taskAggregate.findFirst({
+          where: {
+            taskId: input.taskId,
+            projectId,
+            intentEpoch: input.intentEpoch,
+            status: "paused_recovery",
+          },
+        });
+        if (!aggregate) return null;
+        const aggregateTaskBrief = parseRecoveryRecord(aggregate.taskBriefJson);
+        if (aggregateTaskBrief.taskId !== input.taskId || aggregateTaskBrief.projectId !== projectId ||
+            aggregateTaskBrief.intentEpoch !== input.intentEpoch || aggregateTaskBrief.sourceMessageId !== input.teacherMessageId) return null;
+        const teacherMessage = await tx.conversationMessage.findFirst({
+          where: { id: input.teacherMessageId, projectId, role: "teacher" },
+          select: { metadataJson: true },
+        });
+        if (!teacherMessage) return null;
+        const messageTaskBrief = parseRecoveryRecord(parseRecoveryRecord(teacherMessage.metadataJson).taskBrief);
+        if (messageTaskBrief.taskId !== input.taskId || messageTaskBrief.projectId !== projectId ||
+            messageTaskBrief.intentEpoch !== input.intentEpoch) return null;
+        const activeJobCount = await tx.conversationTurnJob.count({
+          where: { projectId, status: { in: ["queued", "running"] }, id: { not: existing.id } },
+        });
+        if (activeJobCount !== 0) return null;
+
+        return tx.conversationTurnJob.update({
+          where: { id: existing.id },
+          data: {
+            status: "queued",
+            ...(existing.attempts === existing.maxAttempts ? { maxAttempts: existing.maxAttempts + 1 } : {}),
+            recoveryEvidenceDigest: evidenceDigest,
+            lockedBy: null,
+            lockedUntil: null,
+            finishedAt: null,
+          },
+        });
+      });
+    },
+
+    async requeueConversationTurnJobAfterContractRepair(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnAfterContractRepairInput,
+    ) {
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        if (input.projectId !== projectId || input.jobId !== jobId) return null;
+        if (!requiredRecoveryText(input.teacherMessageId) || !requiredRecoveryText(input.taskId) ||
+            !requiredRecoveryText(input.idempotencyKey) || !requiredRecoveryText(input.failureObservationId) ||
+            !Number.isInteger(input.intentEpoch) || input.intentEpoch < 0 ||
+            !isSha256(input.taskBriefDigest) || !isSha256(input.expectedFailureSignature) ||
+            !isSha256(input.repairEvidenceDigest)) return null;
+        const existing = await tx.conversationTurnJob.findFirst({ where: { id: jobId, projectId } });
+        if (!existing || existing.attempts < existing.maxAttempts ||
+            existing.teacherMessageId !== input.teacherMessageId || existing.idempotencyKey !== input.idempotencyKey) return null;
+        const failedAfterContractDefect = existing.status === "failed" &&
+          (
+            existing.errorCode === "main_agent_execution_failed" ||
+            existing.errorCode === "control_plane_lifecycle_conflict" ||
+            existing.errorCode === "main_agent_retry_budget_exhausted"
+          ) &&
+          existing.failureRetryability === "not_retryable";
+        const legacyControlledPause = existing.status === "failed" && existing.errorCode === "turn_failed" &&
+          existing.failureRetryability === null;
+        const wronglySucceededIncompleteTask = existing.status === "succeeded";
+        if (!failedAfterContractDefect && !legacyControlledPause && !wronglySucceededIncompleteTask) return null;
+        const repairDigest = input.repairEvidenceDigest.toLowerCase();
+        if (repairDigest === input.expectedFailureSignature.toLowerCase() || existing.recoveryEvidenceDigest === repairDigest) return null;
+        const aggregate = await tx.taskAggregate.findFirst({
+          where: {
+            taskId: input.taskId,
+            projectId,
+            intentEpoch: input.intentEpoch,
+            status: { in: ["active", "paused_recovery"] },
+          },
+        });
+        if (!aggregate) return null;
+        const aggregateTaskBrief = parseRecoveryRecord(aggregate.taskBriefJson);
+        if (aggregateTaskBrief.digest !== input.taskBriefDigest || aggregateTaskBrief.taskId !== input.taskId ||
+            aggregateTaskBrief.projectId !== projectId || aggregateTaskBrief.intentEpoch !== input.intentEpoch ||
+            aggregateTaskBrief.sourceMessageId !== input.teacherMessageId) return null;
+        const teacherMessage = await tx.conversationMessage.findFirst({
+          where: { id: input.teacherMessageId, projectId, role: "teacher" },
+          select: { metadataJson: true },
+        });
+        if (!teacherMessage) return null;
+        const messageTaskBrief = parseRecoveryRecord(parseRecoveryRecord(teacherMessage.metadataJson).taskBrief);
+        if (messageTaskBrief.digest !== input.taskBriefDigest || messageTaskBrief.taskId !== input.taskId ||
+            messageTaskBrief.projectId !== projectId || messageTaskBrief.intentEpoch !== input.intentEpoch) return null;
+        const failureObservation = await tx.observationRecord.findFirst({
+          where: {
+            observationId: input.failureObservationId,
+            projectId,
+            taskId: input.taskId,
+            intentEpoch: input.intentEpoch,
+            status: { in: ["failed", "blocked", "inconclusive"] },
+          },
+          select: { payloadJson: true },
+        });
+        if (!failureObservation ||
+            parseRecoveryRecord(failureObservation.payloadJson).failureSignature !== input.expectedFailureSignature.toLowerCase()) return null;
+        if (legacyControlledPause && aggregate.status !== "paused_recovery") return null;
+        const activeJobCount = await tx.conversationTurnJob.count({
+          where: { projectId, status: { in: ["queued", "running"] }, id: { not: existing.id } },
+        });
+        if (activeJobCount !== 0) return null;
+        return tx.conversationTurnJob.update({
+          where: { id: existing.id },
+          data: {
+            status: "queued",
+            maxAttempts: existing.maxAttempts + 1,
+            recoveryEvidenceDigest: repairDigest,
+            lockedBy: null,
+            lockedUntil: null,
+            finishedAt: null,
           },
         });
       });
@@ -1694,6 +1961,16 @@ function parseStructuredContent(value: string): Record<string, unknown> {
   }
 }
 
+function taskBriefDigestFromJson(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { digest?: unknown };
+    return typeof parsed.digest === "string" && /^[a-f0-9]{64}$/i.test(parsed.digest) ? parsed.digest.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 function attachArtifactApprovalEvidence(artifact: { nodeKey: string; kind: string; structuredContentJson: string }): Record<string, unknown> {
   const structuredContent = parseStructuredContent(artifact.structuredContentJson);
   if (artifact.nodeKey === "creative_theme_generate" && artifact.kind === "creative_theme_generate") {
@@ -1777,6 +2054,25 @@ function isPassedVideoReview(value: unknown, schemaVersion: string): value is Re
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseRecoveryRecord(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function requiredRecoveryText(value: string) {
+  return Boolean(value.trim());
+}
+
+function isSha256(value: string) {
+  return /^[a-f0-9]{64}$/i.test(value.trim());
 }
 
 function assertVideoShotPlan(input: UpsertVideoShotsInput) {

@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "agent_brain",
+      "env_vars": [
+        "AGENT_BRAIN_CHANNEL",
+        "AGENT_BRAIN_API_KEY",
+        "AGENT_BRAIN_BASE_URL",
+        "AGENT_BRAIN_MODEL",
+        "AGENT_BRAIN_THIRD_API_KEY",
+        "AGENT_BRAIN_THIRD_BASE_URL",
+        "AGENT_BRAIN_THIRD_MODEL",
+        "AGENT_BRAIN_FALLBACK_API_KEY",
+        "AGENT_BRAIN_FALLBACK_BASE_URL",
+        "AGENT_BRAIN_FALLBACK_MODEL",
+        "AGENT_BRAIN_REASONING_EFFORT"
+      ],
+      "runtime_contract": {
+        "schema_version": "provider-runtime-contract.v1",
+        "kind": "agent_brain_responses",
+        "endpoint_category": "openai_compatible_responses",
+        "selected_channel_env": "AGENT_BRAIN_CHANNEL",
+        "purpose_channels": {
+          "main_agent_responses": {
+            "channel": "primary",
+            "credential_env": "AGENT_BRAIN_API_KEY",
+            "base_url_env": "AGENT_BRAIN_BASE_URL",
+            "model_env": "AGENT_BRAIN_MODEL"
+          },
+          "critic_responses": {
+            "channel": "third",
+            "credential_env": "AGENT_BRAIN_THIRD_API_KEY",
+            "base_url_env": "AGENT_BRAIN_THIRD_BASE_URL",
+            "model_env": "AGENT_BRAIN_THIRD_MODEL"
+          },
+          "fallback_responses": {
+            "channel": "fallback",
+            "credential_env": "AGENT_BRAIN_FALLBACK_API_KEY",
+            "base_url_env": "AGENT_BRAIN_FALLBACK_BASE_URL",
+            "model_env": "AGENT_BRAIN_FALLBACK_MODEL"
+          }
+        },
+        "reasoning": {
+          "env": "AGENT_BRAIN_REASONING_EFFORT",
+          "default": "high",
+          "allowed": ["low", "medium", "high", "xhigh"]
+        }
+      }
+    },
+    {
+      "id": "image_generation",
+      "env_vars": [
+        "IMAGE_PROVIDER_CHANNEL",
+        "MINIMAX_API_KEY",
+        "MINIMAX_BASE_URL",
+        "MINIMAX_IMAGE_MODEL"
+      ],
+      "runtime_contract": {
+        "schema_version": "provider-runtime-contract.v1",
+        "kind": "minimax_image",
+        "selected_channel_env": "IMAGE_PROVIDER_CHANNEL",
+        "required_channel": "minimax",
+        "credential_env": "MINIMAX_API_KEY",
+        "base_url_env": "MINIMAX_BASE_URL",
+        "model_env": "MINIMAX_IMAGE_MODEL"
+      }
+    },
+    {
+      "id": "tts_minimax",
+      "env_vars": [
+        "TTS_PROVIDER_MODE",
+        "MINIMAX_API_KEY",
+        "MINIMAX_BASE_URL",
+        "MINIMAX_TTS_MODEL"
+      ],
+      "runtime_contract": {
+        "schema_version": "provider-runtime-contract.v1",
+        "kind": "minimax_tts",
+        "selected_mode_env": "TTS_PROVIDER_MODE",
+        "required_mode": "minimax",
+        "credential_env": "MINIMAX_API_KEY",
+        "base_url_env": "MINIMAX_BASE_URL",
+        "model_env": "MINIMAX_TTS_MODEL"
+      }
+    },
+    {
+      "id": "text_llm",
+      "env_vars": [
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_MODEL"
+      ]
+    }
+  ]
+}

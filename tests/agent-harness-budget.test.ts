@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAgentHarnessBudgetEvent,
+  countSubmittedExternalProviderCalls,
   evaluateAgentHarnessBudget,
   readAgentHarnessBudgetEventsFromMessages,
 } from "@/server/conversation/agent-harness-budget";
 
 describe("AgentHarnessBudget", () => {
+  it("counts only events that reached a real Provider submit boundary", () => {
+    const blocked = buildAgentHarnessBudgetEvent({
+      capabilityId: "ppt_sample_assets",
+      status: "blocked",
+      kind: "blocked_by_policy",
+      providerSubmitted: false,
+    });
+    const submitted = buildAgentHarnessBudgetEvent({
+      capabilityId: "ppt_sample_assets",
+      status: "failed",
+      kind: "tool_failed",
+      providerSubmitted: true,
+    });
+
+    expect(countSubmittedExternalProviderCalls([blocked, submitted])).toBe(1);
+  });
+
   it("allows requests without historical budget events", () => {
     const decision = evaluateAgentHarnessBudget({
       capabilityId: "lesson_plan",

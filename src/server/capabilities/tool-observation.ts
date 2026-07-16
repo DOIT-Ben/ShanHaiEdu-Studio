@@ -30,6 +30,8 @@ export interface ToolObservation {
   jobId?: string;
   inputDigest?: string;
   errorCategory?: string;
+  reasonCode?: string;
+  reasonDetails?: string[];
   sourceMessageId?: string;
   capabilityId: string;
   expectedArtifactKind?: string;
@@ -50,6 +52,8 @@ export interface CreateToolObservationInput {
   jobId?: string;
   inputDigest?: string;
   errorCategory?: string;
+  reasonCode?: string;
+  reasonDetails?: string[];
   sourceMessageId?: string;
   capabilityId: string;
   expectedArtifactKind?: string;
@@ -90,6 +94,8 @@ export function createToolObservation(input: CreateToolObservationInput): ToolOb
     jobId: input.jobId,
     inputDigest: input.inputDigest,
     errorCategory: input.errorCategory,
+    reasonCode: input.reasonCode,
+    reasonDetails: input.reasonDetails ? [...input.reasonDetails] : undefined,
     sourceMessageId: input.sourceMessageId,
     capabilityId: input.capabilityId,
     expectedArtifactKind: input.expectedArtifactKind,
@@ -168,6 +174,8 @@ export function isToolObservation(value: unknown): value is ToolObservation {
     (value.runId === undefined || typeof value.runId === "string") &&
     (value.inputDigest === undefined || typeof value.inputDigest === "string") &&
     (value.errorCategory === undefined || typeof value.errorCategory === "string") &&
+    (value.reasonCode === undefined || typeof value.reasonCode === "string") &&
+    (value.reasonDetails === undefined || (Array.isArray(value.reasonDetails) && value.reasonDetails.every((detail) => typeof detail === "string"))) &&
     typeof value.capabilityId === "string" &&
     (value.expectedArtifactKind === undefined || typeof value.expectedArtifactKind === "string") &&
     isToolObservationKind(value.kind) &&

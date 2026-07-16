@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "authority-convergence-archive-result.v1",
+  "migrationId": "2026-07-16-authority-convergence",
+  "completedAt": "2026-07-16T07:52:08.9842085+08:00",
+  "manifestSha256": "d8e73434c3f063eeea5e25d77a21dcfec095ed5c6520e419c1c5cd4d87718b12",
+  "verifiedEntries": 631,
+  "verifiedBytes": 14602074,
+  "archiveCount": 610,
+  "roadmapCount": 21,
+  "sourceFilesAbsent": true,
+  "targetDigestsMatch": true
+}

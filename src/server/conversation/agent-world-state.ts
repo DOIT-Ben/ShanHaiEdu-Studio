@@ -4,6 +4,8 @@ import type { ContextPackage } from "@/server/conversation/context-package";
 import type { AgentObservation, RunCheckpoint } from "@/server/conversation/react-control";
 import type { PersistedAgentToolReport } from "@/server/tools/agent-tool-report";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
+import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
+import type { TaskBrief } from "@/server/conversation/task-contract";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -100,6 +102,8 @@ export type AgentWorldState = {
 
 export type BuildAgentWorldStateInput = {
   project: ProjectRecord;
+  taskBrief: TaskBrief | null;
+  taskPlanRevision: number | null;
   workflowNodes: WorkflowNodeRecord[];
   artifacts: ArtifactRecord[];
   generationJobs: GenerationJobRecord[];
@@ -122,6 +126,7 @@ export type BuildAgentWorldStateInput = {
 const generationJobLabels: Record<GenerationJobRecord["kind"], string> = {
   pptx: "PPTX 文件生成",
   image: "课堂图片生成",
+  audio: "视频旁白生成",
   video: "课堂视频生成",
 };
 
@@ -131,10 +136,13 @@ const blockedReasonByStatus: Record<"blocked" | "failed", string> = {
 };
 
 export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWorldState {
-  const trustedInputs = input.artifacts
+  const scopedArtifacts = input.taskBrief
+    ? input.artifacts.filter((artifact) => isArtifactBoundToTask(artifact, input.taskBrief!))
+    : input.artifacts;
+  const trustedInputs = scopedArtifacts
     .filter(isArtifactTrustedForDownstream)
     .map(toWorldStateArtifact);
-  const draftArtifacts = input.artifacts
+  const draftArtifacts = scopedArtifacts
     .filter((artifact) => !isArtifactTrustedForDownstream(artifact))
     .map(toWorldStateArtifact);
 
@@ -196,10 +204,24 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
         policyOutcome: report.policyOutcome,
         createdAt: report.createdAt,
       })),
-    runCheckpoint: input.runCheckpoint?.projectId === input.project.id ? input.runCheckpoint : null,
+    runCheckpoint: resolveCurrentTaskCheckpoint(input),
     pendingPlan: input.pendingPlan ? toPendingPlan(input.pendingPlan) : null,
     nextRisks: [...staleRisks, ...blockedItems],
   };
+}
+
+function resolveCurrentTaskCheckpoint(input: BuildAgentWorldStateInput): RunCheckpoint | null {
+  const checkpoint = input.runCheckpoint;
+  if (!checkpoint || !input.taskBrief || input.taskPlanRevision === null ||
+      checkpoint.projectId !== input.project.id || checkpoint.planVersion !== input.taskPlanRevision) {
+    return null;
+  }
+  const currentObservationIds = new Set((input.agentObservations ?? []).map((observation) => observation.observationId));
+  if (checkpoint.observationRefs.length === 0 ||
+      checkpoint.observationRefs.some((observationId) => !currentObservationIds.has(observationId))) {
+    return null;
+  }
+  return checkpoint;
 }
 
 function toWorldStateObservation(observation: AgentObservation): AgentWorldStateObservation {

@@ -168,7 +168,67 @@ function unsupportedProviderTool(overrides: Partial<ToolDefinition> = {}): ToolD
   };
 }
 
+function minimaxImageResult(overrides: Partial<ImageGenerationResult> = {}): ImageGenerationResult {
+  return {
+    fileName: "normalized.png",
+    localOutput: ".tmp/image-artifacts/normalized.png",
+    bytes: 2048,
+    sha256: "d".repeat(64),
+    imageValid: true,
+    mime: "image/png",
+    provider: "minimax",
+    model: "image-01",
+    width: 1920,
+    height: 1080,
+    promptDigest: "f".repeat(64),
+    rawAsset: {
+      fileName: "raw.png",
+      localOutput: ".tmp/image-artifacts/raw.png",
+      bytes: 2048,
+      sha256: "e".repeat(64),
+      mime: "image/png",
+    },
+    normalizedAsset: {
+      fileName: "normalized.png",
+      localOutput: ".tmp/image-artifacts/normalized.png",
+      bytes: 2048,
+      sha256: "d".repeat(64),
+      mime: "image/png",
+      width: 1920,
+      height: 1080,
+    },
+    ...overrides,
+  };
+}
+
 describe("M64-C ProviderToolAdapter", () => {
+  it("rejects an R5-only PPT design candidate that is not production-downstream eligible", async () => {
+    let calls = 0;
+    const source = pptDesignArtifact({
+      status: "needs_review",
+      isApproved: false,
+      structuredContent: {
+        pptDesignCandidate: { schemaVersion: "ppt-design-candidate.v1" },
+        artifactQualityState: {
+          validationStatus: "passed",
+          reviewStatus: "passed",
+          downstreamEligibility: "blocked",
+          eligibleStages: ["production_design_expansion"],
+        },
+      },
+    });
+    const result = await executeFutureProviderTool({
+      tool: getToolDefinition("generate_ppt_sample_assets"),
+      projectId: "project-a",
+      artifactRefs: [pptDesignRef()],
+      resolvedArtifacts: [source],
+      runPptAssetBatch: async () => { calls += 1; return validPptSampleFixtures(); },
+    });
+
+    expect(calls).toBe(0);
+    expect(result).toMatchObject({ status: "needs_input", missingInputs: ["ppt_design_draft"] });
+  });
+
   it("returns a manifest-backed PPT sample asset bundle from the quality provider tool", async () => {
     const fixtures = validPptSampleFixtures();
     const source = pptDesignArtifact({ structuredContent: { pptDesignPackage: fixtures.designPackage } });
@@ -184,7 +244,7 @@ describe("M64-C ProviderToolAdapter", () => {
       status: "succeeded",
       toolId: "generate_ppt_sample_assets",
       capabilityId: "ppt_sample_assets",
-      provider: "image_asset",
+      provider: "test-image-provider",
       artifactDraft: {
         nodeKey: "image_prompts",
         kind: "image_prompts",
@@ -449,14 +509,15 @@ describe("M64-C ProviderToolAdapter", () => {
       resolvedArtifacts: [assetBriefArtifact()],
       runImage: async (input) => {
         calledWith = input as Parameters<NonNullable<ProviderToolAdapterInput["runImage"]>>[0];
-        return {
+        return minimaxImageResult({
           fileName: "asset-reference.png",
           localOutput: ".tmp/asset-reference.png",
-          bytes: 4096,
-          sha256: "asset-image-sha256",
-          imageValid: true,
-          mime: "image/png",
-        };
+          normalizedAsset: {
+            ...minimaxImageResult().normalizedAsset,
+            fileName: "asset-reference.png",
+            localOutput: ".tmp/asset-reference.png",
+          },
+        });
       },
     });
 
@@ -472,7 +533,7 @@ describe("M64-C ProviderToolAdapter", () => {
       status: "succeeded",
       toolId: "asset_image_generate",
       capabilityId: "asset_image_generate",
-      provider: "image_asset",
+      provider: "minimax",
       artifactDraft: {
         nodeKey: "asset_image_generate",
         kind: "asset_image_generate",
@@ -548,7 +609,7 @@ describe("M64-C ProviderToolAdapter", () => {
         artifactCreated: false,
         retryPolicy: {
           retryable: false,
-          nextAction: "ask_teacher",
+          nextAction: "fix_inputs",
         },
       },
       budgetEvent: {
@@ -612,12 +673,13 @@ describe("M64-C ProviderToolAdapter", () => {
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
       observation: {
-        kind: "blocked_by_policy",
+        kind: "quality_gate_failed",
         artifactCreated: false,
       },
       budgetEvent: {
-        status: "blocked",
-        kind: "blocked_by_policy",
+        status: "failed",
+        kind: "quality_gate_failed",
+        providerSubmitted: false,
       },
     });
   });
@@ -642,8 +704,8 @@ describe("M64-C ProviderToolAdapter", () => {
       capabilityId: "coze_ppt",
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
-      observation: { kind: "blocked_by_policy", artifactCreated: false },
-      budgetEvent: { status: "blocked", kind: "blocked_by_policy" },
+      observation: { kind: "quality_gate_failed", retryPolicy: { nextAction: "fix_inputs" }, artifactCreated: false },
+      budgetEvent: { status: "failed", kind: "quality_gate_failed" },
     });
   });
 
@@ -697,6 +759,7 @@ describe("M64-C ProviderToolAdapter", () => {
     });
 
     expect(result.status).toBe("retryable_failed");
+    expect(result.budgetEvent).toMatchObject({ providerSubmitted: true });
     if ("observation" in result) {
       expect(result.observation.teacherSafeSummary).not.toMatch(forbiddenSensitiveText);
       expect(result.observation.internalReasonSanitized).not.toMatch(forbiddenSensitiveText);
@@ -704,6 +767,39 @@ describe("M64-C ProviderToolAdapter", () => {
   });
 
   describe("M64-R image_asset", () => {
+    it("accepts a deterministic-quality-passed needs_review source without teacher approval", async () => {
+      let called = false;
+      const sourceArtifact = pptDraftArtifact({
+        status: "needs_review",
+        isApproved: false,
+        structuredContent: {
+          artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" },
+        },
+      });
+
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [sourceArtifact],
+        runImage: async () => {
+          called = true;
+          return minimaxImageResult({
+            fileName: "visual.png",
+            localOutput: "artifact-storage/image-artifacts/visual.png",
+            normalizedAsset: {
+              ...minimaxImageResult().normalizedAsset,
+              fileName: "visual.png",
+              localOutput: "artifact-storage/image-artifacts/visual.png",
+            },
+          });
+        },
+      });
+
+      expect(called).toBe(true);
+      expect(result.status).toBe("succeeded");
+    });
+
     it("passes the approved ppt draft to the image runner and returns a truth-gated image artifact draft", async () => {
       let calledWith: unknown;
       const sourceArtifact = pptDraftArtifact({ version: 11 });
@@ -718,14 +814,15 @@ describe("M64-C ProviderToolAdapter", () => {
         sourceMessageId: "message-a",
         runImage: async (input) => {
           calledWith = input;
-          return {
+          return minimaxImageResult({
             fileName: "percentage-intro.png",
             localOutput: ".tmp/image-artifacts/percentage-intro.png",
-            bytes: 1024,
-            sha256: "image-sha256",
-            imageValid: true,
-            mime: "image/png",
-          };
+            normalizedAsset: {
+              ...minimaxImageResult().normalizedAsset,
+              fileName: "percentage-intro.png",
+              localOutput: ".tmp/image-artifacts/percentage-intro.png",
+            },
+          });
         },
       });
 
@@ -738,7 +835,7 @@ describe("M64-C ProviderToolAdapter", () => {
         status: "succeeded",
         toolId: "generate_classroom_image",
         capabilityId: "image_asset",
-        provider: "image_asset",
+        provider: "minimax",
         artifactDraft: {
           nodeKey: "image_prompts",
           kind: "image_prompts",
@@ -748,8 +845,8 @@ describe("M64-C ProviderToolAdapter", () => {
               imageAsset: {
                 fileName: "percentage-intro.png",
                 localOutput: ".tmp/image-artifacts/percentage-intro.png",
-                bytes: 1024,
-                sha256: "image-sha256",
+                bytes: 2048,
+                sha256: "d".repeat(64),
                 mime: "image/png",
                 generationMode: "image_generated",
                 sourceArtifactId: "artifact-ppt-draft-a",
@@ -785,6 +882,125 @@ describe("M64-C ProviderToolAdapter", () => {
       });
     });
 
+    it("passes only the typed Tool Skill slice to the image provider and binds MiniMax lineage to the artifact", async () => {
+      let calledWith: unknown;
+      const sourceArtifact = {
+        ...pptDraftArtifact(),
+        kind: "asset_brief_generate",
+        nodeKey: "asset_brief_generate",
+        id: "artifact-video-asset-brief-a",
+      } as ArtifactRecord;
+      const businessSkillContext = {
+        skillName: "shanhai-imagegen",
+        skillVersion: "1.1",
+        displayName: "山海图像生成",
+        responsibility: "执行当前视频资产 Tool 的图片请求",
+        semanticSlice: {
+          schemaVersion: "business-tool-skill-slice.v1",
+          toolName: "generate_video_assets",
+          responsibility: "执行当前视频资产 Tool 的图片请求",
+          contracts: {
+            tool: { consumes: ["asset_brief_generate"], produces: ["asset_image_generate"] },
+            skill: { consumes: [], produces: [{ artifactType: "image-generation-result", contractVersion: "shanhai-imagegen/v2" }] },
+          },
+          guidance: [{ sourcePath: "references/result-contract.md", content: "绑定真实文件、来源、Provider、模型和质量证据。" }],
+        },
+        provenance: {
+          schemaVersion: "business-tool-skill-provenance.v1",
+          entrypointSha256: `sha256:${"a".repeat(64)}`,
+          references: [{ sourcePath: "references/result-contract.md", sha256: `sha256:${"b".repeat(64)}` }],
+          bindingPolicyDigest: `sha256:${"c".repeat(64)}`,
+        },
+      } as never;
+
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinition("asset_image_generate"),
+        projectId: "project-a",
+        project: projectRecord(),
+        userInstruction: "只生成灯塔守护者角色参考图",
+        toolInput: { taskBrief: { goal: "独立创意短片资产图", requestedOutputs: ["video"], constraints: [], excludedOutputs: ["ppt", "package"] } },
+        artifactRefs: [artifactRef("asset_brief_generate", sourceArtifact.id, sourceArtifact.title)],
+        resolvedArtifacts: [sourceArtifact],
+        businessSkillContext,
+        runImage: async (input) => {
+          calledWith = input;
+          return {
+            fileName: "normalized.png",
+            localOutput: ".tmp/image-artifacts/normalized.png",
+            bytes: 2048,
+            sha256: "d".repeat(64),
+            imageValid: true,
+            mime: "image/png",
+            provider: "minimax",
+            model: "image-01",
+            width: 1920,
+            height: 1080,
+            promptDigest: "f".repeat(64),
+            rawAsset: { fileName: "raw.png", localOutput: ".tmp/image-artifacts/raw.png", bytes: 2048, sha256: "e".repeat(64), mime: "image/png" },
+            normalizedAsset: { fileName: "normalized.png", localOutput: ".tmp/image-artifacts/normalized.png", bytes: 2048, sha256: "d".repeat(64), mime: "image/png", width: 1920, height: 1080 },
+          };
+        },
+      });
+
+      expect(calledWith).toMatchObject({
+        userInstruction: "只生成灯塔守护者角色参考图",
+        toolInput: { taskBrief: { goal: "独立创意短片资产图" } },
+        businessSkillContext: {
+          semanticSlice: { toolName: "generate_video_assets" },
+          provenance: { entrypointSha256: `sha256:${"a".repeat(64)}` },
+        },
+      });
+      expect(result).toMatchObject({
+        status: "succeeded",
+        provider: "minimax",
+        artifactDraft: {
+          structuredContent: {
+            storage: {
+              imageAsset: {
+                provider: "minimax",
+                model: "image-01",
+                width: 1920,
+                height: 1080,
+                rawAsset: { sha256: "e".repeat(64) },
+                normalizedAsset: { sha256: "d".repeat(64) },
+              },
+            },
+            businessSkillProvenance: { bindingPolicyDigest: `sha256:${"c".repeat(64)}` },
+          },
+        },
+      });
+    });
+
+    it("rejects a nominal MiniMax success when raw or normalized lineage is incomplete", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [pptDraftArtifact()],
+        runImage: async () => ({
+          fileName: "normalized.png",
+          localOutput: ".tmp/image-artifacts/normalized.png",
+          bytes: 2048,
+          sha256: "d".repeat(64),
+          imageValid: true,
+          mime: "image/png",
+          provider: "minimax",
+          model: "image-01",
+          width: 1920,
+          height: 1080,
+          promptDigest: "f".repeat(64),
+        } as unknown as ImageGenerationResult),
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        artifactCreated: false,
+        errorCategory: "quality_gate_failed",
+        observation: { kind: "quality_gate_failed", artifactCreated: false },
+        budgetEvent: { status: "failed", kind: "quality_gate_failed", providerSubmitted: true },
+      });
+    });
+
     it("returns needs_input without calling the image runner when ppt_draft is missing", async () => {
       let called = false;
       const result = await executeFutureProviderTool({
@@ -804,7 +1020,7 @@ describe("M64-C ProviderToolAdapter", () => {
         capabilityId: "image_asset",
         missingInputs: ["ppt_draft"],
         artifactCreated: false,
-        observation: { kind: "blocked_by_policy", artifactCreated: false },
+        observation: { kind: "quality_gate_failed", retryPolicy: { nextAction: "fix_inputs" }, artifactCreated: false },
       });
     });
 
@@ -827,6 +1043,32 @@ describe("M64-C ProviderToolAdapter", () => {
         errorCategory: "quality_gate_failed",
         observation: { kind: "quality_gate_failed", artifactCreated: false },
         budgetEvent: { status: "failed", kind: "quality_gate_failed" },
+      });
+    });
+
+    it("returns a MiniMax parameter rejection to Main Agent as fix_inputs", async () => {
+      const result = await executeFutureProviderTool({
+        tool: getToolDefinitionByCapabilityId("image_asset"),
+        projectId: "project-a",
+        artifactRefs: [pptDraftRef()],
+        resolvedArtifacts: [pptDraftArtifact()],
+        runImage: async () => {
+          throw new Error("minimax_image_generation_request_failed:status_2013:invalid_aspect_ratio");
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        toolId: "generate_classroom_image",
+        capabilityId: "image_asset",
+        artifactCreated: false,
+        errorCategory: "provider_input_invalid",
+        observation: {
+          kind: "quality_gate_failed",
+          reasonCode: "minimax_image_generation_request_failed:status_2013:invalid_aspect_ratio",
+          retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+        },
+        budgetEvent: { status: "failed", kind: "quality_gate_failed", providerSubmitted: true },
       });
     });
 
@@ -907,6 +1149,7 @@ describe("M64-C ProviderToolAdapter", () => {
             sha256: "video-sha256",
             videoValid: true,
             mime: "video/mp4",
+            providerEvidence: { name: "evolink", model: "grok-imagine-video" },
             requestEvidence: { shotId: "shot_01", durationSeconds: 10, references: [] },
           };
         },
@@ -942,6 +1185,8 @@ describe("M64-C ProviderToolAdapter", () => {
                 sha256: "video-sha256",
                 mime: "video/mp4",
                 generationMode: "video_generated",
+                provider: "evolink",
+                model: "grok-imagine-video",
                 sourceArtifactId: "artifact-video-plan-a",
                 sourceArtifactIds: ["artifact-video-plan-a", "artifact-storyboard-a", "artifact-assets-a"],
                 requestEvidence: { shotId: "shot_01", durationSeconds: 10, references: [] },
@@ -975,6 +1220,9 @@ describe("M64-C ProviderToolAdapter", () => {
           gates: expect.arrayContaining(["video_valid", "mp4_ftyp_present", "mp4_moov_present"]),
         },
       });
+      expect(result).toMatchObject({
+        providerPayload: { provider: "evolink", model: "grok-imagine-video" },
+      });
     });
 
     it("returns needs_input and does not call the video runner when any required artifact is missing", async () => {
@@ -1001,7 +1249,7 @@ describe("M64-C ProviderToolAdapter", () => {
           capabilityId: "video_segment_generate",
           missingInputs: [missingKind],
           artifactCreated: false,
-          observation: { kind: "blocked_by_policy", artifactCreated: false },
+          observation: { kind: "quality_gate_failed", retryPolicy: { nextAction: "fix_inputs" }, artifactCreated: false },
         });
       }
     });
@@ -1098,7 +1346,7 @@ describe("M64-C ProviderToolAdapter", () => {
           runVideo: async (input) => {
             selectedShot = (input as { shot?: unknown }).shot;
             const shot = (input as { shot: { shotId: string; referenceEvidence: unknown[] } }).shot;
-            return { fileName: "shot.mp4", localOutput: ".tmp/video-artifacts/shot.mp4", bytes: 4096, sha256: "video-sha256", videoValid: true, mime: "video/mp4", requestEvidence: { shotId: shot.shotId, durationSeconds: 10, references: shot.referenceEvidence as never[] } };
+            return { fileName: "shot.mp4", localOutput: ".tmp/video-artifacts/shot.mp4", bytes: 4096, sha256: "video-sha256", videoValid: true, mime: "video/mp4", providerEvidence: { name: "evolink", model: "grok-imagine-video" }, requestEvidence: { shotId: shot.shotId, durationSeconds: 10, references: shot.referenceEvidence as never[] } };
           },
         });
         expect(selectedShot).toMatchObject({ shotId: "shot_01", durationTargetRange: { minSeconds: 10, maxSeconds: 20 }, durationSeconds: 10, referenceImageUrls: ["https://files.example/reference.png"], referenceEvidence: [{ assetId: "asset_main", localSha256: sha256, shotId: "shot_01" }] });

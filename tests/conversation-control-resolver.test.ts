@@ -135,7 +135,7 @@ describe("ConversationControlResolver", () => {
       agentTurn: mainAgentPrerequisiteTurn,
       capabilityAvailability: [],
     });
-    expect(result.decision).toMatchObject({ kind: "switch_to_capability", targetCapabilityId: "video_script_generate", supersedePendingAction: true });
+    expect(result.decision).toMatchObject({ kind: "switch_to_capability", targetCapabilityId: "requirement_spec", supersedePendingAction: true });
     expect(result.turn.toolPlan?.capabilityId).toBe("requirement_spec");
     expect(result.turn.toolPlan?.internalReason).toBe("main_agent_selected_prerequisite");
   });
@@ -185,14 +185,25 @@ describe("ConversationControlResolver", () => {
   });
 
   it("supersedes the active offer when the teacher revises its content", () => {
+    const revisedTurn: MainAgentTurn = {
+      ...baseTurn,
+      state: "running_tool",
+      shouldRunToolNow: true,
+      toolPlan: {
+        ...pendingPptOutlinePlan().toolPlan,
+        planId: "ppt:revised-by-main-agent",
+        internalReason: "main_agent_replanned_from_teacher_revision",
+        inputDraft: { teacherGoal: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行" },
+      },
+    };
     const result = resolveConversationControl({
       userMessage: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行",
       pendingPlan: pendingPptOutlinePlan(),
-      agentTurn: baseTurn,
+      agentTurn: revisedTurn,
       capabilityAvailability: [],
     });
     expect(result.decision).toMatchObject({ kind: "revise_active_offer", supersedePendingAction: true });
-    expect(result.turn.shouldRunToolNow).toBe(false);
+    expect(result.turn).toMatchObject({ state: "running_tool", shouldRunToolNow: true, toolPlan: { requiresConfirmation: false } });
   });
 
   it("supersedes the active offer when the teacher cancels it", () => {
@@ -207,15 +218,25 @@ describe("ConversationControlResolver", () => {
   });
 
   it("treats edited quick-reply text as a revision instead of authorizing the old action", () => {
+    const revisedTurn: MainAgentTurn = {
+      ...baseTurn,
+      state: "running_tool",
+      shouldRunToolNow: true,
+      toolPlan: {
+        ...pendingPptOutlinePlan().toolPlan,
+        planId: "ppt:edited-quick-reply",
+        inputDraft: { teacherGoal: "把叙事改成先冲突后揭秘，不要按刚才那版执行" },
+      },
+    };
     const result = resolveConversationControl({
       userMessage: "把叙事改成先冲突后揭秘，不要按刚才那版执行",
       pendingPlan: pendingPptOutlinePlan(),
       receivedConfirmedActionId: "human:p:ppt_outline:m1",
-      agentTurn: baseTurn,
+      agentTurn: revisedTurn,
       capabilityAvailability: [],
     });
     expect(result.decision).toMatchObject({ kind: "revise_active_offer", pendingPlanStatus: "superseded", advanceIntentEpoch: true });
-    expect(result.turn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
+    expect(result.turn).toMatchObject({ state: "running_tool", shouldRunToolNow: true, toolPlan: { planId: "ppt:edited-quick-reply" } });
   });
 
   it("pauses an active offer without advancing the intent epoch", () => {
@@ -230,15 +251,28 @@ describe("ConversationControlResolver", () => {
     expect(result.turn).toMatchObject({ state: "chatting", shouldRunToolNow: false, toolPlan: undefined });
   });
 
-  it("resumes a paused offer by requiring a newly issued action", () => {
+  it("resumes a paused standard internal task without manufacturing another confirmation", () => {
+    const intentGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: "task-1",
+      projectId: "project-1",
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard",
+      budgetPolicyVersion: "v1-standard",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 3,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
     const result = resolveConversationControl({
       userMessage: "恢复刚才的任务",
-      pendingPlan: { ...pendingPptOutlinePlan(), status: "paused" },
+      pendingPlan: { ...pendingPptOutlinePlan(), status: "paused", intentGrant },
       agentTurn: baseTurn,
       capabilityAvailability: [],
     });
     expect(result.decision).toMatchObject({ kind: "resume_paused_offer", pendingPlanStatus: "superseded" });
-    expect(result.turn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false, toolPlan: { requiresConfirmation: true } });
+    expect(result.turn).toMatchObject({ state: "running_tool", shouldRunToolNow: true, toolPlan: { requiresConfirmation: false } });
   });
 
   it("cancels an active offer and advances the intent epoch", () => {

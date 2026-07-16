@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as postVideoRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { seedArtifactRouteTask } from "../../../../tests/support/artifact-route-task-fixture";
 import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
@@ -23,6 +24,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
+    const { taskBrief } = await seedArtifactRouteTask(project, ["video_segment_generate"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",
@@ -109,9 +111,14 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
     expect(routeToolCall).toHaveBeenCalledWith(expect.objectContaining({
-      capabilityId: "video_segment_generate",
+      toolName: "generate_video_segment",
       projectId: project.id,
-      project,
+      project: expect.objectContaining({ id: project.id }),
+      executionEnvelope: expect.objectContaining({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        taskBriefDigest: taskBrief.digest,
+      }),
       artifactRefs: [approvedSourceArtifact, approvedStoryboard, approvedAssetImages].map((artifact) => ({
         kind: artifact.kind,
         artifactId: artifact.id,
@@ -173,6 +180,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
   ])("does not save a video artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "Video provider truth gate" });
+    await seedArtifactRouteTask(project, ["video_segment_generate"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",
@@ -254,6 +262,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
   it("does not save a video artifact and fails the job when ToolRouter fails", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M64-R video ToolRouter failure" });
+    await seedArtifactRouteTask(project, ["video_segment_generate"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",

@@ -1,128 +1,107 @@
 # ShanHaiEdu-Studio 项目准则
 
-> 本文件是 `ShanHaiEdu-Studio` 的长期工程约定。它只记录任何阶段都必须坚守的规则，不记录临时分支、短期任务或一次性计划。若与用户当次明确指令冲突，以用户当次指令为准；若与平台、安全或工具权限冲突，以平台和工具限制为准。
+> 本文件只记录跨阶段长期有效的工程规则。优先级：平台与安全限制 > 用户当前明确指令 > 本文件 > 活动需求与计划。历史文档只能提供证据，不能恢复旧流程。
 
-## 1. 工作方式
+## 1. 当前权威与读取顺序
 
-- 每次回复用户必须以 `董事长，` 开头。
-- 本项目默认严格模式；除非用户明确说“轻量模式”，所有开发、架构、接入、重构、清理和交付都按阶段推进。
-- 动手前必须明确目标、范围、关键假设、成功标准、风险和回退方式。
-- 任何需求增加、需求变更、架构调整或正式开发前，必须先在 `docs\` 写规划文档。
-- 规划通过后再实现；不能跳过调研、规划、测试定义和阶段验收。
-- 当前需求与质量门禁的唯一权威口径是 `docs\product\current-requirements-baseline.md`；旧阶段计划、历史报告、台账快照和 MVP 过渡方案若与该文档冲突，一律以该文档为准。
+开始新会话、新阶段或接管工作前，按顺序读取：
 
-## 2. 文档结构与入口
+1. `AGENTS.md`
+2. `docs\README.md`
+3. `docs\product\current-requirements-baseline.md`
+4. `docs\product\requirements-backlog.md`
+5. `docs\mainlines\current-mainline-status.md`
+6. `docs\architecture\README.md`
+7. `docs\architecture\V1.0 重构设计.md`及当前相关 ADR
+8. `docs\stages\README.md`及唯一活动阶段的 plan / test-plan
 
-- 新会话、新智能体或新阶段开始前，必须先读 `docs\README.md`，理解需求、架构、主线、阶段文档的归属边界。
-- 产品需求统一放入 `docs\product\`：
-  - `docs\product\current-requirements-baseline.md` 是当前产品需求与质量门禁最高口径。
-  - `docs\product\requirements-backlog.md` 记录未完成需求、新增需求、延期需求和优先级。
-  - `docs\product\conversation-interaction-requirements.md` 记录对话确认、自由输入、改道和追问类需求。
-- 架构设计统一放入 `docs\architecture\`：长期架构、核心主线、五平面、十二系统、ADR 决策都从 `docs\architecture\README.md` 进入。
-- 主线状态统一放入 `docs\mainlines\`：当前主线、阶段顺序、已完成/未完成状态以 `docs\mainlines\current-mainline-status.md` 为入口。
-- 阶段开发统一放入 `docs\stages\`：只记录单阶段 plan、test-plan、closeout；阶段文档不能覆盖产品基线和需求总账。
-- 新增需求或需求变更必须先进入 `docs\product\requirements-backlog.md`，再写阶段计划；不得只写在某个阶段计划里。
-- 旧阶段文档、历史报告、早期 MVP 方案仅作证据；若与当前产品基线或需求总账冲突，按当前产品基线和需求总账执行。
-- 不批量移动、删除或归档旧文档，除非有单独文档治理计划和用户确认。
-
-## 3. 智能体架构主线
-
-任何山海智教智能体相关开发、架构调整、Provider 接入、节点契约、记忆系统、上下文压缩、质量门禁和工作流编排任务，必须先阅读并遵守以下文档：
+冲突时按以下顺序裁决：
 
 ```text
-docs\product\current-requirements-baseline.md
-docs\architecture\2026-07-09-山海智教智能体-统一口径与工作准则.md
-docs\architecture\2026-07-09-山海智教智能体-核心设计串联.md
-docs\architecture\2026-07-09-山海智教智能体-MVP1-上下文契约与门禁规划.md
+当前明确指令
+> 产品需求基线
+> 当前主线状态
+> 已接受架构决策
+> 当前阶段 plan / test-plan
+> Roadmap
+> Archive 与历史证据
 ```
 
-2026-07-13勘误：上述历史文档及其他旧架构材料中，凡把真实Provider、文件/最终包生成或`needs_review`自动等同于逐次HumanGate的口径，均已被当前需求基线RQ-038与V1-9R替代。明确任务在已披露、版本绑定的IntentGrant预算内自动推进；只有无有效授权、超预算/最高强度、不可推断选择、外发、权限变化或破坏性副作用才进入HumanGate。旧文档仍可作为合同与演进证据，不得恢复旧产品行为。
+`docs\archive\` 默认不参与搜索、规划、开发或验收判断。只有追溯历史原因、校验证据或用户明确要求时才定向读取；不得从 archive 恢复过时断言、固定流程、旧 run 或旧 Provider/Skill lock。
 
-需要通用架构背景时，再阅读：
+## 2. 文档职责
+
+- `docs\product\current-requirements-baseline.md`：只写产品不变量和质量门禁，不写 runId、测试计数或阶段年表。
+- `docs\product\requirements-backlog.md`：只写未完成、延期和未来需求，不保存已完成流水账。
+- `docs\mainlines\current-mainline-status.md`：只写当前事实、五层证据、阻塞和下一动作。
+- `docs\architecture\`：只保留当前架构入口和已接受 ADR。
+- `docs\stages\`：只保留唯一活动阶段的 plan、test-plan 和索引。
+- `docs\roadmap\`：保存已接受但尚未进入当前阶段的未来工作；不得自动启动。
+- `docs\archive\`：保存历史原文、迁移清单和审计证据；不得作为活动权威。
+- `docs\contracts\`、`docs\runbooks\`：只保留当前仍生效的合同或操作边界。
+
+新增需求先进入 backlog；进入当前阶段后再写 plan 和 test-plan。完成或失效的阶段材料通过带 SHA-256 的迁移清单归档，不堆回活动目录。
+
+## 3. 产品与控制面不变量
+
+- ShanHaiEdu 是由产品 Main Agent 自主编排的非固定 DAG 教师备课工作台，不是线性审批台或 mock 展示页。
+- Main Agent 是业务 Tool 选择、下一步、Observation、Replan、重试和停止的唯一编排者。兼容层、Runner、Skill、Director、Critic和外部 Codex均不得取得第二编排权。
+- 旧工作流、宏节点、Capability计划和阶段模板只可保留为迁移证据、参考策略或展示投影；生产能力必须拆为可独立发现和执行的原子 Tool，不得由工作流固定下一 Tool、重试或停止。
+- 明确交付任务必须形成完整 `TaskBrief`、`IntentGrant`、`IntentEpoch`、强度、预算和计划版本；所有可执行 Tool 必须通过有效 `ExecutionEnvelope`。
+- 标准授权范围内的可逆内部工作零例行确认。只有缺少不可推断选择、有效授权或预算，或涉及外发、权限变化、覆盖删除等真实副作用时进入 `HumanGate`。
+- Tool结果先原子持久化 `ToolInvocation`、`ValidationReport`、`Observation`、事件和允许的 Artifact，再由同一 Main Agent 决定后续动作。
+- mock、placeholder、deterministic draft、文本 fallback、degraded 产物和未验证文件不得冒充真实完成。
+- 最终包必须来自正式持久化的当前版本 package asset；不得从最新版、未批准版、不同任务或临时路径现场拼装。
+- 业务 Skill 只能增强 Main Agent 已选择的高层 Tool，不能选择下一 Tool、批准、返修或接管控制面。
+- 现行业务 Skill 权威源是集合根既有 `shanhaiedu-技能系统`；运行时 projection 是冻结投影，不是新的 Skill 系统。
+
+## 4. 教育交付不变量
+
+- 教案必须结构化并可被 PPT、图片和视频继续消费。
+- PPT 设计必须逐页表达底图、元素、文字、排版、教学动作和视觉重点；真实 PPTX 以文件结构和实际 slideCount 验真。
+- 视频先作为脱离教材仍成立的独立创意短片，再以唯一最小课程锚点回接任务。不得自动收缩为儿童、教师、教室或课堂活动。
+- 完整视频必须保留脚本、镜头、资产、声音、字幕、时间线和质量证据；真实交付时长为30至90秒。
+- 教师签收、内部质量通过和下游可用是不同事实，不得互相伪造。
+
+## 5. 工程实施
+
+- 动手前明确目标、范围、成功标准、风险和回退；只改与当前目标直接相关的内容。
+- 先读目标文件、相关测试和一个相似实现，先检查 `git status --short`，保留来源不明和用户在途改动。
+- 需求或架构实质变化先更新活动文档，再写会失败的特征测试，再做最小实现和定向回归。
+- 同一责任层连续两轮没有新证据时，记录已知事实、失败点和恢复入口，转向不依赖项，不做等价循环。
+- 配置、端点、模型、凭据和开关不得硬编码进业务代码；Provider事实以API台账和运行时选择合同为准。
+- 不绑定 `superpowers` 等开发方法 Skill。成熟库可以用于实现，但不得改变产品控制权和验收边界。
+- 单文件约超过500行、单函数或组件约超过150行，或承载多个无关职责时，新增功能前先评估拆分。
+
+## 6. 前端与消息边界
+
+- 教师对话区以 `assistant-ui` 为唯一目标 UI Runtime；项目自有 `MessagePart` 和 `AgentEventEnvelope` 是数据库与 API 合同。
+- 前端只投影线程、消息、计划、Tool状态、Artifact引用、HumanGate和错误恢复，不成为业务真源，不从正文关键词猜测状态。
+- 前端不得用固定宏阶段或大节点终态替代同一 turn 内真实的文本流、Tool、Observation、失败位置、Artifact和恢复轨迹。
+- 保留安静、工作导向的三栏工作台；中间对话是主视觉，不做营销页、大Hero、卡片套卡片或无意义动效。
+- 教师界面不得暴露 schema、provider、node_id、storage、debug、local path、token或内部推理。
+- V1发布前的真实浏览器门只运行桌面视口；不新增390px真实黑盒，除非用户当次明确要求。既有窄屏合同与历史证据保留。
+
+## 7. 验收与发布边界
+
+所有结论分别标记：
 
 ```text
-docs\architecture\智能体设计架构\README.md
-docs\architecture\智能体设计架构\patterns\01-conversation-context-compaction.md
-docs\architecture\智能体设计架构\patterns\02-node-contract-control.md
-docs\architecture\智能体设计架构\patterns\03-memory-boundaries.md
+contract / executor / model orchestration / product E2E / release
 ```
 
-后续实施必须遵守：
+低层通过不得上推为高层完成。fixture只能证明仓内合同；真实模型、真实文件、真实产品链路和发布必须分别有新鲜证据。
 
-```text
-通用架构定方法；
-五平面定职责；
-十二系统定边界；
-MVP 规划定顺序；
-代码实现定证据。
-```
+- R5已经关闭，默认不重跑。
+- V1-9是唯一一次产品 Main Agent 真实全链路；只有当前Go/No-Go全部通过后才允许创建新运行。
+- 运行开始时冻结合同与摘要；实质升级必须终止旧运行并创建显式后继，不得在同一run静默换规则。
+- V1-9通过前不得进入教师签收、部署、生产写入或V1-10切流。
+- 部署、不可逆操作和教师签收需要当次授权；未经要求不commit、不push、不移动历史标签。
 
-不得绕过 `ContextPackage`、`Node Contract`、`PlanGuard`、`HumanGate`、`Quality Gate` 直接实现功能；不得把完整长对话直接当作模型输入边界；不得把模型自评、deterministic draft、placeholder 或文本 fallback 伪装成真实交付。
+## 8. 验证与安全
 
-## 4. 固定开发链路
-
-任何阶段性开发都遵守：
-
-```text
-调研现有工具/方案
--> 写阶段规划文档
--> 写测试文档或测试用例
--> 按规划开发
--> 按测试文档集中验收
--> 审查与修正
--> 收尾记录
-```
-
-- 调研优先看官方文档、一手来源、源码、项目既有模式、已安装 skills 和成熟开源方案。
-- 阶段规划必须说明：为什么做、复用什么、怎么适配、哪里自研、怎么验收。
-- 测试定义必须早于开发；开发完成后按阶段集中验收，不把零散小测当作通过。
-- 阶段内允许运行最小快速检查定位问题，但最终结论必须来自阶段验收。
-
-## 5. 反屎山原则
-
-- 优先定向重构，不用补丁层层包裹问题。
-- 当单文件超过约 500 行、单函数/组件超过约 150 行，或同一文件承载多个无关职责时，新增功能前必须评估拆分。
-- UI、数据请求、状态推进、业务规则、Agent Runtime、provider adapter 不得混在一个文件或组件里。
-- 不做无关格式化、无关改名、无关重构。
-- 不重复造轮子；能复用成熟库、组件、协议、数据结构、skills 或项目既有模式时，优先复用。
-- 若暂缓重构，必须在规划或收尾记录中写明原因、后续拆分目标和删除条件。
-
-## 6. 产品与技术边界
-
-- 当前产品目标是真实可用、由 Main Agent 自主编排的非固定 DAG 备课制作助手，不是线性审批工作台或 mock 展示页。
-- MVP 可以能力较弱，但必须真实保存项目、对话、节点产物和确认状态。
-- mock、placeholder、deterministic 输出、演示数据不得伪装成真实生成或上线完成。
-- 文本 fallback、目标页数、设计稿页数、文件名、任务成功状态都不能冒充真实交付；PPTX 必须以真实 slideCount 校验，图片、视频和最终包必须以真实文件结构和质量门禁校验。
-- OpenAI SDK / OpenAI Agents SDK 只能在服务端 Runtime Adapter 层使用，不得直接放进 React 组件。
-- 项目、对话、节点、产物、版本、确认、失败恢复和交付包状态必须由后端业务层持久化。
-- 代码应保留可迁移边界：`AgentRuntime`、`WorkflowEngine`、`WorkflowRepository`、`ArtifactStorage`、`ProviderAdapter`。
-
-## 7. 前端体验边界
-
-- 保留 Codex 风格工作台：左侧项目，中间对话，右侧压缩节点，点击打开阅读侧栏。
-- 中间对话区是主视觉；整体纯白、极简、低噪声。
-- 不做营销页、大 hero、大渐变、炫技动效、emoji、卡片套卡片。
-- 字号层级控制在 2-3 种，最大不超过 35px。
-- 低频操作默认隐藏，hover/focus 时出现。
-- 用户可见界面不得出现工程词：schema、manifest、provider、node_id、storage、API、debug、local path 等。
-- UI 改动必须做桌面和窄屏浏览器检查。
-
-## 8. 验证与审查
-
-- 宣称完成前必须有新鲜验证证据。
-- 构建通过必须有 `npm run build` exit 0。
-- 测试通过必须有测试命令输出且失败数为 0。
-- 页面可用必须实际浏览器打开关键流程。
-- API 可用必须有真实请求或集成测试。
-- 阶段验收后必须审查：是否符合需求基线、规划文档、测试文档，是否泄露敏感信息或工程词，是否产生屎山。
-- 无法验证时，必须说明原因和剩余风险。
-
-## 9. 清理、提交与安全
-
-- 删除、清理、迁移后删除、批量覆盖等破坏性操作必须单独确认。
-- 默认归档或送回收站，不做不可恢复删除。
-- 更新 `AGENTS.md` 前必须先做时间戳备份：项目归档一份，`C:\Users\HB\.codex\AGETNS-bak\` 一份。
-- 提交前先看 `git status --short`，只纳入本轮授权范围内的改动。
-- 提交信息使用中文：`类型: 简要描述 | 版本号 | YYYY-MM-DD HH:MM`。
-- 未经用户明确要求，不主动 push、部署、发布或执行不可逆操作。
-- 不在回复、日志、提交、文档、截图中明文展示密钥、token、账号和个人敏感信息。
+- 声称完成前执行与风险相称的定向测试、TypeScript、构建、链接、哈希或实际环境验证；只有实际执行成功的命令才能报告为通过。
+- 文档迁移必须先保存原文快照和逐文件 SHA-256 manifest；历史原文迁移后字节保持不变。
+- 更新本文件前，必须在项目 archive 和 `C:\Users\HB\.codex\AGETNS-bak\` 各保存一份时间戳备份，并在更新后立即重新读取。
+- 不触碰 `.env`、密钥、私有API台账、SQLite/WAL/SHM、用户上传、Artifact、真实媒体、旧run状态或Git标签，除非用户明确授权具体操作。
+- 不在回复、日志、提交、文档或截图中明文展示密钥、token、账号和个人敏感信息。

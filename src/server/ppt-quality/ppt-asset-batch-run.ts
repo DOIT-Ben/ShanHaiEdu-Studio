@@ -40,6 +40,8 @@ export async function runPptAssetBatch(input: {
       width: generated.width,
       height: generated.height,
       mime: generated.mime,
+      rawAsset: generated.rawAsset ? { ...generated.rawAsset } : generated.rawAsset,
+      normalizedAsset: generated.normalizedAsset ? { ...generated.normalizedAsset } : generated.normalizedAsset,
       transparentBackground: generated.transparentBackgroundVerified,
       placeholder: false,
       localSubjectDrawn: false,

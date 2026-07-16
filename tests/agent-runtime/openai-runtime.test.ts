@@ -8,7 +8,7 @@ import type { ToolRouterInput } from "../../src/server/tools/tool-router";
 import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
 import { expectSucceeded } from "./test-helpers";
 import { validPptDesignPackage } from "../support/ppt-quality-fixture";
-import { createPptDesignCandidateProjection, type PptDesignCandidateInput } from "../../src/server/ppt-quality/ppt-design-candidate";
+import { normalizePptDesignSemanticCandidate, type PptDesignSemanticCandidate } from "../../src/server/ppt-quality/ppt-design-candidate";
 import { createStoryboardManifest } from "../../src/server/video-quality/video-production-contract";
 import { createVideoNarrationScript } from "../../src/server/video-quality/video-narration-contract";
 
@@ -90,8 +90,12 @@ describe("OpenAIRuntime", () => {
     const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
     const result = expectSucceeded(await runtime.run(storyboardInput()));
     expect(result.artifactDraft.structuredContent).toEqual({ videoStoryboardManifest: manifest });
+    expect(result.artifactDraft.markdown).toContain("## 目标总时长");
+    expect(result.artifactDraft.markdown).toContain("## 连贯性说明");
+    expect(result.artifactDraft.markdown).toContain("## 自检清单");
     expect(JSON.stringify(calls[0])).toContain("videoStoryboardManifest");
     expect(JSON.stringify(calls[0])).toContain("single minimal return");
+    expect(JSON.stringify(calls[0].text)).not.toContain("structuredContentJson");
   });
 
   it("rejects storyboard output without a validated structured manifest", async () => {
@@ -103,7 +107,7 @@ describe("OpenAIRuntime", () => {
   it("transports a compact PPT design candidate without projecting production structural content", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const candidate = compactPptDesignCandidate();
-    expect(() => createPptDesignCandidateProjection(candidate)).not.toThrow();
+    expect(() => normalizePptDesignSemanticCandidate(candidate)).not.toThrow();
     const client = {
       responses: {
         create: async (payload: Record<string, unknown>) => {
@@ -117,10 +121,10 @@ describe("OpenAIRuntime", () => {
     const result = expectSucceeded(await runtime.run(pptDesignInput()));
 
     expect(result.artifactDraft.structuredContent?.pptDesignCandidate).toMatchObject({
-      schemaVersion: "ppt-design-candidate.v1",
-      taskBriefDigest: "b".repeat(64),
-      candidateDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      schemaVersion: "ppt-design-semantic-candidate.v1",
     });
+    expect(result.artifactDraft.structuredContent?.pptDesignCandidate).not.toHaveProperty("taskBriefDigest");
+    expect(result.artifactDraft.structuredContent?.pptDesignCandidate).not.toHaveProperty("candidateDigest");
     expect(result.artifactDraft.structuredContent).not.toHaveProperty("pptDesignPackage");
     expect(JSON.stringify(calls[0])).not.toContain("mediaAccessibility");
     expect(JSON.stringify(calls[0])).not.toContain("productionPath");
@@ -214,7 +218,7 @@ describe("OpenAIRuntime", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       model: "gpt-test",
-      instructions: expect.stringContaining("小学数学公开课"),
+      instructions: expect.stringContaining("默认角色语境偏向小学"),
       text: {
         format: {
           type: "json_schema",
@@ -229,6 +233,9 @@ describe("OpenAIRuntime", () => {
     expect(JSON.stringify(calls[0])).toContain("教案需围绕百分数意义展开");
     expect(JSON.stringify(calls[0])).toContain("targetPageCount");
     expect(JSON.stringify(calls[0])).toContain("use_general_curriculum_context");
+    const requestInstructions = String((calls[0] as Record<string, unknown>).instructions);
+    expect(requestInstructions).toContain("不是年级、学科或学段的能力门禁");
+    expect(requestInstructions).not.toMatch(/小学数学公开课备课助手|只服务小学|不要生成初中/);
     expect(calls[0]).toMatchObject({ instructions: expect.stringContaining("可修改且不伪造教材证据的通用课程默认") });
     expect(calls[0]).toMatchObject({ instructions: expect.stringContaining("逐字作为二级标题") });
     expect(result).toMatchObject({
@@ -244,6 +251,87 @@ describe("OpenAIRuntime", () => {
         contentType: "text/markdown",
       },
     });
+  });
+
+  it("uses the frozen task intensity strategy for a business Tool model call", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = { responses: { create: async (payload: Record<string, unknown>) => { calls.push(payload); return { output_text: structuredStoryboardOutput(validStoryboardManifest()) }; } } };
+    const runtime = new OpenAIRuntime({ client, model: "ledger-default", reasoningEffort: "high" });
+    const runtimeInput = storyboardInput();
+    runtimeInput.taskInput = { generationIntensity: "standard" };
+
+    await runtime.run(runtimeInput);
+
+    expect(calls[0]).toMatchObject({ model: "gpt-5.6-terra", reasoning: { effort: "medium" } });
+  });
+
+  it("preserves actionable PPT candidate validation diagnostics for Main Agent repair", async () => {
+    const invalidCandidate = { ...compactPptDesignCandidate(), pagePlans: [] };
+    const client = { responses: { create: async () => ({ output_text: structuredPptDesignOutput(invalidCandidate as never) }) } };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+
+    const result = await runtime.run(pptDesignInput());
+
+    expect(result).toMatchObject({
+      status: "failed",
+      failure: {
+        category: "validation",
+        reasonCode: "ppt_design_candidate_semantics_invalid",
+        details: expect.arrayContaining(["page_count_mismatch"]),
+      },
+    });
+  });
+
+  it("loads the selected business Skill into only the current Tool request without giving it orchestration authority", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = {
+      responses: {
+        create: async (payload: Record<string, unknown>) => {
+          calls.push(payload);
+          return { output_text: structuredLessonPlanOutput() };
+        },
+      },
+    };
+    const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
+    expectSucceeded(await runtime.run({
+      ...input(),
+      businessSkillContext: {
+        skillName: "shanhai-jiaoan",
+        skillVersion: "1.0",
+        displayName: "山海教案",
+        responsibility: "生成结构化教案候选",
+        semanticSlice: {
+          schemaVersion: "business-tool-skill-slice.v1",
+          bindingMode: "formal_contract",
+          artifactContractAuthority: "skill",
+          toolName: "create_lesson_plan",
+          responsibility: "生成结构化教案候选",
+          contracts: {
+            tool: { consumes: ["requirement_spec"], produces: ["lesson_plan"] },
+            skill: {
+              consumes: [{ artifactType: "textbook-evidence", contractVersion: "shanhai-jiaocai/v1" }],
+              produces: [{ artifactType: "lesson-plan", contractVersion: "shanhai-jiaoan/v2" }],
+            },
+          },
+          guidance: [{ sourcePath: "references/教案质量门禁.md", content: "必须保留教学目标、学情、流程和评价结构。" }],
+        },
+        provenance: {
+          schemaVersion: "business-tool-skill-provenance.v1",
+          entrypointSha256: `sha256:${"a".repeat(64)}`,
+          references: [{ sourcePath: "references/教案质量门禁.md", sha256: `sha256:${"b".repeat(64)}` }],
+          bindingPolicyDigest: `sha256:${"c".repeat(64)}`,
+        },
+      },
+    }));
+
+    expect(calls[0]).toMatchObject({
+      instructions: expect.stringContaining("必须保留教学目标、学情、流程和评价结构"),
+    });
+    expect(calls[0]).toMatchObject({
+      instructions: expect.stringContaining("不得选择、调用或强制下一 Tool"),
+    });
+    expect(JSON.stringify(calls[0])).toContain("shanhai-jiaoan");
+    expect(JSON.stringify(calls[0])).not.toContain("run_skill_pipeline");
   });
 
   it("does not include native tool fields in the Responses payload when nativeToolLoop is not configured", async () => {
@@ -387,7 +475,9 @@ describe("OpenAIRuntime", () => {
   });
 
   it("fails honestly without a configured model channel", async () => {
-    const runtime = createAgentRuntimeFromEnv({});
+    const runtime = createAgentRuntimeFromEnv({
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+    });
     const result = await runtime.run(input());
 
     expect(result).toMatchObject({ status: "failed", run: { runtimeKind: "openai", status: "failed" } });
@@ -409,6 +499,7 @@ describe("OpenAIRuntime", () => {
     const productionRuntime = createAgentRuntimeFromEnv({
       NODE_ENV: "production",
       SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
     });
     expect(await productionRuntime.run(input())).toMatchObject({
       status: "failed",
@@ -523,9 +614,9 @@ describe("OpenAIRuntime", () => {
   });
 
   it.each([
-    ["timeout", new Error("Request timed out after 20000ms")],
-    ["network", new Error("fetch failed: ECONNRESET")],
-  ] as const)("classifies %s failures without creating an artifact", async (category, failure) => {
+    ["timeout", "agent_runtime_timeout", new Error("Request timed out after 20000ms")],
+    ["network", "agent_runtime_network_failed", new Error("fetch failed: ECONNRESET")],
+  ] as const)("classifies %s failures without creating an artifact", async (category, reasonCode, failure) => {
     const client = { responses: { async create() { throw failure; } } };
     const runtime = new OpenAIRuntime({ client, model: "gpt-test" });
 
@@ -534,7 +625,7 @@ describe("OpenAIRuntime", () => {
     expect(result).toMatchObject({
       status: "failed",
       run: { runId: "run-openai", status: "failed" },
-      failure: { category, retryable: true },
+      failure: { category, reasonCode, retryable: true },
     });
     expect("artifactDraft" in result).toBe(false);
   });
@@ -592,7 +683,7 @@ function structuredLessonPlanOutput(): string {
   });
 }
 
-function structuredPptDesignOutput(candidate: PptDesignCandidateInput | null): string {
+function structuredPptDesignOutput(candidate: PptDesignSemanticCandidate | null): string {
   return JSON.stringify({
     assistantMessage: {
       title: "PPT 设计候选已生成",
@@ -625,11 +716,10 @@ function structuredPptDesignOutput(candidate: PptDesignCandidateInput | null): s
   });
 }
 
-function compactPptDesignCandidate(): PptDesignCandidateInput {
+function compactPptDesignCandidate(): PptDesignSemanticCandidate {
   const packageValue = validPptDesignPackage();
   return {
-    schemaVersion: "ppt-design-candidate.v1",
-    taskBriefDigest: "b".repeat(64),
+    schemaVersion: "ppt-design-semantic-candidate.v1",
     goalSummary: "五年级百分数公开课逐页PPT设计。",
     brief: {
       grade: packageValue.brief.grade,
@@ -639,7 +729,11 @@ function compactPptDesignCandidate(): PptDesignCandidateInput {
       useCase: packageValue.brief.useCase,
       targetSlideCount: packageValue.brief.targetSlideCount,
     },
-    evidenceBindings: packageValue.evidenceBindings.map((binding) => ({ ...binding, digest: "a".repeat(64) })),
+    evidenceBindings: packageValue.evidenceBindings.map((binding) => ({
+      evidenceId: binding.evidenceId,
+      pageRefs: binding.pageRefs,
+      claims: binding.claims,
+    })),
     objectives: packageValue.objectives,
     narrative: {
       openingTension: packageValue.narrative.openingTension,
@@ -663,8 +757,13 @@ function structuredStoryboardOutput(manifest: ReturnType<typeof validStoryboardM
     assistantMessage: { title: "视频分镜已生成", body: "已形成三镜头独立创意分镜。" },
     artifactDraft: {
       title: "机械谜题导入视频分镜", summary: "三镜头推进独立悬念，只在结尾回到课程问题。",
-      markdown: ["## 目标总时长", "30-60 秒。", "## 分镜 ID", "shot_01 至 shot_03。", "## 每镜头时长", "每镜头 10-20 秒。", "## 镜头目标", "推进独立悬念。", "## 场景", "机械工作间。", "## 画面动作", "装置逐步变化。", "## 镜头运动", "缓慢推进。", "## 旁白或字幕", "后期仅保留疑问。", "## 角色、道具、场景资产", "同一机械装置。", "## 关键帧要求", "保持装置状态连续。", "## 连贯性说明", "首尾状态逐镜头承接。", "## 自检清单", "镜头、资产和唯一课程回接已检查。"].join("\n"),
-      structuredContentJson: manifest ? JSON.stringify({ videoStoryboardManifest: manifest }) : null,
+      videoStoryboardManifest: manifest ? (() => {
+        const { manifestDigest: _digest, ...semantic } = manifest;
+        return {
+          ...semantic,
+          shots: semantic.shots.map(({ referenceAssetIds: _serverDerived, ...shot }) => shot),
+        };
+      })() : null,
     },
     nextSuggestedAction: { label: "查看并确认视频分镜" },
   });

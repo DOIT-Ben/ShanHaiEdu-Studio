@@ -5,18 +5,22 @@ import { test } from "node:test";
 
 const root = process.cwd();
 
-test("live deployment demo handoff documents real deployment readiness gates", () => {
-  const runbookPath = path.join(root, "docs", "runbooks", "live-deployment-demo-handoff.md");
+test("release roadmap defers live deployment while preserving real readiness and rollback gates", () => {
+  const roadmapPath = path.join(root, "docs", "roadmap", "release", "README.md");
+  const runbookPath = path.join(root, "docs", "roadmap", "release", "v1-invited-release-recovery.md");
+  assert.equal(existsSync(roadmapPath), true);
   assert.equal(existsSync(runbookPath), true);
 
+  const roadmap = readFileSync(roadmapPath, "utf8");
   const runbook = readFileSync(runbookPath, "utf8");
-  assert.match(runbook, /Live Target/);
-  assert.match(runbook, /npm run preflight:deploy-demo/);
-  assert.match(runbook, /npm run demo:e2e:delivery/);
-  assert.match(runbook, /nginx|reverse proxy/i);
+  assert.match(roadmap, /当前V1\.0智能体原子Tool重构关闭、重新规划并通过唯一V1-9真实全链路后/);
+  assert.match(roadmap, /不得提前启动/);
+  assert.match(roadmap, /V1-9通过后仍需当次授权/);
+  assert.match(runbook, /npm run preflight:production/);
+  assert.match(runbook, /反向代理|nginx|reverse proxy/i);
   assert.match(runbook, /HTTPS/);
-  assert.match(runbook, /Provider Smoke/);
-  assert.match(runbook, /public URL|PUBLIC_HOST/);
-  assert.match(runbook, /回滚/);
-  assert.match(runbook, /deploy-demo-readiness.*不等于公网 live/s);
+  assert.match(runbook, /Provider\s*配置存在/);
+  assert.match(runbook, /\/api\/health/);
+  assert.match(runbook, /代码 Release 回滚/);
+  assert.match(runbook, /deploy\/switch-v1-container\.sh/);
 });

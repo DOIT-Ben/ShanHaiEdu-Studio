@@ -52,16 +52,13 @@ test("Conversation layout compresses when the artifact side panel is open", () =
   const mediaSource = readSource("src/components/layout/MediaWorkbench.tsx");
   const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
   const topbarSource = readSource("src/components/conversation/WorkbenchTopbar.tsx");
-  const stageSource = readSource("src/components/conversation/StageProgress.tsx");
 
   assert.match(mediaSource, /compact=\{controller\.sidePanelOpen\}/);
   assert.match(conversationSource, /compact: boolean/);
   assert.match(conversationSource, /<WorkbenchTopbar[\s\S]*compact=\{compact\}/);
-  assert.match(conversationSource, /<StageProgress[\s\S]*compact=\{compact\}/);
+  assert.doesNotMatch(conversationSource, /<StageProgress/);
   assert.match(topbarSource, /compact = false/);
   assert.match(topbarSource, /data-workbench-topbar-compact/);
-  assert.match(stageSource, /compact = false/);
-  assert.match(stageSource, /data-stage-progress-compact/);
 });
 
 test("Project sidebar exposes real archive and recycle-bin actions while collaboration stays wired to member management", () => {
@@ -90,13 +87,13 @@ test("Project sidebar exposes real archive and recycle-bin actions while collabo
 });
 
 test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfaces", () => {
-  const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
+  const conversationSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
   const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(conversationSource, /WelcomeEmptyState/);
   assert.match(conversationSource, /buildWelcomePromptSuggestions/);
-  assert.match(conversationSource, /onInputChange\(suggestion\.prompt\)/);
+  assert.match(conversationSource, /onSelect\(suggestion\.prompt\)/);
   assert.doesNotMatch(conversationSource, /直接告诉我你要准备哪节公开课/);
 
   assert.match(composerSource, /handleDrop/);

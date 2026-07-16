@@ -30,7 +30,7 @@ export type TargetLocator =
     };
 
 export type ValidationTarget = {
-  kind: "artifact" | "artifact_draft" | "tool_execution";
+  kind: "artifact" | "artifact_draft" | "tool_execution" | "tool_invocation";
   targetId?: string;
   targetVersion?: number;
   targetDigest?: string;

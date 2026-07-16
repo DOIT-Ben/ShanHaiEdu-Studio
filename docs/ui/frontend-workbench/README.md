@@ -1,51 +1,25 @@
-# 前端 UI 工作台主线文档索引
+# 当前前端工作台
 
-日期：2026-07-08
+本目录只保留当前入口和视觉证据，不再保存M44至M54等历史阶段路线。
 
-用途：沉淀 ShanHaiEdu 前端聊天式工作台、UI 设计、交互美化、组件拆分、踩坑记录和验收标准。后续凡是工作台 UI 优化、设计复用、体验问题复盘，都优先从本目录查。
+## 当前实现边界
 
-## 当前正式文档
+- assistant-ui通过ExternalStoreRuntime适配现有服务端消息与事件。
+- 旧正文无损映射为text part；新消息保留类型化parts和安全回退正文。
+- Artifact、计划、质量、HumanGate和错误只接受服务端引用，不从正文关键词猜测。
+- 事件按project与sequence幂等恢复；Snapshot水位单调，断线后先校正再续接。
+- 编辑、重试、分支和队列操作只有服务端存在安全合同时才显示。
 
-| 文档 | 用途 |
-| --- | --- |
-| `local-real-mvp-m54a-frontend-workbench-roadmap.md` | M54-A 前端聊天式工作台持续升级路线，定义阶段方向和组件化路线。 |
-| `local-real-mvp-m54a-frontend-workbench-deep-spec.md` | 图像参考驱动的深度开发规格，沉淀参考图、交互状态、组件边界和验收矩阵。 |
-| `local-real-mvp-m54a-frontend-workbench-test-plan.md` | M54-A0 测试定义，把参考图和工作台体验要求转成合同测试与浏览器验收。 |
-| `local-real-mvp-m54a-open-items.md` | 当前代码已落地能力和第一档待完成项，以实际代码证据校准 M54-A。 |
+## 当前验证
 
-产品需求入口：
+V1前只执行桌面真实浏览器门。长Markdown、表格、活动、成果引用、HumanGate、错误恢复和输入区必须无重叠、截断、裸Markdown和工程词。
 
-- `docs\product\beta-feedback-requirements.md`
-- `docs\product\frontend-workbench-priority-requirements.md`
+视觉证据规则：`assets\references\README.md`。
 
-## 历史 UI 阶段沉淀
+未来设计吸收：`..\..\roadmap\ui\README.md`。
 
-历史 UI/体验阶段文档统一放在 `stage-history/`，用于回看已经踩过的坑、阶段验收证据和可复用设计判断。
+历史M54-A规格与28份stage-history已归档至：
 
-| 范围 | 文档 |
-| --- | --- |
-| 早期前端打磨 | `stage-history/frontend-polish-v0.3.9.md` |
-| M44 API 默认运行态 UI | `stage-history/local-real-mvp-m44-api-default-runtime-ui-*.md` |
-| M45 聊天意图与顶栏 | `stage-history/local-real-mvp-m45-chat-intent-and-topbar-*.md` |
-| M47 Composer API 接线 | `stage-history/local-real-mvp-m47-composer-api-wiring-*.md` |
-| M48 Chat-first 对话 UI | `stage-history/local-real-mvp-m48-chat-first-conversation-ui-*.md` |
-| M49 滚动与体验细节 | `stage-history/local-real-mvp-m49-chat-scroll-and-delight-*.md` |
-| M50 产物轨与 Markdown 预览 | `stage-history/local-real-mvp-m50-artifact-rail-markdown-preview-*.md` |
-| M51 交互打磨与按钮审计 | `stage-history/local-real-mvp-m51-interaction-polish-and-button-audit-*.md` |
-| M52 半自动对话门与选项 | `stage-history/local-real-mvp-m52-semi-auto-conversation-gate-*.md` |
-| M53 教师视角确认与成果阅读 | `stage-history/local-real-mvp-m53-teacher-facing-confirmation-and-reading-*.md` |
-
-## 后续应放入本目录的文档
-
-- M54-A 前端测试定义。
-- M54-A 开发收口报告。
-- 工作台视觉规范。
-- Logo 与品牌资产规范。
-- 聊天消息、输入区、附件、糖葫芦和侧栏组件规范。
-- UI 走查报告、浏览器截图验收记录、避坑复盘。
-
-## 归档策略
-
-- 本目录保存 UI 主线仍有复用价值的规划、规格、测试和复盘。
-- `docs/stages` 只保留跨主线阶段报告或非 UI 专项阶段材料。
-- 新 UI 文档默认进入本目录；只有跨主线总报告继续放 `docs/stages`。
+```text
+..\..\archive\2026-07-16-authority-convergence\historical\docs\ui\frontend-workbench\
+```

@@ -31,6 +31,7 @@ export type PresentationBrief = {
 export type EvidenceBinding = {
   evidenceId: string;
   sourceArtifactId: string;
+  sourceArtifactVersion?: number;
   sourceType: "textbook" | "curriculum_standard" | "teacher_material";
   pageRefs: string[];
   claims: string[];

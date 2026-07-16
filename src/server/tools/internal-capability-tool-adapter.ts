@@ -1,4 +1,4 @@
-import type { AgentProjectContext, AgentRuntime, ApprovedArtifactInput } from "@/server/agent-runtime/types";
+import type { AgentProjectContext, AgentRuntime, ApprovedArtifactInput, BusinessSkillContext } from "@/server/agent-runtime/types";
 import {
   type AgentRuntimeCapabilityInput,
   runCapabilityWithAgentRuntime,
@@ -11,6 +11,7 @@ import {
   type AgentHarnessBudgetEventStatus,
 } from "@/server/conversation/agent-harness-budget";
 import type { ToolDefinition, ToolExecutionResult } from "./tool-types";
+import type { ExecutionEnvelope } from "@/server/conversation/task-contract";
 import {
   adaptPptDirectorOutputToDesignArtifact,
   type PptDirectorPlanBinding,
@@ -28,6 +29,8 @@ export type InternalCapabilityToolInput = {
   inputDigest?: string;
   intentEpoch?: number;
   pptDirectorPlan?: PptDirectorPlanBinding;
+  businessSkillContext?: BusinessSkillContext;
+  executionEnvelope?: ExecutionEnvelope;
 };
 
 export type InternalCapabilityToolDependencies = {
@@ -65,7 +68,9 @@ export async function executeInternalCapabilityTool(
       taskInput: input.taskInput,
       projectContext: input.projectContext,
       approvedArtifacts: input.approvedArtifacts ?? [],
+      businessSkillContext: input.businessSkillContext,
       sourceMessageId: input.sourceMessageId,
+      executionEnvelope: input.executionEnvelope,
     });
 
     if (result.status === "succeeded") {
@@ -86,12 +91,12 @@ export async function executeInternalCapabilityTool(
         capabilityId,
         missingInputs: [...result.missingInputs],
         assistantPrompt: result.assistantPrompt,
-        observation: createBlockedObservation(input, capabilityId, {
+        observation: createNeedsInputObservation(input, capabilityId, {
           teacherSafeSummary: result.assistantPrompt,
-          internalReasonSanitized: `Needs teacher input: ${result.missingInputs.join(", ")}`,
+          internalReasonSanitized: `Missing required inputs: ${result.missingInputs.join(", ")}`,
         }),
         artifactCreated: false,
-        budgetEvent: buildBudgetEvent(input, capabilityId, "blocked", "blocked_by_policy"),
+        budgetEvent: buildBudgetEvent(input, capabilityId, "failed", "quality_gate_failed"),
       };
     }
 
@@ -101,6 +106,8 @@ export async function executeInternalCapabilityTool(
       internalReason: `${result.errorCategory}: ${result.userMessage}`,
       retryable: result.retryable,
       errorCategory: result.errorCategory,
+      reasonCode: result.reasonCode,
+      reasonDetails: result.reasonDetails,
       runtimeRun: result.runtimeRun,
     });
   } catch (error) {
@@ -157,6 +164,8 @@ function buildFailureResult(
     internalReason: string;
     retryable: boolean;
     errorCategory: string;
+    reasonCode?: string;
+    reasonDetails?: string[];
     runtimeRun?: Extract<CapabilityRunResult, { status: "failed" }>["runtimeRun"];
   },
 ): ToolExecutionResult {
@@ -177,6 +186,8 @@ function buildFailureResult(
       sourceMessageId: input.sourceMessageId,
       inputDigest: input.inputDigest,
       errorCategory: normalizedErrorCategory,
+      reasonCode: failure.reasonCode,
+      reasonDetails: failure.reasonDetails,
       capabilityId: failure.capabilityId,
       expectedArtifactKind: input.tool.producedArtifactKind,
       kind: observationKind,
@@ -189,11 +200,13 @@ function buildFailureResult(
     }),
     artifactCreated: false,
     errorCategory: normalizedErrorCategory,
+    reasonCode: failure.reasonCode,
+    reasonDetails: failure.reasonDetails ? [...failure.reasonDetails] : undefined,
     budgetEvent: buildBudgetEvent(input, failure.capabilityId, budgetStatus, budgetKind),
   };
 }
 
-function createBlockedObservation(
+function createNeedsInputObservation(
   input: InternalCapabilityToolInput,
   capabilityId: string,
   details: { teacherSafeSummary: string; internalReasonSanitized: string },
@@ -203,7 +216,7 @@ function createBlockedObservation(
     sourceMessageId: input.sourceMessageId,
     capabilityId,
     expectedArtifactKind: input.tool.producedArtifactKind,
-    kind: "blocked_by_policy",
+    kind: "quality_gate_failed",
     teacherSafeSummary: details.teacherSafeSummary,
     internalReasonSanitized: details.internalReasonSanitized,
     retryPolicy: {

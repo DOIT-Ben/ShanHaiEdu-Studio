@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
@@ -79,7 +80,9 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
   });
 
   it("does not create a production executor without a configured model channel", () => {
-    expect(createAgentToolExecutorFromEnv({})).toBeUndefined();
+    expect(createAgentToolExecutorFromEnv({
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+    })).toBeUndefined();
   });
 
   it("uses an explicitly selected Chat Completions channel without weakening Router schema validation", async () => {
@@ -114,8 +117,16 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
   });
 
   it("requires an explicit complete DeepSeek channel configuration", () => {
-    expect(createAgentToolExecutorFromEnv({ AGENT_TOOL_MODEL_CHANNEL: "deepseek" })).toBeUndefined();
+    const ledgerEnv = {
+      SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret" as const,
+    };
     expect(createAgentToolExecutorFromEnv({
+      ...ledgerEnv,
+      AGENT_TOOL_MODEL_CHANNEL: "deepseek",
+    })).toBeUndefined();
+    expect(createAgentToolExecutorFromEnv({
+      ...ledgerEnv,
       AGENT_TOOL_MODEL_CHANNEL: "deepseek",
       DEEPSEEK_API_KEY: "test-key",
       DEEPSEEK_BASE_URL: "https://example.invalid/v1",
@@ -238,7 +249,12 @@ function directorEnvelopeInput() {
     intentEpoch: 1,
     sourceMessageId: "message-1",
     reviewTargetRef: null,
-    approvedArtifactRefs: [],
+    approvedArtifactRefs: [{
+      artifactId: "artifact_textbook_evidence",
+      kind: "textbook_evidence",
+      version: 1,
+      digest: "a".repeat(64),
+    }],
     arguments: { goal: "规划课件", stage: "page_design", targetPageIds: [], focus: null },
   };
 }

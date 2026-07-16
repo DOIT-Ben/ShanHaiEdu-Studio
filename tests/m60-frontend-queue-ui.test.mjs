@@ -51,14 +51,16 @@ test("M60 frontend maps persisted turn jobs to teacher-readable queue labels", (
   assert.match(indicatorSource, /正在生成/);
 });
 
-test("M60 frontend keeps refreshing snapshots while a turn is queued or running", () => {
+test("M60 refreshes queued turns through versioned snapshots and disables polling for assistant-ui events", () => {
   const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
 
   assert.match(controllerSource, /const snapshotPollingIntervalMs = \d+/);
   assert.match(controllerSource, /function hasPendingTurnStatus/);
   assert.match(controllerSource, /status === "queued" \|\| status === "running"/);
   assert.match(controllerSource, /useEffect\(\(\) => \{[\s\S]*!projectBusy[\s\S]*composerSubmitting[\s\S]*return/s);
-  assert.match(controllerSource, /window\.setTimeout\(async \(\) => \{[\s\S]*dataSource\.getProjectSnapshot\(activeProjectId\)[\s\S]*applySnapshot\(snapshot\)[\s\S]*scheduleNextSnapshotRefresh\(\)/s);
+  assert.match(controllerSource, /options\.eventDrivenMessages \|\| !activeProjectId \|\| !projectBusy/);
+  assert.match(controllerSource, /window\.setTimeout\(async \(\) => \{[\s\S]*beginSnapshotRequest\(activeProjectId\)[\s\S]*dataSource\.getProjectSnapshot\(activeProjectId\)[\s\S]*applySnapshot\(snapshot, snapshotRequest\)[\s\S]*scheduleNextSnapshotRefresh\(\)/s);
+  assert.match(controllerSource, /eventSnapshotCoordinator\.request\(\{ projectId: event\.projectId, requiredSequence: event\.sequence \}\)/);
   assert.match(controllerSource, /window\.clearTimeout\(snapshotPollingTimer\)/);
 });
 

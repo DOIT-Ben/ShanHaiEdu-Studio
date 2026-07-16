@@ -91,6 +91,7 @@ describe("ToolRegistry", () => {
       "repair_ppt_full_deck_pages",
       "generate_ppt_full_assets",
       "generate_classroom_image",
+      "generate_video_narration",
       "generate_video_segment",
     ]);
   });
@@ -289,7 +290,7 @@ describe("ToolRegistry", () => {
       adapterKind: "package",
       capabilityId: "concat_only_assemble",
       implemented: true,
-      requiredArtifactKinds: ["video_segment_generate", "storyboard_generate", "video_script_generate"],
+      requiredArtifactKinds: ["video_segment_generate", "storyboard_generate", "video_script_generate", "video_narration_generate"],
       producedArtifactKind: "concat_only_assemble",
     });
   });

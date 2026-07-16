@@ -5,8 +5,21 @@ import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifac
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
 import type { ArtifactItem, ChatMessage, ConversationTurnJob, GenerationIntensity, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
-import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
+import type { WorkbenchExecutionFeedback } from "@/lib/workbench-execution-feedback";
 import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
+import { shouldRefreshSnapshotForAgentEvent, type TeacherAgentEvent } from "@/lib/teacher-agent-events";
+import {
+  createProjectSnapshotCommitWatermark,
+  createProjectSnapshotRefreshCoordinator,
+  type ProjectSnapshotCommitToken,
+} from "@/lib/project-agent-event-sync";
+
+export type SubmitConversationMessageInput = {
+  body: string;
+  reference: string | null;
+  artifactRefs: string[];
+  confirmedActionId?: string;
+};
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
 const xiaokuResponseStyleStorageKey = "shanhai.xiaoku.responseStyle";
@@ -20,7 +33,7 @@ function snapshotHasPendingTurn(snapshot: WorkbenchSnapshot) {
   return snapshot.turnJobs.some((job) => hasPendingTurnStatus(job.status)) || snapshot.messages.some((message) => hasPendingTurnStatus(message.turnStatus));
 }
 
-export function useWorkbenchController() {
+export function useWorkbenchController(options: { eventDrivenMessages?: boolean } = {}) {
   const dataSource = useMemo(() => createDefaultWorkbenchDataSource(), []);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [projectView, setProjectView] = useState<ProjectLifecycleState>("active");
@@ -32,6 +45,7 @@ export function useWorkbenchController() {
   const [input, setInput] = useState("");
   const [pendingConfirmationActionId, setPendingConfirmationActionId] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+  const [composerArtifactRefs, setComposerArtifactRefs] = useState<string[]>([]);
   const [composerSubmitting, setComposerSubmitting] = useState(false);
   const [turnJobs, setTurnJobs] = useState<ConversationTurnJob[]>([]);
   const [executionFeedback, setExecutionFeedback] = useState<WorkbenchExecutionFeedback | null>(null);
@@ -63,12 +77,14 @@ export function useWorkbenchController() {
   const messageIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
   const composerNoticeTimer = useRef<number | null>(null);
   const intensityVersionRef = useRef(new Map<string, number>());
+  const activeProjectIdRef = useRef("");
 
   useEffect(() => {
     if (activeProject) intensityVersionRef.current.set(activeProject.id, activeProject.intensityVersion ?? 0);
   }, [activeProject]);
 
   const clearActiveProject = useCallback(() => {
+    activeProjectIdRef.current = "";
     setActiveProjectId("");
     window.localStorage.removeItem(activeProjectStorageKey);
     setMessages([]);
@@ -81,7 +97,8 @@ export function useWorkbenchController() {
     setDetailOpen(false);
   }, []);
 
-  const applySnapshot = useCallback((snapshot: WorkbenchSnapshot) => {
+  const applySnapshotState = useCallback((snapshot: WorkbenchSnapshot) => {
+    activeProjectIdRef.current = snapshot.project.id;
     setActiveProjectId(snapshot.project.id);
     window.localStorage.setItem(activeProjectStorageKey, snapshot.project.id);
     setMessages(snapshot.messages);
@@ -103,10 +120,34 @@ export function useWorkbenchController() {
     setLoadState("ready");
   }, []);
 
+  const snapshotCommitWatermark = useMemo(() => createProjectSnapshotCommitWatermark({
+    applySnapshot: applySnapshotState,
+  }), [applySnapshotState]);
+  const beginSnapshotRequest = useCallback(
+    (projectId: string) => snapshotCommitWatermark.begin(projectId),
+    [snapshotCommitWatermark],
+  );
+  const applySnapshot = useCallback(
+    (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => snapshotCommitWatermark.commit(snapshot, token),
+    [snapshotCommitWatermark],
+  );
+
+  const eventSnapshotCoordinator = useMemo(() => createProjectSnapshotRefreshCoordinator({
+    loadSnapshot: dataSource.getProjectSnapshot,
+    beginSnapshotRequest,
+    applySnapshot: (snapshot, token) => {
+      if (!token) throw new Error("Project event snapshot commit token is missing.");
+      applySnapshot(snapshot, token);
+    },
+    isCurrentProject: (projectId: string) => activeProjectIdRef.current === projectId,
+    onError: () => setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。"),
+  }), [applySnapshot, beginSnapshotRequest, dataSource]);
+
   const loadProject = useCallback(
     async (projectId: string) => {
       setLoadState("loading");
       try {
+        const snapshotRequest = beginSnapshotRequest(projectId);
         const snapshot = await dataSource.getProjectSnapshot(projectId);
         if (snapshot.project.lifecycleState !== "active") {
           const activeProjects = await dataSource.listProjects("active");
@@ -117,17 +158,17 @@ export function useWorkbenchController() {
           setLoadState("ready");
           return;
         }
-        applySnapshot(snapshot);
+        applySnapshot(snapshot, snapshotRequest);
       } catch (error) {
         setLoadState("error");
         setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "项目内容暂时没有取回，请稍后再试。");
       }
     },
-    [applySnapshot, clearActiveProject, dataSource],
+    [applySnapshot, beginSnapshotRequest, clearActiveProject, dataSource],
   );
 
   useEffect(() => {
-    if (!activeProjectId || !projectBusy || composerSubmitting || loadState !== "ready") return;
+    if (options.eventDrivenMessages || !activeProjectId || !projectBusy || composerSubmitting || loadState !== "ready") return;
 
     let active = true;
     let snapshotPollingTimer: number | null = null;
@@ -135,6 +176,7 @@ export function useWorkbenchController() {
     function scheduleNextSnapshotRefresh() {
       snapshotPollingTimer = window.setTimeout(async () => {
         try {
+          const snapshotRequest = beginSnapshotRequest(activeProjectId);
           const snapshot = await dataSource.getProjectSnapshot(activeProjectId);
           if (!active) return;
           if (snapshot.project.lifecycleState !== "active") {
@@ -147,7 +189,7 @@ export function useWorkbenchController() {
             setLoadState("ready");
             return;
           }
-          applySnapshot(snapshot);
+          applySnapshot(snapshot, snapshotRequest);
           if (snapshotHasPendingTurn(snapshot)) scheduleNextSnapshotRefresh();
         } catch {
           if (!active) return;
@@ -162,7 +204,18 @@ export function useWorkbenchController() {
       active = false;
       if (snapshotPollingTimer) window.clearTimeout(snapshotPollingTimer);
     };
-  }, [activeProjectId, applySnapshot, clearActiveProject, composerSubmitting, dataSource, loadState, projectBusy]);
+  }, [activeProjectId, applySnapshot, beginSnapshotRequest, clearActiveProject, composerSubmitting, dataSource, loadState, options.eventDrivenMessages, projectBusy]);
+
+  const refreshProjectFromAgentEvent = useCallback(async (event: TeacherAgentEvent) => {
+    if (!options.eventDrivenMessages || event.projectId !== activeProjectIdRef.current || !shouldRefreshSnapshotForAgentEvent(event)) return null;
+    return eventSnapshotCoordinator.request({ projectId: event.projectId, requiredSequence: event.sequence });
+  }, [eventSnapshotCoordinator, options.eventDrivenMessages]);
+
+  const correctProjectFromAgentStreamError = useCallback(async () => {
+    const projectId = activeProjectIdRef.current;
+    if (!options.eventDrivenMessages || !projectId) return;
+    await eventSnapshotCoordinator.request({ projectId, requiredSequence: 0 });
+  }, [eventSnapshotCoordinator, options.eventDrivenMessages]);
 
   useEffect(() => {
     let active = true;
@@ -173,6 +226,7 @@ export function useWorkbenchController() {
         const nextProjects = await dataSource.listProjects("active");
         if (!active) return;
         setProjects(nextProjects);
+        activeProjectIdRef.current = "";
         setActiveProjectId("");
         setMessages([]);
         setArtifacts([]);
@@ -215,6 +269,7 @@ export function useWorkbenchController() {
   }
 
   function selectProject(projectId: string) {
+    activeProjectIdRef.current = projectId;
     setActiveProjectId(projectId);
     setSidePanelOpen(false);
     setDetailOpen(false);
@@ -225,10 +280,11 @@ export function useWorkbenchController() {
     setLoadState("loading");
     try {
       const snapshot = await dataSource.createProject();
+      const snapshotRequest = beginSnapshotRequest(snapshot.project.id);
       const nextProjects = await dataSource.listProjects();
       setProjects(nextProjects);
       setProjectView("active");
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       setNotice("已新建公开课项目，可以开始描述备课目标。");
       return true;
     } catch (error) {
@@ -263,6 +319,7 @@ export function useWorkbenchController() {
     const text = artifactText(item);
     setPendingConfirmationActionId(null);
     setReference(`${item.title}：${item.summary}`);
+    setComposerArtifactRefs(item.artifactId ? [item.artifactId] : []);
     setInput((current) => (current ? `${current}\n\n请基于：${text}` : `请基于：${text}`));
     setNotice(`已把「${item.title}」插入为下一步输入。`);
     flashComposerNotice("已插入为下一步输入。");
@@ -274,14 +331,21 @@ export function useWorkbenchController() {
   function attachComposerFile(fileName: string, text: string) {
     setPendingConfirmationActionId(null);
     setReference(`资料《${fileName}》：\n${text}`);
+    setComposerArtifactRefs([]);
     flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
+  }
+
+  function clearComposerReference() {
+    setReference(null);
+    setComposerArtifactRefs([]);
   }
 
   async function setMessageReaction(messageId: string, value: ChatMessage["reaction"] | null) {
     if (!activeProjectId || !dataSource.setMessageReaction) return;
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.setMessageReaction(activeProjectId, messageId, value);
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
     } catch {
       setNotice("这条反馈标签暂时没有保存，请稍后重试。");
     }
@@ -362,8 +426,9 @@ export function useWorkbenchController() {
       return;
     }
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.approveArtifact(activeProjectId, artifactKey);
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       setNotice(`已确认「${item.title}」，下一步会使用它继续生成。`);
     } catch {
       setNotice(`「${item.title}」暂时没有确认成功，请稍后再试。`);
@@ -378,8 +443,9 @@ export function useWorkbenchController() {
       return;
     }
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.regenerateArtifact(activeProjectId, artifactKey);
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       setNotice(`已保留「${item.title}」旧内容，新的版本完成后再由你确认是否采用。`);
     } catch {
       setNotice(`「${item.title}」暂时没有开始重做，请稍后再试。`);
@@ -400,8 +466,9 @@ export function useWorkbenchController() {
     const nextGenerationKey = `${item.artifactId}:${assetKind}`;
     setRealAssetGenerationKey(nextGenerationKey);
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.generateRealAsset(activeProjectId, item.artifactId, assetKind, { confirmedActionId: action.actionId });
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       setNotice(action.successNotice);
     } catch {
       setNotice(action.failureNotice);
@@ -410,32 +477,37 @@ export function useWorkbenchController() {
     }
   }
 
-  async function sendPrompt() {
+  async function submitConversationMessage(submission: SubmitConversationMessageInput) {
     if (composerSubmittingRef.current || composerSubmitting) {
       flashComposerNotice("正在发送，请稍候。");
       return;
     }
-    if (!input.trim() && !reference) {
+    const body = submission.body.trim();
+    const submittedReference = submission.reference?.trim() || null;
+    const artifactRefs = [...new Set(submission.artifactRefs.map((value) => value.trim()).filter(Boolean))];
+    if (!body && !submittedReference) {
       flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
       return;
     }
     let targetProjectId = activeProjectId;
-    const body = input.trim();
-    const confirmationActionId = pendingConfirmationActionId;
-    const displayBody = reference ? `${body || "请参考这份资料继续。"}\n\n引用：${reference}` : body;
+    let snapshotRequest = targetProjectId ? beginSnapshotRequest(targetProjectId) : null;
+    const confirmationActionId = submission.confirmedActionId?.trim() || null;
+    const displayBody = submittedReference ? `${body || "请参考这份资料继续。"}\n\n引用：${submittedReference}` : body;
     const optimisticMessage: ChatMessage = {
       id: `optimistic-teacher-${Date.now()}`,
       speaker: "teacher",
       body: displayBody,
+      artifactRefs,
       turnStatus: projectBusy ? "queued" : "running",
       turnStatusLabel: projectBusy ? "排队中" : "正在生成",
     };
     setInput("");
     setPendingConfirmationActionId(null);
     setReference(null);
+    setComposerArtifactRefs([]);
     composerSubmittingRef.current = true;
     setComposerSubmitting(true);
-    setExecutionFeedback({ label: "正在理解你的备课要求", stageIndex: 1 });
+    setExecutionFeedback({ label: "正在理解你的备课要求" });
     setMessages((current) => [...current, optimisticMessage]);
     flashComposerNotice(projectBusy ? "已加入队列" : "已发送，正在生成");
     try {
@@ -443,30 +515,39 @@ export function useWorkbenchController() {
         flashComposerNotice("正在新建项目并发送");
         const createdSnapshot = await dataSource.createProject();
         targetProjectId = createdSnapshot.project.id;
+        const createSnapshotRequest = beginSnapshotRequest(targetProjectId);
         const nextProjects = await dataSource.listProjects();
         setProjects(nextProjects);
         setProjectView("active");
-        applySnapshot(createdSnapshot);
+        applySnapshot(createdSnapshot, createSnapshotRequest);
         setMessages((current) => [...current, optimisticMessage]);
+        snapshotRequest = beginSnapshotRequest(targetProjectId);
       }
 
-      setExecutionFeedback({ label: "正在组织教案、课件和素材任务", stageIndex: 2 });
-      const messageSignature = buildClientMessageSignature(targetProjectId, body, reference, confirmationActionId, xiaokuResponseStyle);
+      setExecutionFeedback({ label: "正在组织教案、课件和素材任务" });
+      const messageSignature = buildClientMessageSignature(targetProjectId, body, submittedReference, confirmationActionId, xiaokuResponseStyle, artifactRefs);
       const sendOptions: WorkbenchSendMessageOptions = {
         idempotencyKey: getRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature),
         ...(confirmationActionId ? { confirmedActionId: confirmationActionId } : {}),
         responseStyle: xiaokuResponseStyle,
       };
-      const snapshot = await dataSource.sendMessage(targetProjectId, body, reference, sendOptions);
-      setExecutionFeedback({ label: "正在保存本轮成果", stageIndex: 3 });
-      applySnapshot(snapshot);
+      const snapshot = await dataSource.submitConversationMessage(targetProjectId, {
+        body,
+        reference: submittedReference,
+        artifactRefs,
+        ...sendOptions,
+      });
+      setExecutionFeedback({ label: "正在保存本轮成果" });
+      if (!snapshotRequest) throw new Error("Conversation snapshot commit token is missing.");
+      applySnapshot(snapshot, snapshotRequest);
       messageIdempotencyRef.current = null;
       flashComposerNotice("已发送");
     } catch {
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
       setInput(body);
       setPendingConfirmationActionId(confirmationActionId);
-      setReference(reference);
+      setReference(submittedReference);
+      setComposerArtifactRefs(artifactRefs);
       flashComposerNotice("发送没有成功，请稍后再试。");
     } finally {
       composerSubmittingRef.current = false;
@@ -475,11 +556,38 @@ export function useWorkbenchController() {
     }
   }
 
+  async function recoverConversationTurn(checkpointId: string) {
+    if (!activeProjectId || composerSubmittingRef.current || composerSubmitting) return;
+    composerSubmittingRef.current = true;
+    setComposerSubmitting(true);
+    flashComposerNotice("正在从已保存的进度恢复");
+    try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
+      applySnapshot(await dataSource.recoverConversationTurn(activeProjectId, checkpointId), snapshotRequest);
+      flashComposerNotice("已恢复当前任务");
+    } catch {
+      flashComposerNotice("当前进度暂时不能恢复，请刷新后重试。");
+    } finally {
+      composerSubmittingRef.current = false;
+      setComposerSubmitting(false);
+    }
+  }
+
+  async function sendPrompt() {
+    return submitConversationMessage({
+      body: input,
+      reference,
+      artifactRefs: composerArtifactRefs,
+      ...(pendingConfirmationActionId ? { confirmedActionId: pendingConfirmationActionId } : {}),
+    });
+  }
+
   async function submitPptSampleReview(item: ArtifactItem, review: PptSampleReviewSubmission) {
     if (!activeProjectId || !item.artifactId) return;
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.submitPptSampleReview(activeProjectId, item.artifactId, review);
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0);
       setNotice(passed ? "样张审查已通过，请确认是否用于后续批量制作。" : "样张问题已记录，可以按页调整后重新审查。");
     } catch {
@@ -490,8 +598,9 @@ export function useWorkbenchController() {
   async function submitPptFullDeckReview(item: ArtifactItem, review: PptFullDeckReviewSubmission) {
     if (!activeProjectId || !item.artifactId) return;
     try {
+      const snapshotRequest = beginSnapshotRequest(activeProjectId);
       const snapshot = await dataSource.submitPptFullDeckReview(activeProjectId, item.artifactId, review);
-      applySnapshot(snapshot);
+      applySnapshot(snapshot, snapshotRequest);
       const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0);
       setNotice(passed ? "完整课件逐页审查已通过，请确认是否进入最终交付。" : "页面问题已记录，可以按页返修后重新审查。");
     } catch {
@@ -531,6 +640,9 @@ export function useWorkbenchController() {
     setInput: updateInput,
     reference,
     setReference,
+    clearComposerReference,
+    composerArtifactRefs,
+    pendingConfirmationActionId,
     composerSubmitting,
     projectBusy,
     turnJobs,
@@ -563,13 +675,17 @@ export function useWorkbenchController() {
     xiaokuResponseStyle,
     setXiaoKuResponseStyle,
     sendPrompt,
+    submitConversationMessage,
+    recoverConversationTurn,
+    refreshProjectFromAgentEvent,
+    correctProjectFromAgentStreamError,
     selectQuickReply,
     showRecovery,
   };
 }
 
-export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null, responseStyle = "pragmatic") {
-  return JSON.stringify({ projectId, body, reference: reference ?? "", confirmationActionId: confirmationActionId ?? "", responseStyle });
+export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null, responseStyle = "pragmatic", artifactRefs: string[] = []) {
+  return JSON.stringify({ projectId, body, reference: reference ?? "", artifactRefs: [...artifactRefs].sort(), confirmationActionId: confirmationActionId ?? "", responseStyle });
 }
 
 export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: string; key: string } | null }, signature: string) {

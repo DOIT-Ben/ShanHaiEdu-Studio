@@ -142,7 +142,17 @@ describe("Backend Workflow Lite Stage 3 artifact versioning", () => {
     const regenerateResponse = await postRegenerateRoute(
       new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ title: "需求规格重做", summary: "route v2", markdownContent: "# route v2" }),
+        body: JSON.stringify({
+          title: "需求规格重做",
+          summary: "route v2",
+          markdownContent: "# route v2",
+          structuredContent: {
+            teacherNote: "保留教师修改说明",
+            generationMode: "model_generated",
+            providerStatus: "real",
+            runtimeKind: "openai",
+          },
+        }),
       }),
       { params: Promise.resolve({ projectId: project.id, artifactId: v1.id }) },
     );
@@ -157,7 +167,11 @@ describe("Backend Workflow Lite Stage 3 artifact versioning", () => {
       isApproved: false,
       status: "needs_review",
       summary: "route v2",
+      structuredContent: { teacherNote: "保留教师修改说明" },
     });
+    expect(regenerateBody.artifact.structuredContent).not.toHaveProperty("generationMode");
+    expect(regenerateBody.artifact.structuredContent).not.toHaveProperty("providerStatus");
+    expect(regenerateBody.artifact.structuredContent).not.toHaveProperty("runtimeKind");
   });
 
   it("keeps approved-inputs route on the old version after route regeneration", async () => {

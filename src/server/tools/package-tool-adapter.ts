@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
+import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import { readFileSync } from "node:fs";
 import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { prepareVersionedFinalPackageInput } from "@/server/package/final-package-input-contract";
-import { buildVersionedFinalPackage, type FinalPackageInspectors } from "@/server/package/versioned-final-package";
+import {
+  buildVersionedFinalPackage,
+  createFinalPackageManifestDigest,
+  verifyFinalPackageBuffer,
+  type ClassroomRunSpec,
+  type FinalPackageInspectors,
+} from "@/server/package/versioned-final-package";
 import { buildStoredVideoDownload } from "@/server/video-generation/artifact-video";
 import { buildPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
 import { composePptKeySamplePptx } from "@/server/ppt-quality/ppt-key-sample-composer";
@@ -16,11 +23,13 @@ import { buildPptFullDeckCandidate, validatePptFullDeckCandidate } from "@/serve
 import type { PptFullDeckCandidate } from "@/server/ppt-quality/ppt-production-types";
 import type { PptKeySampleSet, PptSampleApproval } from "@/server/ppt-quality/ppt-asset-types";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
+import { hasValidExecutionEnvelope, type ExecutionEnvelope } from "@/server/conversation/task-contract";
 import { assembleVideoTimeline } from "@/server/video-quality/video-timeline-assembler";
-import { generateMiniMaxVideoNarration, type VideoNarrationProviderResult } from "@/server/video-generation/video-narration-provider";
+import type { VideoNarrationProviderResult } from "@/server/video-generation/video-narration-provider";
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 
@@ -37,6 +46,7 @@ export type PackageToolAdapterInput = {
   artifactRefs: PackageArtifactRef[];
   resolvedArtifacts?: ArtifactRecord[];
   sourceMessageId?: string;
+  businessSkillContext?: BusinessSkillContext;
   runPptKeySampleAssembly?: (input: {
     designPackage: PptDesignPackage;
     requestBatch: PptAssetRequestBatch;
@@ -49,7 +59,6 @@ export type PackageToolAdapterInput = {
     sampleSet: PptKeySampleSet;
     sampleApproval: PptSampleApproval;
   }) => Promise<PptFullDeckCandidate>;
-  runVideoNarration?: (input: { script: VideoNarrationScript }) => Promise<VideoNarrationProviderResult>;
   finalPackageInspectors?: Partial<FinalPackageInspectors>;
 };
 
@@ -250,11 +259,12 @@ async function executeConcatOnlyAssemble(input: PackageToolAdapterInput): Promis
   const scriptArtifact = requireArtifact(input, "video_script_generate");
   const narrationScript = scriptArtifact.structuredContent.videoNarrationScript as VideoNarrationScript | undefined;
   if (!narrationScript || !validateVideoNarrationScript(narrationScript).valid) throw new Error("video_narration_script_missing");
-  const narration = await (input.runVideoNarration ?? ((value) => generateMiniMaxVideoNarration(value)))({ script: narrationScript });
+  const narrationArtifact = requireArtifact(input, "video_narration_generate");
+  const narration = readStoredVideoNarration(narrationArtifact, narrationScript);
   const assembly = assembleVideoTimeline({ projectId: input.projectId, clips: clipInputs, narration });
   if (!assembly.transcript || !assembly.audioTrack) throw new Error("video_final_review_tracks_missing");
   assertFullIntroDuration(assembly.finalVideo.durationMs, storyboardManifest);
-  const sourceArtifactIds = [...assembly.timeline.entries.map((entry) => entry.sourceArtifactId), storyboardArtifact.id, scriptArtifact.id];
+  const sourceArtifactIds = [...assembly.timeline.entries.map((entry) => entry.sourceArtifactId), storyboardArtifact.id, scriptArtifact.id, narrationArtifact.id];
   const artifactTruth = buildArtifactTruth(input.tool, "concat_only_assemble");
   const qualityGate = { passed: true, gates: ["storyboard_shot_coverage_verified", "full_intro_duration_verified", "ffprobe_shots_verified", "clips_normalized", "ffmpeg_timeline_assembled", "provider_audio_replaced", "controlled_audio_verified", "subtitle_timing_verified", "final_video_fully_decoded", "timeline_order_preserved", "sampled_frames_created", "awaiting_video_final_review"] } satisfies ToolQualityGateResult;
 
@@ -365,6 +375,7 @@ async function executeFinalPackage(input: PackageToolAdapterInput): Promise<Tool
             localOutput: stored.localOutput,
             bytes: download.buffer.length,
             sha256: download.sha256,
+            manifestSha256: createFinalPackageManifestDigest(download.manifest),
             mime: ZIP_MIME,
             generationMode: "versioned_final_package_generated",
             sourceArtifactIds: prepared.sourceArtifactIds,
@@ -427,9 +438,61 @@ function findResolvedArtifacts(input: PackageToolAdapterInput, kind: string): Ar
       artifact.projectId === input.projectId &&
       artifact.kind === kind &&
       artifact.nodeKey === kind &&
-      artifact.status === "approved" &&
-      artifact.isApproved === true,
+      isArtifactTrustedForDownstream(artifact),
   );
+}
+
+function readStoredVideoNarration(artifact: ArtifactRecord, script: VideoNarrationScript): VideoNarrationProviderResult {
+  const storage = isRecord(artifact.structuredContent.storage) ? artifact.structuredContent.storage : null;
+  const audio = storage && isRecord(storage.audioTrack) ? storage.audioTrack : null;
+  const transcript = storage && isRecord(storage.transcript) ? storage.transcript : null;
+  const providerEvidence = isRecord(artifact.structuredContent.narrationProviderEvidence)
+    ? artifact.structuredContent.narrationProviderEvidence
+    : null;
+  const cues = artifact.structuredContent.cues;
+  if (
+    !audio ||
+    !transcript ||
+    !providerEvidence ||
+    !Array.isArray(cues) ||
+    providerEvidence.scriptDigest !== script.scriptDigest ||
+    providerEvidence.requestedVoiceId !== script.voiceId ||
+    providerEvidence.voiceBindingSource !== "provider_ledger"
+  ) {
+    throw new Error("video_narration_artifact_invalid");
+  }
+  const audioBuffer = readStoredBuffer(audio, "video_narration_audio_invalid");
+  const transcriptBuffer = readStoredBuffer(transcript, "video_narration_transcript_invalid");
+  const parsedCues = cues.map((cue) => {
+    if (!isRecord(cue) || typeof cue.text !== "string" || typeof cue.startMs !== "number" || typeof cue.endMs !== "number" || cue.endMs <= cue.startMs) {
+      throw new Error("video_narration_cues_invalid");
+    }
+    return { text: cue.text, startMs: cue.startMs, endMs: cue.endMs };
+  });
+  if (parsedCues.length === 0) throw new Error("video_narration_cues_invalid");
+  return {
+    audioBuffer,
+    transcriptBuffer,
+    cues: parsedCues,
+    providerEvidence: {
+      model: typeof providerEvidence.model === "string" ? providerEvidence.model : "",
+      voiceId: typeof providerEvidence.voiceId === "string" ? providerEvidence.voiceId : "",
+      requestedVoiceId: script.voiceId,
+      voiceBindingSource: "provider_ledger",
+      scriptDigest: script.scriptDigest,
+      reportedDurationMs: typeof providerEvidence.reportedDurationMs === "number" ? providerEvidence.reportedDurationMs : null,
+    },
+  };
+}
+
+function readStoredBuffer(asset: Record<string, unknown>, errorCode: string): Buffer {
+  const localOutput = typeof asset.localOutput === "string" ? asset.localOutput : "";
+  const expectedDigest = typeof asset.sha256 === "string" ? asset.sha256.toLowerCase() : "";
+  const absolutePath = resolveLocalArtifactOutput(localOutput);
+  if (!absolutePath || !/^[a-f0-9]{64}$/.test(expectedDigest)) throw new Error(errorCode);
+  const buffer = readFileSync(absolutePath);
+  if (createHash("sha256").update(buffer).digest("hex") !== expectedDigest) throw new Error(errorCode);
+  return buffer;
 }
 
 function findRepairableArtifact(input: PackageToolAdapterInput, kind: string): ArtifactRecord | undefined {
@@ -544,7 +607,7 @@ function buildFailureResult(
       kind,
       teacherSafeSummary,
       internalReasonSanitized: internalReason,
-      retryPolicy: { retryable: false, nextAction: kind === "quality_gate_failed" ? "fix_inputs" : "ask_teacher" },
+      retryPolicy: { retryable: false, nextAction: kind === "quality_gate_failed" ? "fix_inputs" : "skip_or_replan" },
     }),
     artifactCreated: false,
     errorCategory,
@@ -560,10 +623,6 @@ function buildBudgetEvent(tool: ToolDefinition, status: "succeeded" | "failed", 
     status,
     kind,
   });
-}
-
-function validateZipBuffer(buffer: Buffer) {
-  return buffer.length > 64 && buffer.subarray(0, 2).toString("utf8") === "PK" && buffer.includes(Buffer.from("manifest.json"));
 }
 
 function validateMp4Buffer(buffer: Buffer) {
@@ -603,24 +662,156 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-export function readPackageAssetBuffer(artifact: ArtifactRecord) {
+export type PersistedFinalPackageToolInvocation = {
+  invocationId: string;
+  projectId: string;
+  taskId: string;
+  intentEpoch: number;
+  planRevision: number;
+  toolName: string;
+  executionEnvelopeJson: string;
+  idempotencyKey: string;
+  status: string;
+  artifactId: string | null;
+  observationId: string | null;
+  finishedAt: Date | null;
+};
+
+export type PersistedFinalPackageObservation = {
+  observationId: string;
+  projectId: string;
+  taskId: string;
+  invocationId: string | null;
+  intentEpoch: number;
+  status: string;
+  artifactId: string | null;
+};
+
+export async function readPackageAssetBuffer(
+  artifact: ArtifactRecord,
+  invocation: PersistedFinalPackageToolInvocation | null,
+  observation: PersistedFinalPackageObservation | null,
+) {
+  assertFinalPackageToolLineage(artifact, invocation, observation);
   const storage = artifact.structuredContent.storage;
   const packageAsset = storage && typeof storage === "object" ? (storage as Record<string, unknown>).packageAsset : null;
   if (!packageAsset || typeof packageAsset !== "object") {
     throw new Error("stored_package_asset_not_found");
   }
-  const asset = packageAsset as { localOutput?: unknown; fileName?: unknown };
+  const asset = packageAsset as Record<string, unknown>;
+  if (
+    asset.generationMode !== "versioned_final_package_generated" ||
+    asset.mime !== ZIP_MIME ||
+    typeof asset.fileName !== "string" ||
+    !asset.fileName.trim().toLowerCase().endsWith(".zip") ||
+    !Number.isInteger(asset.bytes) ||
+    (asset.bytes as number) < 1 ||
+    !isSha256(asset.sha256) ||
+    !isSha256(asset.manifestSha256)
+  ) {
+    throw new Error("stored_package_asset_contract_invalid");
+  }
+  const manifest = requireRecord(artifact.structuredContent.finalPackageManifest, "stored_package_manifest_missing");
+  const classroomRunSpec = requireRecord(artifact.structuredContent.classroomRunSpec, "stored_package_run_spec_missing") as ClassroomRunSpec;
+  if (
+    asset.manifestSha256 !== createFinalPackageManifestDigest(manifest) ||
+    artifact.structuredContent.courseVersionId !== manifest.courseVersionId ||
+    artifact.structuredContent.reviewBatchId !== manifest.reviewBatchId ||
+    classroomRunSpec.courseVersionId !== manifest.courseVersionId ||
+    classroomRunSpec.reviewBatchId !== manifest.reviewBatchId ||
+    classroomRunSpec.courseAnchor !== manifest.courseAnchor ||
+    classroomRunSpec.pptSlideCount !== manifest.pptSlideCount
+  ) {
+    throw new Error("stored_package_version_binding_invalid");
+  }
+  assertStoredSourceLineage(asset.sourceArtifactIds, manifest.files);
   const localOutput = typeof asset.localOutput === "string" ? asset.localOutput : "";
   const absolutePath = resolveLocalArtifactOutput(localOutput);
   if (!absolutePath) {
     throw new Error("stored_package_path_outside_storage");
   }
   const buffer = readFileSync(absolutePath);
-  if (!validateZipBuffer(buffer)) {
-    throw new Error("invalid_stored_package_file");
+  if (buffer.length !== asset.bytes || createHash("sha256").update(buffer).digest("hex") !== asset.sha256) {
+    throw new Error("stored_package_digest_mismatch");
   }
+  await verifyFinalPackageBuffer(buffer, manifest, classroomRunSpec);
   return {
     filename: typeof asset.fileName === "string" && asset.fileName.trim() ? asset.fileName : `${safeFileSegment(artifact.id)}.zip`,
     buffer,
   };
+}
+
+function assertFinalPackageToolLineage(
+  artifact: ArtifactRecord,
+  invocation: PersistedFinalPackageToolInvocation | null,
+  observation: PersistedFinalPackageObservation | null,
+): asserts invocation is PersistedFinalPackageToolInvocation {
+  const envelope = invocation ? parsePersistedFinalPackageEnvelope(invocation.executionEnvelopeJson) : null;
+  if (
+    !invocation ||
+    !envelope ||
+    artifact.origin !== "tool_result" ||
+    typeof artifact.taskId !== "string" ||
+    !artifact.taskId.trim() ||
+    !isSha256(artifact.taskBriefDigest) ||
+    !Number.isInteger(artifact.intentEpoch) ||
+    (artifact.intentEpoch ?? -1) < 0 ||
+    !Number.isInteger(artifact.planRevision) ||
+    (artifact.planRevision ?? -1) < 0 ||
+    invocation.projectId !== artifact.projectId ||
+    invocation.taskId !== artifact.taskId ||
+    invocation.intentEpoch !== artifact.intentEpoch ||
+    invocation.planRevision !== artifact.planRevision ||
+    invocation.artifactId !== artifact.id ||
+    invocation.status !== "succeeded" ||
+    invocation.toolName !== "create_final_package" ||
+    !invocation.observationId ||
+    !invocation.finishedAt ||
+    invocation.idempotencyKey !== envelope.idempotencyKey ||
+    envelope.projectId !== artifact.projectId ||
+    envelope.taskId !== artifact.taskId ||
+    envelope.intentEpoch !== artifact.intentEpoch ||
+    envelope.planRevision !== artifact.planRevision ||
+    envelope.taskBriefDigest !== artifact.taskBriefDigest ||
+    !observation ||
+    observation.observationId !== invocation.observationId ||
+    observation.projectId !== artifact.projectId ||
+    observation.taskId !== artifact.taskId ||
+    observation.invocationId !== invocation.invocationId ||
+    observation.intentEpoch !== artifact.intentEpoch ||
+    observation.artifactId !== artifact.id ||
+    observation.status !== "succeeded"
+  ) {
+    throw new Error("stored_package_tool_lineage_invalid");
+  }
+}
+
+function parsePersistedFinalPackageEnvelope(value: string): ExecutionEnvelope | null {
+  try {
+    const parsed = JSON.parse(value) as ExecutionEnvelope;
+    return hasValidExecutionEnvelope(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function assertStoredSourceLineage(sourceArtifactIds: unknown, files: unknown): void {
+  if (!Array.isArray(sourceArtifactIds) || sourceArtifactIds.length === 0 ||
+      sourceArtifactIds.some((id) => typeof id !== "string" || !id.trim()) ||
+      new Set(sourceArtifactIds).size !== sourceArtifactIds.length || !isRecord(files)) {
+    throw new Error("stored_package_source_lineage_invalid");
+  }
+  const sourceIds = new Set(sourceArtifactIds);
+  if (Object.values(files).some((value) => !isRecord(value) || typeof value.sourceArtifactId !== "string" || !sourceIds.has(value.sourceArtifactId))) {
+    throw new Error("stored_package_source_lineage_invalid");
+  }
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function requireRecord(value: unknown, errorCode: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(errorCode);
+  return value;
 }

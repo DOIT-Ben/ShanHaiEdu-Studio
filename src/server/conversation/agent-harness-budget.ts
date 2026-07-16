@@ -21,6 +21,7 @@ export type AgentHarnessBudgetEvent = {
   actionKey: string;
   status: AgentHarnessBudgetEventStatus;
   kind: AgentHarnessBudgetEventKind;
+  providerSubmitted?: boolean;
   createdAt: string;
 };
 
@@ -53,6 +54,7 @@ export type BuildAgentHarnessBudgetEventInput = {
   expectedArtifactKind?: string;
   status: AgentHarnessBudgetEventStatus;
   kind: AgentHarnessBudgetEventKind;
+  providerSubmitted?: boolean;
   createdAt?: string;
 };
 
@@ -96,8 +98,33 @@ export function buildAgentHarnessBudgetEvent(input: BuildAgentHarnessBudgetEvent
     actionKey: input.actionKey ?? `${input.capabilityId}:${input.expectedArtifactKind ?? ""}`,
     status: input.status,
     kind: input.kind,
+    providerSubmitted: input.providerSubmitted === true,
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
+}
+
+export function countSubmittedExternalProviderCalls(events: AgentHarnessBudgetEvent[]): number {
+  return events.filter((event) => isAgentHarnessBudgetEvent(event) && event.providerSubmitted).length;
+}
+
+export function appendAgentHarnessBudgetEventMetadata(
+  metadata: Record<string, unknown>,
+  event: AgentHarnessBudgetEvent,
+): Record<string, unknown> {
+  const existing = readAgentHarnessBudgetEventsFromMessages([{ metadata }]);
+  const key = budgetEventKey(event);
+  const events = existing.some((candidate) => budgetEventKey(candidate) === key)
+    ? existing
+    : [...existing, event];
+  return {
+    ...metadata,
+    agentHarnessBudgetEvent: undefined,
+    agentHarnessBudgetEvents: events,
+  };
+}
+
+function budgetEventKey(event: AgentHarnessBudgetEvent) {
+  return `${event.capabilityId}:${event.actionKey}:${event.status}:${event.kind}:${event.providerSubmitted}:${event.createdAt}`;
 }
 
 export function readAgentHarnessBudgetEventsFromMessages(messages: Array<{ metadata?: unknown }>): AgentHarnessBudgetEvent[] {
@@ -193,6 +220,7 @@ function isAgentHarnessBudgetEvent(value: unknown): value is AgentHarnessBudgetE
     typeof value.actionKey === "string" &&
     isAgentHarnessBudgetEventStatus(value.status) &&
     isAgentHarnessBudgetEventKind(value.kind) &&
+    (value.providerSubmitted === undefined || typeof value.providerSubmitted === "boolean") &&
     typeof value.createdAt === "string" &&
     Number.isFinite(Date.parse(value.createdAt))
   );

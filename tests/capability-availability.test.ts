@@ -126,6 +126,7 @@ describe("CapabilityAvailability", () => {
       approvedArtifactFor("video_segment_generate"),
       approvedArtifactFor("storyboard_generate"),
       approvedArtifactFor("video_script_generate"),
+      approvedArtifactFor("video_narration_generate"),
     ]);
 
     expect(entry.status).toBe("blocked");
@@ -135,8 +136,12 @@ describe("CapabilityAvailability", () => {
   it("marks implemented external generation providers available only when matching runtime env exists", () => {
     const availability = resolveRuntimeProviderAvailability({
       COZE_PPT_USE_CLI: "1",
-      IMAGEGEN_MYSELF_PRIMARY_API_KEY: "test-key",
-      IMAGEGEN_MYSELF_PRIMARY_BASE_URL: "https://image.example/v1",
+      NODE_ENV: "test",
+      SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+      IMAGE_PROVIDER_CHANNEL: "minimax",
+      MINIMAX_API_KEY: "test-key",
+      MINIMAX_BASE_URL: "https://image.example",
+      MINIMAX_IMAGE_MODEL: "image-01",
       EVOLINK_API_KEY: "video-key",
       EVOLINK_VIDEO_BASE_URL: "https://video.example",
     });
@@ -148,5 +153,22 @@ describe("CapabilityAvailability", () => {
     });
     expect(availability.asset_image_generate).toBeUndefined();
     expect(availability.concat_only_assemble).toBeUndefined();
+  });
+
+  it("recognizes the API-ledger MiniMax image contract without another image provider", () => {
+    const availability = resolveRuntimeProviderAvailability({
+      NODE_ENV: "test",
+      SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+      IMAGE_PROVIDER_CHANNEL: "minimax",
+      MINIMAX_API_KEY: "minimax-test-key",
+      MINIMAX_BASE_URL: "https://minimax.example",
+      MINIMAX_IMAGE_MODEL: "image-01",
+    });
+
+    expect(availability).toMatchObject({
+      image_asset: true,
+      ppt_sample_assets: true,
+      ppt_full_assets: true,
+    });
   });
 });

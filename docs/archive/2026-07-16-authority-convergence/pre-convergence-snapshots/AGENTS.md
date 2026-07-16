@@ -1,0 +1,128 @@
+# ShanHaiEdu-Studio 项目准则
+
+> 本文件是 `ShanHaiEdu-Studio` 的长期工程约定。它只记录任何阶段都必须坚守的规则，不记录临时分支、短期任务或一次性计划。若与用户当次明确指令冲突，以用户当次指令为准；若与平台、安全或工具权限冲突，以平台和工具限制为准。
+
+## 1. 工作方式
+
+- 每次回复用户必须以 `董事长，` 开头。
+- 本项目默认严格模式；除非用户明确说“轻量模式”，所有开发、架构、接入、重构、清理和交付都按阶段推进。
+- 动手前必须明确目标、范围、关键假设、成功标准、风险和回退方式。
+- 任何需求增加、需求变更、架构调整或正式开发前，必须先在 `docs\` 写规划文档。
+- 规划通过后再实现；不能跳过调研、规划、测试定义和阶段验收。
+- 当前需求与质量门禁的唯一权威口径是 `docs\product\current-requirements-baseline.md`；旧阶段计划、历史报告、台账快照和 MVP 过渡方案若与该文档冲突，一律以该文档为准。
+
+## 2. 文档结构与入口
+
+- 新会话、新智能体或新阶段开始前，必须先读 `docs\README.md`，理解需求、架构、主线、阶段文档的归属边界。
+- 产品需求统一放入 `docs\product\`：
+  - `docs\product\current-requirements-baseline.md` 是当前产品需求与质量门禁最高口径。
+  - `docs\product\requirements-backlog.md` 记录未完成需求、新增需求、延期需求和优先级。
+  - `docs\product\conversation-interaction-requirements.md` 记录对话确认、自由输入、改道和追问类需求。
+- 架构设计统一放入 `docs\architecture\`：长期架构、核心主线、五平面、十二系统、ADR 决策都从 `docs\architecture\README.md` 进入。
+- 主线状态统一放入 `docs\mainlines\`：当前主线、阶段顺序、已完成/未完成状态以 `docs\mainlines\current-mainline-status.md` 为入口。
+- 阶段开发统一放入 `docs\stages\`：只记录单阶段 plan、test-plan、closeout；阶段文档不能覆盖产品基线和需求总账。
+- 新增需求或需求变更必须先进入 `docs\product\requirements-backlog.md`，再写阶段计划；不得只写在某个阶段计划里。
+- 旧阶段文档、历史报告、早期 MVP 方案仅作证据；若与当前产品基线或需求总账冲突，按当前产品基线和需求总账执行。
+- 不批量移动、删除或归档旧文档，除非有单独文档治理计划和用户确认。
+
+## 3. 智能体架构主线
+
+任何山海智教智能体相关开发、架构调整、Provider 接入、节点契约、记忆系统、上下文压缩、质量门禁和工作流编排任务，必须先阅读并遵守以下文档：
+
+```text
+docs\product\current-requirements-baseline.md
+docs\architecture\2026-07-09-山海智教智能体-统一口径与工作准则.md
+docs\architecture\2026-07-09-山海智教智能体-核心设计串联.md
+docs\architecture\2026-07-09-山海智教智能体-MVP1-上下文契约与门禁规划.md
+```
+
+2026-07-13勘误：上述历史文档及其他旧架构材料中，凡把真实Provider、文件/最终包生成或`needs_review`自动等同于逐次HumanGate的口径，均已被当前需求基线RQ-038与V1-9R替代。明确任务在已披露、版本绑定的IntentGrant预算内自动推进；只有无有效授权、超预算/最高强度、不可推断选择、外发、权限变化或破坏性副作用才进入HumanGate。旧文档仍可作为合同与演进证据，不得恢复旧产品行为。
+
+需要通用架构背景时，再阅读：
+
+```text
+docs\architecture\智能体设计架构\README.md
+docs\architecture\智能体设计架构\patterns\01-conversation-context-compaction.md
+docs\architecture\智能体设计架构\patterns\02-node-contract-control.md
+docs\architecture\智能体设计架构\patterns\03-memory-boundaries.md
+```
+
+后续实施必须遵守：
+
+```text
+通用架构定方法；
+五平面定职责；
+十二系统定边界；
+MVP 规划定顺序；
+代码实现定证据。
+```
+
+不得绕过 `ContextPackage`、`Node Contract`、`PlanGuard`、`HumanGate`、`Quality Gate` 直接实现功能；不得把完整长对话直接当作模型输入边界；不得把模型自评、deterministic draft、placeholder 或文本 fallback 伪装成真实交付。
+
+## 4. 固定开发链路
+
+任何阶段性开发都遵守：
+
+```text
+调研现有工具/方案
+-> 写阶段规划文档
+-> 写测试文档或测试用例
+-> 按规划开发
+-> 按测试文档集中验收
+-> 审查与修正
+-> 收尾记录
+```
+
+- 调研优先看官方文档、一手来源、源码、项目既有模式、已安装 skills 和成熟开源方案。
+- 阶段规划必须说明：为什么做、复用什么、怎么适配、哪里自研、怎么验收。
+- 测试定义必须早于开发；开发完成后按阶段集中验收，不把零散小测当作通过。
+- 阶段内允许运行最小快速检查定位问题，但最终结论必须来自阶段验收。
+
+## 5. 反屎山原则
+
+- 优先定向重构，不用补丁层层包裹问题。
+- 当单文件超过约 500 行、单函数/组件超过约 150 行，或同一文件承载多个无关职责时，新增功能前必须评估拆分。
+- UI、数据请求、状态推进、业务规则、Agent Runtime、provider adapter 不得混在一个文件或组件里。
+- 不做无关格式化、无关改名、无关重构。
+- 不重复造轮子；能复用成熟库、组件、协议、数据结构、skills 或项目既有模式时，优先复用。
+- 若暂缓重构，必须在规划或收尾记录中写明原因、后续拆分目标和删除条件。
+
+## 6. 产品与技术边界
+
+- 当前产品目标是真实可用、由 Main Agent 自主编排的非固定 DAG 备课制作助手，不是线性审批工作台或 mock 展示页。
+- MVP 可以能力较弱，但必须真实保存项目、对话、节点产物和确认状态。
+- mock、placeholder、deterministic 输出、演示数据不得伪装成真实生成或上线完成。
+- 文本 fallback、目标页数、设计稿页数、文件名、任务成功状态都不能冒充真实交付；PPTX 必须以真实 slideCount 校验，图片、视频和最终包必须以真实文件结构和质量门禁校验。
+- OpenAI SDK / OpenAI Agents SDK 只能在服务端 Runtime Adapter 层使用，不得直接放进 React 组件。
+- 项目、对话、节点、产物、版本、确认、失败恢复和交付包状态必须由后端业务层持久化。
+- 代码应保留可迁移边界：`AgentRuntime`、`WorkflowEngine`、`WorkflowRepository`、`ArtifactStorage`、`ProviderAdapter`。
+
+## 7. 前端体验边界
+
+- 保留 Codex 风格工作台：左侧项目，中间对话，右侧压缩节点，点击打开阅读侧栏。
+- 中间对话区是主视觉；整体纯白、极简、低噪声。
+- 不做营销页、大 hero、大渐变、炫技动效、emoji、卡片套卡片。
+- 字号层级控制在 2-3 种，最大不超过 35px。
+- 低频操作默认隐藏，hover/focus 时出现。
+- 用户可见界面不得出现工程词：schema、manifest、provider、node_id、storage、API、debug、local path 等。
+- UI 改动必须做桌面和窄屏浏览器检查。
+
+## 8. 验证与审查
+
+- 宣称完成前必须有新鲜验证证据。
+- 构建通过必须有 `npm run build` exit 0。
+- 测试通过必须有测试命令输出且失败数为 0。
+- 页面可用必须实际浏览器打开关键流程。
+- API 可用必须有真实请求或集成测试。
+- 阶段验收后必须审查：是否符合需求基线、规划文档、测试文档，是否泄露敏感信息或工程词，是否产生屎山。
+- 无法验证时，必须说明原因和剩余风险。
+
+## 9. 清理、提交与安全
+
+- 删除、清理、迁移后删除、批量覆盖等破坏性操作必须单独确认。
+- 默认归档或送回收站，不做不可恢复删除。
+- 更新 `AGENTS.md` 前必须先做时间戳备份：项目归档一份，`C:\Users\HB\.codex\AGETNS-bak\` 一份。
+- 提交前先看 `git status --short`，只纳入本轮授权范围内的改动。
+- 提交信息使用中文：`类型: 简要描述 | 版本号 | YYYY-MM-DD HH:MM`。
+- 未经用户明确要求，不主动 push、部署、发布或执行不可逆操作。
+- 不在回复、日志、提交、文档、截图中明文展示密钥、token、账号和个人敏感信息。

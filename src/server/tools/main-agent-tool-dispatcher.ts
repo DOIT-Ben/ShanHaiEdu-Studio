@@ -2,6 +2,7 @@ import { createToolObservation } from "@/server/capabilities/tool-observation";
 import type { ExecutionIdentitySnapshot } from "@/server/workbench/types";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import { hasValidExecutionEnvelope, type ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { executeThroughToolGateway, type CurrentToolExecutionScope } from "./tool-execution-gateway";
 
 import { createAgentToolInvocationEnvelope, type AgentToolArtifactRef, type AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import { routeAgentToolCall, type AgentToolAuthorizationDatabase, type AgentToolRouterResult } from "./agent-tool-router";
@@ -19,6 +20,7 @@ export type MainAgentToolServerContext = {
   approvedArtifactRefs: AgentToolArtifactRef[];
   reviewTargetRef?: AgentToolArtifactRef | null;
   executionEnvelope?: ExecutionEnvelope;
+  executionScope?: CurrentToolExecutionScope;
 };
 
 export type MainAgentToolDispatchRequest = {
@@ -70,39 +72,75 @@ export async function dispatchMainAgentToolCall(
     return blocked(request, "tool_not_executable");
   }
 
+  if (!request.serverContext.executionEnvelope) {
+    return blocked(request, "execution_envelope_required");
+  }
+  if (!hasValidExecutionEnvelope(request.serverContext.executionEnvelope)) {
+    return blocked(request, "execution_envelope_invalid");
+  }
+  if (!request.serverContext.executionScope) {
+    return blocked(request, "execution_scope_required");
+  }
+
+  const gatewayRequest = {
+    toolName: definition.internalToolId ?? definition.id,
+    projectId: request.serverContext.projectId,
+    intentEpoch: request.serverContext.intentEpoch,
+    arguments: structuredClone(request.arguments),
+  };
+
   if (definition.adapterKind === "agent") {
     if (!dependencies.agentToolExecutor) return blocked(request, "agent_tool_executor_unavailable");
-    const envelope = createAgentToolInvocationEnvelope({
-      invocationId: request.invocationId,
-      toolId: definition.id,
-      identity: request.serverContext.identity,
-      projectId: request.serverContext.projectId,
-      intentEpoch: request.serverContext.intentEpoch,
-      sourceMessageId: request.serverContext.sourceMessageId,
-      generationIntensity: request.serverContext.generationIntensity ?? "standard",
-      reviewTargetRef: request.serverContext.reviewTargetRef ?? null,
-      approvedArtifactRefs: request.serverContext.approvedArtifactRefs,
-      arguments: structuredClone(request.arguments),
+    const result = await executeThroughToolGateway({
+      request: gatewayRequest,
+      current: request.serverContext.executionScope,
+      executionEnvelope: request.serverContext.executionEnvelope,
+      execute: async () => {
+        const envelope = createAgentToolInvocationEnvelope({
+          invocationId: request.invocationId,
+          toolId: definition.id,
+          identity: request.serverContext.identity,
+          projectId: request.serverContext.projectId,
+          intentEpoch: request.serverContext.intentEpoch,
+          sourceMessageId: request.serverContext.sourceMessageId,
+          generationIntensity: request.serverContext.generationIntensity ?? "standard",
+          reviewTargetRef: request.serverContext.reviewTargetRef ?? null,
+          approvedArtifactRefs: request.serverContext.approvedArtifactRefs,
+          arguments: structuredClone(request.arguments),
+        });
+        return {
+          envelope,
+          result: await routeAgentToolCall(envelope, {
+            executor: dependencies.agentToolExecutor,
+            authorizationDb: dependencies.agentToolAuthorizationDb,
+            authorize: dependencies.authorizeAgentTool,
+          }),
+        };
+      },
     });
-    const result = await routeAgentToolCall(envelope, {
-      executor: dependencies.agentToolExecutor,
-      authorizationDb: dependencies.agentToolAuthorizationDb,
-      authorize: dependencies.authorizeAgentTool,
-    });
-    return { kind: "agent_tool", envelope, result };
+    if ("reasonCode" in result) return blocked(request, result.reasonCode);
+    return { kind: "agent_tool", envelope: result.envelope, result: result.result };
   }
 
   if (!dependencies.allowBusinessExecution || !dependencies.buildBusinessToolInput) {
     return blocked(request, "business_tool_requires_outer_guard");
   }
-  if (!request.serverContext.executionEnvelope || !hasValidExecutionEnvelope(request.serverContext.executionEnvelope)) {
-    return blocked(request, "invalid_execution_envelope");
+  if (typeof definition.internalToolId !== "string") {
+    return blocked(request, "control_tool_requires_main_agent_loop");
   }
   const businessInput = dependencies.buildBusinessToolInput(request, definition.internalToolId);
   if (businessInput.executionEnvelope !== request.serverContext.executionEnvelope) {
     return blocked(request, "execution_envelope_not_forwarded");
   }
-  const result = await (dependencies.businessToolRouter ?? routeToolCall)(businessInput);
+  const result = await executeThroughToolGateway<ToolExecutionResult>({
+    request: gatewayRequest,
+    current: request.serverContext.executionScope,
+    executionEnvelope: request.serverContext.executionEnvelope,
+    execute: () => (dependencies.businessToolRouter ?? routeToolCall)(businessInput),
+  });
+  if (!("toolId" in result)) {
+    return blocked(request, result.reasonCode);
+  }
   return { kind: "business_tool", result };
 }
 

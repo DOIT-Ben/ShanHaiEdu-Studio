@@ -1,11 +1,59 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMainConversationAgentFromEnv, OpenAIMainConversationAgent, resolveMainAgentTimeoutMs } from "@/server/conversation/model-main-conversation-agent";
+import {
+  createMainConversationAgentFromEnv,
+  OpenAIMainConversationAgent,
+  resolveMainAgentTimeoutMs,
+  resolveMainAgentToolControlPlane,
+} from "@/server/conversation/model-main-conversation-agent";
 import { createDeterministicMainConversationAgent } from "@/server/conversation/main-conversation-agent";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { createTaskBrief } from "@/server/conversation/task-contract";
 
 describe("M55-C model-first main conversation agent", () => {
+  it("returns a typed recoverable failure when the selected Responses channel is blocked", async () => {
+    const client = {
+      responses: {
+        async create() {
+          throw new Error("403 Your request was blocked.");
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({ userMessage: "请完成百分数PPT", availableArtifactKinds: [] });
+
+    expect(turn).toMatchObject({
+      state: "failed_retryable",
+      failure: {
+        phase: "direct_response",
+        reasonCode: "main_agent_provider_policy_blocked",
+        category: "provider_policy",
+        retryability: "after_provider_health_change",
+      },
+    });
+    expect(JSON.stringify(turn.failure)).not.toMatch(/api[_-]?key|credential|token|secret|https?:\/\//i);
+  });
+
+  it("distinguishes a Responses timeout from a policy block", async () => {
+    const client = {
+      responses: {
+        async create() {
+          throw new Error("Request timed out after 180000ms");
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({ userMessage: "请完成百分数PPT", availableArtifactKinds: [] });
+
+    expect(turn.failure).toMatchObject({
+      reasonCode: "main_agent_provider_timeout",
+      category: "timeout",
+      retryability: "retryable",
+    });
+  });
+
   it("keeps the Main Agent prompt domain-neutral and delegates delivery specifics to registered Tools", async () => {
     const client = fakeResponsesClient({
       assistantMessage: { body: "我会先根据当前材料判断下一步。" },
@@ -20,7 +68,7 @@ describe("M55-C model-first main conversation agent", () => {
     expect(client.lastPayload?.instructions).not.toMatch(/PPT质量主线|课程锚点|video_segment_generate|classroomRunSpecDraft|final_package/);
   });
 
-  it("passes TaskBrief and IntentGrant into the native Tool control plane and forbids routine confirmation", async () => {
+  it("passes TaskBrief and IntentGrant while separating routine confirmation from semantic collaboration", async () => {
     const client = fakeResponsesClient({
       assistantMessage: { body: "继续处理任务。" },
       state: "chatting", quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
@@ -65,7 +113,10 @@ describe("M55-C model-first main conversation agent", () => {
       },
     } as MainConversationAgentInput);
 
-    expect(client.lastPayload?.instructions).toContain("不得要求教师再次确认");
+    expect(client.lastPayload?.instructions).toContain("标准授权不等于禁止语义校准");
+    expect(client.lastPayload?.instructions).toContain("request_teacher_decision");
+    expect(client.lastPayload?.instructions).toContain("边界清晰时不要例行询问");
+    expect(client.lastPayload?.instructions).not.toContain("标准范围内不得要求教师再次确认");
     expect(client.lastPayload?.instructions).toContain("不得要求教师回复“继续”");
     expect(client.lastPayload?.instructions).toContain("重试预算耗尽时诚实暂停");
     expect(JSON.parse(client.lastPayload?.input as string)).toMatchObject({
@@ -309,7 +360,93 @@ describe("M55-C model-first main conversation agent", () => {
     expect(turn.toolPlan).toBeUndefined();
   });
 
-  it("keeps teacher-facing clarification examples inside primary school scope", async () => {
+  it("lets structured intake decide an active-task redirect instead of using a server text rule", async () => {
+    const payloads: Record<string, any>[] = [];
+    const client = {
+      responses: {
+        async create(payload: Record<string, any>) {
+          payloads.push(payload);
+          return {
+            output_text: "",
+            output: [{
+              id: "item-revise-active-task",
+              type: "function_call",
+              call_id: "call-revise-active-task",
+              name: "revise_active_task",
+              arguments: JSON.stringify({
+                goal: "只做独立创意导入视频脚本",
+                requestedOutputs: ["video_script"],
+                constraints: ["独立创意短片", "只保留最小课程锚点"],
+                excludedOutputs: ["lesson_plan", "ppt", "image", "video", "package"],
+              }),
+            }],
+          };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const decision = await agent.intakeTask!({
+      userMessage: "改成只做独立创意导入视频脚本，不做 PPT 和成片。",
+      generationIntensity: "standard",
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      activeTask: {
+        taskId: "task-active",
+        digest: "a".repeat(64),
+        intentEpoch: 0,
+        goal: "制作百分数公开课 PPT",
+        requestedOutputs: ["ppt"],
+        constraints: [],
+        excludedOutputs: [],
+      },
+      recentMessages: [],
+    });
+
+    expect(payloads[0].tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "revise_active_task" }),
+      expect.objectContaining({ name: "submit_conversation_control" }),
+    ]));
+    expect(JSON.parse(payloads[0].input)).toMatchObject({ activeTask: { taskId: "task-active", intentEpoch: 0 } });
+    expect(decision).toMatchObject({
+      kind: "control",
+      control: { kind: "redirect", advanceIntentEpoch: true },
+      replacementProposal: { requestedOutputs: ["video_script"] },
+    });
+  });
+
+  it("keeps an ambiguous direction discussion as conversation so the Main Agent can ask", async () => {
+    const client = {
+      responses: {
+        async create() {
+          return { output_text: "你是在比较两种方向，还是希望我现在停止 PPT 并改做视频脚本？", output: [] };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const decision = await agent.intakeTask!({
+      userMessage: "如果改成视频脚本会不会更好？",
+      generationIntensity: "standard",
+      projectContext: {},
+      activeTask: {
+        taskId: "task-active",
+        digest: "b".repeat(64),
+        intentEpoch: 0,
+        goal: "制作 PPT",
+        requestedOutputs: ["ppt"],
+        constraints: [],
+        excludedOutputs: [],
+      },
+      recentMessages: [],
+    });
+
+    expect(decision).toMatchObject({
+      kind: "conversation",
+      turn: { assistantMessage: { body: expect.stringContaining("还是希望我现在") } },
+    });
+  });
+
+  it("keeps primary school as a product bias without turning it into a capability gate", async () => {
     const client = fakeResponsesClient({
       assistantMessage: {
         title: "可以，先确认 PPT 需求",
@@ -324,16 +461,17 @@ describe("M55-C model-first main conversation agent", () => {
 
     const turn = await agent.respond({ userMessage: "帮我做小学课件 PPT", availableArtifactKinds: [] });
 
-    expect(client.lastPayload?.instructions).toContain("只服务小学");
+    expect(client.lastPayload?.instructions).toContain("默认角色语境偏向小学");
+    expect(client.lastPayload?.instructions).toContain("不是年级、学科或学段的能力门禁");
+    expect(client.lastPayload?.instructions).not.toMatch(/只服务小学|不要生成初中|先限定在小学/);
     expect(turn.state).toBe("collecting_inputs");
-    expect(turn.assistantMessage.body).toContain("小学");
-    expect(turn.assistantMessage.body).toContain("五年级数学");
-    expect(turn.assistantMessage.body).not.toMatch(/七年级|八年级|九年级|初中|高中|有理数|约20页/);
+    expect(turn.assistantMessage.body).toContain("七年级数学");
+    expect(turn.assistantMessage.body).toContain("有理数的加法");
     expect(turn.toolPlan).toBeUndefined();
     expect(turn.shouldRunToolNow).toBe(false);
   });
 
-  it("rejects teacher requests outside primary school scope instead of planning junior-high content", async () => {
+  it("passes a junior-high delivery request to the model and preserves its selected business Tool", async () => {
     const client = fakeResponsesClient({
       assistantMessage: {
         body: "可以，我来为你整理七年级数学《有理数的加法》PPT。",
@@ -354,10 +492,10 @@ describe("M55-C model-first main conversation agent", () => {
 
     const turn = await agent.respond({ userMessage: "帮我做七年级数学有理数的加法 PPT", availableArtifactKinds: [] });
 
-    expect(turn.state).toBe("collecting_inputs");
-    expect(turn.assistantMessage.body).toContain("当前版本先限定在小学");
-    expect(turn.assistantMessage.body).not.toMatch(/有理数|七年级/);
-    expect(turn.toolPlan).toBeUndefined();
+    expect(client.lastPayload?.input).toContain("七年级数学有理数的加法");
+    expect(turn.state).toBe("awaiting_confirmation");
+    expect(turn.assistantMessage.body).toContain("七年级数学");
+    expect(turn.toolPlan).toMatchObject({ capabilityId: "ppt_outline" });
     expect(turn.shouldRunToolNow).toBe(false);
   });
 
@@ -766,7 +904,10 @@ describe("M55-C model-first main conversation agent", () => {
   });
 
   it("does not silently fall back to deterministic routing when model config is missing outside tests", async () => {
-    const agent = createMainConversationAgentFromEnv({ NODE_ENV: "development" });
+    const agent = createMainConversationAgentFromEnv({
+      NODE_ENV: "development",
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+    });
 
     const turn = await agent.respond({ userMessage: "三年级 数学", availableArtifactKinds: [] });
 
@@ -790,13 +931,29 @@ describe("M55-C model-first main conversation agent", () => {
     const productionAgent = createMainConversationAgentFromEnv({
       NODE_ENV: "production",
       SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
     });
     const productionTurn = await productionAgent.respond({ userMessage: "你好", availableArtifactKinds: [] });
     expect(productionTurn).toMatchObject({ state: "failed_retryable", runtimeKind: "openai" });
   });
 
+  it("assigns Tool control-plane ownership explicitly for model and deterministic runtimes", () => {
+    expect(resolveMainAgentToolControlPlane({ NODE_ENV: "development" })).toBe("native");
+    expect(resolveMainAgentToolControlPlane({
+      NODE_ENV: "development",
+      SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+    })).toBe("outer");
+    expect(resolveMainAgentToolControlPlane({
+      NODE_ENV: "production",
+      SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
+    })).toBe("native");
+  });
+
   it("continues an existing pending delivery plan even when model config is missing", async () => {
-    const agent = createMainConversationAgentFromEnv({ NODE_ENV: "development" });
+    const agent = createMainConversationAgentFromEnv({
+      NODE_ENV: "development",
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+    });
 
     const turn = await agent.respond({
       userMessage: "继续下一步",
@@ -837,22 +994,6 @@ describe("M55-C model-first main conversation agent", () => {
   });
 
   it("uses a read-only Agent Tool and replans in the same model turn", async () => {
-    const finalOutput = {
-      assistantMessage: { title: null, body: "课件规划已核对，下一步请确认关键样张。" },
-      state: "awaiting_confirmation",
-      quickReplies: [],
-      recommendedOptions: [],
-      shouldRunToolNow: false,
-      toolPlan: {
-        capabilityId: "ppt_key_samples",
-        reasonForUser: "我可以按规划组装关键样张。",
-        missingInputs: [],
-        nextSuggestedCapabilities: ["ppt_full_assets"],
-        requiresConfirmation: true,
-        inputDraft: { teacherGoal: "完成关键样张", notes: null },
-      },
-      deliveryPlan: null,
-    };
     const payloads: Record<string, any>[] = [];
     const responses = [
       {
@@ -865,7 +1006,7 @@ describe("M55-C model-first main conversation agent", () => {
           arguments: JSON.stringify({ goal: "规划课件", stage: "sample_plan", targetPageIds: [], focus: null }),
         }],
       },
-      { output_text: JSON.stringify(finalOutput), output: [] },
+      { output_text: "课件规划已核对，我会按观察结果继续处理。", output: [] },
     ];
     const client = {
       responses: {
@@ -902,6 +1043,7 @@ describe("M55-C model-first main conversation agent", () => {
       expect.objectContaining({ type: "function_call_output", call_id: "call-1" }),
     ]));
     expect(turn).toMatchObject({ shouldRunToolNow: false, runtimeKind: "openai" });
+    expect(turn.assistantMessage.body).toBe("课件规划已核对，我会按观察结果继续处理。");
     expect(turn.toolPlan).toBeUndefined();
     expect(turn.deliveryPlan).toBeUndefined();
   });
@@ -965,22 +1107,217 @@ describe("M55-C model-first main conversation agent", () => {
     expect(turn.assistantMessage.body).not.toContain("服务暂时不可用");
   });
 
+  it("classifies an identical failed Tool retry as a controlled recovery pause", async () => {
+    const responses = ["call-1", "call-2"].map((callId, index) => ({
+      output_text: "",
+      output: [{
+        id: `item-${index + 1}`,
+        type: "function_call",
+        call_id: callId,
+        name: "create_ppt_design_draft",
+        arguments: JSON.stringify({ repairIssues: ["learning_progression_missing"] }),
+      }],
+    }));
+    let responseIndex = 0;
+    let observationOrdinal = 0;
+    const onRecoveryCheckpoint = vi.fn();
+    const agent = new OpenAIMainConversationAgent({
+      client: {
+        responses: {
+          async create() {
+            return responses[Math.min(responseIndex++, responses.length - 1)];
+          },
+        },
+      } as OpenAIResponsesClient,
+      model: "test-model",
+    });
+
+    const turn = await agent.respond({
+      userMessage: "继续修复PPT设计候选",
+      availableArtifactKinds: ["ppt_draft"],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_ppt_design_draft" }],
+        allowedToolNames: ["create_ppt_design_draft"],
+        dispatch: async () => ({
+          status: "failed",
+          observation: {
+            observationId: `observation-${++observationOrdinal}`,
+            status: "failed",
+            reasonCodes: ["validation", "learning_progression_missing"],
+          },
+        }),
+        onRecoveryCheckpoint,
+      },
+    });
+
+    expect(onRecoveryCheckpoint).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "repeated_tool_failure",
+      observationIds: ["observation-1", "observation-2"],
+    }));
+    expect(turn).toMatchObject({
+      state: "failed_blocked",
+      failure: {
+        reasonCode: "main_agent_retry_budget_exhausted",
+        category: "control_plane",
+        retryability: "not_retryable",
+      },
+      assistantMessage: { body: expect.stringContaining("当前进度已保存") },
+    });
+    expect(turn.assistantMessage.body).not.toContain("服务暂时不可用");
+  });
+
+  it("presents a HumanGate Tool Observation as a checkpointed teacher pause without another model request", async () => {
+    const create = vi.fn(async () => ({
+      output_text: "",
+      output: [{
+        id: "item-human-gate",
+        type: "function_call",
+        call_id: "call-human-gate",
+        name: "generate_ppt_sample_assets",
+        arguments: "{}",
+      }],
+    }));
+    const onRecoveryCheckpoint = vi.fn();
+    const agent = new OpenAIMainConversationAgent({
+      client: { responses: { create } } as OpenAIResponsesClient,
+      model: "test-model",
+    });
+
+    const turn = await agent.respond({
+      userMessage: "继续生成PPT样张",
+      availableArtifactKinds: ["ppt_design_draft"],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "generate_ppt_sample_assets" }],
+        allowedToolNames: ["generate_ppt_sample_assets"],
+        dispatch: async () => ({
+          status: "blocked",
+          observation: {
+            observationId: "observation-human-gate",
+            status: "blocked",
+            reasonCodes: ["missing_grant"],
+            nextAction: "ask_teacher",
+          },
+        }),
+        onRecoveryCheckpoint,
+      },
+    });
+
+    expect(create).toHaveBeenCalledOnce();
+    expect(onRecoveryCheckpoint).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "human_gate_required",
+      observationIds: ["observation-human-gate"],
+      checkpoint: expect.objectContaining({ checkpointDigest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+    }));
+    expect(turn).toMatchObject({
+      state: "failed_blocked",
+      shouldRunToolNow: false,
+      runtimeKind: "openai",
+      quickReplies: [],
+      assistantMessage: { body: expect.stringContaining("等待决定后再继续") },
+    });
+    expect(turn.failure).toBeUndefined();
+    expect(turn.assistantMessage.body).not.toContain("服务暂时不可用");
+  });
+
+  it("classifies a Tool invocation lifecycle conflict as a control-plane failure", async () => {
+    const client = {
+      responses: {
+        async create() {
+          return {
+            output_text: "",
+            output: [{
+              id: "item-control-plane-conflict",
+              type: "function_call",
+              call_id: "call-control-plane-conflict",
+              name: "create_ppt_design_draft",
+              arguments: "{}",
+            }],
+          };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "继续完成当前PPT设计",
+      availableArtifactKinds: ["ppt_draft"],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_ppt_design_draft" }],
+        allowedToolNames: ["create_ppt_design_draft"],
+        dispatch: async () => {
+          throw new Error("Tool invocation is not active.");
+        },
+      },
+    });
+
+    expect(turn.failure).toMatchObject({
+      phase: "agent_tool_loop",
+      reasonCode: "control_plane_lifecycle_conflict",
+      category: "control_plane",
+      retryability: "not_retryable",
+    });
+    expect(turn.failure?.reasonCode).not.toBe("main_agent_response_invalid");
+  });
+
+  it("presents an unsatisfied completion contract as a checkpointed pause instead of an unexpected runtime failure", async () => {
+    const responses = [
+      {
+        output_text: "",
+        output: [{
+          id: "item-1",
+          type: "function_call",
+          call_id: "call-1",
+          name: "create_requirement_spec",
+          arguments: "{}",
+        }],
+      },
+      { output_text: "先到这里。", output: [] },
+      { output_text: "仍然先到这里。", output: [] },
+    ];
+    let responseIndex = 0;
+    const client = {
+      responses: {
+        async create() {
+          return responses[Math.min(responseIndex++, responses.length - 1)];
+        },
+      },
+    } as OpenAIResponsesClient;
+    const onRecoveryCheckpoint = vi.fn();
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "完成当前材料包",
+      availableArtifactKinds: [],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_requirement_spec" }],
+        allowedToolNames: ["create_requirement_spec"],
+        dispatch: async () => ({
+          status: "succeeded",
+          observation: { observationId: "observation-1", status: "succeeded", reasonCodes: ["business_tool_succeeded"] },
+        }),
+        validateCompletion: async () => ({ status: "unsatisfied", remainingRequestedOutputs: ["package"] }),
+        onRecoveryCheckpoint,
+      },
+    });
+
+    expect(onRecoveryCheckpoint).toHaveBeenCalledOnce();
+    expect(turn).toMatchObject({
+      state: "failed_blocked",
+      shouldRunToolNow: false,
+      runtimeKind: "openai",
+      assistantMessage: { body: expect.stringContaining("当前进度已保存") },
+    });
+    expect(turn.failure).toBeUndefined();
+    expect(turn.assistantMessage.body).not.toContain("服务暂时不可用");
+  });
+
   it("exposes every currently qualified high-level Tool without hiding ppt_design behind Director", async () => {
     const payloads: Record<string, any>[] = [];
-    const finalOutput = {
-      assistantMessage: { title: null, body: "逐页设计已由业务工具保存，继续准备样张。" },
-      state: "continuing_workflow",
-      quickReplies: [],
-      recommendedOptions: [],
-      shouldRunToolNow: false,
-      toolPlan: null,
-      deliveryPlan: null,
-    };
     const client = {
       responses: {
         async create(payload: Record<string, unknown>) {
           payloads.push(payload);
-          return { output_text: JSON.stringify(finalOutput), output: [] };
+          return { output_text: "逐页设计已保存，正在根据结果继续准备样张。", output: [] };
         },
       },
     } as OpenAIResponsesClient;
@@ -1013,8 +1350,43 @@ describe("M55-C model-first main conversation agent", () => {
     const requestInput = JSON.parse(String(payloads[0].input));
     expect(requestInput.availableCapabilities).toEqual([]);
     expect(payloads[0].tools).toEqual([expect.objectContaining({ name: "create_ppt_design_draft" })]);
-    expect(payloads[0].text.format.schema.properties.toolPlan).toEqual({ type: "null" });
-    expect(payloads[0].text.format.schema.properties.deliveryPlan).toEqual({ type: "null" });
+    expect(payloads[0]).not.toHaveProperty("text");
+  });
+
+  it("keeps native Tool ownership when the currently qualified Tool set is empty", async () => {
+    const payloads: Record<string, any>[] = [];
+    const client = {
+      responses: {
+        async create(payload: Record<string, unknown>) {
+          payloads.push(payload);
+          return {
+            output_text: "当前没有可继续执行的业务工具，已保留现有进度。",
+            output: [],
+          };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const dispatch = vi.fn();
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const turn = await agent.respond({
+      userMessage: "继续当前任务",
+      availableArtifactKinds: ["requirement_spec"],
+      toolControlPlane: "native",
+      agentToolLoop: {
+        tools: [],
+        allowedToolNames: [],
+        dispatch,
+      },
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].tools).toEqual([]);
+    expect(payloads[0]).not.toHaveProperty("text");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(turn).toMatchObject({ shouldRunToolNow: false, state: "chatting" });
+    expect(turn.toolPlan).toBeUndefined();
+    expect(turn.deliveryPlan).toBeUndefined();
   });
 });
 

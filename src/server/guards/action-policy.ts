@@ -1,13 +1,13 @@
-import type { IntentGrant, PendingDecision, PendingDecisionKind } from "@/server/conversation/task-contract";
+import type { IntentGrant, PendingDecision, PendingDecisionKind, TaskBrief } from "@/server/conversation/task-contract";
 import type { ToolDefinition } from "@/server/tools/tool-types";
+import { resolveStandardTaskBudget, STANDARD_TASK_BUDGET_POLICY_VERSION } from "./task-budget-policy";
 
-export type ActionRiskKind = "internal" | "external_generation" | "budget_upgrade" | "highest_intensity" | "publish" | "permission_change" | "destructive" | "material_choice";
+export type ActionRiskKind = "internal" | "external_generation" | "budget_upgrade" | "highest_intensity" | "publish" | "permission_change" | "destructive";
 export type ActionPolicyDecision =
   | { kind: "allow"; reason: "within_task_grant" }
-  | { kind: "human_gate"; reason: "missing_grant" | "grant_scope_mismatch" | "budget_not_disclosed" | "expired_grant" | "budget_upgrade" | "highest_intensity" | "publish" | "permission_change" | "destructive" | "material_choice" };
+  | { kind: "human_gate"; reason: "missing_grant" | "grant_scope_mismatch" | "budget_not_disclosed" | "expired_grant" | "budget_upgrade" | "highest_intensity" | "publish" | "permission_change" | "destructive" };
 
-export const STANDARD_BUDGET_POLICY_VERSION = "v1-standard";
-export const STANDARD_TASK_MAX_EXTERNAL_PROVIDER_CALLS = 3;
+export const STANDARD_BUDGET_POLICY_VERSION = STANDARD_TASK_BUDGET_POLICY_VERSION;
 
 export function actionRiskForTool(
   tool: Pick<ToolDefinition, "adapterKind" | "sideEffectLevel">,
@@ -17,12 +17,13 @@ export function actionRiskForTool(
     : "internal";
 }
 
-export function discloseStandardTaskBudget(grant: IntentGrant): IntentGrant {
+export function discloseStandardTaskBudget(grant: IntentGrant, taskBrief: TaskBrief): IntentGrant {
+  const budget = resolveStandardTaskBudget(taskBrief);
   return {
     ...grant,
-    budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
+    budgetPolicyVersion: budget.policyVersion,
     maxCostCredits: null,
-    maxExternalProviderCalls: STANDARD_TASK_MAX_EXTERNAL_PROVIDER_CALLS,
+    maxExternalProviderCalls: budget.maxExternalProviderCalls,
   };
 }
 
@@ -45,7 +46,7 @@ export function evaluateActionPolicy(input: {
     case "internal":
       return { kind: "allow", reason: "within_task_grant" };
     case "external_generation":
-      if (grant.budgetPolicyVersion !== STANDARD_BUDGET_POLICY_VERSION || !hasDisclosedBudgetLimit(grant)) {
+      if (!isSupportedBudgetPolicyVersion(grant.budgetPolicyVersion) || !hasDisclosedBudgetLimit(grant)) {
         return { kind: "human_gate", reason: "budget_not_disclosed" };
       }
       if (typeof grant.maxExternalProviderCalls === "number" &&
@@ -58,7 +59,6 @@ export function evaluateActionPolicy(input: {
     case "publish": return { kind: "human_gate", reason: "publish" };
     case "permission_change": return { kind: "human_gate", reason: "permission_change" };
     case "destructive": return { kind: "human_gate", reason: "destructive" };
-    case "material_choice": return { kind: "human_gate", reason: "material_choice" };
   }
 }
 
@@ -106,6 +106,10 @@ function hasDisclosedBudgetLimit(grant: IntentGrant) {
     (typeof grant.maxExternalProviderCalls === "number" && grant.maxExternalProviderCalls > 0);
 }
 
+function isSupportedBudgetPolicyVersion(value: string | null) {
+  return value === STANDARD_BUDGET_POLICY_VERSION;
+}
+
 export function describeActionPolicyHumanGate(reason: Extract<ActionPolicyDecision, { kind: "human_gate" }> ["reason"]): {
   kind: PendingDecisionKind;
   question: string;
@@ -133,8 +137,6 @@ function pendingDecisionKindFor(reason: Extract<ActionPolicyDecision, { kind: "h
       return "permission_change";
     case "destructive":
       return "destructive";
-    case "material_choice":
-      return "material_choice";
   }
 }
 

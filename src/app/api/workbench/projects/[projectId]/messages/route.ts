@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
-import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
+import {
+  createMainConversationAgentFromEnv,
+  resolveMainAgentToolControlPlane,
+} from "@/server/conversation/model-main-conversation-agent";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
 import { normalizeXiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 import { createAgentToolExecutorFromEnv } from "@/server/tools/openai-agent-tool-executor";
+import { recoverConversationTurnFromCheckpoint } from "@/server/conversation/conversation-turn-checkpoint-recovery";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 
 const runtime = createAgentRuntimeFromEnv();
 const mainAgent = createMainConversationAgentFromEnv();
+const mainAgentToolControlPlane = resolveMainAgentToolControlPlane();
 const agentToolExecutor = createAgentToolExecutorFromEnv();
 
 type RouteContext = {
@@ -33,6 +39,20 @@ export async function POST(request: Request, context: RouteContext) {
     try {
       const { projectId } = await context.params;
       const body = await request.json();
+      const recoveryCheckpointId = optionalString(body.recoveryCheckpointId);
+      if (recoveryCheckpointId) {
+        if (optionalString(body.body ?? body.content) || optionalString(body.reference) || Array.isArray(body.artifactRefs) && body.artifactRefs.length > 0) {
+          throw new Error("Checkpoint recovery cannot submit a second teacher message.");
+        }
+        const recovered = await recoverConversationTurnFromCheckpoint({
+          projectId,
+          checkpointId: recoveryCheckpointId,
+          service,
+          controlPlaneStore: createControlPlaneStore(),
+        });
+        scheduleProjectQueueDrain(projectId, service);
+        return NextResponse.json(recovered, { status: 202 });
+      }
       const teacherContent = String(body.body ?? body.content ?? "").trim();
       const reference = body.reference ? String(body.reference).trim() : "";
       const content = reference ? `${teacherContent}\n\n引用：${reference}` : teacherContent;
@@ -52,7 +72,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (shouldAutoDrainConversationQueue()) {
-        void drainProjectConversationQueue(projectId, { service, runtime, agent: mainAgent, agentToolExecutor, enableTaskGrantAutonomy: true }).catch(() => null);
+        scheduleProjectQueueDrain(projectId, service);
       }
 
       return NextResponse.json({ message, job }, { status: 202 });
@@ -62,6 +82,18 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "这条消息暂时没有发送成功，请稍后再试。" }, { status });
     }
   });
+}
+
+function scheduleProjectQueueDrain(projectId: string, service: Parameters<Parameters<typeof withLocalWorkbenchActor>[1]>[0]["service"]) {
+  if (!shouldAutoDrainConversationQueue()) return;
+  void drainProjectConversationQueue(projectId, {
+    service,
+    runtime,
+    agent: mainAgent,
+    agentToolExecutor,
+    enableTaskGrantAutonomy: true,
+    enableNativeToolControlPlane: mainAgentToolControlPlane === "native",
+  }).catch(() => null);
 }
 
 function optionalString(value: unknown) {

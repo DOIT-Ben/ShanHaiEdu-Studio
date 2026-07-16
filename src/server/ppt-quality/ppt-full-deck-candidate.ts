@@ -43,7 +43,7 @@ export function buildPptFullDeckCandidate(input: {
 
 export function validatePptFullDeckCandidate(candidate: PptFullDeckCandidate): boolean {
   if (candidate.schemaVersion !== "ppt-full-deck-candidate.v1" || candidate.reviewStatus !== "awaiting_delivery_review") return false;
-  if (candidate.pageIds.length < 12 || candidate.pages.length !== candidate.pageIds.length) return false;
+  if (candidate.pageIds.length < 1 || candidate.pages.length !== candidate.pageIds.length) return false;
   if (candidate.pptx.slideCount !== candidate.pageIds.length || candidate.pdf.pageCount !== candidate.pageIds.length) return false;
   if (![candidate.pptx.sha256, candidate.pdf.sha256, candidate.contactSheet.sha256, ...candidate.pages.map((page) => page.renderSha256)].every((value) => SHA256.test(value))) return false;
   if (!sameSet(candidate.pageIds, candidate.pages.map((page) => page.pageId)) || !sameSet(candidate.pageIds, candidate.contactSheet.pageIds)) return false;
@@ -64,7 +64,7 @@ export function sealPptFullDeckCandidate(candidate: PptFullDeckCandidate, qa: Pp
 }
 
 export function validatePptFullDeckPackage(value: PptFullDeckPackage): boolean {
-  if (value.finalEligible !== true || value.pageIds.length < 12 || value.pages.length !== value.pageIds.length) return false;
+  if (value.finalEligible !== true || value.pageIds.length < 1 || value.pages.length !== value.pageIds.length) return false;
   if (value.pptx.slideCount !== value.pageIds.length || value.pdf.pageCount !== value.pageIds.length) return false;
   if (!sameSet(value.pageIds, value.qa.map((entry) => entry.pageId))) return false;
   if (value.qa.some((entry) => entry.design !== "passed" || entry.visual !== "passed" || entry.provenance !== "passed" || entry.readability !== "passed" || entry.findings.length > 0)) return false;

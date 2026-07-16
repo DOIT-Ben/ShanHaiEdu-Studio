@@ -3,50 +3,11 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
-
-const openAiLedgerChannels = {
-  primary: {
-    apiKey: "AGENT_BRAIN_API_KEY",
-    baseUrl: "AGENT_BRAIN_BASE_URL",
-    model: "AGENT_BRAIN_MODEL",
-    source: "agent_brain_primary",
-  },
-  third: {
-    apiKey: "AGENT_BRAIN_THIRD_API_KEY",
-    baseUrl: "AGENT_BRAIN_THIRD_BASE_URL",
-    model: "AGENT_BRAIN_THIRD_MODEL",
-    source: "agent_brain_third",
-  },
-  fallback: {
-    apiKey: "AGENT_BRAIN_FALLBACK_API_KEY",
-    baseUrl: "AGENT_BRAIN_FALLBACK_BASE_URL",
-    model: "AGENT_BRAIN_FALLBACK_MODEL",
-    source: "agent_brain_fallback",
-  },
-};
-
-const imageChannels = {
-  primary: {
-    apiKey: "IMAGEGEN_MYSELF_PRIMARY_API_KEY",
-    baseUrl: "IMAGEGEN_MYSELF_PRIMARY_BASE_URL",
-    model: "IMAGEGEN_MYSELF_MODEL",
-  },
-  free: {
-    apiKey: "IMAGEGEN_FREE_API_KEY",
-    baseUrl: "IMAGEGEN_FREE_BASE_URL",
-    model: "IMAGEGEN_FREE_MODEL",
-  },
-  free_primary: {
-    apiKey: "IMAGEGEN_FREE_PRIMARY_API_KEY",
-    baseUrl: "IMAGEGEN_FREE_PRIMARY_BASE_URL",
-    model: "IMAGEGEN_FREE_PRIMARY_MODEL",
-  },
-  myself_fallback: {
-    apiKey: "IMAGEGEN_MYSELF_FALLBACK_API_KEY",
-    baseUrl: "IMAGEGEN_MYSELF_FALLBACK_BASE_URL",
-    model: "IMAGEGEN_MYSELF_FALLBACK_MODEL",
-  },
-};
+import {
+  resolveProviderLedgerManifestRoot,
+  resolveProviderLedgerValueSource,
+  resolveProviderRuntimeContract,
+} from "../src/server/provider-ledger/provider-ledger-contract.mjs";
 
 export async function runProductionPreflight({ cwd = process.cwd(), env = process.env } = {}) {
   const checks = [
@@ -60,11 +21,11 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
     checkDatabaseUrl(cwd, env),
     checkAdminReadiness(cwd, env),
     checkArtifactStorageRoot(cwd, env),
-    checkOpenAiProvider(env),
+    checkOpenAiProvider(cwd, env),
     checkCozePptProvider(env),
-    checkImageProvider(env),
+    checkImageProvider(cwd, env),
     checkVideoProvider(env),
-    checkTtsProvider(env),
+    checkTtsProvider(cwd, env),
   ];
 
   return {
@@ -231,22 +192,32 @@ function checkArtifactStorageRoot(cwd, env) {
   });
 }
 
-function checkOpenAiProvider(env) {
-  if (hasAll(env, ["OPENAI_API_KEY", "OPENAI_MODEL"])) {
-    return buildCheck("provider-openai", true, {
-      message: "OpenAI-compatible provider env is present.",
-      source: "openai_env",
+function checkOpenAiProvider(cwd, env) {
+  try {
+    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "agent_brain");
+    if (contract.kind !== "agent_brain_responses") throw new Error("agent_brain_contract_kind_invalid");
+    const selectedChannel = providerValue(valueSource, contract.selectedChannelEnv)?.toLowerCase();
+    const channel = Object.values(contract.purposeChannels).find((entry) => entry.channel === selectedChannel);
+    if (!selectedChannel || !channel) {
+      return buildCheck("provider-openai", false, {
+        message: "Select a ledger-declared Agent Brain channel for production.",
+        missing: selectedChannel ? [] : [contract.selectedChannelEnv],
+        source: "provider_ledger:invalid_channel",
+      });
+    }
+    const missing = missingProviderValues(valueSource, [channel.credentialEnv, channel.baseUrlEnv, channel.modelEnv]);
+    const reasoning = providerValue(valueSource, contract.reasoning.env)?.toLowerCase() || contract.reasoning.default;
+    const reasoningAllowed = contract.reasoning.allowed.includes(reasoning);
+    return buildCheck("provider-openai", missing.length === 0 && reasoningAllowed, {
+      message: missing.length === 0 && reasoningAllowed
+        ? "Agent Brain matches the ledger runtime contract."
+        : "Agent Brain does not satisfy the ledger runtime contract.",
+      missing,
+      source: `provider_ledger:${selectedChannel}`,
     });
+  } catch {
+    return invalidLedgerCheck("provider-openai", "Agent Brain ledger runtime contract is unavailable or invalid.");
   }
-
-  const channelName = (env.AGENT_BRAIN_CHANNEL?.trim() || "primary").toLowerCase();
-  const channel = openAiLedgerChannels[channelName] ?? openAiLedgerChannels.primary;
-  const missing = missingEnv(env, [channel.apiKey, channel.model]);
-  return buildCheck("provider-openai", missing.length === 0, {
-    message: missing.length === 0 ? "OpenAI-compatible ledger provider env is present." : "OpenAI-compatible provider env is missing.",
-    missing,
-    source: channel.source,
-  });
 }
 
 function checkCozePptProvider(env) {
@@ -258,15 +229,21 @@ function checkCozePptProvider(env) {
   });
 }
 
-function checkImageProvider(env) {
-  const channelName = env.IMAGE_PROVIDER_CHANNEL?.trim() || "primary";
-  const channel = imageChannels[channelName] ?? imageChannels.primary;
-  const missing = missingEnv(env, [channel.apiKey, channel.baseUrl]);
-  return buildCheck("provider-image", missing.length === 0, {
-    message: missing.length === 0 ? "Image provider env is present." : "Image provider env is missing.",
-    missing,
-    source: channelName,
-  });
+function checkImageProvider(cwd, env) {
+  try {
+    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "image_generation");
+    if (contract.kind !== "minimax_image") throw new Error("image_contract_kind_invalid");
+    const selectedChannel = providerValue(valueSource, contract.selectedChannelEnv)?.toLowerCase();
+    const missing = missingProviderValues(valueSource, [contract.credentialEnv, contract.baseUrlEnv, contract.modelEnv]);
+    const ok = selectedChannel === contract.requiredChannel && missing.length === 0;
+    return buildCheck("provider-image", ok, {
+      message: ok ? "MiniMax image generation matches the ledger runtime contract." : "Only the ledger-declared MiniMax image channel is release-ready.",
+      missing: selectedChannel ? missing : [contract.selectedChannelEnv, ...missing],
+      source: selectedChannel === contract.requiredChannel ? "provider_ledger:minimax" : "provider_ledger:invalid_channel",
+    });
+  } catch {
+    return invalidLedgerCheck("provider-image", "Image ledger runtime contract is unavailable or invalid.");
+  }
 }
 
 function checkVideoProvider(env) {
@@ -290,12 +267,41 @@ function checkVideoProvider(env) {
   });
 }
 
-function checkTtsProvider(env) {
-  const hasKey = Boolean(env.MINIMAX_TTS_API_KEY?.trim() || env.MINIMAX_API_KEY?.trim());
-  return buildCheck("provider-tts", hasKey, {
-    message: hasKey ? "MiniMax TTS provider env is present." : "MiniMax TTS provider env is missing.",
-    missing: hasKey ? [] : ["MINIMAX_TTS_API_KEY"],
-    source: "minimax_tts",
+function checkTtsProvider(cwd, env) {
+  try {
+    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "tts_minimax");
+    if (contract.kind !== "minimax_tts") throw new Error("tts_contract_kind_invalid");
+    const selectedMode = providerValue(valueSource, contract.selectedModeEnv)?.toLowerCase();
+    const missing = missingProviderValues(valueSource, [contract.credentialEnv, contract.baseUrlEnv, contract.modelEnv]);
+    const ok = selectedMode === contract.requiredMode && missing.length === 0;
+    return buildCheck("provider-tts", ok, {
+      message: ok ? "MiniMax TTS matches the ledger runtime contract." : "MiniMax TTS requires the ledger-declared mode, key, base URL, and model.",
+      missing: selectedMode ? missing : [contract.selectedModeEnv, ...missing],
+      source: selectedMode === contract.requiredMode ? "provider_ledger:minimax" : "provider_ledger:invalid_mode",
+    });
+  } catch {
+    return invalidLedgerCheck("provider-tts", "TTS ledger runtime contract is unavailable or invalid.");
+  }
+}
+
+function resolveRuntimeProvider(cwd, env, capability) {
+  const ledgerRoot = resolveProviderLedgerManifestRoot({ cwd, env });
+  return {
+    contract: resolveProviderRuntimeContract({ ledgerRoot, capability }),
+    valueSource: resolveProviderLedgerValueSource({
+      ledgerRoot,
+      capability,
+      ambientEnv: env,
+      explicitLedgerRoot: Boolean(env.SHANHAI_PROVIDER_LEDGER_ROOT?.trim()),
+    }),
+  };
+}
+
+function invalidLedgerCheck(id, message) {
+  return buildCheck(id, false, {
+    message,
+    missing: ["provider-ledger-runtime-contract"],
+    source: "provider_ledger:invalid_contract",
   });
 }
 
@@ -313,6 +319,15 @@ function buildCheck(id, ok, detail) {
 
 function missingEnv(env, keys) {
   return keys.filter((key) => !env[key]?.trim());
+}
+
+function missingProviderValues(valueSource, keys) {
+  return keys.filter((key) => !providerValue(valueSource, key));
+}
+
+function providerValue(valueSource, key) {
+  const value = valueSource.values[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function hasAll(env, keys) {

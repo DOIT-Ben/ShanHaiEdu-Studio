@@ -1,70 +1,44 @@
-# ShanHaiEdu 架构文档入口
+# ShanHaiEdu 当前架构入口
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
-本文是架构文档导航。架构文档只记录长期结构、边界、职责和决策，不承载单阶段开发流水账。
+本目录只保留当前架构不变量、V1.0重构设计和已接受ADR。历史架构包、早期五平面/十二系统材料和已被覆盖的ADR已归档。
 
-## 1. 必读顺序
+## 当前设计基线
 
-```text
-docs\architecture\2026-07-09-山海智教智能体-统一口径与工作准则.md
-docs\architecture\2026-07-09-山海智教智能体-核心设计串联.md
-docs\architecture\2026-07-09-山海智教智能体-workbench-five-planes.md
-docs\architecture\2026-07-09-山海智教智能体-workbench-twelve-systems.md
-docs\architecture\2026-07-09-山海智教智能体-MVP1-上下文契约与门禁规划.md
-```
+- `V1.0 重构设计.md`：把产品收敛为Main Agent唯一编排、工作流能力原子Tool化、服务端守门和assistant-ui实时投影的目标架构。
+- 该设计覆盖旧宏节点、外层计划器、forced-next-tool、approve自动推进和固定阶段UI的生产控制权；历史文档不得恢复这些路径。
 
-需要通用架构背景时，再读：
+## 架构不变量
 
-```text
-docs\architecture\智能体设计架构\README.md
-docs\architecture\智能体设计架构\patterns\01-conversation-context-compaction.md
-docs\architecture\智能体设计架构\patterns\02-node-contract-control.md
-docs\architecture\智能体设计架构\patterns\03-memory-boundaries.md
-```
+- Project、TaskBrief、IntentGrant、IntentEpoch和Artifact版本是跨轮状态真源。
+- 产品Main Agent是业务Tool选择、下一步、Observation、Replan、重试和停止的唯一编排者。
+- 原生function-call + Observation + ReAct是唯一生产业务控制循环；工作流、宏节点、Capability计划和阶段模板只能作为参考策略、迁移证据或展示投影。
+- 高层业务能力必须拆为可独立发现、执行、校验和恢复的原子Tool；Tool不得自行选择下一业务Tool。
+- `ToolExecutionGateway`强制ExecutionEnvelope、ActionPolicy、幂等和实际参数对账。
+- ToolInvocation、ValidationReport、Observation、Artifact、GenerationJob和事件按同一结果原子提交。
+- checkpoint与SemanticSnapshot保存跨轮目标、约束、排除项、计划revision、可信Artifact和Observation引用。
+- assistant-ui只消费项目自有MessagePart和AgentEventEnvelope，不成为业务真源。
+- Provider和Skill通过Adapter与Binding Policy接入，不进入React组件，不取得编排权。
+- mock、deterministic、placeholder和degraded产物不能提升为生产Artifact。
 
-## 2. 架构不变量
+## 当前已接受ADR
 
-- Project 是中心，不是单条消息。
-- Agent 是调度者，不是事实源。
-- ContextPackage 是模型输入边界，不是完整长对话。
-- ToolRouter 是工具执行边界，模型只能表达 tool intent。
-- Artifact / Evidence / Quality Gate 决定真实完成状态。
-- HumanGate 和 PlanGuard 不能被自然语言、按钮、模型自评或 provider 回包绕过。
+1. `decisions\2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md`
+2. `decisions\2026-07-14-adr-main-agent-react-checkpoint-compaction.md`
+3. `decisions\2026-07-14-adr-r5-ppt-design-candidate-boundary.md`
+4. `decisions\2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md`
 
-## 3. ADR 目录
+入口：`decisions\README.md`。
 
-新的关键架构决策写入：
+## 当前合同
 
-```text
-docs\architecture\decisions\YYYY-MM-DD-adr-主题.md
-```
+- Provider台账绑定：`..\contracts\provider-ledger-runtime-contract.md`
+- 产品不变量：`..\product\current-requirements-baseline.md`
+- 当前Runner完整性阻塞：`..\mainlines\current-mainline-status.md`
 
-ADR 应包含：背景、决策、取舍、风险、验证方式、回退方式。
+## 未来候选
 
-已接受的关键决策：
+Codex SDK、互动课件和V1.5成果工作区只从 `..\roadmap\architecture\README.md` 进入。它们不改变当前Runtime、控制权或V1-9顺序。
 
-```text
-docs\architecture\decisions\2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md
-docs\architecture\decisions\2026-07-14-adr-v1-1采用assistant-ui与AG-UI兼容事件层.md
-```
-
-## 4. V1 Agent 与交付质量专题
-
-PPT、视频、受控 ReAct、节点合同、质量量表、提示词、框架审计和真实 API 实验统一从以下入口读取：
-
-```text
-docs\architecture\2026-07-11-v1-agent-delivery-quality\README.md
-```
-
-该专题属于候选设计与证据包，不覆盖产品需求基线或已接受 ADR。实施时必须先核对 `docs\mainlines\current-mainline-status.md` 的最新代码事实。
-
-## 5. V1 后 Runtime 候选
-
-以下文件只保存 V1 完成后的复审候选，不改变当前 Runtime、Main Agent、ToolRouter、HumanGate 或 V1 执行顺序：
-
-```text
-docs\architecture\用Codex-SDK加强shanhai-studio-V1.md
-```
-
-该候选原由两条同提交的远端讨论分支保存；项目主线收敛后以本文件为唯一仓内副本，未来实施前必须重新核对届时代码与官方能力。
+本次权威切换前的Streaming阶段与旧V1-9计划保存在 `..\archive\2026-07-16-v1-agent-refactor-authority-switch\`，仅作历史证据。历史材料索引见 `..\archive\README.md`，默认不读取。

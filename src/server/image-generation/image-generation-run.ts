@@ -6,11 +6,24 @@ import path from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
+import {
+  resolveProviderLedgerRuntimeContract,
+  resolveProviderLedgerValueBag,
+} from "@/server/provider-ledger/provider-ledger-adapter";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
+import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { PptAssetRequest, PptGeneratedAsset } from "@/server/ppt-quality/ppt-asset-types";
 import { buildPptAssetImageGenerationRequest } from "@/server/ppt-quality/ppt-image-provider-request";
-import { generateImageWithExternalWrapper, generateImageWithMiniMaxCli } from "./image-provider-wrapper-run";
-import { generateImageWithCurlProvider } from "./image-provider-curl-run";
+
+export type ImageGenerationFileEvidence = {
+  fileName: string;
+  localOutput: string;
+  bytes: number;
+  sha256: string;
+  mime: string;
+  width?: number;
+  height?: number;
+};
 
 export type ImageGenerationResult = {
   fileName: string;
@@ -19,269 +32,228 @@ export type ImageGenerationResult = {
   sha256: string;
   imageValid: true;
   mime: "image/png" | "image/jpeg";
+  provider: "minimax";
+  model: string;
+  width: number;
+  height: number;
+  promptDigest: string;
+  rawAsset: ImageGenerationFileEvidence;
+  normalizedAsset: ImageGenerationFileEvidence & {
+    mime: "image/png" | "image/jpeg";
+    width: number;
+    height: number;
+  };
 };
 
-type ImageProviderConfig = {
-  channel: string;
+type MiniMaxImageProviderConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
   timeoutMs: number;
-  transparentAssetFallbackCommand: string | null;
-  wrapperScript: string | null;
-  wrapperPowerShell: string;
-  curlProvider: boolean;
-  minimaxCliScript: string | null;
+  backgroundRemovalCommand: string | null;
 };
 
 const MIN_IMAGE_BYTES = 32;
 const execFileAsync = promisify(execFile);
 
-const channelEnvMap = {
-  primary: {
-    apiKey: "IMAGEGEN_MYSELF_PRIMARY_API_KEY",
-    baseUrl: "IMAGEGEN_MYSELF_PRIMARY_BASE_URL",
-    model: "IMAGEGEN_MYSELF_MODEL",
-  },
-  free: {
-    apiKey: "IMAGEGEN_FREE_API_KEY",
-    baseUrl: "IMAGEGEN_FREE_BASE_URL",
-    model: "IMAGEGEN_FREE_MODEL",
-  },
-  free_primary: {
-    apiKey: "IMAGEGEN_FREE_PRIMARY_API_KEY",
-    baseUrl: "IMAGEGEN_FREE_PRIMARY_BASE_URL",
-    model: "IMAGEGEN_FREE_PRIMARY_MODEL",
-  },
-  myself_fallback: {
-    apiKey: "IMAGEGEN_MYSELF_FALLBACK_API_KEY",
-    baseUrl: "IMAGEGEN_MYSELF_FALLBACK_BASE_URL",
-    model: "IMAGEGEN_MYSELF_FALLBACK_MODEL",
-  },
-  minimax: {
-    apiKey: "MINIMAX_API_KEY",
-    baseUrl: "MINIMAX_BASE_URL",
-    model: "MINIMAX_IMAGE_MODEL",
-  },
-} as const;
-
 export async function generateImageFromArtifact(input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
+  userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
+  businessSkillContext?: BusinessSkillContext;
 }): Promise<ImageGenerationResult> {
   const config = readConfig(process.env);
-  const response = await fetch(buildImageGenerationsUrl(config.baseUrl), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.model,
-      prompt: buildPrompt(input.project, input.artifact),
-      size: "1024x1024",
-      quality: "low",
-      response_format: "b64_json",
-    }),
-    signal: AbortSignal.timeout(config.timeoutMs),
-  });
-
-  if (!response.ok) {
-    throw new Error("image_generation_request_failed");
-  }
-
-  const payload = await response.json();
-  const imageResult = extractImageResult(payload);
-  const buffer = imageResult.kind === "b64" ? imageResult.buffer : await downloadImage(imageResult.url, config.timeoutMs);
+  const prompt = buildImageGenerationPrompt(input);
+  const providerBuffer = await requestMiniMaxImage({ config, prompt, aspectRatio: "16:9" });
+  const buffer = await normalizeMiniMaxProviderFormat(providerBuffer);
   const validation = validateImageBuffer(buffer);
   if (!validation.valid) {
     throw new Error("invalid_image_output");
   }
 
-  const fileName = `${sanitizeFileSegment(input.project.id)}-${Date.now()}-classroom-visual${validation.extension}`;
+  const sourceMetadata = await inspectImageMetadata(providerBuffer);
+  const suffix = `${sanitizeFileSegment(input.project.id)}-${Date.now()}`;
+  const rawFileName = `${suffix}-provider-raw${sourceMetadata.extension}`;
+  const rawStored = writeLocalArtifact({
+    category: "image-artifacts",
+    fileName: rawFileName,
+    buffer: providerBuffer,
+  });
+  const fileName = `${suffix}-normalized${validation.extension}`;
   const stored = writeLocalArtifact({
     category: "image-artifacts",
     fileName,
     buffer,
   });
 
+  const normalizedSha256 = sha256(buffer);
   return {
     fileName,
     localOutput: stored.localOutput,
     bytes: buffer.length,
-    sha256: createHash("sha256").update(buffer).digest("hex"),
+    sha256: normalizedSha256,
     imageValid: true,
     mime: validation.mime,
+    provider: "minimax",
+    model: config.model,
+    width: validation.width,
+    height: validation.height,
+    promptDigest: sha256(Buffer.from(prompt, "utf8")),
+    rawAsset: {
+      fileName: rawFileName,
+      localOutput: rawStored.localOutput,
+      bytes: providerBuffer.length,
+      sha256: sha256(providerBuffer),
+      mime: sourceMetadata.mime,
+      ...(sourceMetadata.width ? { width: sourceMetadata.width } : {}),
+      ...(sourceMetadata.height ? { height: sourceMetadata.height } : {}),
+    },
+    normalizedAsset: {
+      fileName,
+      localOutput: stored.localOutput,
+      bytes: buffer.length,
+      sha256: normalizedSha256,
+      mime: validation.mime,
+      width: validation.width,
+      height: validation.height,
+    },
   };
 }
 
 export async function generatePptAssetImage(request: PptAssetRequest): Promise<PptGeneratedAsset> {
   const config = readConfig(process.env);
   const providerRequest = buildPptAssetImageGenerationRequest({ request, model: config.model });
-  if (config.channel === "minimax") return generatePptAssetImageWithMiniMax({ request, providerRequest, config });
-  if (config.curlProvider) return generatePptAssetImageWithCurl({ request, providerRequest, config });
-  if (config.wrapperScript) return generatePptAssetImageWithWrapper({ request, providerRequest, config });
-  let clientRequestId = randomUUID();
-  let response = await requestPptAssetGeneration({ config, body: providerRequest.body, clientRequestId });
-  let usedTransparencyFallback = false;
+  return generatePptAssetImageWithMiniMax({ request, providerRequest, config });
+}
 
-  if (!response.ok && request.transparentBackground && config.transparentAssetFallbackCommand) {
-    const responseText = await response.text();
-    if (isTransparentBackgroundUnsupported(responseText)) {
-      clientRequestId = randomUUID();
-      response = await requestPptAssetGeneration({
-        config,
-        clientRequestId,
-        body: buildOpaqueForegroundFallbackBody(providerRequest.body),
-      });
-      usedTransparencyFallback = true;
-    }
+async function generatePptAssetImageWithMiniMax(input: {
+  request: PptAssetRequest;
+  providerRequest: ReturnType<typeof buildPptAssetImageGenerationRequest>;
+  config: MiniMaxImageProviderConfig;
+}): Promise<PptGeneratedAsset> {
+  const prompt = input.request.transparentBackground
+    ? String(buildOpaqueForegroundFallbackBody(input.providerRequest.body).prompt)
+    : String(input.providerRequest.body.prompt);
+  const raw = await requestMiniMaxImage({ config: input.config, prompt, aspectRatio: input.request.aspectRatio });
+  const rawMetadata = await inspectPptAssetFileMetadata(raw, "ppt_asset_raw_image_evidence_incomplete");
+  let processed = await normalizeMiniMaxProviderFormat(raw);
+  const chain: PptGeneratedAsset["processingChain"] = [];
+  if (!processed.equals(raw)) {
+    chain.push({ operation: "format_conversion", sourceSha256: sha256(raw), targetSha256: sha256(processed) });
   }
-
-  if (!response.ok) throw new Error(`ppt_asset_image_generation_request_failed:http_${response.status}`);
-
-  const payload = await response.json();
-  const imageResult = extractImageResult(payload);
-  const rawBuffer = imageResult.kind === "b64" ? imageResult.buffer : await downloadImage(imageResult.url, config.timeoutMs);
-  let processedBuffer = rawBuffer;
-  const processingChain: PptGeneratedAsset["processingChain"] = [];
-  if (usedTransparencyFallback) {
-    processedBuffer = await removeOpaqueBackground({ buffer: rawBuffer, command: config.transparentAssetFallbackCommand! });
-    processingChain.push({
-      operation: "remove_background",
-      sourceSha256: sha256(rawBuffer),
-      targetSha256: sha256(processedBuffer),
-    });
+  if (input.request.transparentBackground) {
+    if (!input.config.backgroundRemovalCommand) throw new Error("ppt_asset_background_remover_not_configured");
+    const backgroundRemoved = await removeOpaqueBackground({ buffer: processed, command: input.config.backgroundRemovalCommand });
+    chain.push({ operation: "remove_background", sourceSha256: sha256(processed), targetSha256: sha256(backgroundRemoved) });
+    processed = backgroundRemoved;
   }
-
-  const buffer = await normalizePptAssetBuffer(processedBuffer, request);
-  if (!buffer.equals(processedBuffer)) {
-    processingChain.push({
-      operation: "resize",
-      sourceSha256: sha256(processedBuffer),
-      targetSha256: sha256(buffer),
-    });
+  const buffer = await normalizePptAssetBuffer(processed, input.request);
+  if (!buffer.equals(processed)) {
+    chain.push({ operation: "resize", sourceSha256: sha256(processed), targetSha256: sha256(buffer) });
   }
   const validation = validateImageBuffer(buffer);
-  if (!validation.valid) throw new Error("invalid_ppt_asset_image_output");
-  if (request.transparentBackground && !hasPngAlpha(buffer)) throw new Error("ppt_asset_transparent_background_not_verified");
+  if (!validation.valid || (input.request.transparentBackground && !hasPngAlpha(buffer))) {
+    throw new Error("invalid_ppt_asset_image_output");
+  }
 
-  const fileName = `${sanitizeFileSegment(request.assetId)}-${Date.now()}${validation.extension}`;
-  const stored = writeLocalArtifact({ category: "image-artifacts", fileName, buffer });
-  return {
-    fileName,
-    storageRef: stored.localOutput,
+  const suffix = `${sanitizeFileSegment(input.request.assetId)}-${Date.now()}`;
+  const rawFileName = `${suffix}-provider-raw${rawMetadata.extension}`;
+  const normalizedFileName = `${suffix}-normalized${validation.extension}`;
+  const rawStored = writeLocalArtifact({ category: "image-artifacts", fileName: rawFileName, buffer: raw });
+  const normalizedStored = writeLocalArtifact({ category: "image-artifacts", fileName: normalizedFileName, buffer });
+  const rawAsset = {
+    fileName: rawFileName,
+    storageRef: rawStored.localOutput,
+    sha256: sha256(raw),
+    bytes: raw.length,
+    width: rawMetadata.width,
+    height: rawMetadata.height,
+    mime: rawMetadata.mime,
+  } as const;
+  const normalizedAsset = {
+    fileName: normalizedFileName,
+    storageRef: normalizedStored.localOutput,
     sha256: sha256(buffer),
     bytes: buffer.length,
     width: validation.width,
     height: validation.height,
     mime: validation.mime,
-    transparentBackgroundVerified: request.transparentBackground ? hasPngAlpha(buffer) : false,
-    provider: config.channel,
-    model: config.model,
-    clientRequestId,
-    providerRequestId: extractProviderRequestId(response, payload),
-    providerTaskId: null,
-    sentReferenceAssetIds: providerRequest.evidence.sentReferenceAssetIds,
-    processingChain,
-  };
-}
-
-async function generatePptAssetImageWithMiniMax(input: { request: PptAssetRequest; providerRequest: ReturnType<typeof buildPptAssetImageGenerationRequest>; config: ImageProviderConfig }): Promise<PptGeneratedAsset> {
-  if (!input.config.minimaxCliScript) throw new Error("missing_MINIMAX_CLI_SCRIPT");
-  const raw = await generateImageWithMiniMaxCli({ cliScript: input.config.minimaxCliScript, prompt: input.request.transparentBackground ? String(buildOpaqueForegroundFallbackBody(input.providerRequest.body).prompt) : String(input.providerRequest.body.prompt), aspectRatio: input.request.aspectRatio, timeoutMs: input.config.timeoutMs });
-  let processed = raw; const chain: PptGeneratedAsset["processingChain"] = [];
-  if (!input.request.transparentBackground) {
-    processed = await sharp(raw).png().toBuffer();
-    if (!processed.equals(raw)) chain.push({ operation: "format_conversion", sourceSha256: sha256(raw), targetSha256: sha256(processed) });
-  }
-  if (input.request.transparentBackground) { if (!input.config.transparentAssetFallbackCommand) throw new Error("ppt_asset_background_remover_not_configured"); processed = await removeOpaqueBackground({ buffer: raw, command: input.config.transparentAssetFallbackCommand }); chain.push({ operation: "remove_background", sourceSha256: sha256(raw), targetSha256: sha256(processed) }); }
-  const buffer = await normalizePptAssetBuffer(processed, input.request); if (!buffer.equals(processed)) chain.push({ operation: "resize", sourceSha256: sha256(processed), targetSha256: sha256(buffer) });
-  const validation = validateImageBuffer(buffer); if (!validation.valid || (input.request.transparentBackground && !hasPngAlpha(buffer))) throw new Error("invalid_ppt_asset_image_output");
-  const fileName = `${sanitizeFileSegment(input.request.assetId)}-${Date.now()}${validation.extension}`; const stored = writeLocalArtifact({ category: "image-artifacts", fileName, buffer });
-  return { fileName, storageRef: stored.localOutput, sha256: sha256(buffer), bytes: buffer.length, width: validation.width, height: validation.height, mime: validation.mime, transparentBackgroundVerified: input.request.transparentBackground ? hasPngAlpha(buffer) : false, provider: "minimax", model: input.config.model, clientRequestId: randomUUID(), providerRequestId: null, providerTaskId: null, sentReferenceAssetIds: input.providerRequest.evidence.sentReferenceAssetIds, processingChain: chain };
-}
-
-async function generatePptAssetImageWithCurl(input: { request: PptAssetRequest; providerRequest: ReturnType<typeof buildPptAssetImageGenerationRequest>; config: ImageProviderConfig }): Promise<PptGeneratedAsset> {
-  const body = input.request.transparentBackground ? buildOpaqueForegroundFallbackBody(input.providerRequest.body) : input.providerRequest.body;
-  const payload = await generateImageWithCurlProvider({ url: buildImageGenerationsUrl(input.config.baseUrl), apiKey: input.config.apiKey, body, timeoutMs: input.config.timeoutMs });
-  const result = extractImageResult(payload); const raw = result.kind === "b64" ? result.buffer : await downloadImage(result.url, input.config.timeoutMs);
-  let processed = raw; const chain: PptGeneratedAsset["processingChain"] = [];
-  if (input.request.transparentBackground) { if (!input.config.transparentAssetFallbackCommand) throw new Error("ppt_asset_background_remover_not_configured"); processed = await removeOpaqueBackground({ buffer: raw, command: input.config.transparentAssetFallbackCommand }); chain.push({ operation: "remove_background", sourceSha256: sha256(raw), targetSha256: sha256(processed) }); }
-  const buffer = await normalizePptAssetBuffer(processed, input.request); if (!buffer.equals(processed)) chain.push({ operation: "resize", sourceSha256: sha256(processed), targetSha256: sha256(buffer) });
-  const validation = validateImageBuffer(buffer); if (!validation.valid || (input.request.transparentBackground && !hasPngAlpha(buffer))) throw new Error("invalid_ppt_asset_image_output");
-  const fileName = `${sanitizeFileSegment(input.request.assetId)}-${Date.now()}${validation.extension}`; const stored = writeLocalArtifact({ category: "image-artifacts", fileName, buffer });
-  return { fileName, storageRef: stored.localOutput, sha256: sha256(buffer), bytes: buffer.length, width: validation.width, height: validation.height, mime: validation.mime, transparentBackgroundVerified: input.request.transparentBackground ? hasPngAlpha(buffer) : false, provider: `${input.config.channel}_curl`, model: input.config.model, clientRequestId: randomUUID(), providerRequestId: null, providerTaskId: null, sentReferenceAssetIds: input.providerRequest.evidence.sentReferenceAssetIds, processingChain: chain };
-}
-
-async function generatePptAssetImageWithWrapper(input: {
-  request: PptAssetRequest;
-  providerRequest: ReturnType<typeof buildPptAssetImageGenerationRequest>;
-  config: ImageProviderConfig;
-}): Promise<PptGeneratedAsset> {
-  const clientRequestId = randomUUID();
-  const opaqueFallback = input.request.transparentBackground;
-  const prompt = opaqueFallback
-    ? String(buildOpaqueForegroundFallbackBody(input.providerRequest.body).prompt)
-    : String(input.providerRequest.body.prompt);
-  const rawBuffer = await generateImageWithExternalWrapper({
-    powerShell: input.config.wrapperPowerShell,
-    script: input.config.wrapperScript!,
-    apiKey: input.config.apiKey,
-    baseUrl: input.config.baseUrl,
-    model: input.config.model,
-    prompt,
-    size: String(input.providerRequest.body.size),
-    quality: String(input.providerRequest.body.quality),
-    timeoutMs: input.config.timeoutMs,
-  });
-  let processedBuffer = rawBuffer;
-  const processingChain: PptGeneratedAsset["processingChain"] = [];
-  if (opaqueFallback) {
-    if (!input.config.transparentAssetFallbackCommand) throw new Error("ppt_asset_background_remover_not_configured");
-    processedBuffer = await removeOpaqueBackground({ buffer: rawBuffer, command: input.config.transparentAssetFallbackCommand });
-    processingChain.push({ operation: "remove_background", sourceSha256: sha256(rawBuffer), targetSha256: sha256(processedBuffer) });
-  }
-  const buffer = await normalizePptAssetBuffer(processedBuffer, input.request);
-  if (!buffer.equals(processedBuffer)) processingChain.push({ operation: "resize", sourceSha256: sha256(processedBuffer), targetSha256: sha256(buffer) });
-  const validation = validateImageBuffer(buffer);
-  if (!validation.valid) throw new Error("invalid_ppt_asset_image_output");
-  if (input.request.transparentBackground && !hasPngAlpha(buffer)) throw new Error("ppt_asset_transparent_background_not_verified");
-  const fileName = `${sanitizeFileSegment(input.request.assetId)}-${Date.now()}${validation.extension}`;
-  const stored = writeLocalArtifact({ category: "image-artifacts", fileName, buffer });
+  } as const;
   return {
-    fileName, storageRef: stored.localOutput, sha256: sha256(buffer), bytes: buffer.length,
-    width: validation.width, height: validation.height, mime: validation.mime,
+    fileName: normalizedAsset.fileName,
+    storageRef: normalizedAsset.storageRef,
+    sha256: normalizedAsset.sha256,
+    bytes: normalizedAsset.bytes,
+    width: normalizedAsset.width,
+    height: normalizedAsset.height,
+    mime: normalizedAsset.mime,
     transparentBackgroundVerified: input.request.transparentBackground ? hasPngAlpha(buffer) : false,
-    provider: `${input.config.channel}_wrapper`, model: input.config.model, clientRequestId,
-    providerRequestId: null, providerTaskId: null,
-    sentReferenceAssetIds: input.providerRequest.evidence.sentReferenceAssetIds, processingChain,
+    provider: "minimax",
+    model: input.config.model,
+    clientRequestId: randomUUID(),
+    providerRequestId: null,
+    providerTaskId: null,
+    sentReferenceAssetIds: input.providerRequest.evidence.sentReferenceAssetIds,
+    rawAsset,
+    normalizedAsset,
+    processingChain: chain,
   };
 }
 
-async function requestPptAssetGeneration(input: {
-  config: ImageProviderConfig;
-  body: Record<string, unknown>;
-  clientRequestId: string;
-}): Promise<Response> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await fetch(buildImageGenerationsUrl(input.config.baseUrl), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${input.config.apiKey}`,
-          "Content-Type": "application/json",
-          "X-Client-Request-Id": input.clientRequestId,
-        },
-        body: JSON.stringify(input.body),
-        signal: AbortSignal.timeout(input.config.timeoutMs),
-      });
-    } catch (error) {
-      lastError = error;
-    }
+async function requestMiniMaxImage(input: { config: MiniMaxImageProviderConfig; prompt: string; aspectRatio: string }): Promise<Buffer> {
+  const response = await fetch(buildMiniMaxImageGenerationUrl(input.config.baseUrl), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.config.apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model: input.config.model,
+      prompt: input.prompt,
+      aspect_ratio: input.aspectRatio,
+      response_format: "base64",
+      n: 1,
+      prompt_optimizer: false,
+    }),
+    signal: AbortSignal.timeout(input.config.timeoutMs),
+  });
+  if (!response.ok) throw new Error(`minimax_image_generation_request_failed:http_${response.status}`);
+  const payload = await response.json() as {
+    base_resp?: { status_code?: number | string | null; status_msg?: unknown };
+    data?: { image_base64?: unknown };
+  };
+  const statusCode = payload.base_resp?.status_code;
+  if (statusCode !== undefined && statusCode !== null && String(statusCode) !== "0") {
+    const statusMessage = sanitizeMiniMaxStatusMessage(payload.base_resp?.status_msg);
+    throw new Error(`minimax_image_generation_request_failed:status_${String(statusCode).replace(/[^A-Za-z0-9_-]/g, "_")}${statusMessage ? `:${statusMessage}` : ""}`);
   }
-  throw lastError;
+  const images = payload.data?.image_base64;
+  if (!Array.isArray(images) || typeof images[0] !== "string" || !images[0].trim()) {
+    throw new Error("minimax_image_generation_response_invalid");
+  }
+  const encoded = images[0].trim().replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/i, "").replace(/\s+/g, "");
+  return Buffer.from(encoded, "base64");
+}
+
+function sanitizeMiniMaxStatusMessage(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+}
+
+async function normalizeMiniMaxProviderFormat(buffer: Buffer): Promise<Buffer> {
+  if (validateImageBuffer(buffer).valid) return buffer;
+  try {
+    return await sharp(buffer).png().toBuffer();
+  } catch {
+    throw new Error("invalid_ppt_asset_image_output");
+  }
+}
+
+export function buildMiniMaxImageGenerationUrl(baseUrl: string) {
+  const normalized = baseUrl.replace(/\/+$/, "").replace(/\/v1$/i, "");
+  return `${normalized}/v1/image_generation`;
 }
 
 function buildOpaqueForegroundFallbackBody(providerBody: Record<string, unknown>): Record<string, unknown> {
@@ -291,10 +263,6 @@ function buildOpaqueForegroundFallbackBody(providerBody: Record<string, unknown>
   };
   delete body.background;
   return body;
-}
-
-function isTransparentBackgroundUnsupported(responseText: string) {
-  return /transparent background is not supported/i.test(responseText);
 }
 
 async function removeOpaqueBackground(input: { buffer: Buffer; command: string }): Promise<Buffer> {
@@ -327,66 +295,26 @@ async function normalizePptAssetBuffer(buffer: Buffer, request: PptAssetRequest)
     .toBuffer();
 }
 
-export function buildImageGenerationsUrl(baseUrl: string) {
-  const normalized = baseUrl.replace(/\/+$/, "");
-  if (/\/v1\/images\/generations$/i.test(normalized)) {
-    return normalized;
+function readConfig(env: NodeJS.ProcessEnv): MiniMaxImageProviderConfig {
+  const runtimeContract = resolveProviderLedgerRuntimeContract({ capability: "image_generation", ambientEnv: env });
+  if (runtimeContract.kind !== "minimax_image") {
+    throw new Error("image_provider_runtime_contract_invalid");
   }
-  if (/\/v1$/i.test(normalized)) {
-    return `${normalized}/images/generations`;
-  }
-  return `${normalized}/v1/images/generations`;
-}
-
-function readConfig(env: NodeJS.ProcessEnv): ImageProviderConfig {
-  const channel = env.IMAGE_PROVIDER_CHANNEL?.trim() || "primary";
-  const channelEnv = channelEnvMap[channel as keyof typeof channelEnvMap] || channelEnvMap.primary;
-  const apiKey = env[channelEnv.apiKey]?.trim();
-  const baseUrl = env[channelEnv.baseUrl]?.trim();
-  if (!apiKey || !baseUrl) {
-    throw new Error("missing_IMAGE_PROVIDER_ENV");
-  }
+  const values = resolveProviderLedgerValueBag({ capability: "image_generation", ambientEnv: env });
+  const channel = values.require(runtimeContract.selectedChannelEnv);
+  if (channel !== runtimeContract.requiredChannel) throw new Error("image_provider_channel_not_allowed");
 
   return {
-    channel,
-    apiKey,
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    model: env[channelEnv.model]?.trim() || env.IMAGEGEN_MYSELF_MODEL?.trim() || "gpt-image-2",
+    apiKey: values.require(runtimeContract.credentialEnv),
+    baseUrl: values.require(runtimeContract.baseUrlEnv).replace(/\/+$/, ""),
+    model: values.require(runtimeContract.modelEnv),
     timeoutMs: Number.parseInt(env.IMAGE_SMOKE_TIMEOUT_MS || env.AIRCODE_PROVIDER_TIMEOUT || "180000", 10),
-    transparentAssetFallbackCommand: env.PPT_ASSET_REMBG_COMMAND?.trim() || null,
-    wrapperScript: env.PPT_ASSET_IMAGEGEN_WRAPPER_SCRIPT?.trim() || null,
-    wrapperPowerShell: env.PPT_ASSET_IMAGEGEN_WRAPPER_POWERSHELL?.trim() || "powershell.exe",
-    curlProvider: env.PPT_ASSET_IMAGE_PROVIDER?.trim() === "curl",
-    minimaxCliScript: env.MINIMAX_CLI_POWERSHELL_SCRIPT?.trim() || null,
+    backgroundRemovalCommand: env.PPT_ASSET_REMBG_COMMAND?.trim() || null,
   };
 }
 
 function sha256(buffer: Buffer) {
   return createHash("sha256").update(buffer).digest("hex");
-}
-
-function extractImageResult(payload: unknown): { kind: "b64"; buffer: Buffer } | { kind: "url"; url: string } {
-  const value = payload as { data?: Array<{ b64_json?: unknown; url?: unknown }> };
-  const first = Array.isArray(value?.data) ? value.data[0] : null;
-  if (!first || typeof first !== "object") {
-    throw new Error("missing_image_result");
-  }
-
-  if (typeof first.b64_json === "string" && first.b64_json.trim()) {
-    return {
-      kind: "b64",
-      buffer: Buffer.from(first.b64_json, "base64"),
-    };
-  }
-
-  if (typeof first.url === "string" && first.url.trim()) {
-    return {
-      kind: "url",
-      url: first.url,
-    };
-  }
-
-  throw new Error("missing_image_payload");
 }
 
 function validateImageBuffer(buffer: Buffer): { valid: true; mime: "image/png" | "image/jpeg"; extension: ".png" | ".jpg"; width: number; height: number } | { valid: false } {
@@ -435,18 +363,6 @@ function readJpegDimensions(buffer: Buffer): { width: number; height: number } |
   return null;
 }
 
-function extractProviderRequestId(response: Response, payload: unknown): string | null {
-  const headerId = response.headers.get("x-request-id")?.trim() || response.headers.get("request-id")?.trim();
-  if (headerId) return headerId;
-  if (payload && typeof payload === "object") {
-    const record = payload as Record<string, unknown>;
-    for (const key of ["request_id", "requestId", "id"]) {
-      if (typeof record[key] === "string" && record[key].trim()) return record[key].trim();
-    }
-  }
-  return null;
-}
-
 function isValidPng(buffer: Buffer) {
   const hasPngSignature = buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   const hasIhdr = buffer.subarray(12, 16).toString("ascii") === "IHDR";
@@ -470,24 +386,104 @@ function isValidJpeg(buffer: Buffer) {
   return hasJpegSignature && hasEndMarker && hasSizeMarker;
 }
 
-async function downloadImage(url: string, timeoutMs: number) {
-  const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
-  if (!response.ok) {
-    throw new Error("image_download_failed");
-  }
-  return Buffer.from(await response.arrayBuffer());
+export function buildImageGenerationPrompt(input: {
+  project: ProjectRecord;
+  artifact: ArtifactRecord;
+  userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
+  businessSkillContext?: BusinessSkillContext;
+}) {
+  const taskBrief = asRecord(input.toolInput?.taskBrief);
+  const goal = optionalText(taskBrief?.goal) || optionalText(input.userInstruction) || input.artifact.summary || input.project.title;
+  const constraints = textList(taskBrief?.constraints);
+  const excludedOutputs = textList(taskBrief?.excludedOutputs);
+  const isVideoAsset = input.artifact.kind === "asset_brief_generate" ||
+    input.businessSkillContext?.semanticSlice.toolName === "generate_video_assets";
+  const toolDetails = ["prompt", "assetType", "purpose", "style", "composition"]
+    .flatMap((key) => {
+      const value = optionalText(input.toolInput?.[key]);
+      return value ? [`${key}: ${value}`] : [];
+    });
+  const skillGuidance = input.businessSkillContext?.semanticSlice.guidance
+    .map((guidance) => guidance.content.trim())
+    .filter(Boolean) ?? [];
+
+  return [
+    `任务目标：${goal}。`,
+    isVideoAsset
+      ? "用途：为脱离教材仍成立的独立创意短片生成当前镜头所需的角色、道具、场景或关键帧参考图；只保留唯一最小课程锚点，不扩张为教案、PPT、成片或整包。"
+      : "用途：为当前 TaskBrief 中的课堂/PPT 视觉任务生成一张可供下游使用的图片资产。",
+    input.project.subject ? `学科语境：${input.project.subject}。` : "",
+    input.project.grade ? `受众语境：${input.project.grade}。` : "",
+    input.project.lessonTopic ? `主题语境：${input.project.lessonTopic}。` : "",
+    constraints.length ? `必须遵守：${constraints.join("；")}。` : "",
+    excludedOutputs.length ? `排除输出：${excludedOutputs.join("、")}。` : "",
+    ...toolDetails,
+    ...skillGuidance,
+    "图片中不要出现品牌、二维码、网址、水印或复杂正文；需要在PPT中编辑的文字不要烘焙进图片。",
+    `可信上游 ${input.artifact.kind}：`,
+    input.artifact.markdownContent.slice(0, 2000),
+  ].filter(Boolean).join("\n");
 }
 
-function buildPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
-  return [
-    "小学六年级数学百分数公开课导入页主视觉。",
-    `课题：${project.lessonTopic || "百分数导入课"}。`,
-    `年级：${project.grade || "六年级"}。`,
-    "纯白背景，真实课堂可理解的生活情境，一张图只表达一个核心问题。",
-    "画面中不要出现品牌、二维码、网址、复杂文字。",
-    "当前 PPT 大纲：",
-    artifact.markdownContent.slice(0, 1600),
-  ].join("\n");
+async function inspectImageMetadata(buffer: Buffer): Promise<{
+  mime: string;
+  extension: string;
+  width?: number;
+  height?: number;
+}> {
+  const basic = validateImageBuffer(buffer);
+  if (basic.valid) {
+    return { mime: basic.mime, extension: basic.extension, width: basic.width, height: basic.height };
+  }
+  try {
+    const metadata = await sharp(buffer).metadata();
+    const format = metadata.format?.toLowerCase();
+    const extension = format === "jpeg" ? ".jpg" : format ? `.${format}` : ".bin";
+    return {
+      mime: format ? `image/${format === "jpg" ? "jpeg" : format}` : "application/octet-stream",
+      extension,
+      ...(metadata.width ? { width: metadata.width } : {}),
+      ...(metadata.height ? { height: metadata.height } : {}),
+    };
+  } catch {
+    return { mime: "application/octet-stream", extension: ".bin" };
+  }
+}
+
+async function inspectPptAssetFileMetadata(
+  buffer: Buffer,
+  reasonCode: string,
+): Promise<{
+  mime: "image/png" | "image/jpeg" | "image/webp";
+  extension: ".png" | ".jpg" | ".webp";
+  width: number;
+  height: number;
+}> {
+  const metadata = await inspectImageMetadata(buffer);
+  if (!metadata.width || !metadata.height) throw new Error(reasonCode);
+  if (metadata.mime === "image/png") {
+    return { mime: metadata.mime, extension: ".png", width: metadata.width, height: metadata.height };
+  }
+  if (metadata.mime === "image/jpeg") {
+    return { mime: metadata.mime, extension: ".jpg", width: metadata.width, height: metadata.height };
+  }
+  if (metadata.mime === "image/webp") {
+    return { mime: metadata.mime, extension: ".webp", width: metadata.width, height: metadata.height };
+  }
+  throw new Error(reasonCode);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function textList(value: unknown) {
+  return Array.isArray(value) ? [...new Set(value.map(optionalText).filter(Boolean))] : [];
 }
 
 function sanitizeFileSegment(value: string) {

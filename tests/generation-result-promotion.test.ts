@@ -314,21 +314,21 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
 });
 
 describe("V1 Stage 1C integration contracts", () => {
-  it("routes PPTX, image, video and conversation Provider results through the unified commit", () => {
-    const paths = [
+  it("routes artifact endpoints through the control-plane atomic commit while retaining the conversation compatibility path", () => {
+    const routePaths = [
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route.ts",
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route.ts",
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route.ts",
-      "src/server/conversation/conversation-turn-service.ts",
     ];
-    for (const relativePath of paths) {
+    for (const relativePath of routePaths) {
       const source = readFileSync(path.join(root, relativePath), "utf8");
-      expect(source).toContain("commitGenerationResult");
+      expect(source).toContain("commitArtifactRouteToolSuccess");
+      expect(source).not.toContain("commitGenerationResult");
       expect(source).not.toMatch(/saveArtifact\([\s\S]{0,800}finishGenerationJob/);
+      expect(source).toContain("runWithProjectExecutionLease");
     }
-    for (const relativePath of paths.slice(0, 3)) {
-      expect(readFileSync(path.join(root, relativePath), "utf8")).toContain("runWithProjectExecutionLease");
-    }
+    expect(readFileSync(path.join(root, "src/server/conversation/conversation-turn-service.ts"), "utf8"))
+      .toContain("commitGenerationResult");
   });
 
   it("upgrades an existing database additively and idempotently", () => {

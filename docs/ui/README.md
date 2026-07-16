@@ -1,17 +1,21 @@
-# UI 文档中心
+# ShanHaiEdu 当前UI入口
 
-日期：2026-07-08
+更新时间：2026-07-16
 
-本目录用于沉淀 ShanHaiEdu 的 UI 设计、工作台体验、视觉美化、组件拆分、浏览器验收和踩坑复盘。
+当前教师工作台以 `assistant-ui` 为唯一目标对话Runtime，项目自有 `MessagePart` 和 `AgentEventEnvelope` 是消息与事件合同。前端只展示服务端事实，不取得Tool编排、Artifact、HumanGate或Quality Gate控制权。
 
-## 子目录
+## 当前入口
 
-| 目录 | 用途 |
-| --- | --- |
-| `frontend-workbench/` | 前端聊天式工作台 UI 主线，包含 M54-A 当前规划、图像参考规格和历史 UI 阶段沉淀。 |
+- `frontend-workbench\README.md`：当前工作台边界与验证入口。
+- `frontend-workbench\assets\references\README.md`：脱敏视觉参考与浏览器证据规则。
+- `..\architecture\decisions\2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md`：消息和控制面边界。
 
-## 规则
+## 固定体验边界
 
-- 新增 UI/交互/视觉/组件体验相关规划，优先放入本目录对应子目录。
-- 跨后端、智能体、部署或生产准备的阶段报告仍放 `docs/stages`。
-- UI 文档必须尽量保留参考图、问题背景、避坑点和验收方式，方便后续复用。
+- 三栏工作台：左侧项目，中间对话，右侧按需成果阅读；中间对话是主视觉。
+- 安静、纯白、工作导向，不做营销Hero、卡片套卡片、无意义渐变或炫技动效。
+- 文本、活动、计划、Tool状态、Artifact、HumanGate和错误均由类型化Part渲染。
+- 教师界面不得出现schema、provider、node_id、storage、debug、local path、token或内部推理。
+- V1发布前真实浏览器只验桌面视口；不新增390px黑盒，除非用户明确要求。
+
+已接受但未进入当前阶段的Demo设计吸收位于 `..\roadmap\ui\README.md`。历史UI路线、规格和阶段报告位于archive，默认不读取。

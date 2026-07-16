@@ -47,7 +47,7 @@ export function MediaWorkbench() {
 }
 
 function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: PasswordAuthUser | null; onLogout?: () => Promise<void> }) {
-  const controller = useWorkbenchController();
+  const controller = useWorkbenchController({ eventDrivenMessages: true });
   const feedbackController = useFeedbackController();
   const [projectSheetOpen, setProjectSheetOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
@@ -86,6 +86,11 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
     setArtifactDrawerGroup(group);
     controller.setSidePanelOpen(false);
     controller.setRailOpen(true);
+  }
+
+  function openConversationArtifact(artifactId: string) {
+    const item = controller.artifacts.find((candidate) => candidate.artifactId === artifactId);
+    if (item) openDetailFromReading(item);
   }
 
   return (
@@ -151,25 +156,30 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
               errorMessage={controller.errorMessage}
               input={controller.input}
               reference={controller.reference}
+              artifactRefs={controller.composerArtifactRefs}
+              confirmedActionId={controller.pendingConfirmationActionId}
               composerSubmitting={controller.composerSubmitting}
               projectBusy={controller.projectBusy}
               executionFeedback={controller.executionFeedback}
               notice={controller.notice}
               composerNotice={controller.composerNotice}
               onInputChange={controller.setInput}
-              onClearReference={() => controller.setReference(null)}
+              onClearReference={controller.clearComposerReference}
               onAttachFile={controller.attachComposerFile}
               onAttachFileError={controller.flashComposerNotice}
-              onSend={controller.sendPrompt}
+              onSubmitConversationMessage={controller.submitConversationMessage}
+              onAgentEvent={controller.refreshProjectFromAgentEvent}
+              onAgentStreamError={controller.correctProjectFromAgentStreamError}
+              onRecoverCheckpoint={controller.recoverConversationTurn}
                onQuickReplySelect={controller.selectQuickReply}
                onSetMessageReaction={controller.setMessageReaction}
               onRetry={controller.retryActiveProject}
               onOpenArtifacts={() => openArtifactDrawer("all")}
+              onOpenArtifact={openConversationArtifact}
               onOpenMembers={() => setMembersOpen(true)}
               onOpenFeedback={feedbackController.openFeedback}
               onOpenUserManagement={() => setUserManagementOpen(true)}
                onLogout={onLogout}
-               xiaokuResponseStyle={controller.xiaokuResponseStyle}
                onOpenXiaoKuSettings={() => setXiaoKuSettingsOpen(true)}
              /> : (
               <AuthenticatedWelcome

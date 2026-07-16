@@ -14,7 +14,7 @@ function readOptionalSource(relativePath) {
   return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : "";
 }
 
-test("message route lets the model-first agent decide before generating artifacts", () => {
+test("message route commits control first and gives the native model loop sole tool ownership", () => {
   const routeSource = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
   const queueSource = readSource("src/server/conversation/conversation-turn-queue.ts");
   const serviceSource = readSource("src/server/conversation/conversation-turn-service.ts");
@@ -32,13 +32,28 @@ test("message route lets the model-first agent decide before generating artifact
   assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
   assert.match(serviceSource, /saveArtifact/);
 
-  const agentDecisionStart = serviceSource.indexOf("const rawAgentTurn = applyCapabilityAvailabilityToTurn(await input.agent.respond");
-  assert.notEqual(agentDecisionStart, -1);
-  const agentDecisionBranch = serviceSource.slice(agentDecisionStart);
-  assert.match(agentDecisionBranch, /if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/);
-  assert.match(agentDecisionBranch, /runPlannedArtifact/);
-  assert.match(agentDecisionBranch, /return \{ message: input\.triggerMessage, assistantMessage, agentTurn \}/);
-  assert.doesNotMatch(agentDecisionBranch.split(/if \(agentTurn\.shouldRunToolNow && \(agentTurn\.toolPlan \|\| pendingPlan\?\.toolPlan\)\)/)[0], /saveArtifact/);
+  const controlResolutionStart = serviceSource.indexOf("const preAgentControl =");
+  const controlCommitBranchStart = serviceSource.indexOf("if (preAgentControl)", controlResolutionStart);
+  const nativeOwnershipStart = serviceSource.indexOf("const nativeToolControlPlaneOwnsTurn = input.enableNativeToolControlPlane === true");
+  const modelResponseStart = serviceSource.indexOf("await input.agent.respond", nativeOwnershipStart);
+  const legacyPlanRejectionStart = serviceSource.indexOf("if (nativeToolControlPlaneOwnsTurn && agentTurn.shouldRunToolNow", modelResponseStart);
+  assert.notEqual(controlResolutionStart, -1);
+  assert.notEqual(controlCommitBranchStart, -1);
+  assert.notEqual(nativeOwnershipStart, -1);
+  assert.notEqual(modelResponseStart, -1);
+  assert.notEqual(legacyPlanRejectionStart, -1);
+  assert.ok(controlResolutionStart < controlCommitBranchStart);
+  assert.ok(controlCommitBranchStart < nativeOwnershipStart);
+  assert.ok(nativeOwnershipStart < modelResponseStart);
+  assert.match(serviceSource.slice(controlResolutionStart, controlCommitBranchStart), /resolvePreAgentControl/);
+  assert.match(serviceSource.slice(controlCommitBranchStart, nativeOwnershipStart), /return commitPreAgentControlTurn/);
+  assert.match(serviceSource.slice(nativeOwnershipStart), /toolControlPlane: nativeToolControlPlaneOwnsTurn \? "native" : "outer"/);
+  assert.match(serviceSource.slice(nativeOwnershipStart), /agentToolLoop: nativeToolLoop/);
+  const legacyPlanRejectionBranch = serviceSource.slice(legacyPlanRejectionStart);
+  assert.match(legacyPlanRejectionBranch, /single_orchestrator_violation/);
+  assert.match(legacyPlanRejectionBranch, /legacy_outer_tool_plan_rejected/);
+  assert.match(legacyPlanRejectionBranch, /shouldRunToolNow: false/);
+  assert.match(legacyPlanRejectionBranch, /toolPlan: undefined/);
 });
 
 test("conversation inline artifact is a teacher-facing result card without backend labels", () => {

@@ -121,6 +121,67 @@ describe("OpenAI tool-call loop runner", () => {
     expect(adapter.calls[1].inputItems?.[0]).toEqual({ role: "user", content: request.input });
   });
 
+  it("keeps explicit context continuation by default when a compatible REST provider returns a response id", async () => {
+    const functionCallItem = {
+      id: "fc_explicit",
+      type: "function_call",
+      status: "completed",
+      call_id: "call_explicit",
+      name: "createSlides",
+      arguments: JSON.stringify({ userInstruction: "生成水循环课件。" }),
+    };
+    const adapter = fakeAdapter([
+      response({ responseId: "resp_rest_only", functionCalls: [parsedCall(functionCallItem)], outputItems: [functionCallItem] }),
+      response({ assistantText: "课件已经生成。", rawText: "课件已经生成。" }),
+    ]);
+
+    await runOpenAIToolCallLoop({
+      adapter,
+      request,
+      tools,
+      allowedToolNames: ["createSlides"],
+      context: serverContext,
+      buildToolRouterInput: buildInputFromServerContext,
+      toolRouter: async () => succeededToolResult(),
+    });
+
+    expect(adapter.calls[1].previousResponseId).toBeUndefined();
+    expect(adapter.calls[1].inputItems?.[0]).toEqual({ role: "user", content: request.input });
+    expect(JSON.stringify(adapter.calls[1].inputItems)).toContain("call_explicit");
+  });
+
+  it("uses previous_response continuation only when the provider capability is explicitly enabled", async () => {
+    const functionCallItem = {
+      id: "fc_previous",
+      type: "function_call",
+      status: "completed",
+      call_id: "call_previous",
+      name: "createSlides",
+      arguments: JSON.stringify({ userInstruction: "生成水循环课件。" }),
+    };
+    const adapter = fakeAdapter([
+      response({ responseId: "resp_previous", functionCalls: [parsedCall(functionCallItem)], outputItems: [functionCallItem] }),
+      response({ assistantText: "课件已经生成。", rawText: "课件已经生成。" }),
+    ]);
+
+    await runOpenAIToolCallLoop({
+      adapter,
+      request,
+      tools,
+      allowedToolNames: ["createSlides"],
+      context: serverContext,
+      buildToolRouterInput: buildInputFromServerContext,
+      toolRouter: async () => succeededToolResult(),
+      usePreviousResponseId: true,
+    });
+
+    expect(adapter.calls[1]).toMatchObject({
+      previousResponseId: "resp_previous",
+      inputItems: [expect.objectContaining({ type: "function_call_output", call_id: "call_previous" })],
+    });
+    expect(JSON.stringify(adapter.calls[1].inputItems)).not.toContain(request.input);
+  });
+
   it.each(["failed", "retryable_failed", "needs_input"] as const)("stops safely when ToolRouter reports %s instead of letting the model upgrade it to success", async (toolStatus) => {
     const adapter = fakeAdapter([
       response({
@@ -354,6 +415,15 @@ function response(overrides: Partial<GptProtocolResponse> = {}): GptProtocolResp
     functionCalls: [],
     outputItemsSummary: [],
     outputItems: [],
+    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 },
+    telemetry: {
+      streamed: false,
+      startedAt: "2026-07-16T00:00:00.000Z",
+      completedAt: "2026-07-16T00:00:00.000Z",
+      durationMs: 0,
+      chunkCount: 0,
+      textBytes: 0,
+    },
     diagnostics: { status: "succeeded", provider: "openai_responses", model: "test-model" },
     ...overrides,
   };

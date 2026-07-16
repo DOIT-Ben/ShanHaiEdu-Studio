@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import { DeterministicRuntime } from "./deterministic-runtime";
 import { OpenAIRuntime, type OpenAIResponsesClient } from "./openai-runtime";
 import type { AgentRuntime, AgentRuntimeInput, AgentRuntimeResult } from "./types";
-import { createOpenAIRuntimeNativeToolLoopOptions } from "./native-tool-loop-config";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 
 type RuntimeFactoryEnv = OpenAICompatibleEnv & {
@@ -30,21 +29,10 @@ export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env):
     maxRetries: 0,
   }) as OpenAIResponsesClient;
 
-  const toolExecutionRuntime = new OpenAIRuntime({
-    client,
-    model: config.model,
-    reasoningEffort: config.reasoningEffort,
-  });
-
-  const nativeToolLoop = env.SHANHAI_OPENAI_NATIVE_TOOL_LOOP === "1"
-    ? (input: AgentRuntimeInput) => createOpenAIRuntimeNativeToolLoopOptions(input, { toolExecutionRuntime })
-    : undefined;
-
   return new OpenAIRuntime({
     client,
     model: config.model,
     reasoningEffort: config.reasoningEffort,
-    nativeToolLoop,
   });
 }
 

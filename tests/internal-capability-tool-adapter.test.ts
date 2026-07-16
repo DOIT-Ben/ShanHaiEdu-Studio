@@ -167,6 +167,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
           userMessage: "PPT 设计稿必须逐页写清底图、元素、文字和教学动作。",
           retryable: true,
           errorCategory: "validation",
+          reasonCode: "ppt_design_candidate_semantics_invalid",
         }),
       },
     );
@@ -176,8 +177,10 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       toolId: "create_ppt_design_draft",
       capabilityId: "ppt_design",
       artifactCreated: false,
+      reasonCode: "ppt_design_candidate_semantics_invalid",
       observation: {
         kind: "quality_gate_failed",
+        reasonCode: "ppt_design_candidate_semantics_invalid",
         artifactCreated: false,
       },
       budgetEvent: {
@@ -205,7 +208,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
         projectId: "project-a",
         intentEpoch: 2,
         structuredOutput: validPptDirectorOutput(),
-        approvedArtifactRefs: [{ artifactId: "artifact_textbook_evidence", kind: "textbook_evidence", digest: "evidence-digest" }],
+        approvedArtifactRefs: [{ artifactId: "artifact_textbook_evidence", kind: "textbook_evidence", version: 1, digest: "a".repeat(64) }],
       },
       intentEpoch: 2,
     });
@@ -284,7 +287,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       assistantPrompt: "请先确认备课需求。",
       artifactCreated: false,
       observation: {
-        kind: "blocked_by_policy",
+        kind: "quality_gate_failed",
         artifactCreated: false,
         retryPolicy: {
           retryable: false,
@@ -292,8 +295,8 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
         },
       },
       budgetEvent: {
-        status: "blocked",
-        kind: "blocked_by_policy",
+        status: "failed",
+        kind: "quality_gate_failed",
       },
     });
   });

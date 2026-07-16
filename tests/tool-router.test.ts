@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
-import { routeToolCall } from "@/server/tools/tool-router";
+import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { routeToolCall as routeToolCallWithoutEnvelope } from "@/server/tools/tool-router";
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { ToolDefinition, ToolExecutionResult } from "@/server/tools/tool-types";
 import type { ArtifactRecord } from "@/server/workbench/types";
@@ -12,6 +13,46 @@ const projectContext = {
   subject: "数学",
   topic: "百分数",
   requestedOutputs: ["需求规格"],
+};
+
+const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies) => {
+  const intentEpoch = input.executionIntentEpoch ?? 0;
+  const taskBrief = createTaskBrief({
+    taskId: `task:${input.projectId}`,
+    projectId: input.projectId,
+    intentEpoch,
+    goal: input.userInstruction ?? "ToolRouter contract fixture",
+    requestedOutputs: [input.capabilityId ?? input.toolName ?? "unknown"],
+    constraints: ["offline_fixture_only"],
+    excludedOutputs: [],
+    generationIntensity: "standard",
+    sourceMessageId: input.sourceMessageId ?? `message:${input.projectId}`,
+  });
+  const intentGrant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId: taskBrief.projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: "standard",
+    budgetPolicyVersion: "offline-fixture.v1",
+    maxCostCredits: 0,
+    maxExternalProviderCalls: 0,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  return routeToolCallWithoutEnvelope({
+    ...input,
+    executionIntentEpoch: intentEpoch,
+    executionEnvelope: input.executionEnvelope ?? createExecutionEnvelope({
+      actorUserId: "teacher-fixture",
+      taskBrief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant,
+      action: { toolName: input.toolName ?? input.capabilityId ?? "unknown_tool", arguments: input.toolInput ?? {} },
+    }),
+  }, dependencies);
 };
 
 function fakeRuntime(): AgentRuntime {
@@ -213,12 +254,37 @@ describe("M64-D ToolRouter Core", () => {
     const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
     const providerExecutor = vi.fn(async ({ tool }) => providerSuccessResult(tool));
     const pptDraftArtifact = resolvedArtifact("ppt_draft", "artifact-ppt-draft-a");
+    const businessSkillContext = {
+      skillName: "shanhai-imagegen",
+      skillVersion: "1.1",
+      displayName: "课堂视觉图",
+      responsibility: "提供图片任务语义",
+      semanticSlice: {
+        schemaVersion: "business-tool-skill-slice.v1" as const,
+        bindingMode: "formal_contract" as const,
+        artifactContractAuthority: "skill" as const,
+        toolName: "generate_classroom_image",
+        responsibility: "提供图片任务语义",
+        contracts: {
+          tool: { consumes: ["ppt_draft"], produces: ["image_prompts"] },
+          skill: { consumes: [], produces: [{ artifactType: "image-generation-result", contractVersion: "shanhai-imagegen/v2" }] },
+        },
+        guidance: [{ sourcePath: "references/result-contract.md", content: "绑定真实图片结果与质量证据。" }],
+      },
+      provenance: {
+        schemaVersion: "business-tool-skill-provenance.v1" as const,
+        entrypointSha256: `sha256:${"a".repeat(64)}`,
+        references: [{ sourcePath: "references/result-contract.md", sha256: `sha256:${"b".repeat(64)}` }],
+        bindingPolicyDigest: `sha256:${"c".repeat(64)}`,
+      },
+    };
 
     const result = await routeFutureToolCall(
       {
         capabilityId: "image_asset",
         projectId: "project-a",
         userInstruction: "生成课堂导入图",
+        businessSkillContext,
         artifactRefs: [{ kind: "ppt_draft", artifactId: "artifact-ppt-draft-a" }],
         resolvedArtifacts: [pptDraftArtifact],
       },
@@ -236,6 +302,7 @@ describe("M64-D ToolRouter Core", () => {
       projectId: "project-a",
       artifactRefs: [{ kind: "ppt_draft", artifactId: "artifact-ppt-draft-a" }],
       resolvedArtifacts: [pptDraftArtifact],
+      businessSkillContext,
     });
     expect(result).toMatchObject({
       status: "succeeded",
@@ -309,8 +376,8 @@ describe("M64-D ToolRouter Core", () => {
       capabilityId: "coze_ppt",
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
-      observation: { kind: "blocked_by_policy", artifactCreated: false },
-      budgetEvent: { status: "blocked", kind: "blocked_by_policy" },
+      observation: { kind: "quality_gate_failed", retryPolicy: { nextAction: "fix_inputs" }, artifactCreated: false },
+      budgetEvent: { status: "failed", kind: "quality_gate_failed" },
     });
   });
 
@@ -339,7 +406,7 @@ describe("M64-D ToolRouter Core", () => {
       capabilityId: "coze_ppt",
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
-      observation: { kind: "blocked_by_policy", artifactCreated: false },
+      observation: { kind: "quality_gate_failed", retryPolicy: { nextAction: "fix_inputs" }, artifactCreated: false },
     });
   });
 
@@ -384,12 +451,13 @@ describe("M64-D ToolRouter Core", () => {
         toolId: toolName,
         artifactCreated: false,
         observation: {
-          kind: "blocked_by_policy",
+          kind: "tool_failed",
+          retryPolicy: { nextAction: "skip_or_replan" },
           artifactCreated: false,
         },
         budgetEvent: {
-          status: "blocked",
-          kind: "blocked_by_policy",
+          status: "failed",
+          kind: "tool_failed",
         },
       });
     }
@@ -421,11 +489,13 @@ describe("M64-D ToolRouter Core", () => {
           { kind: "video_segment_generate", artifactId: "segment-a" },
           { kind: "storyboard_generate", artifactId: "storyboard-a" },
           { kind: "video_script_generate", artifactId: "script-a" },
+          { kind: "video_narration_generate", artifactId: "narration-a" },
         ],
         resolvedArtifacts: [
           resolvedArtifact("video_segment_generate", "segment-a"),
           resolvedArtifact("storyboard_generate", "storyboard-a"),
           resolvedArtifact("video_script_generate", "script-a"),
+          resolvedArtifact("video_narration_generate", "narration-a"),
         ],
       },
       { packageExecutor },
@@ -439,11 +509,13 @@ describe("M64-D ToolRouter Core", () => {
         { kind: "video_segment_generate", artifactId: "segment-a" },
         { kind: "storyboard_generate", artifactId: "storyboard-a" },
         { kind: "video_script_generate", artifactId: "script-a" },
+        { kind: "video_narration_generate", artifactId: "narration-a" },
       ],
       resolvedArtifacts: [
         resolvedArtifact("video_segment_generate", "segment-a"),
         resolvedArtifact("storyboard_generate", "storyboard-a"),
         resolvedArtifact("video_script_generate", "script-a"),
+        resolvedArtifact("video_narration_generate", "narration-a"),
       ],
     });
     expect(result).toMatchObject({
@@ -451,6 +523,54 @@ describe("M64-D ToolRouter Core", () => {
       toolId: "concat_only_assemble",
       capabilityId: "concat_only_assemble",
     });
+  });
+
+  it("forwards the selected formal delivery Skill context into create_final_package", async () => {
+    const packageExecutor = vi.fn(async ({ tool }) => successResult(tool));
+    const kinds = [
+      "requirement_spec",
+      "lesson_plan",
+      "ppt_design_draft",
+      "pptx_artifact",
+      "image_prompts",
+      "video_script_generate",
+      "concat_only_assemble",
+    ] as const;
+    const artifacts = kinds.map((kind) => resolvedArtifact(kind, `artifact-${kind}`));
+    const businessSkillContext = {
+      skillName: "shanhai-delivery",
+      skillVersion: "1.3",
+      displayName: "山海一致交付",
+      responsibility: "核验当前任务的正式交付包",
+      semanticSlice: {
+        schemaVersion: "business-tool-skill-slice.v1" as const,
+        bindingMode: "formal_contract" as const,
+        artifactContractAuthority: "skill" as const,
+        toolName: "create_final_package",
+        responsibility: "核验当前任务的正式交付包",
+        contracts: {
+          tool: { consumes: [...kinds], produces: ["final_delivery"] },
+          skill: { consumes: [], produces: [{ artifactType: "delivery-package", contractVersion: "shanhai-delivery/v2" }] },
+        },
+        guidance: [{ sourcePath: "references/assembly-boundary.md", content: "只核验正式持久化的当前版本组件。" }],
+      },
+      provenance: {
+        schemaVersion: "business-tool-skill-provenance.v1" as const,
+        entrypointSha256: `sha256:${"a".repeat(64)}`,
+        references: [{ sourcePath: "references/assembly-boundary.md", sha256: `sha256:${"b".repeat(64)}` }],
+        bindingPolicyDigest: `sha256:${"c".repeat(64)}`,
+      },
+    };
+
+    await routeToolCall({
+      toolName: "create_final_package",
+      projectId: "project-a",
+      businessSkillContext,
+      artifactRefs: artifacts.map((artifact) => ({ kind: artifact.kind, artifactId: artifact.id })),
+      resolvedArtifacts: artifacts,
+    }, { packageExecutor });
+
+    expect(packageExecutor).toHaveBeenCalledWith(expect.objectContaining({ businessSkillContext }));
   });
 
   it("does not let bare refs invoke package tools", async () => {
@@ -470,7 +590,7 @@ describe("M64-D ToolRouter Core", () => {
       status: "needs_input",
       toolId: "concat_only_assemble",
       capabilityId: "concat_only_assemble",
-      missingInputs: ["video_segment_generate", "storyboard_generate", "video_script_generate"],
+      missingInputs: ["video_segment_generate", "storyboard_generate", "video_script_generate", "video_narration_generate"],
       artifactCreated: false,
     });
   });
@@ -495,12 +615,13 @@ describe("M64-D ToolRouter Core", () => {
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
       observation: {
-        kind: "blocked_by_policy",
+        kind: "quality_gate_failed",
+        retryPolicy: { nextAction: "fix_inputs" },
         artifactCreated: false,
       },
       budgetEvent: {
-        status: "blocked",
-        kind: "blocked_by_policy",
+        status: "failed",
+        kind: "quality_gate_failed",
       },
     });
   });
@@ -555,12 +676,13 @@ describe("M64-D ToolRouter Core", () => {
       missingInputs: ["ppt_design_draft"],
       artifactCreated: false,
       observation: {
-        kind: "blocked_by_policy",
+        kind: "quality_gate_failed",
+        retryPolicy: { nextAction: "fix_inputs" },
         artifactCreated: false,
       },
       budgetEvent: {
-        status: "blocked",
-        kind: "blocked_by_policy",
+        status: "failed",
+        kind: "quality_gate_failed",
       },
     });
   });
@@ -581,7 +703,8 @@ describe("M64-D ToolRouter Core", () => {
         capabilityId: "unknown",
         artifactCreated: false,
         observation: {
-          kind: "blocked_by_policy",
+          kind: "tool_failed",
+          retryPolicy: { nextAction: "skip_or_replan" },
           artifactCreated: false,
         },
       });
@@ -616,12 +739,13 @@ describe("M64-D ToolRouter Core", () => {
       capabilityId: "requirement_spec",
       artifactCreated: false,
       observation: {
-        kind: "blocked_by_policy",
+        kind: "tool_failed",
+        retryPolicy: { nextAction: "skip_or_replan" },
         artifactCreated: false,
       },
       budgetEvent: {
-        status: "blocked",
-        kind: "blocked_by_policy",
+        status: "failed",
+        kind: "tool_failed",
       },
     });
   });

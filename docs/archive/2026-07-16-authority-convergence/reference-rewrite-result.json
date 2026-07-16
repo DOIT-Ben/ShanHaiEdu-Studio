@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "authority-convergence-reference-rewrite.v1",
+  "migrationId": "2026-07-16-authority-convergence",
+  "completedAt": "2026-07-16T07:59:45.9113487+08:00",
+  "archiveManifestSha256": "d8e73434c3f063eeea5e25d77a21dcfec095ed5c6520e419c1c5cd4d87718b12",
+  "files": [
+    {
+      "filePath": "docs/architecture/decisions/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
+      "beforeBytes": 4459,
+      "beforeSha256": "5de2e2590a2634e4588b2ce60d40223562c5b733f7c8a63237b56e577083f1b3",
+      "replacements": [
+        {
+          "sourcePath": "docs/stages/local-real-v1-control-plane-assistant-ui-refactor-plan.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/stages/local-real-v1-control-plane-assistant-ui-refactor-plan.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/stages/local-real-v1-control-plane-assistant-ui-refactor-test-plan.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/stages/local-real-v1-control-plane-assistant-ui-refactor-test-plan.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/architecture/decisions/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
+      "afterBytes": 4573,
+      "afterSha256": "fb27f0a97df81e93a7a13f6bb8b97986093f089ad014c86b34655990f5727b42"
+    },
+    {
+      "filePath": "docs/roadmap/architecture/2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md",
+      "beforeBytes": 4380,
+      "beforeSha256": "3b3982130b33728d81b403f44ac850f9f68dafa825961e4906e54081cc6d1565",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/v1-5-artifact-workspace-requirements.md",
+          "targetPath": "docs/roadmap/product/v1-5-artifact-workspace-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/architecture/2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md",
+      "afterBytes": 4388,
+      "afterSha256": "cccd8a7ca9069a59ba7155cc592b7c769ccc91ef15d2141cc8accb6db2a3330c"
+    },
+    {
+      "filePath": "docs/roadmap/product/frontend-workbench-priority-requirements.md",
+      "beforeBytes": 5233,
+      "beforeSha256": "e53fc6573c3768029992d4c047172a34ba1ce268f65aff51a27814ab45ce7bc5",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/beta-feedback-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/beta-feedback-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-deep-spec.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-deep-spec.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-roadmap.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-test-plan.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/ui/frontend-workbench/local-real-mvp-m54a-frontend-workbench-test-plan.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/conversation-commitment-execution-consistency-requirements.md",
+          "targetPath": "docs/roadmap/product/conversation-commitment-execution-consistency-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/v1-5-artifact-workspace-requirements.md",
+          "targetPath": "docs/roadmap/product/v1-5-artifact-workspace-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/product/frontend-workbench-priority-requirements.md",
+      "afterBytes": 5534,
+      "afterSha256": "89c725b2dfd33b1e5f62f5cb06b74f4c01244dadc6280b56d3600694a7c1c665"
+    },
+    {
+      "filePath": "docs/roadmap/product/v1-1-feedback-closed-loop-requirements.md",
+      "beforeBytes": 18103,
+      "beforeSha256": "9cf07cc6622ec3eceb409df966cd7abb9f0ba6d0a81b1b98542b2689d75f437c",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/product/v1-1-feedback-closed-loop-requirements.md",
+      "afterBytes": 18160,
+      "afterSha256": "70346814f2bf41d6b21e7d185dc72062e4abf9cbca7f18474b436942a195264a"
+    },
+    {
+      "filePath": "docs/roadmap/product/v1-agent-guided-response-presentation-requirements.md",
+      "beforeBytes": 10854,
+      "beforeSha256": "bd70ac52e061d312d434e9a68dbc2f860d410161bfc18b2a9fc396896ada799a",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/product/v1-agent-guided-response-presentation-requirements.md",
+      "afterBytes": 10911,
+      "afterSha256": "79bcc70d2509854482482abd3ed042544d3c9646772ccdfb6aeba6a1f533c9a4"
+    },
+    {
+      "filePath": "docs/roadmap/product/v2-0前生产化与容量要求.md",
+      "beforeBytes": 7729,
+      "beforeSha256": "f9aaa4ca197720c990eda810922379ca25b532368d1f0e48dae142a4a7ecd7eb",
+      "replacements": [
+        {
+          "sourcePath": "docs/stages/v2-0前生产化30天计划.md",
+          "targetPath": "docs/roadmap/release/v2-0前生产化30天计划.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/stages/v2-0前生产化验收计划.md",
+          "targetPath": "docs/roadmap/release/v2-0前生产化验收计划.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/product/v2-0前生产化与容量要求.md",
+      "afterBytes": 7747,
+      "afterSha256": "f7ea6dac67986b08bf2e5ac543f28dff4e6411a5529dda3d4248fd59b9f953e6"
+    },
+    {
+      "filePath": "docs/roadmap/release/v1-1-feedback-closed-loop-plan.md",
+      "beforeBytes": 13953,
+      "beforeSha256": "c1b060e5806ec636a7a96d38357e0429197cac80b6b0d068df41ddc1f599198f",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/v1-1-feedback-closed-loop-requirements.md",
+          "targetPath": "docs/roadmap/product/v1-1-feedback-closed-loop-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/release/v1-1-feedback-closed-loop-plan.md",
+      "afterBytes": 14018,
+      "afterSha256": "22813804e00e1e202b487b0f23f3098e69c77b505a38217f042eb90cfdb087d0"
+    },
+    {
+      "filePath": "docs/roadmap/release/v1-1-feedback-closed-loop-test-plan.md",
+      "beforeBytes": 10530,
+      "beforeSha256": "9b032a77a8f488fd3156a84f85e6f5d0d55b7c787a520462d3331f9114696462",
+      "replacements": [
+        {
+          "sourcePath": "docs/stages/v1-1-feedback-closed-loop-plan.md",
+          "targetPath": "docs/roadmap/release/v1-1-feedback-closed-loop-plan.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/release/v1-1-feedback-closed-loop-test-plan.md",
+      "afterBytes": 10539,
+      "afterSha256": "8b0d2414767a6b5b0ee10ddc8f95836ba89bdfadf987d88ec6b91ef872b05616"
+    },
+    {
+      "filePath": "docs/roadmap/ui/2026-07-15-frontend-demo-design-absorption.md",
+      "beforeBytes": 13156,
+      "beforeSha256": "0f8aae8c9f738b14c99f08f492d934b08dc3706e49cfc6454324e4d2e988d93f",
+      "replacements": [
+        {
+          "sourcePath": "docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "targetPath": "docs/archive/2026-07-16-authority-convergence/historical/docs/product/v1-1-assistant-ui-conversation-runtime-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/architecture/decisions/2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md",
+          "targetPath": "docs/roadmap/architecture/2026-07-13-adr-当前成果工作区替代常驻糖葫芦.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/v1-5-artifact-workspace-requirements.md",
+          "targetPath": "docs/roadmap/product/v1-5-artifact-workspace-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        },
+        {
+          "sourcePath": "docs/product/v1-agent-guided-response-presentation-requirements.md",
+          "targetPath": "docs/roadmap/product/v1-agent-guided-response-presentation-requirements.md",
+          "slashCount": 0,
+          "backslashCount": 1
+        }
+      ],
+      "snapshotPath": "docs/archive/2026-07-16-authority-convergence/pre-reference-rewrite-snapshots/docs/roadmap/ui/2026-07-15-frontend-demo-design-absorption.md",
+      "afterBytes": 13227,
+      "afterSha256": "207db827437aae9e98c6f52ef62b514807f841b8577ac15fff8585021d2fce44"
+    }
+  ],
+  "summary": {
+    "fileCount": 9,
+    "replacementCount": 21,
+    "snapshotsVerified": true
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getGeneratingLabel, type GeneratingState } from "@/components/conversation/composer/composer-contracts";
 
 type GeneratingIndicatorProps = {
@@ -16,16 +16,20 @@ function getTeacherGeneratingLabel(state: GeneratingIndicatorProps["state"]) {
 }
 
 export function GeneratingIndicator({ state = "generating", label, mark }: GeneratingIndicatorProps) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   return (
-    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="正在生成">
-      <div className="flex max-w-[88%] items-start gap-3 sm:max-w-[620px]">
+    <article data-ai-thinking className="scroll-mt-24 flex justify-start" aria-live="polite" aria-label="小酷正在回复">
+      <div className="flex max-w-[760px] items-start gap-3">
         {mark}
-        <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">小酷</span>
-          </div>
-          <div className="inline-flex items-center gap-3 rounded-2xl border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm text-muted-foreground shadow-[0_12px_30px_rgba(29,74,66,0.05)]">
-            <span>{label ?? getTeacherGeneratingLabel(state)}</span>
+        <div className="min-w-0 flex-1 pt-2">
+          <div className="inline-flex items-center gap-3 text-sm text-muted-foreground">
+            <span>{label ?? (state === "generating" ? "小酷正在回复" : getTeacherGeneratingLabel(state))}</span>
+            <span className="text-xs text-muted-foreground">已运行 {elapsedSeconds} 秒</span>
             <span className="flex items-center gap-1.5" aria-hidden="true">
               <span className="typing-dot" />
               <span className="typing-dot [animation-delay:140ms]" />

@@ -239,7 +239,7 @@ describe("V1-2 Agent Tool router", () => {
     expect(executor.mock.calls[0]![1].id).toBe("ppt_director.plan_or_repair");
   });
 
-  it("preserves a typed inconclusive Agent result", async () => {
+  it("normalizes an executor-origin ask_teacher into a Main Agent repair observation", async () => {
     const envelope = validEnvelope();
     const result = await routeAgentToolCall(envelope, {
       authorize: async () => true,
@@ -254,13 +254,21 @@ describe("V1-2 Agent Tool router", () => {
           kind: "blocked_by_policy",
           teacherSafeSummary: "证据不足，暂不继续。",
           internalReasonSanitized: "missing_evidence",
+          reasonCode: "missing_evidence",
           retryPolicy: { retryable: false, nextAction: "ask_teacher" },
         }),
         artifactCreated: false,
       }),
     });
 
-    expect(result.status).toBe("inconclusive");
+    expect(result).toMatchObject({
+      status: "inconclusive",
+      observation: {
+        kind: "quality_gate_failed",
+        reasonCode: "missing_evidence",
+        retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+      },
+    });
   });
 
   it("rejects tampered invocation input before calling the executor", async () => {
@@ -271,6 +279,8 @@ describe("V1-2 Agent Tool router", () => {
     const result = await routeAgentToolCall(envelope, { executor, authorize: async () => true });
 
     expect(result).toMatchObject({ status: "failed", errorCategory: "invocation_integrity_failed", artifactCreated: false });
+    if (result.status === "succeeded") throw new Error("Expected invocation integrity failure.");
+    expect(result.observation).toMatchObject({ kind: "tool_failed", retryPolicy: { retryable: false, nextAction: "skip_or_replan" } });
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -281,6 +291,8 @@ describe("V1-2 Agent Tool router", () => {
     const result = await routeAgentToolCall(envelope, { executor, authorize: async () => true });
 
     expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_not_allowed", artifactCreated: false });
+    if (result.status === "succeeded") throw new Error("Expected Agent Tool visibility failure.");
+    expect(result.observation).toMatchObject({ kind: "tool_failed", retryPolicy: { retryable: false, nextAction: "skip_or_replan" } });
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -294,6 +306,8 @@ describe("V1-2 Agent Tool router", () => {
     const result = await routeAgentToolCall(envelope, { executor, authorize: async () => true });
 
     expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_arguments_invalid" });
+    if (result.status === "succeeded") throw new Error("Expected Agent Tool argument failure.");
+    expect(result.observation).toMatchObject({ kind: "quality_gate_failed", retryPolicy: { retryable: false, nextAction: "fix_inputs" } });
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -302,6 +316,31 @@ describe("V1-2 Agent Tool router", () => {
     const result = await routeAgentToolCall(validEnvelope(), { executor, authorize: async () => false });
 
     expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_unauthorized" });
+    if (result.status === "succeeded") throw new Error("Expected Agent Tool authorization failure.");
+    expect(result.observation).toMatchObject({
+      kind: "blocked_by_policy",
+      reasonCode: "authorization_denied",
+      retryPolicy: { retryable: false, nextAction: "ask_teacher" },
+    });
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("replans a failed authorization check instead of asking the teacher for a runtime failure", async () => {
+    const executor = vi.fn();
+    const result = await routeAgentToolCall(validEnvelope(), {
+      executor,
+      authorize: async () => {
+        throw new Error("authorization database unavailable");
+      },
+    });
+
+    expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_unavailable" });
+    if (result.status === "succeeded") throw new Error("Expected Agent Tool authorization check failure.");
+    expect(result.observation).toMatchObject({
+      kind: "tool_failed",
+      reasonCode: "authorization_check_failed",
+      retryPolicy: { retryable: true, nextAction: "retry_later" },
+    });
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -761,6 +800,8 @@ describe("V1-2 Agent Tool router", () => {
     const result = await routeAgentToolCall(envelope, { executor, authorize: async () => true });
 
     expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_output_invalid" });
+    if (result.status === "succeeded") throw new Error("Expected Agent Tool output failure.");
+    expect(result.observation).toMatchObject({ kind: "quality_gate_failed", retryPolicy: { retryable: false, nextAction: "fix_inputs" } });
     expect(isAgentToolResultEligibleForProductionGuard(result)).toBe(false);
   });
 

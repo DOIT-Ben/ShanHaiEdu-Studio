@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { buildStoredImageDownload, imageDownloadHeaders } from "@/server/image-generation/artifact-image";
+import {
+  claimArtifactRouteToolExecution,
+  commitArtifactRouteToolFailure,
+  commitArtifactRouteToolReplay,
+  commitArtifactRouteToolSuccess,
+  type ArtifactRouteToolExecutionClaim,
+} from "@/server/tools/artifact-route-tool-execution";
 import { routeToolCall } from "@/server/tools/tool-router";
 import { isVerifiedProviderToolSuccess } from "@/server/tools/tool-types";
-import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
 import { runWithProjectExecutionLease } from "@/server/execution/project-execution-runner";
 import {
   assertRouteLevelGenerationConfirmation,
@@ -45,6 +51,7 @@ export async function POST(request: Request, context: RouteContext) {
         holderPrefix: "image-route",
         task: async (service) => {
           let jobId: string | null = null;
+          let executionClaim: ArtifactRouteToolExecutionClaim | null = null;
           try {
             const { projectId, artifactId } = params;
             const body = await readRouteGenerationBody(request);
@@ -58,6 +65,17 @@ export async function POST(request: Request, context: RouteContext) {
               sourceArtifact,
               confirmedActionId: readConfirmedActionId(body),
             });
+            const actionArguments = {
+              sourceArtifactId: sourceArtifact.id,
+              sourceArtifactVersion: sourceArtifact.version,
+            };
+            executionClaim = await claimArtifactRouteToolExecution({
+              project,
+              actorUserId: executionIdentity.actorUserId,
+              toolName: "generate_classroom_image",
+              arguments: actionArguments,
+              sourceArtifacts: [sourceArtifact],
+            });
             const queuedJob = await service.createGenerationJob(projectId, {
               kind: "image",
               sourceArtifactId: sourceArtifact.id,
@@ -67,22 +85,34 @@ export async function POST(request: Request, context: RouteContext) {
             jobId = queuedJob.id;
             if (queuedJob.status === "succeeded" && queuedJob.resultArtifactId) {
               const artifact = await service.getArtifact(projectId, queuedJob.resultArtifactId);
+              await commitArtifactRouteToolReplay({
+                claim: executionClaim,
+                artifactId: artifact.id,
+                generationJobId: queuedJob.id,
+              });
+              executionClaim = null;
+              jobId = null;
               return NextResponse.json({ artifact, job: queuedJob, reused: true });
-            }
-            const recovered = await service.resumeStagedGenerationResult(projectId, jobId);
-            if (recovered) {
-              return NextResponse.json({ ...recovered, reused: true, recovered: true });
             }
             const runningJob = (await service.startGenerationJobForExecution(projectId, jobId)).job;
             if (runningJob.status === "submission_unknown") {
+              await commitArtifactRouteToolFailure({
+                claim: executionClaim,
+                generationJobId: jobId,
+                teacherSafeSummary: "图片任务状态需要核对，系统没有自动重复提交。",
+                reasonCodes: ["submission_unknown"],
+                errorCategory: "submission_unknown",
+              });
+              executionClaim = null;
               jobId = null;
               return NextResponse.json({ error: "图片任务状态需要核对，系统没有自动重复提交。" }, { status: 409 });
             }
 
             const result = await routeToolCall({
-              capabilityId: "image_asset",
+              toolName: "generate_classroom_image",
               projectId,
               project,
+              toolInput: actionArguments,
               artifactRefs: [{
                 kind: sourceArtifact.kind,
                 artifactId: sourceArtifact.id,
@@ -94,32 +124,45 @@ export async function POST(request: Request, context: RouteContext) {
               resolvedArtifacts: [sourceArtifact],
               executionInputHash: runningJob.inputHash ?? undefined,
               executionIntentEpoch: runningJob.intentEpoch,
+              executionEnvelope: executionClaim.executionEnvelope,
             });
             if (!isVerifiedProviderToolSuccess(result)) {
               const teacherSafeError = result.status === "succeeded"
                 ? "课堂视觉图没有通过交付校验，我没有保存这份结果。"
                 : result.observation.teacherSafeSummary;
-              await service.failGenerationJob(projectId, jobId, { errorMessage: teacherSafeError });
+              await commitArtifactRouteToolFailure({
+                claim: executionClaim,
+                generationJobId: jobId,
+                ...(result.status === "succeeded"
+                  ? { teacherSafeSummary: teacherSafeError, reasonCodes: ["quality_gate_failed"], errorCategory: "quality_gate_failed" }
+                  : { result }),
+              });
+              executionClaim = null;
               jobId = null;
               return NextResponse.json({ error: teacherSafeError }, { status: 400 });
             }
 
             const committingJobId = jobId;
-            jobId = null;
-            const committed = await service.commitGenerationResult(projectId, committingJobId, {
-              nodeKey: result.artifactDraft.nodeKey as WorkflowNodeKey,
-              kind: result.artifactDraft.kind as ArtifactKind,
-              title: result.artifactDraft.title,
-              status: "needs_review",
-              summary: result.artifactDraft.summary,
-              markdownContent: result.artifactDraft.markdownContent ?? "",
-              structuredContent: result.artifactDraft.structuredContent,
-              validationReport: result.validationReport,
+            const committed = await commitArtifactRouteToolSuccess({
+              claim: executionClaim,
+              generationJobId: committingJobId,
+              result,
             });
-            return NextResponse.json(committed);
+            const artifact = await service.getArtifact(projectId, committed.artifact.id);
+            const job = (await service.getGenerationJobs(projectId)).find((candidate) => candidate.id === committingJobId);
+            if (!job) throw new Error("Committed image GenerationJob was not found.");
+            executionClaim = null;
+            jobId = null;
+            return NextResponse.json({ artifact, job });
           } catch (error) {
-            if (jobId) {
-              await service.failGenerationJob(params.projectId, jobId, { errorMessage: "Image generation failed" }).catch(() => null);
+            if (executionClaim) {
+              await commitArtifactRouteToolFailure({
+                claim: executionClaim,
+                ...(jobId ? { generationJobId: jobId } : {}),
+                teacherSafeSummary: "课堂视觉图暂时没有生成成功，请稍后再试。",
+                reasonCodes: ["artifact_route_execution_failed"],
+                errorCategory: "artifact_route_execution_failed",
+              }).catch(() => null);
             }
             const message = error instanceof Error ? error.message : "Image generation failed";
             const confirmationStatus = routeLevelGenerationConfirmationStatus(error);

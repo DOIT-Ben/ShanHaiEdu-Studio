@@ -35,7 +35,7 @@ test("ConversationWorkbench routes quick reply choices into the composer without
   const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
   const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
 
-  assert.match(conversationSource, /onQuickReplySelect=\{onQuickReplySelect\}/);
+  assert.match(conversationSource, /onSelectAction=\{onQuickReplySelect \?\? onInputChange\}/);
   assert.match(controllerSource, /function selectQuickReply/);
   assert.match(controllerSource, /setInput\(value\)/);
   assert.doesNotMatch(controllerSource, /selectQuickReply[\s\S]*sendPrompt\(/);
@@ -61,11 +61,9 @@ test("Message route uses model-first main conversation agent instead of determin
 });
 
 test("Conversation UI presents the assistant as 小酷", () => {
-  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
-  const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
+  const transcriptSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
 
   assert.match(transcriptSource, />小酷</);
-  assert.match(generatingSource, />小酷</);
+  assert.match(transcriptSource, /你好，我是小酷/);
   assert.doesNotMatch(transcriptSource, /ShanHaiEdu AI/);
-  assert.doesNotMatch(generatingSource, /ShanHaiEdu AI/);
 });

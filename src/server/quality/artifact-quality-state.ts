@@ -1,9 +1,11 @@
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { hasForbiddenArtifactTruthMarker, hasVerifiedArtifactApprovalEvidence } from "./artifact-truth-boundary";
 
 export type ArtifactQualityState = {
   validationStatus: "passed" | "failed" | "not_required";
   reviewStatus: "passed" | "repair" | "blocked" | "inconclusive";
   downstreamEligibility: "eligible" | "blocked";
+  eligibleStages?: string[];
 };
 
 export function withArtifactQualityState(
@@ -14,7 +16,9 @@ export function withArtifactQualityState(
 }
 
 export function isArtifactDownstreamEligible(artifact: ArtifactRecord) {
-  return isArtifactStructuredContentDownstreamEligible(artifact.structuredContent);
+  return (artifact.origin === "tool_result" || artifact.origin === undefined) &&
+    !hasForbiddenArtifactTruthMarker(artifact.structuredContent) &&
+    isArtifactStructuredContentDownstreamEligible(artifact.structuredContent);
 }
 
 export function isArtifactStructuredContentDownstreamEligible(structuredContent: unknown) {
@@ -26,8 +30,11 @@ export function isArtifactStructuredContentDownstreamEligible(structuredContent:
 }
 
 export function isArtifactTrustedForDownstream(artifact: ArtifactRecord) {
-  return (artifact.status === "approved" && artifact.isApproved === true) ||
-    isArtifactDownstreamEligible(artifact);
+  if (artifact.origin === undefined) {
+    return (artifact.status === "approved" && artifact.isApproved === true) ||
+      isArtifactStructuredContentDownstreamEligible(artifact.structuredContent);
+  }
+  return hasVerifiedArtifactApprovalEvidence(artifact) || isArtifactDownstreamEligible(artifact);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

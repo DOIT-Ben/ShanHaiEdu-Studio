@@ -30,6 +30,8 @@ export type AgentRuntimeFailureCategory =
 export type AgentRuntimeFailure = {
   category: AgentRuntimeFailureCategory;
   retryable: boolean;
+  reasonCode?: string;
+  details?: string[];
 };
 
 export type AgentProjectContext = {
@@ -53,6 +55,39 @@ export type ApprovedArtifactInput = {
   markdown: string;
 };
 
+export type BusinessSkillArtifactContract = {
+  artifactType: string;
+  contractVersion: string;
+};
+
+export type BusinessSkillContext = {
+  skillName: string;
+  skillVersion: string;
+  displayName: string;
+  responsibility: string;
+  semanticSlice: {
+    schemaVersion: "business-tool-skill-slice.v1";
+    bindingMode: "formal_contract" | "guidance_only";
+    artifactContractAuthority: "skill" | "tool";
+    toolName: string;
+    responsibility: string;
+    contracts: {
+      tool: { consumes: string[]; produces: string[] };
+      skill?: {
+        consumes: BusinessSkillArtifactContract[];
+        produces: BusinessSkillArtifactContract[];
+      };
+    };
+    guidance: Array<{ sourcePath: string; content: string }>;
+  };
+  provenance: {
+    schemaVersion: "business-tool-skill-provenance.v1";
+    entrypointSha256: string;
+    references: Array<{ sourcePath: string; sha256: string }>;
+    bindingPolicyDigest: string;
+  };
+};
+
 export type AgentRuntimeInput = {
   projectId: string;
   runId: string;
@@ -62,6 +97,7 @@ export type AgentRuntimeInput = {
   taskInput?: Record<string, unknown>;
   projectContext: AgentProjectContext;
   approvedArtifacts: ApprovedArtifactInput[];
+  businessSkillContext?: BusinessSkillContext;
 };
 
 export type AgentAssistantMessage = {

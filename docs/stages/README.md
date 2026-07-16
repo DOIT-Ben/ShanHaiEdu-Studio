@@ -1,69 +1,27 @@
-# 阶段文档目录说明
+# 当前阶段入口
 
-`docs\stages\` 只保存阶段性计划、测试计划、验收报告和收尾记录。
+更新时间：2026-07-16
 
-## 1. 命名规则
+`docs\stages\`当前唯一活动阶段：V1.0 Main Agent唯一编排与工作流原子Tool化重构的教师协作与步骤投影修正。后继V1-9仍未启动。
 
-```text
-local-real-mvp-mXX-主题-plan.md
-local-real-mvp-mXX-主题-test-plan.md
-local-real-mvp-mXX-主题-closeout.md
-```
+## 活动文件
 
-## 2. 边界
+- `v1-agent-atomic-tool-refactor-plan.md`
+- `v1-agent-atomic-tool-refactor-test-plan.md`
+- `v1-agent-atomic-tool-refactor-closeout.md`
 
-- 阶段文档不能取代 `docs\product\current-requirements-baseline.md`。
-- 阶段文档不能取代 `docs\product\requirements-backlog.md`。
-- 阶段文档里的旧结论如果与当前产品基线冲突，按当前产品基线执行。
-- 历史阶段文件保留为追溯证据，不直接作为当前开发依据。
+当前门状态：**REOPENED / IMPLEMENTATION IN PROGRESS**。
 
-## 3. 新阶段必须包含
+旧Streaming阶段的成果作为前置能力保留，其plan/test-plan已经按原文归档。重构前V1-9 plan/test-plan也已归档；用户验收V1.0后必须根据最新合同重新生成V1-9计划，不能恢复旧文件。
 
-1. 目标与范围
-2. 关键假设
-3. 不纳入范围
-4. 文件影响面
-5. 测试计划
-6. 风险与回退
-7. 集中验收命令
+## 固定边界
 
-## 4. 当前活动阶段
+- Main Agent是唯一拥有业务Tool选择、下一步、重试、Replan和停止权的组件。
+- 工作流、宏节点、Capability计划、Runner、Skill、Director、Critic和assistant-ui不得取得第二编排权。
+- 每个缺陷先形成红测试，再做最小实现和定向回归；不按固定Tool顺序写断言。
+- 不调用真实图片、视频、PPTX、ZIP或V1-9整包Provider。
+- R5不重跑，V1前不运行390px，不创建manifest/runId。
+- fixture只证明contract或executor，不能上推为model orchestration、product E2E或release。
+- 未经用户另行要求不commit、不push、不部署、不移动标签。
 
-V1 当前只从以下入口继续：
-
-```text
-local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-plan.md
-local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-test-plan.md
-local-real-v1-v1-9r-agent-autonomy-human-gate-recovery-blocker.md
-```
-
-V1-9R 关闭前不得进入 V1-9 唯一真实 Provider 全链路。V1 发布前真实浏览器门只运行桌面视口；既有窄屏合同和历史证据继续保留。
-
-2026-07-14 项目治理期间，产品阶段暂停推进，先按以下文档收敛唯一主线与工作目录：
-
-```text
-2026-07-14-mainline-worktree-consolidation-plan.md
-2026-07-14-mainline-worktree-consolidation-test-plan.md
-2026-07-14-mainline-worktree-consolidation-closeout.md
-```
-
-该治理阶段已完成，只改变Git与文档入口，不改变产品需求、R5状态或V1-9准入条件。
-
-## 5. 已接受但未进入当前主线
-
-以下文档属于独立切片或 V1 发布后的规划，不得打断当前 V1 主线：
-
-```text
-interactive-courseware-spec-foundation-plan.md
-interactive-courseware-spec-foundation-test-plan.md
-v1-1-feedback-closed-loop-plan.md
-v1-1-feedback-closed-loop-test-plan.md
-v2-0前生产化30天计划.md
-v2-0前生产化验收计划.md
-```
-
-实施前必须重新核对对应需求、架构决策、依赖和当时主线状态。
-
-## 6. 历史阶段证据
-
-其余阶段文档默认属于已完成阶段、早期并行主线、MVP迁移、失败阻塞、合并准备或审查记录。历史文件不因名称旧而自动删除或移动；需要归档时，先检查引用并建立单独迁移清单、回滚 manifest 和用户确认。
+未来阶段统一从 `..\roadmap\README.md` 进入；历史阶段统一从 `..\archive\README.md` 追溯。两者都不能覆盖当前plan和test-plan。

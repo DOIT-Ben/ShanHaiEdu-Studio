@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { materialPackageDownloadHeaders } from "@/server/package/artifact-package";
 import { readPackageAssetBuffer } from "@/server/tools/package-tool-adapter";
+import { prisma } from "@/server/db/client";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -16,7 +17,46 @@ export async function GET(request: Request, context: RouteContext) {
         throw new Error("not_final_delivery_artifact");
       }
       if (!hasPackageAsset(finalDelivery)) throw new Error("stored_package_asset_not_found");
-      const storedPackage = readPackageAssetBuffer(finalDelivery);
+      const invocation = await prisma.toolInvocationRecord.findFirst({
+        where: {
+          projectId,
+          artifactId,
+          status: "succeeded",
+          toolName: "create_final_package",
+          observationId: { not: null },
+          finishedAt: { not: null },
+        },
+        orderBy: { finishedAt: "desc" },
+        select: {
+          invocationId: true,
+          projectId: true,
+          taskId: true,
+          intentEpoch: true,
+          planRevision: true,
+          toolName: true,
+          executionEnvelopeJson: true,
+          idempotencyKey: true,
+          status: true,
+          artifactId: true,
+          observationId: true,
+          finishedAt: true,
+          observations: {
+            select: {
+              observationId: true,
+              projectId: true,
+              taskId: true,
+              invocationId: true,
+              intentEpoch: true,
+              status: true,
+              artifactId: true,
+            },
+          },
+        },
+      });
+      const observation = invocation?.observations.find(
+        (candidate) => candidate.observationId === invocation.observationId,
+      ) ?? null;
+      const storedPackage = await readPackageAssetBuffer(finalDelivery, invocation, observation);
       return new Response(toArrayBuffer(storedPackage.buffer), {
         status: 200,
         headers: materialPackageDownloadHeaders(storedPackage.filename),

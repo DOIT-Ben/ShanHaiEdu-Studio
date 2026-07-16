@@ -7,6 +7,10 @@ import type { ExecutionIdentitySnapshot, ProjectExecutionFence } from "@/server/
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { randomUUID } from "node:crypto";
+import type { MainAgentFailure } from "./main-agent-failure";
+import { createControlPlaneStore } from "./control-plane-store";
+import { evaluateTaskCompletionContract } from "./task-completion-contract";
+import { hasValidTaskBrief, type TaskBrief } from "./task-contract";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 
@@ -33,11 +37,13 @@ export type DrainProjectConversationQueueOptions = {
   leaseMs?: number;
   agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
   enableTaskGrantAutonomy?: boolean;
+  enableNativeToolControlPlane?: boolean;
 };
 
 export type DrainProjectConversationQueueResult = {
   started: number;
   succeeded: number;
+  blocked: number;
   failed: number;
 };
 
@@ -48,11 +54,11 @@ export async function drainProjectConversationQueue(
   options: DrainProjectConversationQueueOptions,
 ): Promise<DrainProjectConversationQueueResult> {
   if (activeProjectDrains.has(projectId)) {
-    return { started: 0, succeeded: 0, failed: 0 };
+    return { started: 0, succeeded: 0, blocked: 0, failed: 0 };
   }
 
   activeProjectDrains.add(projectId);
-  const result: DrainProjectConversationQueueResult = { started: 0, succeeded: 0, failed: 0 };
+  const result: DrainProjectConversationQueueResult = { started: 0, succeeded: 0, blocked: 0, failed: 0 };
   const holderId = options.workerId?.trim() || `conversation-worker-${randomUUID()}`;
   const leaseMs = options.leaseMs ?? 10 * 60 * 1000;
   const lease = await options.service.acquireProjectExecutionLease({ projectId, holderId, leaseMs }).catch((error) => {
@@ -86,6 +92,7 @@ export async function drainProjectConversationQueue(
         identity: readJobExecutionIdentity(job),
       });
       try {
+        await appendConversationRunStartedEvent({ projectId, job, service: options.service });
         const execution = await executor({ projectId, job, service: executionService, fence });
         await options.service.renewProjectExecutionLease({ ...fence, leaseMs });
         if (execution.status === "blocked") {
@@ -99,20 +106,42 @@ export async function drainProjectConversationQueue(
             result.failed += 1;
             continue;
           }
+          await appendTerminalConversationEvents({ projectId, job: completed, service: options.service, assistantMessageId: completed.assistantMessageId, status: "blocked" });
+          result.blocked += 1;
         } else {
+          const taskTerminal = await resolveTaskTerminalState({
+            projectId,
+            job,
+            service: options.service,
+          });
+          const completionBlocked = taskTerminal?.status === "paused_recovery";
           const completed = await executionService.finishConversationTurnJob(projectId, job.id, {
             assistantMessageId: execution.assistantMessageId,
-            status: "succeeded",
+            status: completionBlocked ? "blocked" : "succeeded",
+            ...(completionBlocked ? {
+              errorCode: "completion_contract_unsatisfied",
+              errorMessage: "当前任务仍有未完成的交付，进度已保存。",
+            } : {}),
+            ...(taskTerminal ? { taskTerminal } : {}),
           });
           if (completed.status === "quarantined") {
             result.failed += 1;
             continue;
           }
+          await appendTerminalConversationEvents({
+            projectId,
+            job: completed,
+            service: options.service,
+            assistantMessageId: completed.assistantMessageId,
+            status: completionBlocked ? "blocked" : "succeeded",
+          });
+          if (completionBlocked) result.blocked += 1;
+          else result.succeeded += 1;
         }
-        result.succeeded += 1;
       } catch (error) {
         const failure = normalizeExecutionFailure(error);
-        await executionService.failConversationTurnJob(projectId, job.id, failure).catch(() => null);
+        const failed = await executionService.failConversationTurnJob(projectId, job.id, failure);
+        await appendTerminalConversationEvents({ projectId, job: failed, service: options.service, assistantMessageId: failed.assistantMessageId, status: "failed" });
         result.failed += 1;
       }
     }
@@ -123,6 +152,159 @@ export async function drainProjectConversationQueue(
   }
 
   return result;
+}
+
+async function resolveTaskTerminalState(input: {
+  projectId: string;
+  job: ConversationTurnJobRecord;
+  service: WorkbenchService;
+}) {
+  const messages = await input.service.getMessages(input.projectId);
+  const teacherMessage = messages.find((message) => message.id === input.job.teacherMessageId);
+  const candidate = teacherMessage?.metadata.taskBrief;
+  if (!candidate || typeof candidate !== "object" || !hasValidTaskBrief(candidate as TaskBrief)) return null;
+  const taskBrief = candidate as TaskBrief;
+  const store = createControlPlaneStore();
+  const aggregate = await store.getTaskAggregate(input.projectId, taskBrief.intentEpoch);
+  if (!aggregate || aggregate.taskBrief.taskId !== taskBrief.taskId || aggregate.taskBrief.digest !== taskBrief.digest) {
+    throw new Error("TaskAggregate is missing for the queued task terminal transition.");
+  }
+  const artifacts = await input.service.getArtifacts(input.projectId);
+  const completion = evaluateTaskCompletionContract(taskBrief, artifacts);
+  if (completion.status === "satisfied") {
+    return {
+      taskId: taskBrief.taskId,
+      intentEpoch: taskBrief.intentEpoch,
+      taskBriefDigest: taskBrief.digest,
+      status: "completed" as const,
+      checkpoint: null,
+    };
+  }
+  return {
+    taskId: taskBrief.taskId,
+    intentEpoch: taskBrief.intentEpoch,
+    taskBriefDigest: taskBrief.digest,
+    status: "paused_recovery" as const,
+    checkpoint: aggregate.checkpoint ?? {
+      schemaVersion: "task-completion-checkpoint.v1",
+      checkpointId: `completion:${input.job.id}:${taskBrief.digest.slice(0, 12)}`,
+      projectId: input.projectId,
+      taskId: taskBrief.taskId,
+      intentEpoch: taskBrief.intentEpoch,
+      reasonCode: "completion_contract_unsatisfied",
+      remainingRequestedOutputs: completion.remainingRequestedOutputs,
+    },
+  };
+}
+
+async function appendConversationRunStartedEvent(input: {
+  projectId: string;
+  job: ConversationTurnJobRecord;
+  service: WorkbenchService;
+}) {
+  try {
+    const [project, messages] = await Promise.all([
+      input.service.getProject(input.projectId),
+      input.service.getMessages(input.projectId),
+    ]);
+    const teacherMessage = messages.find((message) => message.id === input.job.teacherMessageId);
+    const taskBrief = recordValue(teacherMessage?.metadata.taskBrief);
+    const taskId = optionalText(taskBrief?.taskId) ?? `conversation-turn:${input.job.id}`;
+    const intentEpoch = nonNegativeInteger(taskBrief?.intentEpoch) ?? project.intentEpoch ?? 0;
+    await createControlPlaneStore().appendEvent({
+      eventId: randomUUID(),
+      projectId: input.projectId,
+      taskId,
+      runId: `turn:${input.job.teacherMessageId}`,
+      intentEpoch,
+      kind: "run_started",
+      visibility: "teacher",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        status: "running",
+        teacherMessageId: input.job.teacherMessageId,
+      },
+    });
+  } catch {
+    // Event projection must not become a second execution path.
+  }
+}
+
+async function appendTerminalConversationEvents(input: {
+  projectId: string;
+  job: ConversationTurnJobRecord;
+  service: WorkbenchService;
+  assistantMessageId: string | null | undefined;
+  status: "succeeded" | "blocked" | "failed";
+}) {
+  try {
+    const [project, messages] = await Promise.all([
+      input.service.getProject(input.projectId),
+      input.service.getMessages(input.projectId),
+    ]);
+    const teacherMessage = messages.find((message) => message.id === input.job.teacherMessageId);
+    const assistantMessage = input.assistantMessageId
+      ? messages.find((message) => message.id === input.assistantMessageId)
+      : undefined;
+    const taskBrief = recordValue(teacherMessage?.metadata.taskBrief);
+    const taskId = optionalText(taskBrief?.taskId) ?? `conversation-turn:${input.job.id}`;
+    const intentEpoch = nonNegativeInteger(taskBrief?.intentEpoch) ?? project.intentEpoch ?? 0;
+    const runId = `turn:${input.job.teacherMessageId}`;
+    const store = createControlPlaneStore();
+    if (assistantMessage?.content.trim()) {
+      await store.appendEvent({
+        eventId: randomUUID(),
+        projectId: input.projectId,
+        taskId,
+        runId,
+        intentEpoch,
+        kind: "text_completed",
+        visibility: "teacher",
+        occurredAt: new Date().toISOString(),
+        payload: { messageId: assistantMessage.id, text: assistantMessage.content },
+      });
+    }
+    await store.appendEvent({
+      eventId: randomUUID(),
+      projectId: input.projectId,
+      taskId,
+      runId,
+      intentEpoch,
+      kind: input.status === "succeeded" ? "run_completed" : "run_failed",
+      visibility: "teacher",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        status: input.status,
+        ...(assistantMessage ? { messageId: assistantMessage.id } : {}),
+        ...(input.job.errorCode ? {
+          reasonCode: input.job.errorCode,
+          label: terminalFailureLabel(input.status, input.job.errorCode),
+        } : {}),
+      },
+    });
+  } catch {
+    // The durable message and TurnJob are already committed; a later snapshot remains a safe recovery path.
+  }
+}
+
+function terminalFailureLabel(status: "succeeded" | "blocked" | "failed", reasonCode: string) {
+  if (status === "succeeded") return "本轮任务已经完成";
+  if (reasonCode === "completion_contract_unsatisfied") return "当前交付仍未完成，进度和恢复入口已保存";
+  if (reasonCode === "turn_execution_failed") return "恢复当前任务时未完成，失败位置已保存";
+  if (reasonCode.startsWith("main_agent_provider_")) return "智能服务请求未完成，失败位置已保存";
+  return "当前步骤未完成，失败位置已保存";
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function nonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function readJobExecutionIdentity(job: ConversationTurnJobRecord): ExecutionIdentitySnapshot {
@@ -163,13 +345,16 @@ function createDefaultExecutor(options: DrainProjectConversationQueueOptions): C
       executionFence: fence,
       generationIntensityOverride: job.generationIntensity,
       enableTaskGrantAutonomy: options.enableTaskGrantAutonomy,
+      enableNativeToolControlPlane: options.enableNativeToolControlPlane,
     });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {
+      const failure = response.agentTurn?.failure;
       throw new ConversationTurnJobFailure({
         assistantMessageId: response.assistantMessage?.id,
-        errorCode: "turn_failed",
-        errorMessage: response.assistantMessage?.content ?? "这条消息暂时没有生成成功，请稍后重试。",
+        errorCode: failure?.reasonCode ?? "turn_failed",
+        errorMessage: failure?.summary ?? response.assistantMessage?.content ?? "这条消息暂时没有生成成功，请稍后重试。",
+        failure,
       });
     }
 
@@ -184,12 +369,14 @@ function isFailedTurn(response: MessageTurnResponse) {
 class ConversationTurnJobFailure extends Error {
   readonly assistantMessageId?: string;
   readonly errorCode?: string;
+  readonly failure?: MainAgentFailure;
 
-  constructor(input: { assistantMessageId?: string; errorCode?: string; errorMessage: string }) {
+  constructor(input: { assistantMessageId?: string; errorCode?: string; errorMessage: string; failure?: MainAgentFailure }) {
     super(input.errorMessage);
     this.name = "ConversationTurnJobFailure";
     this.assistantMessageId = input.assistantMessageId;
     this.errorCode = input.errorCode;
+    this.failure = input.failure;
   }
 }
 
@@ -199,6 +386,9 @@ function normalizeExecutionFailure(error: unknown) {
       assistantMessageId: error.assistantMessageId,
       errorCode: error.errorCode,
       errorMessage: sanitizeTeacherVisibleError(error.message),
+      failureCategory: error.failure?.category,
+      retryability: error.failure?.retryability,
+      failureEvidenceDigest: error.failure?.evidenceDigest,
     };
   }
 
@@ -212,6 +402,6 @@ function sanitizeTeacherVisibleError(message: string) {
   const fallback = "这条消息暂时没有生成成功，请稍后重试。";
   const trimmed = message.trim();
   if (!trimmed) return fallback;
-  if (/schema|provider|node_id|capabilityId|runtimeKind|storage|local path|debug|token/i.test(trimmed)) return fallback;
+  if (/schema|provider|node_id|capabilityId|runtimeKind|storage|local path|debug|token|task aggregate|intentepoch|identity cannot change/i.test(trimmed)) return fallback;
   return trimmed;
 }

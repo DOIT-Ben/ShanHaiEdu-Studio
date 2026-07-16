@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { createAgentObservation, createRunCheckpoint } from "@/server/conversation/react-control";
+import { createTaskBrief } from "@/server/conversation/task-contract";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
@@ -14,6 +15,8 @@ describe("AgentWorldState", () => {
   it("separates teacher-approved or internally eligible artifacts from untrusted drafts", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [nodeRecord({ key: "requirement_spec", status: "approved" })],
       artifacts: [
         artifactRecord({ id: "artifact-approved", title: "已确认需求", status: "approved", isApproved: true }),
@@ -51,6 +54,8 @@ describe("AgentWorldState", () => {
   it("reports failed jobs with teacher-readable sanitized fields", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [],
       artifacts: [],
       generationJobs: [
@@ -82,6 +87,8 @@ describe("AgentWorldState", () => {
   it("keeps blocked or failed nodes in blocked items and stale nodes in next risks", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [
         nodeRecord({ key: "pptx_artifact", title: "生成 PPTX 文件", status: "blocked" }),
         nodeRecord({ key: "video_segment_generate", title: "生成分镜视频片段", status: "failed" }),
@@ -103,6 +110,8 @@ describe("AgentWorldState", () => {
   it("sanitizes blocked and stale node reasons before they enter world state", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [
         nodeRecord({ key: "pptx_artifact", title: "生成 PPTX 文件", status: "blocked", staleReason: "OPENAI_API_KEY missing" }),
         nodeRecord({ key: "lesson_plan", title: "公开课教案", status: "stale", staleReason: "COZE_API_TOKEN missing" }),
@@ -121,6 +130,8 @@ describe("AgentWorldState", () => {
   it("keeps only the safe pending plan fields", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [],
       artifacts: [],
       generationJobs: [],
@@ -167,6 +178,8 @@ describe("AgentWorldState", () => {
 
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief: null,
+      taskPlanRevision: null,
       workflowNodes: [],
       artifacts: [],
       generationJobs: [],
@@ -190,6 +203,17 @@ describe("AgentWorldState", () => {
   });
 
   it("exposes trusted ReAct observations and a paused checkpoint for restart recovery", () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task-checkpoint",
+      projectId: "project-1",
+      intentEpoch: 0,
+      goal: "继续当前备课任务",
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: "message-checkpoint",
+    });
     const observation = createAgentObservation({
       projectId: "project-1",
       source: "quality",
@@ -210,6 +234,8 @@ describe("AgentWorldState", () => {
     });
     const state = buildAgentWorldState({
       project: projectRecord(),
+      taskBrief,
+      taskPlanRevision: 4,
       workflowNodes: [],
       artifacts: [],
       generationJobs: [],
@@ -227,6 +253,76 @@ describe("AgentWorldState", () => {
       targetLocators: [{ kind: "page", pageId: "page-5", parentArtifactId: "ppt-1" }],
     })]);
     expect(state.runCheckpoint).toMatchObject({ status: "paused", reason: "budget_exhausted", planVersion: 4 });
+  });
+
+  it("keeps task A artifacts and checkpoint out of task B world state after a redirect", () => {
+    const taskA = createTaskBrief({
+      taskId: "task-a-ppt",
+      projectId: "project-1",
+      intentEpoch: 0,
+      goal: "制作百分数 PPT",
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: "message-task-a",
+    });
+    const taskB = createTaskBrief({
+      taskId: "task-b-video-script",
+      projectId: "project-1",
+      intentEpoch: 1,
+      goal: "改为只做独立创意短片的视频脚本",
+      requestedOutputs: ["video_script"],
+      constraints: ["保留唯一最小课程锚点"],
+      excludedOutputs: ["ppt", "image", "video", "package"],
+      generationIntensity: "standard",
+      sourceMessageId: "message-task-b",
+    });
+    const taskACheckpoint = createRunCheckpoint({
+      projectId: "project-1",
+      planVersion: 3,
+      reason: "repeated_failure",
+      observationRefs: [],
+    });
+
+    const state = buildAgentWorldState({
+      project: projectRecord({ intentEpoch: taskB.intentEpoch }),
+      taskBrief: taskB,
+      taskPlanRevision: 0,
+      workflowNodes: [],
+      artifacts: [
+        artifactRecord({
+          id: "task-a-approved-ppt",
+          nodeKey: "ppt_draft",
+          kind: "ppt_draft",
+          status: "approved",
+          isApproved: true,
+          taskId: taskA.taskId,
+          taskBriefDigest: taskA.digest,
+          intentEpoch: taskA.intentEpoch,
+        }),
+        artifactRecord({
+          id: "task-b-video-script",
+          nodeKey: "video_script_generate",
+          kind: "video_script_generate",
+          status: "approved",
+          isApproved: true,
+          taskId: taskB.taskId,
+          taskBriefDigest: taskB.digest,
+          intentEpoch: taskB.intentEpoch,
+        }),
+      ],
+      generationJobs: [],
+      turnJobs: [],
+      contextPackage: contextPackage(),
+      pendingPlan: null,
+      runCheckpoint: taskACheckpoint,
+    });
+
+    expect(state.trustedInputs.map((artifact) => artifact.id)).toEqual(["task-b-video-script"]);
+    expect(state.draftArtifacts).toEqual([]);
+    expect(state.runCheckpoint).toBeNull();
+    expect(JSON.stringify(state)).not.toContain("task-a-approved-ppt");
   });
 });
 
@@ -324,6 +420,10 @@ function turnJobRecord(overrides: Partial<ConversationTurnJobRecord>): Conversat
     lockedUntil: null,
     errorCode: overrides.errorCode ?? null,
     errorMessage: overrides.errorMessage ?? "对话处理失败",
+    failureCategory: overrides.failureCategory ?? null,
+    failureRetryability: overrides.failureRetryability ?? null,
+    failureEvidenceDigest: overrides.failureEvidenceDigest ?? null,
+    recoveryEvidenceDigest: overrides.recoveryEvidenceDigest ?? null,
     createdAt: "2026-07-09T00:00:00.000Z",
     updatedAt: "2026-07-09T00:00:00.000Z",
     startedAt: "2026-07-09T00:00:00.000Z",

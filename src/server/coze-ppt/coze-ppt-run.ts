@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import JSZip from "jszip";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
+import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
 export { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
@@ -96,10 +95,10 @@ export async function generateCozePptFromArtifact(input: {
 
 async function generateCozePptxBuffer(config: CozePptConfig, project: ProjectRecord, artifact: ArtifactRecord): Promise<CozePptDownloadedResult> {
   if (config.mode === "cli") {
-    return runCozeCliPpt(config, buildCliPrompt(project, artifact));
+    return runCozeCliPpt(config, buildCozePptCliPrompt(project, artifact));
   }
 
-  const prompt = buildPrompt(project, artifact);
+  const prompt = buildCozePptPrompt(project, artifact);
   const result = config.mode === "openapi" ? await runCozeOpenApi(config, prompt) : await runCozePublishedEndpoint(config, prompt);
   return {
     fileName: result.fileName,
@@ -232,9 +231,10 @@ function readConfig(env: NodeJS.ProcessEnv): CozePptConfig {
     };
   }
 
-  const runUrl = env.COZE_PPT_RUN_URL?.trim();
-  const token = env.COZE_API_TOKEN?.trim();
-  const botId = env.COZE_PPT_BOT_ID?.trim();
+  const values = resolveProviderLedgerValueBag({ capability: "coze_ppt", ambientEnv: env });
+  const runUrl = values.get("COZE_PPT_RUN_URL");
+  const token = values.get("COZE_API_TOKEN");
+  const botId = values.get("COZE_PPT_BOT_ID");
   if (!token || (!botId && !runUrl)) {
     throw new Error("missing_COZE_PPT_RUN_ENV");
   }
@@ -242,13 +242,13 @@ function readConfig(env: NodeJS.ProcessEnv): CozePptConfig {
   if (botId) {
     return {
       mode: "openapi",
-      apiBase: (env.COZE_API_BASE?.trim() || "https://api.coze.cn").replace(/\/$/, ""),
+      apiBase: (values.get("COZE_API_BASE") || "https://api.coze.cn").replace(/\/$/, ""),
       botId,
       token,
       timeoutMs,
       deadlineSeconds,
-      pollIntervalMs: Number.parseInt(env.COZE_PPT_POLL_INTERVAL_SECONDS || "1", 10) * 1000,
-      maxPollAttempts: Number.parseInt(env.COZE_PPT_MAX_POLL_ATTEMPTS || "300", 10),
+      pollIntervalMs: Number.parseInt(values.get("COZE_PPT_POLL_INTERVAL_SECONDS") || "1", 10) * 1000,
+      maxPollAttempts: Number.parseInt(values.get("COZE_PPT_MAX_POLL_ATTEMPTS") || "300", 10),
     };
   }
 
@@ -382,13 +382,13 @@ function collectCozeFiles(value: unknown, found: Array<{ fileName: string; fileU
   return found;
 }
 
-function buildCliPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
+export function buildCozePptCliPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
   const pageCount = resolvePptDesignPageCount(artifact.markdownContent);
   return [
-    `@PPT 请基于下面这份逐页四层 PPT 设计稿生成一份小学数学 PPTX。`,
-    `课题：${project.lessonTopic || "百分数导入课"}`,
-    `年级：${project.grade || "六年级"}`,
-    `学科：${project.subject || "数学"}`,
+    "@PPT 请基于下面这份逐页四层 PPT 设计稿生成一份可编辑 PPTX。",
+    `课题：${project.lessonTopic || "未指定课题"}`,
+    `年级：${project.grade || "未指定年级"}`,
+    `学科：${project.subject || "未指定学科"}`,
     `硬性要求：必须生成 ${pageCount} 页，不能只生成封面或说明页；每页必须落实底图、元素、文字、排版四层；生成可下载 PPTX 文件。`,
     "请直接生成 PPTX 产物，不要只返回 Markdown 或说明文字。",
     "当前逐页四层 PPT 设计稿：",
@@ -409,35 +409,21 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
-  const promptTemplate = safeReadText(path.join(process.cwd(), "fixtures", "ppt", "template-a1-original-visual-strategy.md")).slice(0, 1600);
-  const manifest = readFixtureManifest();
-  const textbook = manifest.fixtures.find((fixture) => fixture.id === "sujiao-grade6-percentage-textbook");
+export function buildCozePptPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
   const pageCount = resolvePptDesignPageCount(artifact.markdownContent);
 
   return [
-    "请基于 ShanHaiEdu 本地真实 MVP 的逐页四层 PPT 设计稿，生成一份小学数学 PPTX。",
-    `课题：${project.lessonTopic || "百分数导入课"}`,
-    `年级：${project.grade || "六年级"}`,
-    `学科：${project.subject || "数学"}`,
+    "请基于当前逐页四层 PPT 设计稿生成一份可编辑 PPTX。",
+    `课题：${project.lessonTopic || "未指定课题"}`,
+    `年级：${project.grade || "未指定年级"}`,
+    `学科：${project.subject || "未指定学科"}`,
     `页数：${pageCount} 页。`,
     `要求：严格按设计稿生成，不自行改写成说明文档；每页必须落实底图、元素、文字、排版四层，形成可直接用于公开课的完整 ${pageCount} 页课件。`,
-    `教材样本：${textbook?.id ?? "sujiao-grade6-percentage-textbook"}，sha256=${textbook?.sha256 ?? "unknown"}。`,
     "请返回 JSON，字段必须包含 status、pptx_url、file_name。",
     "不要返回解释文字，不要返回 Markdown 正文。",
     "当前逐页四层 PPT 设计稿：",
     artifact.markdownContent,
-    "提示词模板节选：",
-    promptTemplate,
   ].join("\n");
-}
-
-function readFixtureManifest(): { fixtures: Array<{ id: string; sha256?: string }> } {
-  return JSON.parse(safeReadText(path.join(process.cwd(), "fixtures", "ppt-sample-manifest.json")));
-}
-
-function safeReadText(filePath: string) {
-  return readFileSync(filePath, "utf8");
 }
 
 function isTrustedCozeFileUrl(value: string) {

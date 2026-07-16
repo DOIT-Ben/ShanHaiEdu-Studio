@@ -64,11 +64,31 @@ async function materialize(manifest: ReturnType<typeof validPptFullProductionFix
       create: { width: 32, height: 32, channels: 4, background: { r: 30 + index, g: 110, b: 150, alpha: entry.transparentBackground ? 0 : 1 } },
     }).png().toBuffer();
     const stored = writeLocalArtifact({ category: "image-artifacts", fileName: entry.fileName, buffer });
+    const rawStored = writeLocalArtifact({ category: "image-artifacts", fileName: entry.rawAsset.fileName, buffer });
+    const digest = createHash("sha256").update(buffer).digest("hex");
     entry.storageRef = stored.localOutput;
-    entry.sha256 = createHash("sha256").update(buffer).digest("hex");
+    entry.sha256 = digest;
     entry.bytes = buffer.length;
     entry.width = 32;
     entry.height = 32;
+    entry.rawAsset = {
+      fileName: entry.rawAsset.fileName,
+      storageRef: rawStored.localOutput,
+      sha256: digest,
+      bytes: buffer.length,
+      width: 32,
+      height: 32,
+      mime: "image/png",
+    };
+    entry.normalizedAsset = {
+      fileName: entry.fileName,
+      storageRef: entry.storageRef,
+      sha256: digest,
+      bytes: buffer.length,
+      width: 32,
+      height: 32,
+      mime: "image/png",
+    };
   }
   const { manifestDigest: _digest, ...semantic } = manifest;
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);

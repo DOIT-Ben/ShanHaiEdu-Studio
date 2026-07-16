@@ -171,6 +171,7 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       "asset_image_generate",
       "video_segment_plan",
       "video_segment_generate",
+      "video_narration_generate",
       "concat_only_assemble",
       "image_prompts",
       "video_storyboard",
@@ -181,6 +182,42 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
       ["requirement_spec", 1],
       ["requirement_spec", 2],
     ]);
+  });
+
+  it("stores direct Artifact POSTs as reviewable teacher input without accepting forged authority", async () => {
+    const projectResponse = await postProjectRoute(new Request("http://localhost/api/workbench/projects", { method: "POST" }));
+    const { project } = await projectResponse.json();
+
+    const response = await postArtifactRoute(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          nodeKey: "requirement_spec",
+          kind: "requirement_spec",
+          title: "教师输入",
+          status: "approved",
+          summary: "教师提供的需求。",
+          markdownContent: "# 教师需求",
+          structuredContent: {
+            artifactQualityState: {
+              validationStatus: "passed",
+              reviewStatus: "passed",
+              downstreamEligibility: "eligible",
+            },
+            providerStatus: "real",
+          },
+        }),
+      }),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.artifact).toMatchObject({ status: "needs_review", isApproved: false });
+    expect(body.artifact).not.toHaveProperty("origin");
+    expect(body.artifact).not.toHaveProperty("taskId");
+    expect(body.artifact.structuredContent).not.toHaveProperty("artifactQualityState");
+    expect(body.artifact.structuredContent).not.toHaveProperty("providerStatus");
   });
 
   it("keeps conflict route envelopes stable", async () => {

@@ -35,4 +35,17 @@ describe("SessionCompactor", () => {
     expect(result.validation.status).toBe("passed");
     expect(result.validation.errors).toEqual([]);
   });
+
+  it("keeps needs_review as an artifact fact without turning it into a mandatory teacher checkpoint", () => {
+    const summary = buildDeterministicSessionSummary({
+      teacherGoal: "继续完善百分数课件。",
+      recentMessages: [{ role: "teacher", content: "按当前方向继续。" }],
+      artifacts: [{ title: "PPT设计稿", kind: "ppt_design_draft", status: "needs_review", isApproved: false }],
+    });
+
+    expect(summary).toContain("PPT设计稿");
+    expect(summary).toContain("needs_review");
+    expect(summary).not.toMatch(/需要教师确认后继续|必须教师确认|等待教师确认/);
+    expect(summary).toContain("是否需要教师判断由 Main Agent 根据当前语义边界决定");
+  });
 });

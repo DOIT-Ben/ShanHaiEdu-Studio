@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { POST as postCozePpt } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route";
 import { POST as postImage } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { POST as postVideo } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import {
   assertRouteLevelGenerationConfirmation,
@@ -190,16 +192,18 @@ describe("route-level generation gate", () => {
 
   it("saves direct image generation output as image prompts without overwriting the source PPT draft", async () => {
     const originalEnv = {
-      IMAGEGEN_MYSELF_PRIMARY_API_KEY: process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY,
-      IMAGEGEN_MYSELF_PRIMARY_BASE_URL: process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL,
-      IMAGEGEN_MYSELF_MODEL: process.env.IMAGEGEN_MYSELF_MODEL,
+      IMAGE_PROVIDER_CHANNEL: process.env.IMAGE_PROVIDER_CHANNEL,
+      MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+      MINIMAX_BASE_URL: process.env.MINIMAX_BASE_URL,
+      MINIMAX_IMAGE_MODEL: process.env.MINIMAX_IMAGE_MODEL,
     };
     const originalFetch = globalThis.fetch;
-    process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY = "test-image-key";
-    process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL = "https://image.test/v1";
-    process.env.IMAGEGEN_MYSELF_MODEL = "test-image-model";
+    process.env.IMAGE_PROVIDER_CHANNEL = "minimax";
+    process.env.MINIMAX_API_KEY = "test-image-key";
+    process.env.MINIMAX_BASE_URL = "https://image.test";
+    process.env.MINIMAX_IMAGE_MODEL = "image-01";
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ data: [{ b64_json: validPngBase64() }] }), {
+      new Response(JSON.stringify({ data: { image_base64: [validPngBase64()] }, base_resp: { status_code: 0 } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -207,6 +211,7 @@ describe("route-level generation gate", () => {
     try {
       const service = createWorkbenchService();
       const project = await service.createProject({ title: "route gate image success" });
+      await activateOfflineTask(project);
       const source = await service.saveArtifact(project.id, {
         nodeKey: "ppt_draft",
         kind: "ppt_draft",
@@ -229,9 +234,10 @@ describe("route-level generation gate", () => {
       expect(generated).toMatchObject({ nodeKey: "image_prompts", kind: "image_prompts", status: "needs_review", isApproved: false });
     } finally {
       globalThis.fetch = originalFetch;
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_API_KEY", originalEnv.IMAGEGEN_MYSELF_PRIMARY_API_KEY);
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_BASE_URL", originalEnv.IMAGEGEN_MYSELF_PRIMARY_BASE_URL);
-      restoreEnv("IMAGEGEN_MYSELF_MODEL", originalEnv.IMAGEGEN_MYSELF_MODEL);
+      restoreEnv("IMAGE_PROVIDER_CHANNEL", originalEnv.IMAGE_PROVIDER_CHANNEL);
+      restoreEnv("MINIMAX_API_KEY", originalEnv.MINIMAX_API_KEY);
+      restoreEnv("MINIMAX_BASE_URL", originalEnv.MINIMAX_BASE_URL);
+      restoreEnv("MINIMAX_IMAGE_MODEL", originalEnv.MINIMAX_IMAGE_MODEL);
     }
   });
 });
@@ -283,4 +289,37 @@ function restoreEnv(key: string, value: string | undefined) {
   } else {
     process.env[key] = value;
   }
+}
+
+async function activateOfflineTask(project: Awaited<ReturnType<ReturnType<typeof createWorkbenchService>["createProject"]>>) {
+  const brief = createTaskBrief({
+    taskId: `task:${project.id}`,
+    projectId: project.id,
+    intentEpoch: project.intentEpoch ?? 0,
+    goal: "生成课堂视觉图",
+    requestedOutputs: ["image_prompts"],
+    constraints: ["offline_fixture_only"],
+    excludedOutputs: ["real_provider"],
+    generationIntensity: project.generationIntensity ?? "standard",
+    sourceMessageId: `message:${project.id}`,
+  });
+  const grant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: brief.taskId,
+    projectId: brief.projectId,
+    intentEpoch: brief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: brief.generationIntensity,
+    budgetPolicyVersion: "offline-fixture.v1",
+    maxCostCredits: 0,
+    maxExternalProviderCalls: 1,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  await createControlPlaneStore().upsertTaskAggregate({
+    taskBrief: brief,
+    intentGrant: grant,
+    plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
 }

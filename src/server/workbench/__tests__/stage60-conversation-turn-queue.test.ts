@@ -4,7 +4,9 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
+import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { createWorkbenchService } from "../service";
 
@@ -26,7 +28,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const snapshot = await service.getProjectSnapshot(project.id);
     const persistedTeacherMessage = snapshot.messages.find((message) => message.id === teacherMessage.id)!;
 
-    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(result).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
     expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", kind: "requirement_spec", status: "needs_review" })]);
     expect(persistedTeacherMessage.metadata).toMatchObject({
       taskBrief: { goal: expect.stringContaining("投篮命中率"), intentEpoch: 0 },
@@ -154,9 +156,9 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const snapshot = await service.getProjectSnapshot(project.id);
     const assistantPlanMessage = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).teacherRequest === "帮我做五年级数学百分数 PPT");
 
-    expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
     expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", status: "needs_review" })]);
-    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "succeeded" });
+    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
     expect(pendingDeliveryPlanOf(assistantPlanMessage)).toMatchObject({ status: "confirmed", actionId });
   });
 
@@ -177,7 +179,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const snapshot = await service.getProjectSnapshot(project.id);
     const oldPlan = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
 
-    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(result).toMatchObject({ started: 1, succeeded: 1, blocked: 0, failed: 0 });
     expect(snapshot.artifacts).toHaveLength(0);
     expect(snapshot.project.intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
     expect(pendingDeliveryPlanOf(oldPlan)).toMatchObject({ status: "superseded", actionId: oldActionId });
@@ -206,9 +208,9 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const drainResult = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
     const snapshot = await service.getProjectSnapshot(project.id);
 
-    expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
     expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", status: "needs_review" })]);
-    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "succeeded" });
+    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
   });
 
   it("queued execution blocks a pending plan when POST /messages has no valid actionId", async () => {
@@ -233,9 +235,9 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const snapshot = await service.getProjectSnapshot(project.id);
     const assistantMessages = snapshot.messages.filter((message) => message.role === "assistant");
 
-    expect(drainResult).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
     expect(snapshot.artifacts).toHaveLength(0);
-    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "succeeded" });
+    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked" });
     expect(assistantMessages.at(-1)?.content).toContain("不匹配");
   });
 
@@ -359,6 +361,67 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(snapshot.turnJobs[1].assistantMessageId).toBeTruthy();
   });
 
+  it("does not let generic checkpoint recovery requeue a Provider-health-gated TurnJob", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "V1-9 selected channel recovery" });
+    const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "完成百分数材料包" });
+    const queued = await service.enqueueConversationTurn(project.id, {
+      teacherMessageId: teacherMessage.id,
+      idempotencyKey: "turn:same-task",
+      maxAttempts: 2,
+    });
+    const running = await service.startNextConversationTurnJob(project.id, { lockedBy: "primary-worker" });
+    await service.failConversationTurnJob(project.id, running!.id, {
+      errorCode: "main_agent_provider_policy_blocked",
+      errorMessage: "当前智能服务通道拒绝了这次请求。",
+      retryability: "after_provider_health_change",
+      failureEvidenceDigest: "a".repeat(64),
+    });
+
+    await expect(service.requeueConversationTurnJobForRecovery(project.id, queued.id, {
+      recoveryEvidenceDigest: "a".repeat(64),
+    })).resolves.toBeNull();
+    const recovered = await service.requeueConversationTurnJobForRecovery(project.id, queued.id, {
+      recoveryEvidenceDigest: "b".repeat(64),
+    });
+
+    expect(recovered).toBeNull();
+    expect(await service.startNextConversationTurnJob(project.id, { lockedBy: "fallback-worker" })).toBeNull();
+  });
+
+  it("does not let generic checkpoint recovery extend an exhausted Provider-health-gated TurnJob", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "V1-9 exhausted selected channel recovery" });
+    const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "继续同一百分数材料包" });
+    const queued = await service.enqueueConversationTurn(project.id, {
+      teacherMessageId: teacherMessage.id,
+      idempotencyKey: "turn:same-exhausted-task",
+      maxAttempts: 1,
+    });
+    const running = await service.startNextConversationTurnJob(project.id, { lockedBy: "primary-worker" });
+    await service.failConversationTurnJob(project.id, running!.id, {
+      errorCode: "main_agent_provider_unavailable",
+      errorMessage: "当前智能服务通道暂时不可用。",
+      retryability: "after_provider_health_change",
+      failureEvidenceDigest: "a".repeat(64),
+    });
+
+    const recovered = await service.requeueConversationTurnJobForRecovery(project.id, queued.id, {
+      recoveryEvidenceDigest: "b".repeat(64),
+    });
+
+    expect(recovered).toBeNull();
+    expect((await service.getConversationTurnJobs(project.id))[0]).toMatchObject({
+      id: queued.id,
+      status: "failed",
+      attempts: 1,
+      maxAttempts: 1,
+    });
+    await expect(service.requeueConversationTurnJobForRecovery(project.id, queued.id, {
+      recoveryEvidenceDigest: "b".repeat(64),
+    })).resolves.toBeNull();
+  });
+
   it("skips max-attempt exhausted jobs and continues draining later queued work", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "M60 exhausted job 跳过" });
@@ -407,11 +470,44 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const project = await service.createProject({ title: "V1-3 queued Agent Tool identity" });
     const enhancedProject = await service.updateProjectGenerationIntensity(project.id, { intensity: "enhanced", expectedVersion: 0 });
     const teacherMessage = await service.addMessage(project.id, { role: "teacher", content: "请先规划PPT样张" });
-    await service.saveArtifact(project.id, {
+    const taskBrief = createTaskBrief({
+      taskId: `task:${teacherMessage.id}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: teacherMessage.content,
+      requestedOutputs: ["ppt"],
+      constraints: ["PPT样张"],
+      excludedOutputs: [],
+      generationIntensity: "enhanced",
+      sourceMessageId: teacherMessage.id,
+    });
+    const intentGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: taskBrief.taskId,
+      projectId: project.id,
+      intentEpoch: taskBrief.intentEpoch,
+      standardWorkAuthorized: true,
+      intensity: "enhanced",
+      budgetPolicyVersion: "v1-standard-task-scope.v1",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 2,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+    await service.updateMessageMetadata(project.id, teacherMessage.id, { taskBrief, intentGrant });
+    await createControlPlaneStore().upsertTaskAggregate({
+      taskBrief,
+      intentGrant,
+      plan: { planId: `plan:${taskBrief.taskId}`, revision: 0, status: "active" },
+      status: "active",
+      checkpoint: null,
+    });
+    const outline = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft", kind: "ppt_draft", title: "可信 PPT 大纲", status: "needs_review",
       summary: "已通过内部校验，可供 Director 审查。", markdownContent: "# PPT 大纲",
       structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
     });
+    await service.approveArtifact(project.id, outline.id);
     await service.enqueueConversationTurn(project.id, { teacherMessageId: teacherMessage.id });
     await service.updateProjectGenerationIntensity(project.id, { intensity: "deep", expectedVersion: enhancedProject.intensityVersion ?? 1 });
     let invocation: AgentToolInvocationEnvelope | undefined;
@@ -427,6 +523,17 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       };
     };
     const agent = {
+      async intakeTask(input: { userMessage: string }) {
+        return {
+          kind: "task" as const,
+          proposal: {
+            goal: input.userMessage,
+            requestedOutputs: ["ppt"],
+            constraints: ["PPT样张"],
+            excludedOutputs: [],
+          },
+        };
+      },
       async respond(input: MainConversationAgentInput) {
         expect(input.generationIntensity).toBe("enhanced");
         expect(input.agentToolLoop).toBeDefined();
@@ -452,9 +559,10 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       agent,
       agentToolExecutor,
       workerId: "v1-3-worker",
+      enableNativeToolControlPlane: true,
     });
 
-    expect(result).toMatchObject({ started: 1, succeeded: 1, failed: 0 });
+    expect(result).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
     expect(invocation).toMatchObject({
       projectId: project.id,
       identity: { actorUserId: "local-test-user", actorAuthMode: "local", authSessionId: null },

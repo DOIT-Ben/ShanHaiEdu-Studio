@@ -107,6 +107,7 @@ function messageRecord(index: number, role: ConversationMessageRecord["role"] = 
     projectId: "project-context",
     role,
     content: `消息 ${index}`,
+    parts: [],
     artifactRefs: [],
     metadata: {},
     createdAt: `2026-07-09T00:00:${String(index).padStart(2, "0")}.000Z`,

@@ -48,7 +48,7 @@ export type MainAgentReActRoundRecord = {
   observation: MainAgentReActContinuationObservation;
 };
 
-type CompactedHistory = {
+export type MainAgentReActCompactedHistory = {
   omittedRounds: number;
   digest: string | null;
   statusCounts: Partial<Record<MainAgentReActContinuationObservation["status"], number>>;
@@ -58,10 +58,12 @@ type CompactedHistory = {
 export type MainAgentReActCheckpoint = {
   schemaVersion: typeof MAIN_AGENT_REACT_CHECKPOINT_VERSION;
   baseContextDigest: string;
+  baseContextScope?: "request" | "task_identity";
   task: MainAgentReActCheckpointSeed;
   currentToolNames: string[];
   completedRounds: MainAgentReActRoundRecord[];
-  compactedHistory: CompactedHistory;
+  externalObservations?: MainAgentReActContinuationObservation[];
+  compactedHistory: MainAgentReActCompactedHistory;
   checkpointDigest: string;
 };
 
@@ -71,21 +73,29 @@ export function createMainAgentReActCheckpoint(input: {
   records: MainAgentReActRoundRecord[];
   currentToolNames: readonly string[];
   maxEstimatedTokens?: number;
+  compactedHistory?: MainAgentReActCompactedHistory;
+  externalObservations?: MainAgentReActContinuationObservation[];
 }): MainAgentReActCheckpoint {
   const maxEstimatedTokens = Math.max(800, input.maxEstimatedTokens ?? 4_000);
-  const compactedHistory: CompactedHistory = {
-    omittedRounds: 0,
-    digest: null,
-    statusCounts: {},
-    observationIds: [],
-  };
+  const compactedHistory: MainAgentReActCompactedHistory = input.compactedHistory
+    ? structuredClone(input.compactedHistory)
+    : { omittedRounds: 0, digest: null, statusCounts: {}, observationIds: [] };
   let completedRounds = input.records.map(normalizeRoundRecord);
+  const externalObservations = (input.externalObservations ?? [])
+    .map(normalizeContinuationObservation)
+    .slice(-12);
+  const normalizedSeed = normalizeSeed(input.seed);
+  const baseContextScope = hasTaskIdentity(normalizedSeed) ? "task_identity" as const : "request" as const;
   let checkpoint = withCheckpointDigest({
     schemaVersion: MAIN_AGENT_REACT_CHECKPOINT_VERSION,
-    baseContextDigest: hashRunInput({ instructions: input.request.instructions, input: input.request.input }),
-    task: normalizeSeed(input.seed),
+    baseContextDigest: baseContextScope === "task_identity"
+      ? taskIdentityDigest(normalizedSeed)
+      : requestContextDigest(input.request),
+    baseContextScope,
+    task: normalizedSeed,
     currentToolNames: uniqueText(input.currentToolNames, 32, 120),
     completedRounds,
+    externalObservations,
     compactedHistory,
   });
 
@@ -113,6 +123,55 @@ export function createMainAgentReActCheckpoint(input: {
   }
 
   return checkpoint;
+}
+
+export function isMainAgentReActResumeContextCompatible(input: {
+  checkpoint: MainAgentReActCheckpoint;
+  request: GptProtocolRequest;
+  seed?: MainAgentReActCheckpointSeed;
+}) {
+  const currentSeed = normalizeSeed(input.seed);
+  if (input.checkpoint.baseContextScope === "task_identity") {
+    return hasTaskIdentity(currentSeed) &&
+      input.checkpoint.baseContextDigest === taskIdentityDigest(currentSeed) &&
+      compatibleTaskSeed(input.checkpoint.task, currentSeed);
+  }
+  if (input.checkpoint.baseContextScope === "request") {
+    return input.checkpoint.baseContextDigest === requestContextDigest(input.request);
+  }
+  // Legacy v1 checkpoints hashed the full dynamic request. Migrate only when the
+  // signed checkpoint task identity still matches and the plan did not roll back.
+  if (hasTaskIdentity(input.checkpoint.task) && hasTaskIdentity(currentSeed)) {
+    return compatibleTaskSeed(input.checkpoint.task, currentSeed);
+  }
+  return input.checkpoint.baseContextDigest === requestContextDigest(input.request);
+}
+
+export function restoreMainAgentReActCheckpoint(checkpoint: MainAgentReActCheckpoint): MainAgentReActCheckpoint {
+  if (!checkpoint || checkpoint.schemaVersion !== MAIN_AGENT_REACT_CHECKPOINT_VERSION) {
+    throw new Error("Main Agent ReAct checkpoint version is invalid.");
+  }
+  const { checkpointDigest, ...unsigned } = checkpoint;
+  if (!/^[a-f0-9]{64}$/i.test(checkpointDigest) || checkpointDigest !== hashRunInput(unsigned)) {
+    throw new Error("Main Agent ReAct checkpoint digest is invalid.");
+  }
+  return structuredClone(checkpoint);
+}
+
+export function buildMainAgentReActResumeItems(input: {
+  request: GptProtocolRequest;
+  checkpoint: MainAgentReActCheckpoint;
+}): unknown[] {
+  return [
+    { role: "user", content: input.request.input },
+    {
+      role: "user",
+      content: JSON.stringify({
+        type: "main_agent_react_checkpoint_resume",
+        checkpoint: input.checkpoint,
+      }),
+    },
+  ];
 }
 
 export function buildMainAgentReActContinuationItems(input: {
@@ -169,28 +228,34 @@ function normalizeRoundRecord(record: MainAgentReActRoundRecord): MainAgentReAct
     round: Math.max(1, Math.trunc(record.round)),
     toolName: truncate(record.toolName, 120),
     callDigest: truncate(record.callDigest, 128),
-    observation: {
-      ...(record.observation.observationId ? { observationId: truncate(record.observation.observationId, 160) } : {}),
-      status: record.observation.status,
-      reasonCodes: uniqueText(record.observation.reasonCodes, 12, 160),
-      ...(record.observation.summary ? { summary: truncate(record.observation.summary, 360) } : {}),
-      ...(record.observation.artifactRefs?.length ? { artifactRefs: record.observation.artifactRefs.slice(0, 12).map((ref) => ({
-        artifactId: truncate(ref.artifactId, 160),
-        ...(ref.kind ? { kind: truncate(ref.kind, 120) } : {}),
-        ...(Number.isInteger(ref.version) ? { version: ref.version } : {}),
-        ...(ref.digest ? { digest: truncate(ref.digest, 128) } : {}),
-      })) } : {}),
-      ...(record.observation.reportRefs?.length ? { reportRefs: record.observation.reportRefs.slice(0, 12).map((ref) => ({
-        id: truncate(ref.id, 160),
-        ...(ref.kind ? { kind: truncate(ref.kind, 80) } : {}),
-        ...(ref.digest ? { digest: truncate(ref.digest, 128) } : {}),
-      })) } : {}),
-      ...(record.observation.targetLocators?.length ? { targetLocators: structuredClone(record.observation.targetLocators.slice(0, 12)) } : {}),
-      ...(record.observation.nextAction ? { nextAction: truncate(record.observation.nextAction, 80) } : {}),
-      ...(record.observation.advisoryNextToolIntents?.length ? {
-        advisoryNextToolIntents: uniqueText(record.observation.advisoryNextToolIntents, 12, 120),
-      } : {}),
-    },
+    observation: normalizeContinuationObservation(record.observation),
+  };
+}
+
+function normalizeContinuationObservation(
+  observation: MainAgentReActContinuationObservation,
+): MainAgentReActContinuationObservation {
+  return {
+    ...(observation.observationId ? { observationId: truncate(observation.observationId, 160) } : {}),
+    status: observation.status,
+    reasonCodes: uniqueText(observation.reasonCodes, 12, 160),
+    ...(observation.summary ? { summary: truncate(observation.summary, 360) } : {}),
+    ...(observation.artifactRefs?.length ? { artifactRefs: observation.artifactRefs.slice(0, 12).map((ref) => ({
+      artifactId: truncate(ref.artifactId, 160),
+      ...(ref.kind ? { kind: truncate(ref.kind, 120) } : {}),
+      ...(Number.isInteger(ref.version) ? { version: ref.version } : {}),
+      ...(ref.digest ? { digest: truncate(ref.digest, 128) } : {}),
+    })) } : {}),
+    ...(observation.reportRefs?.length ? { reportRefs: observation.reportRefs.slice(0, 12).map((ref) => ({
+      id: truncate(ref.id, 160),
+      ...(ref.kind ? { kind: truncate(ref.kind, 80) } : {}),
+      ...(ref.digest ? { digest: truncate(ref.digest, 128) } : {}),
+    })) } : {}),
+    ...(observation.targetLocators?.length ? { targetLocators: structuredClone(observation.targetLocators.slice(0, 12)) } : {}),
+    ...(observation.nextAction ? { nextAction: truncate(observation.nextAction, 80) } : {}),
+    ...(observation.advisoryNextToolIntents?.length ? {
+      advisoryNextToolIntents: uniqueText(observation.advisoryNextToolIntents, 12, 120),
+    } : {}),
   };
 }
 
@@ -213,7 +278,41 @@ function normalizeSeed(seed: MainAgentReActCheckpointSeed | undefined): MainAgen
       };
 }
 
-function foldRound(history: CompactedHistory, record: MainAgentReActRoundRecord) {
+function requestContextDigest(request: GptProtocolRequest) {
+  return hashRunInput({ instructions: request.instructions, input: request.input });
+}
+
+function taskIdentityDigest(seed: MainAgentReActCheckpointSeed) {
+  return hashRunInput({
+    projectId: seed.projectId,
+    taskId: seed.taskId,
+    taskBriefDigest: seed.taskBriefDigest,
+    intentEpoch: seed.intentEpoch,
+    generationIntensity: seed.generationIntensity,
+    authorization: seed.authorization,
+  });
+}
+
+function hasTaskIdentity(seed: MainAgentReActCheckpointSeed) {
+  return Boolean(
+    seed.projectId?.trim() &&
+    seed.taskId?.trim() &&
+    seed.taskBriefDigest?.match(/^[a-f0-9]{64}$/i) &&
+    Number.isInteger(seed.intentEpoch) && Number(seed.intentEpoch) >= 0,
+  );
+}
+
+function compatibleTaskSeed(checkpoint: MainAgentReActCheckpointSeed, current: MainAgentReActCheckpointSeed) {
+  return checkpoint.projectId === current.projectId &&
+    checkpoint.taskId === current.taskId &&
+    checkpoint.taskBriefDigest === current.taskBriefDigest &&
+    checkpoint.intentEpoch === current.intentEpoch &&
+    checkpoint.generationIntensity === current.generationIntensity &&
+    checkpoint.planRevision <= current.planRevision &&
+    JSON.stringify(checkpoint.authorization) === JSON.stringify(current.authorization);
+}
+
+function foldRound(history: MainAgentReActCompactedHistory, record: MainAgentReActRoundRecord) {
   history.omittedRounds += 1;
   history.digest = hashRunInput({ previous: history.digest, record });
   history.statusCounts[record.observation.status] = (history.statusCounts[record.observation.status] ?? 0) + 1;

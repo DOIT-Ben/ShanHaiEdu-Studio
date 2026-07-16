@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import { generateCozePptFromArtifact, type CozePptGenerationResult } from "@/server/coze-ppt/coze-ppt-run";
 import { createToolObservation, type ToolObservationKind, type ToolObservationRetryAction } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
@@ -17,7 +19,11 @@ import {
   type VideoGenerationTaskLifecycle,
 } from "@/server/video-generation/video-generation-run";
 import { resolveEvolinkShotReferences } from "@/server/video-generation/evolink-reference-upload";
-import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
+import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
+import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
+import { generateMiniMaxVideoNarration, VideoNarrationProviderError, type VideoNarrationProviderResult } from "@/server/video-generation/video-narration-provider";
+import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import { resolveStoryboardShotDurations, validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
@@ -32,16 +38,23 @@ export type ProviderArtifactRef = {
   structuredContent?: Record<string, unknown>;
 };
 
-export type RunCozePptProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord }) => Promise<CozePptGenerationResult>;
-export type RunImageProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord }) => Promise<ImageGenerationResult>;
-export type RunPptAssetBatchProvider = (input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" }) => Promise<PptAssetBatchRunResult>;
+type ProviderBusinessSkillInput = {
+  userInstruction?: string | null;
+  toolInput?: Record<string, unknown>;
+  businessSkillContext?: BusinessSkillContext;
+};
+
+export type RunCozePptProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord } & ProviderBusinessSkillInput) => Promise<CozePptGenerationResult>;
+export type RunImageProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord } & ProviderBusinessSkillInput) => Promise<ImageGenerationResult>;
+export type RunPptAssetBatchProvider = (input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" } & ProviderBusinessSkillInput) => Promise<PptAssetBatchRunResult>;
 export type RunVideoProvider = (input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
   upstreamArtifacts?: ArtifactRecord[];
   taskLifecycle?: VideoGenerationTaskLifecycle;
   shot?: ResolvedShotVideoRequest;
-}) => Promise<VideoGenerationResult>;
+} & ProviderBusinessSkillInput) => Promise<VideoGenerationResult>;
+export type RunVideoNarrationProvider = (input: { script: VideoNarrationScript } & ProviderBusinessSkillInput) => Promise<VideoNarrationProviderResult>;
 
 export type ResolveVideoShotProvider = (input: {
   toolInput?: Record<string, unknown>;
@@ -59,10 +72,12 @@ export type ProviderToolAdapterInput = {
   resolvedArtifacts?: ArtifactRecord[];
   sourceMessageId?: string;
   generationTaskLifecycle?: VideoGenerationTaskLifecycle;
+  businessSkillContext?: BusinessSkillContext;
   runCozePpt?: RunCozePptProvider;
   runImage?: RunImageProvider;
   runPptAssetBatch?: RunPptAssetBatchProvider;
   runVideo?: RunVideoProvider;
+  runVideoNarration?: RunVideoNarrationProvider;
   resolveVideoShot?: ResolveVideoShotProvider;
 };
 
@@ -72,6 +87,7 @@ const PPT_SAMPLE_ASSET_PROVIDER = "ppt_sample_assets";
 const PPT_FULL_ASSET_PROVIDER = "ppt_full_assets";
 const ASSET_IMAGE_PROVIDER = "asset_image_generate";
 const VIDEO_PROVIDER = "video_segment_generate";
+const VIDEO_NARRATION_PROVIDER = "tts_minimax";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 export async function executeProviderTool(input: ProviderToolAdapterInput): Promise<ToolExecutionResult> {
@@ -96,7 +112,7 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
     return buildNeedsInputResult(input, capabilityId, provider, missingArtifactKinds);
   }
 
-  if (!isCozePptTool(input.tool) && !isImageTool(input.tool) && !isPptAssetTool(input.tool) && !isVideoTool(input.tool)) {
+  if (!isCozePptTool(input.tool) && !isImageTool(input.tool) && !isPptAssetTool(input.tool) && !isVideoTool(input.tool) && !isVideoNarrationTool(input.tool)) {
     return buildFailureResult(input, {
       capabilityId,
       provider,
@@ -121,6 +137,10 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
     return executeVideoTool(input, capabilityId, provider);
   }
 
+  if (isVideoNarrationTool(input.tool)) {
+    return executeVideoNarrationTool(input, capabilityId, provider);
+  }
+
   const sourceArtifact = findResolvedArtifact(input, "ppt_design_draft");
   if (!sourceArtifact) {
     return buildNeedsInputResult(input, capabilityId, provider, ["ppt_design_draft"]);
@@ -132,11 +152,12 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
     const result = await runCozePpt({
       project: input.project ?? buildProjectRecord(input.projectId),
       artifact: sourceArtifact,
+      ...providerBusinessSkillInput(input),
     });
 
     return buildCozePptSuccessResult(input, capabilityId, sourceArtifact.id, result);
   } catch (error) {
-    return buildFailureResult(input, classifyCozePptFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable));
+    return buildFailureResult(input, classifyCozePptFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable), true);
   }
 }
 
@@ -147,20 +168,26 @@ async function executePptAssetTool(input: ProviderToolAdapterInput, capabilityId
   const approvalArtifact = isFullProduction ? findResolvedArtifact(input, "image_prompts") : undefined;
   if (isFullProduction && !approvalArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["image_prompts"]);
 
+  let providerSubmitted = false;
   try {
     if (isFullProduction) {
       assertCurrentPptSampleApproval(sourceArtifact, approvalArtifact!);
       assertPptProductionEvidenceResolved(sourceArtifact, input.resolvedArtifacts ?? []);
     }
     const scope = isFullProduction ? "full_production" as const : "key_samples" as const;
-    const result = await (input.runPptAssetBatch ?? runDefaultPptAssetBatch)({ artifact: sourceArtifact, scope });
+    providerSubmitted = true;
+    const result = await (input.runPptAssetBatch ?? runDefaultPptAssetBatch)({
+      artifact: sourceArtifact,
+      scope,
+      ...providerBusinessSkillInput(input),
+    });
     return buildPptAssetSuccessResult(input, capabilityId, sourceArtifact.id, result, approvalArtifact);
   } catch (error) {
-    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"));
+    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"), providerSubmitted);
   }
 }
 
-async function runDefaultPptAssetBatch(input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" }): Promise<PptAssetBatchRunResult> {
+async function runDefaultPptAssetBatch(input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" } & ProviderBusinessSkillInput): Promise<PptAssetBatchRunResult> {
   const packageValue = input.artifact.structuredContent.pptDesignPackage;
   if (!packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) throw new Error("ppt_design_package_missing");
   const validation = validatePptDesignPackageForProviderProduction(packageValue as PptDesignPackage);
@@ -186,8 +213,7 @@ function assertPptProductionEvidenceResolved(designArtifact: ArtifactRecord, res
     .filter((artifactId) => !resolvedArtifacts.some((artifact) =>
       artifact.id === artifactId &&
       artifact.projectId === designArtifact.projectId &&
-      artifact.status === "approved" &&
-      artifact.isApproved,
+      isArtifactTrustedForDownstream(artifact),
     ));
   if (unresolved.length > 0) throw new Error("ppt_full_evidence_unresolved");
 }
@@ -203,10 +229,11 @@ async function executeImageTool(input: ProviderToolAdapterInput, capabilityId: s
     const result = await (input.runImage ?? generateImageFromArtifact)({
       project: input.project ?? buildProjectRecord(input.projectId),
       artifact: sourceArtifact,
+      ...providerBusinessSkillInput(input),
     });
     return buildImageSuccessResult(input, capabilityId, sourceArtifact.id, result);
   } catch (error) {
-    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"));
+    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"), true);
   }
 }
 
@@ -226,6 +253,7 @@ async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: s
   const artifact = sourceArtifact;
   const upstreamArtifacts = [storyboard, assetImages];
 
+  let providerSubmitted = false;
   try {
     assertVideoProviderPreconditions({ artifact, upstreamArtifacts });
     const shot = await (input.resolveVideoShot ?? resolveDefaultVideoShotRequest)({
@@ -233,17 +261,121 @@ async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: s
       storyboard,
       assetImages,
     });
+    providerSubmitted = true;
     const result = await (input.runVideo ?? generateVideoFromArtifact)({
       project: input.project ?? buildProjectRecord(input.projectId),
       artifact,
       upstreamArtifacts,
       taskLifecycle: input.generationTaskLifecycle,
       shot,
+      ...providerBusinessSkillInput(input),
     });
     return buildVideoSuccessResult(input, capabilityId, [sourceArtifact.id, storyboard.id, assetImages.id], result);
   } catch (error) {
-    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "video"));
+    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "video"), providerSubmitted);
   }
+}
+
+async function executeVideoNarrationTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
+  const sourceArtifact = findResolvedArtifact(input, "video_script_generate");
+  if (!sourceArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["video_script_generate"]);
+  const script = sourceArtifact.structuredContent.videoNarrationScript as VideoNarrationScript | undefined;
+  if (!script || !validateVideoNarrationScript(script).valid) {
+    return buildFailureResult(input, classifyMediaFailure(new Error("video_narration_script_invalid"), capabilityId, provider, false, "video"));
+  }
+
+  try {
+    const narration = await (input.runVideoNarration ?? ((value) => generateMiniMaxVideoNarration(value)))({
+      script,
+      ...providerBusinessSkillInput(input),
+    });
+    if (narration.providerEvidence.scriptDigest !== script.scriptDigest || narration.audioBuffer.length < 512 || narration.transcriptBuffer.length === 0 || narration.cues.length === 0) {
+      throw new Error("video_narration_output_invalid");
+    }
+    const suffix = randomUUID();
+    const audio = writeLocalArtifact({ category: "video-artifacts", fileName: `narration-${suffix}.mp3`, buffer: narration.audioBuffer });
+    const transcript = writeLocalArtifact({ category: "video-artifacts", fileName: `narration-${suffix}.srt`, buffer: narration.transcriptBuffer });
+    const audioSha256 = createHash("sha256").update(narration.audioBuffer).digest("hex");
+    const transcriptSha256 = createHash("sha256").update(narration.transcriptBuffer).digest("hex");
+    const artifactTruth = buildProviderArtifactTruth(input, "video_narration_generate");
+    const qualityGate = { passed: true, gates: ["narration_audio_persisted", "subtitle_cues_valid", "script_digest_bound"] } satisfies ToolQualityGateResult;
+    const businessSkillProvenance = resolveBusinessSkillProvenance(input);
+    return {
+      status: "succeeded",
+      toolId: input.tool.id,
+      capabilityId,
+      provider: VIDEO_NARRATION_PROVIDER,
+      artifactDraft: {
+        nodeKey: "video_narration_generate",
+        kind: "video_narration_generate",
+        title: "真实视频旁白与字幕",
+        summary: "真实旁白音轨与时间绑定字幕已生成并完成脚本版本绑定。",
+        markdownContent: "# 视频旁白与字幕\n\n真实旁白音轨和字幕已持久化，可用于最终视频组装。",
+        structuredContent: {
+          narrationProviderEvidence: narration.providerEvidence,
+          cues: narration.cues,
+          storage: {
+            audioTrack: { fileName: `narration-${suffix}.mp3`, localOutput: audio.localOutput, bytes: narration.audioBuffer.length, sha256: audioSha256, mime: "audio/mpeg" },
+            transcript: { fileName: `narration-${suffix}.srt`, localOutput: transcript.localOutput, bytes: narration.transcriptBuffer.length, sha256: transcriptSha256, mime: "application/x-subrip" },
+          },
+          ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
+          artifactTruth,
+          qualityGate,
+        },
+      },
+      artifactTruth,
+      qualityGate,
+      providerPayload: { provider: VIDEO_NARRATION_PROVIDER, scriptDigest: script.scriptDigest, audioSha256, transcriptSha256, ...(businessSkillProvenance ? { businessSkillProvenance } : {}), artifactTruth, qualityGate },
+      assistantSummary: "真实视频旁白与字幕已生成并通过持久化与脚本绑定校验。",
+      budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+    };
+  } catch (error) {
+    return buildFailureResult(
+      input,
+      classifyVideoNarrationFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable),
+      error instanceof VideoNarrationProviderError ? error.providerSubmitted : false,
+    );
+  }
+}
+
+function classifyVideoNarrationFailure(
+  error: unknown,
+  capabilityId: string,
+  provider: string | undefined,
+  providerRetryable: boolean,
+): Parameters<typeof buildFailureResult>[1] {
+  if (!(error instanceof VideoNarrationProviderError)) {
+    return classifyMediaFailure(error, capabilityId, provider, providerRetryable, "video");
+  }
+
+  const contractFailure = error.phase === "provider_response" || error.phase === "subtitle_validation";
+  if (contractFailure) {
+    return {
+      capabilityId,
+      provider,
+      status: "failed",
+      kind: "quality_gate_failed",
+      userMessage: "旁白服务返回的音频或字幕没有通过执行校验，系统已保留脚本并交回智能体调整。",
+      internalReason: error.code,
+      retryable: false,
+      errorCategory: "provider_contract_rejected",
+      reasonCode: error.code,
+      retryAction: "fix_inputs",
+    };
+  }
+
+  return {
+    capabilityId,
+    provider,
+    status: error.retryable ? "retryable_failed" : "failed",
+    kind: "provider_unavailable",
+    userMessage: "旁白服务暂时没有可靠完成，系统已保留脚本和恢复位置。",
+    internalReason: error.code,
+    retryable: error.retryable,
+    errorCategory: error.code,
+    reasonCode: error.code,
+    retryAction: error.retryable ? "wait_for_provider" : "do_not_retry_automatically",
+  };
 }
 
 async function resolveDefaultVideoShotRequest(input: {
@@ -276,11 +408,12 @@ async function resolveDefaultVideoShotRequest(input: {
   const localPath = resolveLocalArtifactOutput(localOutput);
   const sha256 = typeof imageAsset?.sha256 === "string" ? imageAsset.sha256.toLowerCase() : "";
   if (!localPath || !/^[a-f0-9]{64}$/i.test(sha256)) throw new Error("video_provider_reference_file_invalid");
-  const apiKey = process.env.EVOLINK_VIDEO_API_KEY?.trim() || process.env.EVOLINK_API_KEY?.trim() || "";
+  const providerValues = resolveProviderLedgerValueBag({ capability: "video_generation" });
+  const apiKey = providerValues.get("EVOLINK_API_KEY") || "";
   const referenceEvidence = await resolveEvolinkShotReferences({
     shotId: shot.shotId,
     apiKey,
-    filesBaseUrl: process.env.EVOLINK_FILES_BASE_URL?.trim(),
+    filesBaseUrl: providerValues.get("EVOLINK_FILES_BASE_URL"),
     references: [{
       assetId: reference.assetId,
       assetDomain: "video",
@@ -299,11 +432,19 @@ function buildImageSuccessResult(
   sourceArtifactId: string,
   providerResult: ImageGenerationResult,
 ): ToolExecutionResult {
+  assertCompleteImageGenerationResult(providerResult);
   const isAssetImage = input.tool.capabilityId === ASSET_IMAGE_PROVIDER;
   const producedKind = isAssetImage ? "asset_image_generate" : "image_prompts";
   const artifactTruth = buildProviderArtifactTruth(input, producedKind);
-  const qualityGate = { passed: true, gates: ["image_valid", "supported_image_mime"] } satisfies ToolQualityGateResult;
-  const providerPayload = { provider: IMAGE_PROVIDER, ...providerResult, sourceArtifactId, artifactTruth, qualityGate };
+  const qualityGate = { passed: true, gates: ["image_valid", "supported_image_mime", "raw_and_normalized_lineage_complete"] } satisfies ToolQualityGateResult;
+  const businessSkillProvenance = resolveBusinessSkillProvenance(input);
+  const providerPayload = {
+    ...providerResult,
+    sourceArtifactId,
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
+    artifactTruth,
+    qualityGate,
+  };
   const structuredContent = {
     文件状态: isAssetImage ? "真实视频资产图已生成" : "真实课堂视觉图已生成",
     文件大小: `${providerResult.bytes} bytes`,
@@ -315,10 +456,18 @@ function buildImageSuccessResult(
         bytes: providerResult.bytes,
         sha256: providerResult.sha256,
         mime: providerResult.mime,
+        provider: providerResult.provider,
+        model: providerResult.model,
+        width: providerResult.width,
+        height: providerResult.height,
+        promptDigest: providerResult.promptDigest,
+        rawAsset: structuredClone(providerResult.rawAsset),
+        normalizedAsset: structuredClone(providerResult.normalizedAsset),
         generationMode: isAssetImage ? "asset_image_generated" : "image_generated",
         sourceArtifactId,
       },
     },
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
     artifactTruth,
     qualityGate,
   };
@@ -327,7 +476,7 @@ function buildImageSuccessResult(
     status: "succeeded",
     toolId: input.tool.id,
     capabilityId,
-    provider: IMAGE_PROVIDER,
+    provider: providerResult.provider,
     artifactTruth,
     qualityGate,
     artifactDraft: {
@@ -340,7 +489,7 @@ function buildImageSuccessResult(
     },
     providerPayload,
     assistantSummary: isAssetImage ? "真实视频资产图已生成并通过基础校验。" : "真实课堂视觉图已生成并通过基础校验。",
-    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", true),
   };
 }
 
@@ -352,11 +501,13 @@ function buildPptAssetSuccessResult(
   approvalArtifact?: ArtifactRecord,
 ): ToolExecutionResult {
   const isFullProduction = result.requestBatch.scope === "full_production";
+  const providerIdentity = resolvePptAssetProviderIdentity(result);
   const artifactTruth = buildProviderArtifactTruth(input, "image_prompts");
   const qualityGate = {
     passed: true,
     gates: ["ppt_asset_request_batch_valid", "ppt_asset_manifest_valid", "asset_lineage_complete"],
   } satisfies ToolQualityGateResult;
+  const businessSkillProvenance = resolveBusinessSkillProvenance(input);
   const structuredContent = {
     文件状态: `真实 PPT ${isFullProduction ? "全量正式" : "样张"}资产已生成 ${result.manifest.entries.length} 项`,
     pptAssetRequestBatch: result.requestBatch,
@@ -379,6 +530,7 @@ function buildPptAssetSuccessResult(
         })),
       },
     },
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
     artifactTruth,
     qualityGate,
   };
@@ -386,7 +538,7 @@ function buildPptAssetSuccessResult(
     status: "succeeded",
     toolId: input.tool.id,
     capabilityId,
-    provider: IMAGE_PROVIDER,
+    provider: providerIdentity,
     artifactTruth,
     qualityGate,
     artifactDraft: {
@@ -397,9 +549,9 @@ function buildPptAssetSuccessResult(
       markdownContent: isFullProduction ? "# PPT 全量正式资产批次\n\n当前样张批准、完整真实资产文件和逐对象来源清单已绑定，下一步可以组装完整 PPT。" : "# PPT 关键样张资产批次\n\n真实资产文件和逐对象来源清单已生成，下一步需要组装样张并完成 D/V/P 审查。",
       structuredContent,
     },
-    providerPayload: { provider: IMAGE_PROVIDER, sourceArtifactId, ...result, artifactTruth, qualityGate },
+    providerPayload: { provider: providerIdentity, sourceArtifactId, ...result, ...(businessSkillProvenance ? { businessSkillProvenance } : {}), artifactTruth, qualityGate },
     assistantSummary: isFullProduction ? `PPT 全量正式资产已生成 ${result.manifest.entries.length} 项，下一步可以组装完整 PPT 并逐页审查。` : `PPT 关键样张资产已生成 ${result.manifest.entries.length} 项，下一步需要检查三份总览和正式组装样张。`,
-    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", true),
   };
 }
 
@@ -411,7 +563,16 @@ function buildVideoSuccessResult(
 ): ToolExecutionResult {
   const artifactTruth = buildProviderArtifactTruth(input, "video_segment_generate");
   const qualityGate = { passed: true, gates: ["video_valid", "mp4_ftyp_present", "mp4_moov_present"] } satisfies ToolQualityGateResult;
-  const providerPayload = { provider: VIDEO_PROVIDER, ...providerResult, sourceArtifactIds, artifactTruth, qualityGate };
+  const businessSkillProvenance = resolveBusinessSkillProvenance(input);
+  const providerPayload = {
+    provider: providerResult.providerEvidence.name,
+    model: providerResult.providerEvidence.model,
+    ...providerResult,
+    sourceArtifactIds,
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
+    artifactTruth,
+    qualityGate,
+  };
   const structuredContent = {
     文件状态: "真实分镜视频片段已生成",
     文件大小: `${providerResult.bytes} bytes`,
@@ -424,11 +585,14 @@ function buildVideoSuccessResult(
         sha256: providerResult.sha256,
         mime: providerResult.mime,
         generationMode: "video_generated",
+        provider: providerResult.providerEvidence.name,
+        model: providerResult.providerEvidence.model,
         sourceArtifactId: sourceArtifactIds[0],
         sourceArtifactIds,
         ...(providerResult.requestEvidence ? { requestEvidence: providerResult.requestEvidence } : {}),
       },
     },
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
     artifactTruth,
     qualityGate,
   };
@@ -450,7 +614,7 @@ function buildVideoSuccessResult(
     },
     providerPayload,
     assistantSummary: "真实分镜视频片段已生成并通过基础校验。",
-    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", true),
   };
 }
 
@@ -474,7 +638,8 @@ function classifyMediaFailure(
       errorCategory: "submission_unknown",
     };
   }
-  if (internalReason.toLowerCase().includes(`invalid_${media}_output`)) {
+  if (internalReason.toLowerCase().includes(`invalid_${media}_output`) ||
+      (media === "image" && internalReason === "minimax_image_lineage_incomplete")) {
     return {
       capabilityId,
       provider,
@@ -484,6 +649,20 @@ function classifyMediaFailure(
       internalReason,
       retryable: false,
       errorCategory: "quality_gate_failed",
+    };
+  }
+  if (media === "image" && internalReason.startsWith("minimax_image_generation_request_failed:status_2013")) {
+    return {
+      capabilityId,
+      provider,
+      status: "failed",
+      kind: "quality_gate_failed",
+      userMessage: "当前图片参数没有通过生成服务校验，系统已保留任务，请调整输入后继续。",
+      internalReason,
+      retryable: false,
+      errorCategory: "provider_input_invalid",
+      reasonCode: internalReason,
+      retryAction: "fix_inputs",
     };
   }
   if (media === "image" && internalReason.startsWith("ppt_full_evidence_")) {
@@ -534,7 +713,11 @@ function buildCozePptSuccessResult(
 ): ToolExecutionResult {
   const artifactTruth = buildCozePptArtifactTruth(input);
   const qualityGate = buildCozePptQualityGate();
-  const providerPayload = cozePptPayload(providerResult, artifactTruth, qualityGate);
+  const businessSkillProvenance = resolveBusinessSkillProvenance(input);
+  const providerPayload = {
+    ...cozePptPayload(providerResult, artifactTruth, qualityGate),
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
+  };
   const pageLabel = `${providerResult.slideCount} 页`;
   const structuredContent = {
     文件状态: `真实 ${pageLabel} PPTX 已生成`,
@@ -553,6 +736,7 @@ function buildCozePptSuccessResult(
         sourceArtifactId,
       },
     },
+    ...(businessSkillProvenance ? { businessSkillProvenance } : {}),
     artifactTruth,
     qualityGate,
   };
@@ -573,7 +757,7 @@ function buildCozePptSuccessResult(
     },
     providerPayload,
     assistantSummary: `真实 PPTX 已生成并通过基础校验：${providerResult.slideCount} 页。`,
-    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded"),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", true),
   };
 }
 
@@ -611,7 +795,7 @@ function classifyCozePptFailure(
 }
 
 function buildNeedsInputResult(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined, missingInputs: string[]): ToolExecutionResult {
-  const assistantPrompt = "请先确认前置材料，再继续生成真实文件。";
+  const assistantPrompt = "当前缺少可供本 Tool 使用的可信上游材料，智能体需要先补齐或修复输入。";
 
   return {
     status: "needs_input",
@@ -625,7 +809,7 @@ function buildNeedsInputResult(input: ProviderToolAdapterInput, capabilityId: st
       sourceMessageId: input.sourceMessageId,
       capabilityId,
       expectedArtifactKind: input.tool.producedArtifactKind,
-      kind: "blocked_by_policy",
+      kind: "quality_gate_failed",
       teacherSafeSummary: assistantPrompt,
       internalReasonSanitized: `Missing required source artifacts: ${missingInputs.join(", ")}`,
       retryPolicy: {
@@ -634,7 +818,7 @@ function buildNeedsInputResult(input: ProviderToolAdapterInput, capabilityId: st
       },
     }),
     artifactCreated: false,
-    budgetEvent: buildBudgetEvent(input, capabilityId, "blocked", "blocked_by_policy"),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "failed", "quality_gate_failed"),
   };
 }
 
@@ -649,7 +833,10 @@ function buildFailureResult(
     internalReason: string;
     retryable: boolean;
     errorCategory: string;
+    reasonCode?: string;
+    retryAction?: ToolObservationRetryAction;
   },
+  providerSubmitted = false,
 ): ToolExecutionResult {
   return {
     status: failure.status,
@@ -664,16 +851,17 @@ function buildFailureResult(
       kind: failure.kind,
       teacherSafeSummary: failure.userMessage,
       internalReasonSanitized: failure.internalReason,
+      reasonCode: failure.reasonCode,
       retryPolicy: {
         retryable: failure.retryable,
-        nextAction: failure.errorCategory === "submission_unknown"
+        nextAction: failure.retryAction ?? (failure.errorCategory === "submission_unknown"
           ? "do_not_retry_automatically"
-          : resolveRetryAction(failure.kind, failure.retryable),
+          : resolveRetryAction(failure.kind, failure.retryable)),
       },
     }),
     artifactCreated: false,
     errorCategory: failure.errorCategory,
-    budgetEvent: buildBudgetEvent(input, failure.capabilityId, resolveBudgetStatus(failure.kind, failure.status), resolveBudgetKind(failure.kind)),
+    budgetEvent: buildBudgetEvent(input, failure.capabilityId, resolveBudgetStatus(failure.kind, failure.status), resolveBudgetKind(failure.kind), providerSubmitted),
   };
 }
 
@@ -758,10 +946,15 @@ function isVideoTool(tool: ToolDefinition): boolean {
   return tool.id === "generate_video_segment" && tool.capabilityId === VIDEO_PROVIDER && tool.providerToolId === "video_segment_generate.generate";
 }
 
+function isVideoNarrationTool(tool: ToolDefinition): boolean {
+  return tool.id === "generate_video_narration" && tool.capabilityId === "video_narration_generate" && tool.providerToolId === "tts_minimax.generate_narration";
+}
+
 function resolveProvider(tool: ToolDefinition): string | undefined {
   if (tool.capabilityId === COZE_PPT_PROVIDER || tool.providerToolId?.startsWith("coze_ppt.")) return COZE_PPT_PROVIDER;
   if (tool.capabilityId === PPT_SAMPLE_ASSET_PROVIDER || tool.capabilityId === PPT_FULL_ASSET_PROVIDER) return IMAGE_PROVIDER;
   if (tool.capabilityId === ASSET_IMAGE_PROVIDER) return IMAGE_PROVIDER;
+  if (tool.capabilityId === "video_narration_generate") return VIDEO_NARRATION_PROVIDER;
   return tool.capabilityId;
 }
 
@@ -779,8 +972,7 @@ function findResolvedArtifact(input: ProviderToolAdapterInput, kind: string): Ar
         artifact.projectId === input.projectId &&
         artifact.kind === kind &&
         artifact.nodeKey === kind &&
-        artifact.status === "approved" &&
-        artifact.isApproved === true,
+        isArtifactTrustedForDownstream(artifact),
     );
     if (resolved) return resolved;
   }
@@ -811,6 +1003,42 @@ function buildProjectRecord(projectId: string): ProjectRecord {
   };
 }
 
+function providerBusinessSkillInput(input: ProviderToolAdapterInput): ProviderBusinessSkillInput {
+  return {
+    ...(input.userInstruction === undefined ? {} : { userInstruction: input.userInstruction }),
+    ...(input.toolInput === undefined ? {} : { toolInput: structuredClone(input.toolInput) }),
+    ...(input.businessSkillContext === undefined
+      ? {}
+      : { businessSkillContext: structuredClone(input.businessSkillContext) }),
+  };
+}
+
+function resolveBusinessSkillProvenance(input: ProviderToolAdapterInput) {
+  return input.businessSkillContext ? structuredClone(input.businessSkillContext.provenance) : undefined;
+}
+
+function assertCompleteImageGenerationResult(result: ImageGenerationResult) {
+  const files = [result.rawAsset, result.normalizedAsset];
+  if (result.provider !== "minimax" || !result.model?.trim() ||
+      !Number.isInteger(result.width) || result.width <= 0 ||
+      !Number.isInteger(result.height) || result.height <= 0 ||
+      !/^[a-f0-9]{64}$/i.test(result.promptDigest) ||
+      files.some((file) => !file?.fileName?.trim() || !file.localOutput?.trim() || file.bytes <= 0 ||
+        !/^[a-f0-9]{64}$/i.test(file.sha256) || !file.mime?.trim()) ||
+      result.rawAsset.localOutput === result.normalizedAsset.localOutput ||
+      result.sha256 !== result.normalizedAsset.sha256 ||
+      result.localOutput !== result.normalizedAsset.localOutput ||
+      result.width !== result.normalizedAsset.width || result.height !== result.normalizedAsset.height) {
+    throw new Error("minimax_image_lineage_incomplete");
+  }
+}
+
+function resolvePptAssetProviderIdentity(result: PptAssetBatchRunResult) {
+  const providers = [...new Set(result.manifest.entries.map((entry) => entry.provider.trim()).filter(Boolean))];
+  if (providers.length !== 1) throw new Error("ppt_asset_provider_identity_invalid");
+  return providers[0];
+}
+
 function resolveBudgetStatus(kind: ToolObservationKind, status: "failed" | "retryable_failed"): AgentHarnessBudgetEventStatus {
   if (kind === "blocked_by_policy") return "blocked";
   return status;
@@ -831,16 +1059,23 @@ function resolveBudgetKind(kind: ToolObservationKind): AgentHarnessBudgetEventKi
 function resolveRetryAction(kind: ToolObservationKind, retryable: boolean): ToolObservationRetryAction {
   if (kind === "provider_unavailable") return "wait_for_provider";
   if (kind === "blocked_by_policy") return "ask_teacher";
-  if (kind === "quality_gate_failed") return "ask_teacher";
+  if (kind === "quality_gate_failed") return "fix_inputs";
   return retryable ? "retry_later" : "do_not_retry_automatically";
 }
 
-function buildBudgetEvent(input: ProviderToolAdapterInput, capabilityId: string, status: AgentHarnessBudgetEventStatus, kind: AgentHarnessBudgetEventKind) {
+function buildBudgetEvent(
+  input: ProviderToolAdapterInput,
+  capabilityId: string,
+  status: AgentHarnessBudgetEventStatus,
+  kind: AgentHarnessBudgetEventKind,
+  providerSubmitted = false,
+) {
   return buildAgentHarnessBudgetEvent({
     capabilityId,
     actionKey: `${input.tool.id}:${input.tool.producedArtifactKind ?? ""}`,
     expectedArtifactKind: input.tool.producedArtifactKind,
     status,
     kind,
+    providerSubmitted,
   });
 }

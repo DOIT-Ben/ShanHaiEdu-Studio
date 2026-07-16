@@ -3,17 +3,35 @@ import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runti
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { buildAgentHarnessBudgetEvent, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { evaluateActionPolicy, STANDARD_BUDGET_POLICY_VERSION } from "@/server/guards/action-policy";
 import { appendAgentObservationMetadata, createAgentObservation, readAgentObservationsFromMessages, readLatestRunCheckpointFromMessages } from "@/server/conversation/react-control";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation, readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
-import type { routeToolCall } from "@/server/tools/tool-router";
+import { routeToolCall } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
-import { createWorkbenchService } from "@/server/workbench/service";
+import { createWorkbenchService as createWorkbenchServiceBase } from "@/server/workbench/service";
 import { createWorkbenchActor } from "@/server/auth/actor";
+import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent-react-checkpoint";
 import { withPassedValidationReport } from "./support/validation-report";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
+
+function createWorkbenchService(...args: Parameters<typeof createWorkbenchServiceBase>) {
+  if (args.length > 0) return createWorkbenchServiceBase(...args);
+  const actor = createWorkbenchActor({
+    userId: `conversation-turn-test-${crypto.randomUUID()}`,
+    displayName: "Conversation Turn Test Actor",
+    authMode: "local",
+  });
+  return createWorkbenchServiceBase(undefined, actor, {
+    actorUserId: actor.userId,
+    actorAuthMode: "local",
+    authSessionId: null,
+  });
+}
 
 const legacyProviderMocks = vi.hoisted(() => ({
   generateImageFromArtifact: vi.fn(async () => {
@@ -50,11 +68,388 @@ const fullDeliveryCapabilityIds = [
   "asset_image_generate",
   "video_segment_plan",
   "video_segment_generate",
+  "video_narration_generate",
   "concat_only_assemble",
   "final_package",
 ];
 
 describe("M54-B3 ConversationTurnService route contract", () => {
+  it("forwards one validated task ExecutionEnvelope through the compatibility ToolRouter boundary", async () => {
+    const actor = createWorkbenchActor({
+      userId: `teacher-${crypto.randomUUID()}`,
+      displayName: "Teacher",
+      authMode: "local",
+    });
+    const executionIdentity = { actorUserId: actor.userId, actorAuthMode: "local" as const, authSessionId: null };
+    const service = createWorkbenchServiceBase(undefined, actor, executionIdentity);
+    const project = await service.createProject({
+      title: "Compatibility ToolRouter execution envelope",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+    const controlPlaneStore = createControlPlaneStore();
+    const routed = vi.fn(async (routerInput: Parameters<typeof routeToolCall>[0]) => {
+      expect(routerInput.executionEnvelope).toMatchObject({
+        actorUserId: actor.userId,
+        projectId: project.id,
+        intentEpoch: 0,
+        planRevision: 0,
+        intensity: "standard",
+      });
+      expect(routerInput.executionEnvelope?.taskBriefDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(routerInput.executionEnvelope?.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
+      return routeToolCall(routerInput);
+    });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      controlPlaneStore,
+      toolRouter: routed,
+      executionIdentity,
+      enableTaskGrantAutonomy: true,
+    });
+
+    const body = await turnService.createTurn(project.id, {
+      role: "teacher",
+      content: "请做五年级数学百分数公开课PPT，用投篮命中率导入，约10页。",
+    });
+
+    expect(routed).toHaveBeenCalledTimes(1);
+    expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: false });
+    await expect(controlPlaneStore.getTaskAggregate(project.id, 0)).resolves.toMatchObject({
+      taskBrief: { projectId: project.id },
+      intentGrant: { standardWorkAuthorized: true },
+      plan: { revision: 0 },
+    });
+  });
+
+  it("atomically replaces a legacy fixed-call grant with the TaskBrief-scoped budget", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: `legacy-budget-${crypto.randomUUID()}` });
+    const teacher = await service.addMessage(project.id, { role: "teacher", content: "生成五年级数学百分数公开课 PPT" });
+    const taskBrief = createTaskBrief({
+      taskId: `task:${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: teacher.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: teacher.id,
+    });
+    const legacyGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: taskBrief.taskId,
+      projectId: project.id,
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard",
+      budgetPolicyVersion: "v1-standard",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 3,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+    await service.updateMessageMetadata(project.id, teacher.id, { taskBrief, intentGrant: legacyGrant });
+    const controlPlaneStore = createControlPlaneStore();
+    await controlPlaneStore.upsertTaskAggregate({
+      taskBrief,
+      intentGrant: legacyGrant,
+      plan: { planId: `plan:${taskBrief.taskId}`, revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      controlPlaneStore,
+      enableTaskGrantAutonomy: true,
+      agent: {
+        async intakeTask() {
+          throw new Error("queued recovery must reuse the frozen TaskBrief");
+        },
+        async respond() {
+          return {
+            assistantMessage: { body: "已读取当前任务。" },
+            state: "succeeded" as const,
+            quickReplies: [],
+            recommendedOptions: [],
+            shouldRunToolNow: false,
+            runtimeKind: "openai" as const,
+          };
+        },
+      },
+    });
+
+    await turnService.executeQueuedTurn(project.id, { teacherMessageId: teacher.id });
+
+    const persistedTeacher = (await service.getMessages(project.id)).find((message) => message.id === teacher.id)!;
+    expect(persistedTeacher.metadata.intentGrant).toMatchObject({
+      budgetPolicyVersion: "v1-standard-task-scope.v1",
+      maxExternalProviderCalls: 2,
+    });
+    await expect(controlPlaneStore.getTaskAggregate(project.id, 0)).resolves.toMatchObject({
+      intentGrant: {
+        budgetPolicyVersion: "v1-standard-task-scope.v1",
+        maxExternalProviderCalls: 2,
+      },
+    });
+  });
+
+  it("replays a frozen redirect message without advancing IntentEpoch a second time", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Frozen redirect recovery" });
+    const teacher = await service.addMessage(project.id, { role: "teacher", content: "改成只做视频脚本" });
+    const taskBrief = createTaskBrief({
+      taskId: `task:${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: teacher.content,
+      requestedOutputs: ["video_script"],
+      constraints: [],
+      excludedOutputs: ["ppt", "image", "video", "package"],
+      generationIntensity: "standard",
+      sourceMessageId: teacher.id,
+    });
+    const intentGrant = createStandardGrantFixture(taskBrief);
+    await service.updateMessageMetadata(project.id, teacher.id, { taskBrief, intentGrant });
+    const controlPlaneStore = createControlPlaneStore();
+    await controlPlaneStore.upsertTaskAggregate({
+      taskBrief,
+      intentGrant,
+      plan: { planId: `plan:${taskBrief.taskId}`, revision: 4, status: "paused_recovery" },
+      status: "paused_recovery",
+      checkpoint: null,
+    });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      controlPlaneStore,
+      agent: {
+        async intakeTask() { throw new Error("frozen redirect must not be re-intaken"); },
+        async respond() {
+          return {
+            assistantMessage: { body: "已从原改道任务继续。" },
+            state: "succeeded" as const,
+            quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+            runtimeKind: "openai" as const,
+          };
+        },
+      },
+    });
+
+    await turnService.executeQueuedTurn(project.id, { teacherMessageId: teacher.id });
+
+    expect((await service.getProject(project.id)).intentEpoch).toBe(0);
+    await expect(controlPlaneStore.getTaskAggregate(project.id, 0)).resolves.toMatchObject({
+      taskBrief: { digest: taskBrief.digest },
+      plan: { revision: 4 },
+    });
+  });
+
+  it("resumes a paused TaskAggregate from natural language without creating a new task identity", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Natural recovery", grade: "七年级", subject: "语文", lessonTopic: "春" });
+    const original = await service.addMessage(project.id, { role: "teacher", content: "做一份七年级语文《春》的课件" });
+    const taskBrief = createTaskBrief({
+      taskId: `task:${original.id}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: original.content,
+      requestedOutputs: ["ppt"],
+      constraints: ["七年级语文", "课题《春》"],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: original.id,
+    });
+    const intentGrant = createStandardGrantFixture(taskBrief);
+    await service.updateMessageMetadata(project.id, original.id, { taskBrief, intentGrant });
+    const controlPlaneStore = createControlPlaneStore();
+    await controlPlaneStore.upsertTaskAggregate({
+      taskBrief,
+      intentGrant,
+      plan: { planId: `plan:${taskBrief.taskId}`, revision: 1, status: "paused_recovery" },
+      status: "paused_recovery",
+      checkpoint: null,
+    });
+    const intakeTask = vi.fn(async () => { throw new Error("resume must reuse the frozen TaskBrief"); });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      controlPlaneStore,
+      enableNativeToolControlPlane: true,
+      agent: {
+        intakeTask,
+        async respond() {
+          return {
+            assistantMessage: { body: "已继续七年级语文《春》课件任务。" },
+            state: "succeeded" as const,
+            quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+            runtimeKind: "openai" as const,
+          };
+        },
+      },
+    });
+
+    const resumed = await turnService.createTurn(project.id, { role: "teacher", content: "继续刚才的七年级语文《春》课件任务" });
+
+    expect(intakeTask).not.toHaveBeenCalled();
+    expect(resumed.agentTurn?.assistantMessage.body).toContain("继续七年级语文《春》");
+    await expect(controlPlaneStore.getTaskAggregate(project.id, 0)).resolves.toMatchObject({
+      status: "active",
+      taskBrief: { taskId: taskBrief.taskId, digest: taskBrief.digest },
+    });
+  });
+
+  it("resumes the same frozen task after a Main Agent chosen DialogueCheckpoint receives a natural-language answer", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: "Dialogue recovery", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const controlPlaneStore = createControlPlaneStore();
+    const intakeTask = vi.fn(async (input: { userMessage: string }) => pptTaskProposal(input.userMessage));
+    let respondCount = 0;
+    let frozenTaskId = "";
+    let frozenTaskBriefDigest = "";
+    let frozenIntentEpoch = -1;
+
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      controlPlaneStore,
+      executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+      executionFence: fence,
+      enableTaskGrantAutonomy: true,
+      enableNativeToolControlPlane: true,
+      agent: {
+        intakeTask,
+        async respond(input: MainConversationAgentInput) {
+          respondCount += 1;
+          if (respondCount === 1) {
+            frozenTaskId = input.taskBrief!.taskId;
+            frozenTaskBriefDigest = input.taskBrief!.digest;
+            frozenIntentEpoch = input.taskBrief!.intentEpoch;
+            const loop = input.agentToolLoop!;
+            const result = await loop.dispatch({
+              callId: "dialogue-call",
+              toolName: "request_teacher_decision",
+              arguments: {
+                question: "这份课件更偏向概念理解还是解题训练？",
+                understandingSummary: "当前目标是制作认识百分数的数学课件。",
+                impactSummary: "不同侧重会改变例题比例和页面结构。",
+                options: [
+                  { id: "concept", label: "概念理解", description: "强调意义建构", recommended: true },
+                  { id: "practice", label: "解题训练", description: "强调题型练习", recommended: false },
+                ],
+                allowFreeText: true,
+              },
+            });
+            expect(result).toMatchObject({ status: "blocked", pauseKind: "dialogue_checkpoint" });
+            const checkpoint = createMainAgentReActCheckpoint({
+              request: { instructions: "test", input: input.userMessage },
+              seed: loop.getCheckpointSeed?.(),
+              records: [{
+                round: 1,
+                toolName: "request_teacher_decision",
+                callDigest: "d".repeat(64),
+                observation: result.observation,
+              }],
+              currentToolNames: loop.allowedToolNames,
+            });
+            await loop.onRecoveryCheckpoint?.({
+              reason: "dialogue_checkpoint_required",
+              toolRoundsUsed: 1,
+              observationIds: [result.observation.observationId!],
+              checkpoint,
+            });
+            return {
+              assistantMessage: { body: "我需要你判断一个会影响结果的理解边界。" },
+              state: "needs_input" as const,
+              quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+              runtimeKind: "openai" as const,
+            };
+          }
+
+          expect(input.taskBrief).toMatchObject({
+            taskId: frozenTaskId,
+            digest: frozenTaskBriefDigest,
+            intentEpoch: frozenIntentEpoch,
+          });
+          expect(input.agentToolLoop?.resumeCheckpoint).toMatchObject({ schemaVersion: "react-checkpoint.v1" });
+          expect(input.conversationContext?.semanticSnapshot?.pendingDecision).toMatchObject({
+            schemaVersion: "dialogue-checkpoint.v1",
+            status: "answered",
+            responseText: "以概念理解为主，保留两页练习。",
+          });
+          return {
+            assistantMessage: { body: "明白，我会以概念理解为主，并保留两页练习。" },
+            state: "continuing_workflow" as const,
+            quickReplies: [], recommendedOptions: [], shouldRunToolNow: false,
+            runtimeKind: "openai" as const,
+          };
+        },
+      },
+    });
+
+    try {
+      const first = await turnService.createTurn(project.id, { role: "teacher", content: "帮我做一个数学的认识百分数的PPT" });
+      expect(first.assistantMessage?.parts).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: "dialogue-checkpoint",
+          question: "这份课件更偏向概念理解还是解题训练？",
+        }),
+      ]));
+      expect(first.assistantMessage?.parts?.some((part) => part.type === "error-recovery")).toBe(false);
+      await expect(controlPlaneStore.getTaskAggregate(project.id, frozenIntentEpoch)).resolves.toMatchObject({
+        status: "paused_recovery",
+        taskBrief: { taskId: frozenTaskId, digest: frozenTaskBriefDigest },
+      });
+
+      const resumed = await turnService.createTurn(project.id, { role: "teacher", content: "以概念理解为主，保留两页练习。" });
+      expect(resumed.agentTurn?.assistantMessage.body).toContain("概念理解");
+      expect(intakeTask).toHaveBeenCalledTimes(1);
+      await expect(controlPlaneStore.getTaskAggregate(project.id, frozenIntentEpoch)).resolves.toMatchObject({
+        status: "active",
+        taskBrief: { taskId: frozenTaskId, digest: frozenTaskBriefDigest },
+      });
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("fails closed when a queued message carries a TaskBrief from an old IntentEpoch", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Stale queued TaskBrief" });
+    const teacher = await service.addMessage(project.id, { role: "teacher", content: "做一份PPT" });
+    const taskBrief = createTaskBrief({
+      taskId: `task:${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: teacher.content,
+      requestedOutputs: ["ppt"],
+      constraints: [], excludedOutputs: [], generationIntensity: "standard", sourceMessageId: teacher.id,
+    });
+    await service.updateMessageMetadata(project.id, teacher.id, {
+      taskBrief,
+      intentGrant: createStandardGrantFixture(taskBrief),
+    });
+    await service.advanceProjectIntentEpoch(project.id, 0);
+    const intakeTask = vi.fn(async () => pptTaskProposal(teacher.content));
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: { intakeTask, async respond() { throw new Error("must not run"); } },
+    });
+
+    await expect(turnService.executeQueuedTurn(project.id, { teacherMessageId: teacher.id }))
+      .rejects.toThrow(/queued_task_brief_binding_invalid/);
+    expect(intakeTask).not.toHaveBeenCalled();
+    expect((await service.getProject(project.id)).intentEpoch).toBe(1);
+  });
+
   it("preserves TaskBrief and IntentGrant when the native business Tool appends its Observation", async () => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
@@ -68,6 +463,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
     const agent = {
+      async intakeTask(input: { userMessage: string }) {
+        return pptTaskProposal(input.userMessage);
+      },
       async respond(input: MainConversationAgentInput) {
         const result = await input.agentToolLoop!.dispatch({
           callId: "create-requirement",
@@ -95,6 +493,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         executionFence: fence,
         enableTaskGrantAutonomy: true,
+        enableNativeToolControlPlane: true,
       });
 
       await turnService.createTurn(project.id, {
@@ -112,8 +511,108 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         intentGrant: {
           projectId: project.id,
           standardWorkAuthorized: true,
+          budgetPolicyVersion: "v1-standard-task-scope.v1",
+          maxExternalProviderCalls: expect.any(Number),
         },
         agentObservations: [expect.objectContaining({ actionKey: "create_requirement_spec", status: "succeeded" })],
+      });
+      const persistedIntentGrant = teacherMessage.metadata.intentGrant;
+      expect(
+        typeof persistedIntentGrant === "object" &&
+        persistedIntentGrant !== null &&
+        "maxExternalProviderCalls" in persistedIntentGrant &&
+        typeof persistedIntentGrant.maxExternalProviderCalls === "number"
+          ? persistedIntentGrant.maxExternalProviderCalls
+          : 0,
+      ).toBeGreaterThan(0);
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("preserves a native recovery checkpoint when the outer runtime failure is committed", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({
+      title: "V1-9 native recovery checkpoint authority",
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const controlPlaneStore = createControlPlaneStore();
+    const agent = {
+      async intakeTask(input: { userMessage: string }) {
+        return pptTaskProposal(input.userMessage);
+      },
+      async respond(input: MainConversationAgentInput) {
+        const loop = input.agentToolLoop!;
+        const checkpoint = createMainAgentReActCheckpoint({
+          request: { instructions: "test", input: input.userMessage },
+          seed: loop.getCheckpointSeed?.(),
+          records: [],
+          currentToolNames: loop.allowedToolNames,
+        });
+        await loop.onRecoveryCheckpoint?.({
+          reason: "completion_contract_unsatisfied",
+          toolRoundsUsed: 0,
+          observationIds: [],
+          checkpoint,
+          remainingRequestedOutputs: ["ppt"],
+        });
+        return {
+          assistantMessage: { body: "当前任务尚未完整完成。" },
+          state: "failed_retryable" as const,
+          quickReplies: [],
+          recommendedOptions: [],
+          shouldRunToolNow: false,
+          runtimeKind: "openai" as const,
+          failure: {
+            phase: "agent_tool_loop" as const,
+            reasonCode: "main_agent_execution_failed",
+            category: "unexpected" as const,
+            retryability: "not_retryable" as const,
+            summary: "本轮智能处理没有可靠完成。",
+          },
+        };
+      },
+    };
+
+    try {
+      const turnService = createConversationTurnService({
+        service,
+        runtime: new DeterministicRuntime(),
+        agent,
+        agentToolExecutor: async () => { throw new Error("agent Tool executor must not be called"); },
+        executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        executionFence: fence,
+        enableTaskGrantAutonomy: true,
+        enableNativeToolControlPlane: true,
+        controlPlaneStore,
+      });
+
+      await turnService.createTurn(project.id, {
+        role: "teacher",
+        content: "请做五年级数学百分数公开课PPT，约10页。",
+      });
+      const teacherMessage = (await service.getMessages(project.id)).find((message) => message.role === "teacher")!;
+      const taskBrief = teacherMessage.metadata.taskBrief as { intentEpoch: number };
+      const aggregate = await controlPlaneStore.getTaskAggregate(project.id, taskBrief.intentEpoch);
+
+      expect(teacherMessage.metadata.agentRunCheckpoint).toMatchObject({
+        status: "paused",
+        reason: "completion_contract_unsatisfied",
+        observationRefs: [expect.any(String)],
+      });
+      expect(teacherMessage.metadata.agentObservations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ actionKey: "main_agent_completion_contract", reasonCodes: expect.arrayContaining(["completion_contract_unsatisfied"]) }),
+        expect.objectContaining({ actionKey: expect.stringMatching(/^main_agent_runtime:/), reasonCodes: ["main_agent_execution_failed"] }),
+      ]));
+      expect(aggregate).toMatchObject({
+        status: "paused_recovery",
+        checkpoint: { schemaVersion: "react-checkpoint.v1", checkpointDigest: expect.any(String) },
       });
     } finally {
       await service.releaseProjectExecutionLease(fence);
@@ -124,6 +623,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
     const project = await service.createProject({ title: "V1-9R5 persisted Director binding", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    await seedTaskAggregate(service, project.id, ["ppt"], { goal: "请继续制作五年级数学百分数公开课PPT。" });
     const outline = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -135,11 +635,15 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" },
       },
     });
+    await service.approveArtifact(project.id, outline.id);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
     let agentCalls = 0;
     const agent = {
+      async intakeTask(input: { userMessage: string }) {
+        return pptTaskProposal(input.userMessage);
+      },
       async respond(input: MainConversationAgentInput) {
         agentCalls += 1;
         if (agentCalls === 1) {
@@ -148,12 +652,15 @@ describe("M54-B3 ConversationTurnService route contract", () => {
             toolName: "ppt_director_plan_or_repair",
             arguments: { goal: "制作十页百分数课件", stage: "page_design", targetPageIds: [], focus: null },
           });
-          const turn = buildAgentToolTurn("ppt_design", "ppt_design_draft");
-          return { ...turn, toolPlan: { ...turn.toolPlan, requiresConfirmation: false }, runtimeKind: "openai" as const };
+          await input.agentToolLoop!.dispatch({
+            callId: "design-after-director",
+            toolName: "create_ppt_design_draft",
+            arguments: {},
+          });
         }
         return {
           assistantMessage: { body: "逐页设计已经保存。" },
-          state: "failed_blocked" as const,
+          state: "succeeded" as const,
           quickReplies: [],
           recommendedOptions: [],
           shouldRunToolNow: false,
@@ -163,9 +670,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     };
     const executor = vi.fn(async (envelope) => {
       const directorOutput: any = validPptDirectorOutput();
-      directorOutput.evidence_bindings[0].source_artifact_id = envelope.approvedArtifactRefs[0].artifactId;
+      directorOutput.evidence_bindings[0].source_artifact_kind = envelope.approvedArtifactRefs[0].kind;
       directorOutput.evidence_bindings[0].source_type = "teacher_material";
-      directorOutput.evidence_bindings[0].digest = envelope.approvedArtifactRefs[0].digest;
       return {
         status: "succeeded" as const,
         toolId: "ppt_director.plan_or_repair" as const,
@@ -184,21 +690,23 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         executionFence: fence,
         enableTaskGrantAutonomy: true,
+        enableNativeToolControlPlane: true,
       });
-
       const body = await turnService.createTurn(project.id, {
         role: "teacher",
-        content: "请继续制作五年级数学百分数公开课PPT。",
+        content: "继续",
       });
 
       expect(executor).toHaveBeenCalledTimes(1);
-      expect(body.artifact).toMatchObject({
+      const design = (await service.getArtifacts(project.id)).find((artifact) => artifact.kind === "ppt_design_draft");
+      expect(design).toMatchObject({
         kind: "ppt_design_draft",
         structuredContent: {
           directorInvocationId: expect.any(String),
           artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" },
         },
       });
+      expect(body.artifact).toBeUndefined();
       expect((await service.getArtifacts(project.id)).filter((artifact) => artifact.kind === "ppt_draft")).toHaveLength(1);
     } finally {
       await service.releaseProjectExecutionLease(fence);
@@ -230,12 +738,16 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
     const body = await turnService.createTurn(project.id, {
       role: "teacher",
-      content: "请做五年级数学百分数公开课完整材料包，包括教案、约 10 页 PPT、课堂图片、A 侧投篮命中率独立创意导入视频和最终整包。课程锚点只做与课程任务之间的最小回接。",
+      content: "请做五年级数学百分数公开课完整材料包，包括教案、约 10 页 PPT、课堂视觉图、A 侧投篮命中率独立创意导入视频和最终整包。课程锚点只做与课程任务之间的最小回接。",
     });
 
     expect(body.agentTurn).toMatchObject({ state: "succeeded", shouldRunToolNow: false });
     expect(body.artifact).toMatchObject({ nodeKey: "requirement_spec", kind: "requirement_spec", status: "needs_review" });
     expect(body.assistantMessage?.metadata.pendingDeliveryPlan).toBeUndefined();
+    const teacherMessage = (await service.getMessages(project.id)).find((message) => message.role === "teacher")!;
+    expect(teacherMessage.metadata.taskBrief).toMatchObject({
+      requestedOutputs: ["image", "lesson_plan", "package", "ppt", "video"],
+    });
   });
 
   it("does not let a model-level confirmation preference override an authorized internal task", async () => {
@@ -284,7 +796,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     };
     const turnService = createConversationTurnService({
       service,
-      runtime: new DeterministicRuntime(),
+      runtime: new OfflineModelContractFixtureRuntime(),
       agent,
       enableTaskGrantAutonomy: true,
     });
@@ -442,7 +954,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       summary: "百分数公开课", markdownContent: "# 已确认需求",
     });
     await service.approveArtifact(project.id, requirement.id);
-    const runtime = new DeterministicRuntime();
+    const runtime = new OfflineModelContractFixtureRuntime();
     const inputs: MainConversationAgentInput[] = [];
     const agent = {
       async respond(input: MainConversationAgentInput) {
@@ -473,6 +985,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
   it("lets the OpenAI Main Agent observe a successful business Tool result and choose the next action", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "V1-3 success replan", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    await seedTaskAggregate(service, project.id, ["lesson_plan"], { goal: "继续完善这套公开课" });
     const requirement = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec",
       kind: "requirement_spec",
@@ -482,7 +995,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       markdownContent: "# 需求规格",
     });
     await service.approveArtifact(project.id, requirement.id);
-    const runtime = new DeterministicRuntime();
+    const runtime = new OfflineModelContractFixtureRuntime();
     const run = vi.spyOn(runtime, "run");
     const inputs: MainConversationAgentInput[] = [];
     const agent = {
@@ -512,6 +1025,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       trustedInputs: expect.arrayContaining([expect.objectContaining({ kind: "lesson_plan", downstreamEligible: true })]),
       agentObservations: [expect.objectContaining({ actionKey: "lesson_plan:lesson_plan", status: "succeeded" })],
     });
+    expect((await service.getArtifacts(project.id)).find((artifact) => artifact.kind === "lesson_plan")?.origin)
+      .toBe("tool_result");
     expect(body.agentTurn).toMatchObject({
       state: "succeeded",
       shouldRunToolNow: false,
@@ -815,6 +1330,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
   it("does not let policy blocks consume the tool retry budget", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M63 budget 项目", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
+    await seedTaskAggregate(service, project.id, ["requirement_spec"], { goal: "继续整理需求" });
     const firstFailure = buildAgentHarnessBudgetEvent({
       capabilityId: "requirement_spec",
       expectedArtifactKind: "requirement_spec",
@@ -914,10 +1430,22 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         async respond() {
           return {
             assistantMessage: { body: "我会按新要求重新规划。" },
-            state: "chatting",
+            state: "running_tool",
             quickReplies: [],
             recommendedOptions: [],
-            shouldRunToolNow: false,
+            toolPlan: {
+              planId: "ppt:revised-by-main-agent",
+              capabilityId: "ppt_outline" as const,
+              reasonForUser: "按修改后的叙事要求重做 PPT 大纲。",
+              internalReason: "main_agent_replanned_from_teacher_revision",
+              inputDraft: { teacherGoal: "把叙事大纲改成先冲突后揭秘，不要按刚才那版执行" },
+              missingInputs: [],
+              upstreamPlan: [],
+              nextSuggestedCapabilities: [],
+              requiresConfirmation: false,
+              expectedArtifactKind: "ppt_draft",
+            },
+            shouldRunToolNow: true,
             runtimeKind: "deterministic",
           };
         },
@@ -936,9 +1464,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect((await service.getProject(project.id)).intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
     expect(pendingDeliveryPlanOf(oldPlanMessage).status).toBe("superseded");
     expect(latestActionId).not.toBe(oldActionId);
-    expect(revised.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
+    expect(revised.agentTurn).toMatchObject({ state: "collecting_inputs", shouldRunToolNow: false });
     expect(readAgentObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "teacher_revision", status: "repair", reasonCodes: ["teacher_revised_active_offer"] }),
+      expect.objectContaining({ source: "teacher_revision", status: "repair", reasonCodes: ["main_agent_selected_plan_revision"] }),
     ]));
 
     const staleConfirmation = await turnService.createTurn(project.id, {
@@ -950,7 +1478,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(staleConfirmation.artifact).toBeUndefined();
   });
 
-  it("pauses an active offer and resumes it with a newly issued action", async () => {
+  it("pauses an active offer without manufacturing another confirmation on resume", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "V1-4 pause resume", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
     const oldActionId = await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
@@ -973,10 +1501,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     messages = await service.getMessages(project.id);
     const newActionId = await getLatestPendingActionId(service, project.id);
 
-    expect(resumed.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
-    expect(newActionId).toBeTruthy();
-    expect(newActionId).not.toBe(oldActionId);
-    expect(pendingDeliveryPlanOf(messages.find((message) => pendingDeliveryPlanOf(message).actionId === newActionId)).teacherRequest).toBe("测试请求");
+    expect(resumed.agentTurn).toMatchObject({ state: "collecting_inputs", shouldRunToolNow: false });
+    expect(resumed.agentTurn?.state).not.toBe("awaiting_confirmation");
+    expect(newActionId).toBeFalsy();
     expect(pendingDeliveryPlanOf(messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId)).status).toBe("superseded");
     expect(readLatestRunCheckpointFromMessages(messages)).toBeNull();
   });
@@ -1040,7 +1567,29 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     await service.addMessage(project.id, { role: "assistant", content: "旧分支失败。", metadata: appendAgentObservationMetadata(undefined, oldFailure) });
     await seedPendingPlan(service, project.id, "ppt_outline", "ppt_draft");
     const inputs: MainConversationAgentInput[] = [];
+    let intakeCalls = 0;
     const agent = {
+      async intakeTask(input: { userMessage: string; activeTask?: { taskId: string } }) {
+        intakeCalls += 1;
+        if (intakeCalls === 1 && input.activeTask) {
+          return {
+            kind: "control" as const,
+            control: {
+              kind: "redirect" as const,
+              reasonCode: "teacher_requested_redirect" as const,
+              advanceIntentEpoch: true,
+              userMessage: input.userMessage,
+            },
+            replacementProposal: {
+              goal: input.userMessage,
+              requestedOutputs: ["ppt"],
+              constraints: ["叙事大纲先冲突后揭秘"],
+              excludedOutputs: [],
+            },
+          };
+        }
+        return { kind: "conversation" as const };
+      },
       async respond(input: MainConversationAgentInput) {
         inputs.push(input);
         return { assistantMessage: { body: "收到。" }, state: "chatting" as const, quickReplies: [], recommendedOptions: [], shouldRunToolNow: false, runtimeKind: "openai" as const };
@@ -1075,7 +1624,18 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const turnService = createConversationTurnService({
       service,
       runtime: new DeterministicRuntime(),
-      agent: { async respond() { return { ...buildAgentToolTurn("ppt_design", "ppt_design_draft"), state: "chatting", shouldRunToolNow: false }; } },
+      agent: {
+        async respond() {
+          return {
+            ...buildAgentToolTurn("ppt_design", "ppt_design_draft", {
+              teacherGoal: "只修改第6页的文字和排版，其他页保持不变",
+              targetPageIds: ["page_06"],
+            }),
+            state: "chatting" as const,
+            shouldRunToolNow: false,
+          };
+        },
+      },
     });
 
     await turnService.createTurn(project.id, { role: "teacher", content: "只修改第6页的文字和排版，其他页保持不变" });
@@ -1318,7 +1878,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     }
   });
 
-  it("persists a real pending action when a model requests provider execution without one", async () => {
+  it("uses the task-scoped standard budget without creating a routine provider confirmation", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousToken = process.env.COZE_API_TOKEN;
     const previousRunUrl = process.env.COZE_PPT_RUN_URL;
@@ -1337,40 +1897,49 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         markdownContent: "# 设计稿",
       });
       await service.approveArtifact(project.id, design.id);
-      const toolRouter = vi.fn();
+      const toolRouter = vi.fn(async (routerInput: Parameters<typeof routeToolCall>[0]): Promise<ToolExecutionResult> => ({
+        status: "retryable_failed",
+        toolId: "generate_pptx_from_design",
+        capabilityId: "coze_ppt",
+        observation: createToolObservation({
+          projectId: routerInput.projectId,
+          sourceMessageId: routerInput.sourceMessageId,
+          capabilityId: "coze_ppt",
+          expectedArtifactKind: "pptx_artifact",
+          kind: "tool_failed",
+          teacherSafeSummary: "本次生成暂时没有完成。",
+          internalReasonSanitized: "temporary_failure",
+          retryPolicy: { retryable: true, nextAction: "retry_later" },
+        }),
+        artifactCreated: false,
+        errorCategory: "temporary_failure",
+        budgetEvent: buildAgentHarnessBudgetEvent({
+          capabilityId: "coze_ppt",
+          expectedArtifactKind: "pptx_artifact",
+          status: "retryable_failed",
+          kind: "tool_failed",
+          providerSubmitted: true,
+        }),
+      }));
       const turnService = createConversationTurnService({
         service,
         runtime: new DeterministicRuntime(),
         toolRouter,
         agent: { async respond() { return buildAgentToolTurn("coze_ppt", "pptx_artifact"); } },
+        enableTaskGrantAutonomy: true,
       });
 
       const body = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX" });
       const pending = pendingDeliveryPlanOf(body.assistantMessage);
+      const teacherMessage = (await service.getMessages(project.id)).find((message) => message.role === "teacher")!;
 
-      expect(body.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
-      expect(body.assistantMessage?.content).toContain("费用规则尚未披露");
-      expect(body.assistantMessage?.content).toContain("确认前不会发起付费生成");
-      expect(pending).toMatchObject({ status: "pending", toolPlan: { capabilityId: "coze_ppt" } });
-      expect(pending.actionId).toBe(`human:${project.id}:coze_ppt:${body.assistantMessage?.id}`);
-      expect(pending.pendingDecision).toMatchObject({
-        schemaVersion: "pending-decision.v1",
-        status: "pending",
-        kind: "budget_disclosure",
-        reasonCode: "budget_not_disclosed",
-        projectId: project.id,
-        taskId: expect.any(String),
-        intentEpoch: project.intentEpoch ?? 0,
-        planId: pending.toolPlan?.planId,
-        actionId: pending.actionId,
-      });
-      expect(toolRouter).not.toHaveBeenCalled();
-
-      await turnService.createTurn(project.id, { role: "teacher", content: "取消当前任务" });
-      const canceled = pendingDeliveryPlanOf((await service.getMessages(project.id)).find((message) => message.id === body.assistantMessage?.id));
-      expect(canceled).toMatchObject({
-        status: "canceled",
-        pendingDecision: { status: "canceled", actionId: pending.actionId },
+      expect(body.agentTurn?.state).not.toBe("awaiting_confirmation");
+      expect(body.assistantMessage?.content).not.toContain("费用规则尚未披露");
+      expect(pending.pendingDecision).toBeUndefined();
+      expect(toolRouter).toHaveBeenCalledTimes(1);
+      expect(teacherMessage.metadata.intentGrant).toMatchObject({
+        budgetPolicyVersion: "v1-standard-task-scope.v1",
+        maxExternalProviderCalls: 2,
       });
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
@@ -1379,17 +1948,21 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     }
   });
 
-  it("persists one disclosed task budget and does not confirm each external Tool again", async () => {
+  it("uses the disclosed task budget and asks only for a real budget upgrade", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousToken = process.env.COZE_API_TOKEN;
     const previousRunUrl = process.env.COZE_PPT_RUN_URL;
-    const previousImageKey = process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY;
-    const previousImageUrl = process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL;
+    const previousImageChannel = process.env.IMAGE_PROVIDER_CHANNEL;
+    const previousImageKey = process.env.MINIMAX_API_KEY;
+    const previousImageUrl = process.env.MINIMAX_BASE_URL;
+    const previousImageModel = process.env.MINIMAX_IMAGE_MODEL;
     process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
     process.env.COZE_API_TOKEN = "test-token";
     process.env.COZE_PPT_RUN_URL = "https://example.invalid/coze";
-    process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY = "test-key";
-    process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL = "https://example.invalid/image";
+    process.env.IMAGE_PROVIDER_CHANNEL = "minimax";
+    process.env.MINIMAX_API_KEY = "test-key";
+    process.env.MINIMAX_BASE_URL = "https://example.invalid/image";
+    process.env.MINIMAX_IMAGE_MODEL = "image-01";
     try {
       const service = createWorkbenchService();
       const project = await service.createProject({ title: "V1-9R task budget disclosure", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
@@ -1432,7 +2005,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         errorCategory: "temporary_failure",
         budgetEvent: buildAgentHarnessBudgetEvent({
           capabilityId, expectedArtifactKind,
-          status: "retryable_failed", kind: "tool_failed",
+          status: "retryable_failed", kind: "tool_failed", providerSubmitted: true,
         }),
         };
       });
@@ -1440,24 +2013,30 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         service, runtime: new DeterministicRuntime(), toolRouter, agent, enableTaskGrantAutonomy: true,
       });
 
-      const disclosureTurn = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX" });
-      const pending = pendingDeliveryPlanOf(disclosureTurn.assistantMessage);
+      const upgradeTurn = await turnService.createTurn(project.id, { role: "teacher", content: "生成真实 PPTX" });
+      const pending = pendingDeliveryPlanOf(upgradeTurn.assistantMessage);
       expect(pending.pendingDecision).toMatchObject({
-        kind: "budget_disclosure", maxCostCredits: null, maxExternalProviderCalls: 3,
+        kind: "budget_upgrade", reasonCode: "budget_upgrade", maxCostCredits: null, maxExternalProviderCalls: 4,
+      });
+      expect(toolRouter).toHaveBeenCalledTimes(2);
+      const initialTeacherMessage = (await service.getMessages(project.id))
+        .find((message) => message.role === "teacher" && message.content === "生成真实 PPTX");
+      expect(initialTeacherMessage?.metadata.intentGrant).toMatchObject({
+        budgetPolicyVersion: "v1-standard-task-scope.v1", maxCostCredits: null, maxExternalProviderCalls: 2,
       });
 
       const confirmedTurn = await turnService.createTurn(project.id, {
-        role: "teacher", content: "确认当前任务按这个调用上限继续", confirmedActionId: pending.actionId,
+        role: "teacher", content: "确认升级当前任务预算", confirmedActionId: pending.actionId,
       });
       const confirmationMessage = (await service.getMessages(project.id))
-        .find((message) => message.role === "teacher" && message.content.includes("调用上限"));
+        .find((message) => message.role === "teacher" && message.content.includes("确认升级"));
 
       expect(confirmationMessage?.metadata.intentGrant).toMatchObject({
-        budgetPolicyVersion: "v1-standard", maxCostCredits: null, maxExternalProviderCalls: 3,
+        budgetPolicyVersion: "v1-standard-task-scope.v1", maxCostCredits: null, maxExternalProviderCalls: 4,
       });
       expect(pendingDeliveryPlanOf(confirmedTurn.assistantMessage).pendingDecision).toBeUndefined();
       expect(confirmedTurn.assistantMessage?.content).toContain("本次生成暂时没有完成");
-      expect(toolRouter).toHaveBeenCalledTimes(2);
+      expect(toolRouter).toHaveBeenCalledTimes(3);
       expect(confirmedTurn.agentTurn).toMatchObject({ state: "failed_retryable", shouldRunToolNow: false });
       expect((await service.getMessages(project.id)).filter((message) => pendingDeliveryPlanOf(message).status === "pending")).toHaveLength(0);
 
@@ -1467,7 +2046,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         metadata: {
           agentHarnessBudgetEvent: buildAgentHarnessBudgetEvent({
             capabilityId: "ppt_sample_assets", expectedArtifactKind: "image_prompts",
-            status: "succeeded", kind: "tool_succeeded",
+            status: "succeeded", kind: "tool_succeeded", providerSubmitted: true,
           }),
         },
       });
@@ -1479,20 +2058,30 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         agent: { async respond() { return { ...buildAgentToolTurn("coze_ppt", "pptx_artifact"), runtimeKind: "openai" as const }; } },
       });
       const cappedTurn = await cappedService.createTurn(project.id, { role: "teacher", content: "继续" });
-      expect(pendingDeliveryPlanOf(cappedTurn.assistantMessage).pendingDecision).toMatchObject({
-        kind: "budget_upgrade", reasonCode: "budget_upgrade", maxExternalProviderCalls: 3,
+      const upgradePending = pendingDeliveryPlanOf(cappedTurn.assistantMessage);
+      expect(upgradePending.pendingDecision).toMatchObject({
+        kind: "budget_upgrade", reasonCode: "budget_upgrade", maxExternalProviderCalls: 6,
       });
-      expect(toolRouter).toHaveBeenCalledTimes(2);
+      expect(toolRouter).toHaveBeenCalledTimes(3);
+      expect(evaluateActionPolicy({
+        risk: "external_generation",
+        intentGrant: confirmationMessage?.metadata.intentGrant as IntentGrant,
+        externalProviderCallsUsed: 3,
+      })).toEqual({ kind: "allow", reason: "within_task_grant" });
+      await expect(createControlPlaneStore().getTaskAggregate(project.id, project.intentEpoch ?? 0))
+        .resolves.toMatchObject({ intentGrant: { maxExternalProviderCalls: 4 } });
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
       restoreEnv("COZE_API_TOKEN", previousToken);
       restoreEnv("COZE_PPT_RUN_URL", previousRunUrl);
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_API_KEY", previousImageKey);
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_BASE_URL", previousImageUrl);
+      restoreEnv("IMAGE_PROVIDER_CHANNEL", previousImageChannel);
+      restoreEnv("MINIMAX_API_KEY", previousImageKey);
+      restoreEnv("MINIMAX_BASE_URL", previousImageUrl);
+      restoreEnv("MINIMAX_IMAGE_MODEL", previousImageModel);
     }
   });
 
-  it("persists a typed budget decision when an internal Tool replans into the first external Tool", async () => {
+  it("does not create a budget decision when a full-package task replans into a standard external Tool", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousToken = process.env.COZE_API_TOKEN;
     const previousRunUrl = process.env.COZE_PPT_RUN_URL;
@@ -1527,6 +2116,33 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         runtime: new DeterministicRuntime(),
         agent,
         enableTaskGrantAutonomy: true,
+        toolRouter: async (routerInput) => {
+          if (routerInput.toolName !== "generate_pptx_from_design") return routeToolCall(routerInput);
+          return {
+            status: "retryable_failed",
+            toolId: "generate_pptx_from_design",
+            capabilityId: "coze_ppt",
+            observation: createToolObservation({
+              projectId: routerInput.projectId,
+              sourceMessageId: routerInput.sourceMessageId,
+              capabilityId: "coze_ppt",
+              expectedArtifactKind: "pptx_artifact",
+              kind: "tool_failed",
+              teacherSafeSummary: "本次生成暂时没有完成。",
+              internalReasonSanitized: "temporary_failure",
+              retryPolicy: { retryable: true, nextAction: "retry_later" },
+            }),
+            artifactCreated: false,
+            errorCategory: "temporary_failure",
+            budgetEvent: buildAgentHarnessBudgetEvent({
+              capabilityId: "coze_ppt",
+              expectedArtifactKind: "pptx_artifact",
+              status: "retryable_failed",
+              kind: "tool_failed",
+              providerSubmitted: true,
+            }),
+          };
+        },
       });
 
       const body = await turnService.createTurn(project.id, {
@@ -1535,20 +2151,13 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       });
       const pending = pendingDeliveryPlanOf(body.assistantMessage);
 
-      expect(calls).toBe(2);
-      expect(body.agentTurn).toMatchObject({ state: "awaiting_confirmation", shouldRunToolNow: false });
-      expect(pending).toMatchObject({
-        status: "pending",
-        taskBrief: { goal: expect.stringContaining("完整材料包") },
-        toolPlan: { capabilityId: "coze_ppt" },
-        pendingDecision: {
-          schemaVersion: "pending-decision.v1",
-          status: "pending",
-          kind: "budget_disclosure",
-          reasonCode: "budget_not_disclosed",
-          projectId: project.id,
-          taskId: expect.any(String),
-        },
+      expect(calls).toBeGreaterThan(2);
+      expect(body.agentTurn?.state).not.toBe("awaiting_confirmation");
+      expect(pending.pendingDecision).toBeUndefined();
+      const teacherMessage = (await service.getMessages(project.id)).find((message) => message.role === "teacher")!;
+      expect(teacherMessage.metadata.intentGrant).toMatchObject({
+        budgetPolicyVersion: "v1-standard-task-scope.v1",
+        maxExternalProviderCalls: expect.any(Number),
       });
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
@@ -1745,11 +2354,15 @@ describe("M54-B3 ConversationTurnService route contract", () => {
 
   it("routes confirmed image_asset through ToolRouter and completes its generation job from the router result", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
-    const previousKey = process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY;
-    const previousBase = process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL;
+    const previousChannel = process.env.IMAGE_PROVIDER_CHANNEL;
+    const previousKey = process.env.MINIMAX_API_KEY;
+    const previousBase = process.env.MINIMAX_BASE_URL;
+    const previousModel = process.env.MINIMAX_IMAGE_MODEL;
     process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
-    process.env.IMAGEGEN_MYSELF_PRIMARY_API_KEY = "test-key";
-    process.env.IMAGEGEN_MYSELF_PRIMARY_BASE_URL = "https://example.invalid/image";
+    process.env.IMAGE_PROVIDER_CHANNEL = "minimax";
+    process.env.MINIMAX_API_KEY = "test-key";
+    process.env.MINIMAX_BASE_URL = "https://example.invalid/image";
+    process.env.MINIMAX_IMAGE_MODEL = "image-01";
     legacyProviderMocks.generateImageFromArtifact.mockClear();
     try {
       const service = createWorkbenchService();
@@ -1845,20 +2458,22 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       ]);
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_API_KEY", previousKey);
-      restoreEnv("IMAGEGEN_MYSELF_PRIMARY_BASE_URL", previousBase);
+      restoreEnv("IMAGE_PROVIDER_CHANNEL", previousChannel);
+      restoreEnv("MINIMAX_API_KEY", previousKey);
+      restoreEnv("MINIMAX_BASE_URL", previousBase);
+      restoreEnv("MINIMAX_IMAGE_MODEL", previousModel);
     }
   });
 
   it("routes confirmed video_segment_generate through ToolRouter and completes its generation job from the router result", async () => {
     const previousEnable = process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS;
     const previousMode = process.env.VIDEO_PROVIDER_MODE;
-    const previousKey = process.env.EVOLINK_VIDEO_API_KEY;
-    const previousBase = process.env.EVOLINK_VIDEO_BASE_URL;
+    const previousKey = process.env.EVOLINK_API_KEY;
+    const previousBase = process.env.EVOLINK_BASE_URL;
     process.env.SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS = "1";
     process.env.VIDEO_PROVIDER_MODE = "evolink";
-    process.env.EVOLINK_VIDEO_API_KEY = "test-key";
-    process.env.EVOLINK_VIDEO_BASE_URL = "https://example.invalid/video";
+    process.env.EVOLINK_API_KEY = "test-key";
+    process.env.EVOLINK_BASE_URL = "https://example.invalid/video";
     legacyProviderMocks.generateVideoFromArtifact.mockClear();
     try {
       const service = createWorkbenchService();
@@ -1967,8 +2582,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     } finally {
       restoreEnv("SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS", previousEnable);
       restoreEnv("VIDEO_PROVIDER_MODE", previousMode);
-      restoreEnv("EVOLINK_VIDEO_API_KEY", previousKey);
-      restoreEnv("EVOLINK_VIDEO_BASE_URL", previousBase);
+      restoreEnv("EVOLINK_API_KEY", previousKey);
+      restoreEnv("EVOLINK_BASE_URL", previousBase);
     }
   });
 
@@ -2324,6 +2939,13 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           return {
             assistantMessage: { body: "智能生成服务暂时不可用，暂时不能可靠理解并推进这次需求。" },
             state: "failed_retryable" as const,
+            failure: {
+              phase: "agent_tool_loop" as const,
+              reasonCode: "main_agent_provider_policy_blocked",
+              category: "provider_policy" as const,
+              retryability: "after_provider_health_change" as const,
+              summary: "当前智能服务通道拒绝了这次请求。",
+            },
             quickReplies: [],
             recommendedOptions: [],
             shouldRunToolNow: false,
@@ -2344,6 +2966,31 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     expect(body.assistantMessage?.content).toContain("智能生成服务暂时不可用");
     expect(await service.getArtifacts(project.id)).toEqual([]);
     expect(readActiveToolObservationsFromMessages(messages)).toEqual([]);
+    expect(readAgentObservationsFromMessages(messages)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: "tool",
+        status: "failed",
+        reasonCodes: ["main_agent_provider_policy_blocked"],
+        responsibleStage: "main_agent_runtime",
+        minimalNextAction: "pause",
+      }),
+    ]));
+    expect(body.assistantMessage?.metadata.recovery).toMatchObject({
+      reasonCode: "main_agent_provider_policy_blocked",
+      kind: "resume",
+    });
+    const taskBrief = messages.find((message) => message.role === "teacher")?.metadata.taskBrief as { taskId: string; digest: string };
+    const events = await createControlPlaneStore().listEvents(project.id);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        taskId: taskBrief.taskId,
+        kind: "run_failed",
+        payload: expect.objectContaining({
+          reasonCode: "main_agent_provider_policy_blocked",
+          taskBriefDigest: taskBrief.digest,
+        }),
+      }),
+    ]));
     expect(readAgentObservationsFromMessages(messages).some((observation) =>
       observation.minimalNextAction === "ask_teacher" || observation.reasonCodes.includes("blocked_by_policy")
     )).toBe(false);
@@ -2357,21 +3004,39 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
+    const respond = vi.fn(async () => ({
+      assistantMessage: { body: "已保存原始 PPT 任务。" },
+      state: "chatting" as const,
+      quickReplies: [],
+      recommendedOptions: [],
+      shouldRunToolNow: false,
+      runtimeKind: "openai" as const,
+    }));
+    const intakeTask = vi.fn(async (input: { userMessage: string; activeTask?: { taskId: string } }) => {
+      if (!input.activeTask) return pptTaskProposal(input.userMessage);
+      return {
+        kind: "control" as const,
+        control: {
+          kind: "redirect" as const,
+          reasonCode: "teacher_requested_redirect" as const,
+          advanceIntentEpoch: true,
+          userMessage: input.userMessage,
+        },
+        replacementProposal: {
+          goal: input.userMessage,
+          requestedOutputs: ["video_script"],
+          constraints: ["机械信标独立创意导入"],
+          excludedOutputs: ["ppt", "image", "video", "package"],
+        },
+      };
+    });
     const turnService = createConversationTurnService({
       service,
       runtime: new DeterministicRuntime(),
       enableTaskGrantAutonomy: true,
       agent: {
-        async respond() {
-          return {
-            assistantMessage: { body: "当前离线控制面已保存任务事实。" },
-            state: "failed_retryable" as const,
-            quickReplies: [],
-            recommendedOptions: [],
-            shouldRunToolNow: false,
-            runtimeKind: "openai" as const,
-          };
-        },
+        intakeTask,
+        respond,
       },
     });
 
@@ -2397,6 +3062,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         reasonCode: "teacher_redirected_without_pending_plan",
       },
     });
+    expect(intakeTask).toHaveBeenCalledTimes(2);
+    expect(respond).toHaveBeenCalledTimes(1);
   });
 
   it("lets the main agent confirm a pending plan from a short start reply", async () => {
@@ -2759,6 +3426,82 @@ async function getLatestPendingActionId(service: ReturnType<typeof createWorkben
   return String(pendingDeliveryPlanOf(pendingMessage).actionId ?? "");
 }
 
+/** Offline fixture for repository contracts only; it is not real model-orchestration evidence. */
+class OfflineModelContractFixtureRuntime implements AgentRuntime {
+  private readonly deterministic = new DeterministicRuntime();
+
+  async run(input: Parameters<AgentRuntime["run"]>[0]) {
+    const result = await this.deterministic.run(input);
+    if (result.status !== "succeeded") return result;
+    return {
+      ...result,
+      run: { ...result.run, runtimeKind: "openai" as const },
+      artifactDraft: {
+        ...result.artifactDraft,
+        generationMode: "model_generated" as const,
+      },
+    };
+  }
+}
+
+async function seedTaskAggregate(
+  service: ReturnType<typeof createWorkbenchService>,
+  projectId: string,
+  requestedOutputs: string[],
+  options: { goal?: string; planId?: string } = {},
+) {
+  const project = await service.getProject(projectId);
+  const controlPlaneStore = createControlPlaneStore();
+  const existing = await controlPlaneStore.getTaskAggregate(projectId, project.intentEpoch ?? 0);
+  if (existing) {
+    return {
+      taskBrief: existing.taskBrief,
+      intentGrant: existing.intentGrant,
+      teacherMessage: null,
+    };
+  }
+  const teacherMessage = await service.addMessage(projectId, {
+    role: "teacher",
+    content: options.goal ?? "测试请求",
+  });
+  const taskBrief = createTaskBrief({
+    taskId: `task:${teacherMessage.id}`,
+    projectId,
+    intentEpoch: project.intentEpoch ?? 0,
+    goal: teacherMessage.content,
+    requestedOutputs,
+    constraints: [],
+    excludedOutputs: [],
+    generationIntensity: project.generationIntensity ?? "standard",
+    sourceMessageId: teacherMessage.id,
+  });
+  const intentGrant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: taskBrief.generationIntensity,
+    budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
+    maxCostCredits: null,
+    maxExternalProviderCalls: 2,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  await service.updateMessageMetadata(projectId, teacherMessage.id, { taskBrief, intentGrant });
+  await controlPlaneStore.upsertTaskAggregate({
+    taskBrief,
+    intentGrant,
+    plan: {
+      planId: options.planId ?? `plan:${taskBrief.taskId}`,
+      revision: 0,
+      status: "active",
+    },
+    checkpoint: null,
+  });
+  return { taskBrief, intentGrant, teacherMessage };
+}
+
 async function seedPendingPlan(
   service: ReturnType<typeof createWorkbenchService>,
   projectId: string,
@@ -2766,15 +3509,23 @@ async function seedPendingPlan(
   expectedArtifactKind: string,
   inputDraft: Record<string, unknown> = {},
 ) {
+  const toolTurn = buildAgentToolTurn(capabilityId, expectedArtifactKind, inputDraft);
+  const { taskBrief, intentGrant } = await seedTaskAggregate(service, projectId, [expectedArtifactKind], {
+    planId: toolTurn.toolPlan!.planId,
+  });
   const assistantMessage = await service.addMessage(projectId, {
     role: "assistant",
     content: "请确认是否执行这一步。",
     metadata: {
+      taskBrief,
+      intentGrant,
       pendingDeliveryPlan: {
         status: "pending",
         teacherRequest: "测试请求",
-        toolPlan: buildAgentToolTurn(capabilityId, expectedArtifactKind, inputDraft).toolPlan,
+        toolPlan: toolTurn.toolPlan,
         runtimeKind: "deterministic",
+        taskBrief,
+        intentGrant,
       },
     },
   });
@@ -2810,6 +3561,34 @@ function pendingDeliveryPlanOf(message?: { metadata: Record<string, unknown> }) 
       maxCostCredits?: number | null;
       maxExternalProviderCalls?: number | null;
     };
+  };
+}
+
+function pptTaskProposal(goal: string) {
+  return {
+    kind: "task" as const,
+    proposal: {
+      goal,
+      requestedOutputs: ["ppt"],
+      constraints: ["五年级数学百分数"],
+      excludedOutputs: [],
+    },
+  };
+}
+
+function createStandardGrantFixture(taskBrief: ReturnType<typeof createTaskBrief>): IntentGrant {
+  return {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId: taskBrief.projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: taskBrief.generationIntensity,
+    budgetPolicyVersion: STANDARD_BUDGET_POLICY_VERSION,
+    maxCostCredits: null,
+    maxExternalProviderCalls: 2,
+    requiredCheckpoints: [],
+    expiresAt: null,
   };
 }
 

@@ -35,6 +35,7 @@ export type RunOpenAIToolCallLoopOptions<TContext> = {
   buildToolRouterInput: (intent: ToolCallIntent, context: TContext) => ToolRouterInput;
   toolRouter: (input: ToolRouterInput) => Promise<ToolExecutionResult>;
   maxToolRounds?: number;
+  usePreviousResponseId?: boolean;
 };
 
 const safeFailureText = "这一步暂时无法继续，请调整要求后重试。";
@@ -91,16 +92,25 @@ export async function runOpenAIToolCallLoop<TContext>(
     }
 
     const output = serializeToolExecutionResultForFunctionCallOutput(toolExecutionResult);
-    const inputItems = [createOriginalUserInputItem(options.request), ...getContinuationOutputItems(currentResponse), createFunctionCallOutputItem(functionCall, output)];
+    const usePreviousResponseId = options.usePreviousResponseId === true && Boolean(currentResponse.responseId);
+    const inputItems = usePreviousResponseId
+      ? [createFunctionCallOutputItem(functionCall, output)]
+      : [createOriginalUserInputItem(options.request), ...getContinuationOutputItems(currentResponse), createFunctionCallOutputItem(functionCall, output)];
     toolRoundsUsed += 1;
-    currentResponse = await options.adapter.createResponse(createModelRequest(options.request, options.tools, inputItems));
+    currentResponse = await options.adapter.createResponse(createModelRequest(
+      options.request,
+      options.tools,
+      inputItems,
+      usePreviousResponseId ? currentResponse.responseId : undefined,
+    ));
   }
 }
 
-function createModelRequest(request: GptProtocolRequest, tools: unknown, inputItems?: unknown[]): GptProtocolRequest {
+function createModelRequest(request: GptProtocolRequest, tools: unknown, inputItems?: unknown[], previousResponseId?: string): GptProtocolRequest {
   return {
     ...request,
     ...(inputItems ? { inputItems } : {}),
+    ...(previousResponseId ? { previousResponseId } : {}),
     tools,
     toolChoice: "auto",
     parallelToolCalls: false,

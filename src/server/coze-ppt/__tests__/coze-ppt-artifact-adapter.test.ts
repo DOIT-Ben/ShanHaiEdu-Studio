@@ -6,6 +6,7 @@ import { GET as getPptxRoute } from "@/app/api/workbench/projects/[projectId]/ar
 import { POST as postCozePptRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { seedArtifactRouteTask } from "../../../../tests/support/artifact-route-task-fixture";
 import { withPassedValidationReport } from "../../../../tests/support/validation-report";
 
 vi.mock("@/server/tools/tool-router", () => ({
@@ -36,6 +37,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
+    const { taskBrief } = await seedArtifactRouteTask(project, ["pptx_artifact"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_design_draft",
       kind: "ppt_design_draft",
@@ -121,9 +123,14 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(routeToolCall).toHaveBeenCalledWith(expect.objectContaining({
-      capabilityId: "coze_ppt",
+      toolName: "generate_pptx_from_design",
       projectId: project.id,
       project: expect.objectContaining({ id: project.id }),
+      executionEnvelope: expect.objectContaining({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        taskBriefDigest: taskBrief.digest,
+      }),
       artifactRefs: [expect.objectContaining({
         kind: "ppt_design_draft",
         artifactId: sourceArtifact.id,
@@ -167,6 +174,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
   ])("does not save a PPTX artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "PPTX provider truth gate" });
+    await seedArtifactRouteTask(project, ["pptx_artifact"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_design_draft",
       kind: "ppt_design_draft",

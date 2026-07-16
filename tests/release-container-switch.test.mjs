@@ -68,7 +68,7 @@ test("V1 release switch requires both Docker health and HTTP readiness and has o
 });
 
 test("V1 release switch is exposed by the release runbook without embedding target secrets", () => {
-  const runbook = readFileSync(path.join(root, "docs", "runbooks", "v1-invited-release-recovery.md"), "utf8");
+  const runbook = readFileSync(path.join(root, "docs", "roadmap", "release", "v1-invited-release-recovery.md"), "utf8");
   assert.match(runbook, /deploy\/switch-v1-container\.sh/);
   assert.match(runbook, /flock|互斥/);
   assert.match(runbook, /Docker Health/);

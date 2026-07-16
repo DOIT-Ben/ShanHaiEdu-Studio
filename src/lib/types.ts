@@ -23,6 +23,7 @@ export type ArtifactKind =
   | "asset_image_generate"
   | "video_segment_plan"
   | "video_segment_generate"
+  | "video_narration_generate"
   | "concat_only_assemble"
   | "final_delivery"
   | "final_delivery_checklist";
@@ -129,8 +130,11 @@ export type PptFullDeckReviewSubmission = {
 export type ChatMessage = {
   id: string;
   speaker: "teacher" | "assistant";
+  turnSourceMessageId?: string;
+  projectionKind?: "agent-activity" | "agent-response";
   title?: string;
   body: string;
+  parts?: import("@/lib/conversation-message-contract").MessagePart[];
   timeLabel?: string;
   tone?: "normal" | "focus" | "warning" | "error";
   turnStatus?: ConversationTurnJobStatus;
@@ -186,12 +190,22 @@ export type WorkbenchSendMessageOptions = {
   responseStyle?: XiaoKuResponseStyle;
 };
 
+export type ConversationMessageSubmission = {
+  body: string;
+  reference: string | null;
+  artifactRefs: string[];
+  confirmedActionId?: string;
+  idempotencyKey?: string;
+  responseStyle?: XiaoKuResponseStyle;
+};
+
 export type WorkbenchSnapshot = {
   project: ProjectItem;
   messages: ChatMessage[];
   artifacts: ArtifactItem[];
   turnJobs: ConversationTurnJob[];
   activeArtifactKey: string;
+  agentEventSequence: number;
 };
 
 export type WorkbenchDataSource = {
@@ -200,6 +214,8 @@ export type WorkbenchDataSource = {
   mutateProjectLifecycle: (projectId: string, mutation: ProjectLifecycleMutation) => Promise<{ changed: boolean; project: ProjectItem }>;
   updateGenerationIntensity: (projectId: string, intensity: GenerationIntensity, expectedVersion: number, confirmationActionId?: string) => Promise<{ project: ProjectItem; confirmationRequired?: boolean; actionId?: string }>;
   getProjectSnapshot: (projectId: string) => Promise<WorkbenchSnapshot>;
+  submitConversationMessage: (projectId: string, submission: ConversationMessageSubmission) => Promise<WorkbenchSnapshot>;
+  recoverConversationTurn: (projectId: string, checkpointId: string) => Promise<WorkbenchSnapshot>;
   sendMessage: (projectId: string, body: string, reference: string | null, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
   setMessageReaction?: (projectId: string, messageId: string, value: ChatMessage["reaction"] | null) => Promise<WorkbenchSnapshot>;
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;

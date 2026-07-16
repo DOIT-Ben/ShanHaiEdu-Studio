@@ -4,6 +4,9 @@ import type {
   GptProtocolDiagnostics,
   GptProtocolRequest,
   GptProtocolResponse,
+  GptProtocolStreamEvent,
+  GptProtocolTelemetry,
+  GptProtocolUsage,
 } from "./types";
 
 type OpenAIResponsesAdapterClient = {
@@ -24,9 +27,15 @@ type OpenAIResponsesGptAdapter = {
 export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapterOptions): OpenAIResponsesGptAdapter {
   return {
     async createResponse(request) {
+      const startedAtMs = Date.now();
       try {
         const rawResponse = await options.client.responses.create(createResponsesPayload(options.model, request));
+        if (isAsyncIterable(rawResponse)) {
+          return consumeResponseStream(rawResponse, request, options.model, startedAtMs);
+        }
         const rawText = extractRawText(rawResponse);
+        const usage = extractUsage(rawResponse);
+        const telemetry = createTelemetry(startedAtMs, undefined, 0, rawText, false);
 
         return {
           assistantText: rawText,
@@ -34,16 +43,24 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
           functionCalls: extractFunctionCalls(rawResponse),
           outputItems: extractOutputItems(rawResponse),
           outputItemsSummary: summarizeOutputItems(rawResponse),
+          ...optionalResponseId(rawResponse),
+          usage,
+          telemetry,
           diagnostics: createDiagnostics("succeeded", options.model),
         };
       } catch (error) {
+        const errorMessage = sanitizeDiagnosticText(extractErrorMessage(error));
+        const telemetry = createTelemetry(startedAtMs, undefined, 0, "", true);
+        await emitStreamEvent(request, { type: "response_failed", errorMessage, telemetry });
         return {
           assistantText: "",
           rawText: "",
           functionCalls: [],
           outputItems: [],
           outputItemsSummary: [],
-          diagnostics: createDiagnostics("failed", options.model, sanitizeDiagnosticText(extractErrorMessage(error))),
+          usage: emptyUsage(),
+          telemetry,
+          diagnostics: createDiagnostics("failed", options.model, errorMessage),
         };
       }
     },
@@ -55,7 +72,11 @@ function createResponsesPayload(model: string, request: GptProtocolRequest): Rec
     model,
     instructions: request.instructions,
     input: request.inputItems ?? request.input,
+    stream: true,
   };
+
+  if (request.previousResponseId !== undefined) payload.previous_response_id = request.previousResponseId;
+  if (request.promptCacheKey !== undefined) payload.prompt_cache_key = request.promptCacheKey;
 
   if (request.text !== undefined) {
     payload.text = request.text;
@@ -78,6 +99,163 @@ function createResponsesPayload(model: string, request: GptProtocolRequest): Rec
   }
 
   return payload;
+}
+
+async function consumeResponseStream(
+  stream: AsyncIterable<unknown>,
+  request: GptProtocolRequest,
+  model: string,
+  startedAtMs: number,
+): Promise<GptProtocolResponse> {
+  let firstEventAtMs: number | undefined;
+  let firstTextAtMs: number | undefined;
+  let chunkCount = 0;
+  let rawText = "";
+  let completedResponse: unknown;
+  let responseId: string | undefined;
+  let startedEmitted = false;
+
+  for await (const value of stream) {
+    if (!isRecord(value) || typeof value.type !== "string") continue;
+    firstEventAtMs ??= Date.now();
+    chunkCount += 1;
+    if (value.type === "response.created" || value.type === "response.in_progress") {
+      const response = isRecord(value.response) ? value.response : undefined;
+      responseId = optionalString(response?.id) ?? responseId;
+      if (!startedEmitted) {
+        startedEmitted = true;
+        await emitStreamEvent(request, { type: "response_started", ...(responseId ? { responseId } : {}) });
+      }
+      continue;
+    }
+    if (!startedEmitted) {
+      startedEmitted = true;
+      await emitStreamEvent(request, { type: "response_started", ...(responseId ? { responseId } : {}) });
+    }
+    if (value.type === "response.output_text.delta" && typeof value.delta === "string") {
+      firstTextAtMs ??= Date.now();
+      rawText += value.delta;
+      await emitStreamEvent(request, { type: "text_delta", delta: value.delta });
+      continue;
+    }
+    if (value.type === "response.function_call_arguments.delta" && typeof value.delta === "string") {
+      await emitStreamEvent(request, {
+        type: "function_call_arguments_delta",
+        ...(optionalString(value.item_id) ? { itemId: optionalString(value.item_id) } : {}),
+        delta: value.delta,
+      });
+      continue;
+    }
+    if (value.type === "response.completed") {
+      completedResponse = value.response;
+      responseId = optionalString(isRecord(value.response) ? value.response.id : undefined) ?? responseId;
+      continue;
+    }
+    if (value.type === "response.failed" || value.type === "response.incomplete" || value.type === "error") {
+      throw new Error(streamErrorMessage(value));
+    }
+  }
+
+  const finalResponse = isRecord(completedResponse) ? completedResponse : {};
+  rawText = extractRawText(finalResponse) || rawText;
+  const usage = extractUsage(finalResponse);
+  const telemetry = createTelemetry(startedAtMs, firstEventAtMs, chunkCount, rawText, true, firstTextAtMs);
+  await emitStreamEvent(request, {
+    type: "response_completed",
+    ...(responseId ? { responseId } : {}),
+    usage,
+    telemetry,
+  });
+  return {
+    assistantText: rawText,
+    rawText,
+    functionCalls: extractFunctionCalls(finalResponse),
+    outputItems: extractOutputItems(finalResponse),
+    outputItemsSummary: summarizeOutputItems(finalResponse),
+    ...(responseId ? { responseId } : {}),
+    usage,
+    telemetry,
+    diagnostics: createDiagnostics("succeeded", model),
+  };
+}
+
+async function emitStreamEvent(request: GptProtocolRequest, event: GptProtocolStreamEvent) {
+  try {
+    await request.onStreamEvent?.(structuredClone(event));
+  } catch {
+    // Observability and UI projection must not change the Provider result.
+  }
+}
+
+function extractUsage(rawResponse: unknown): GptProtocolUsage {
+  const usage = isRecord(rawResponse) && isRecord(rawResponse.usage) ? rawResponse.usage : {};
+  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  return {
+    inputTokens: nonNegativeNumber(usage.input_tokens),
+    outputTokens: nonNegativeNumber(usage.output_tokens),
+    totalTokens: nonNegativeNumber(usage.total_tokens),
+    cachedTokens: nonNegativeNumber(inputDetails.cached_tokens),
+    cacheWriteTokens: nonNegativeNumber(inputDetails.cache_write_tokens),
+  };
+}
+
+function emptyUsage(): GptProtocolUsage {
+  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
+}
+
+function createTelemetry(
+  startedAtMs: number,
+  firstEventAtMs: number | undefined,
+  chunkCount: number,
+  text: string,
+  streamed: boolean,
+  firstTextAtMs?: number,
+): GptProtocolTelemetry {
+  const completedAtMs = Date.now();
+  return {
+    streamed,
+    startedAt: new Date(startedAtMs).toISOString(),
+    ...(firstEventAtMs !== undefined ? {
+      firstEventAt: new Date(firstEventAtMs).toISOString(),
+      timeToFirstEventMs: Math.max(0, firstEventAtMs - startedAtMs),
+    } : {}),
+    ...(firstTextAtMs !== undefined ? {
+      firstTextAt: new Date(firstTextAtMs).toISOString(),
+      timeToFirstTextMs: Math.max(0, firstTextAtMs - startedAtMs),
+    } : {}),
+    completedAt: new Date(completedAtMs).toISOString(),
+    durationMs: Math.max(0, completedAtMs - startedAtMs),
+    chunkCount,
+    textBytes: Buffer.byteLength(text, "utf8"),
+  };
+}
+
+function streamErrorMessage(event: Record<string, unknown>) {
+  if (isRecord(event.error) && typeof event.error.message === "string") return event.error.message;
+  if (isRecord(event.response) && isRecord(event.response.error) && typeof event.response.error.message === "string") {
+    return event.response.error.message;
+  }
+  return `Responses stream failed: ${String(event.type)}`;
+}
+
+function optionalResponseId(rawResponse: unknown) {
+  const responseId = isRecord(rawResponse) ? optionalString(rawResponse.id) : undefined;
+  return responseId ? { responseId } : {};
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function nonNegativeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return typeof value === "object"
+    && value !== null
+    && Symbol.asyncIterator in value
+    && typeof (value as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function";
 }
 
 function extractRawText(rawResponse: unknown): string {

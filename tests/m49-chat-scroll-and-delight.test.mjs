@@ -14,38 +14,38 @@ function readOptionalSource(relativePath) {
   return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : "";
 }
 
-test("ConversationWorkbench scrolls to the newest chat state", () => {
+test("assistant-ui exclusively owns conversation scrolling", () => {
   const source = readSource("src/components/conversation/ConversationWorkbench.tsx");
+  const assistantThread = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
 
-  assert.match(source, /useEffect/);
-  assert.match(source, /scrollAnchorRef/);
-  assert.match(source, /scrollIntoView\(\{ behavior: compact \? "auto" : "smooth", block: "end" \}\)/);
-  assert.match(source, /\[compact, messages\.length, composerSubmitting, projectBusy\]/);
-  assert.match(source, /data-chat-scroll-anchor/);
-  assert.match(source, /<ChatTranscript[\s\S]*projectBusy=\{projectBusy\}/);
+  assert.doesNotMatch(source, /LegacyConversationThread|scrollAnchorRef|data-chat-scroll-anchor|ChatTranscript/);
+  assert.match(source, /<ShanHaiAssistantRuntime/);
+  assert.match(assistantThread, /ThreadPrimitive\.Viewport/);
+  assert.match(assistantThread, /data-assistant-ui-scroll-viewport/);
+  assert.doesNotMatch(assistantThread, /scrollIntoView|data-chat-scroll-anchor|ScrollArea/);
 });
 
-test("ChatTranscript renders 小酷 identity and thinking feedback", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+test("assistant-ui renders 小酷 identity and thinking feedback", () => {
+  const source = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
   const contractsSource = readSource("src/components/conversation/composer/composer-contracts.ts");
 
   assert.match(source, /function XiaoKuMark/);
-  assert.match(source, /data-assistant-logo/);
+  assert.match(source, /function XiaoKuMark/);
   assert.match(source, /\/brand\/xiaoku-avatar\.png/);
   assert.match(generatingSource, /data-ai-thinking/);
   assert.match(generatingSource, /getGeneratingLabel/);
   assert.match(contractsSource, /正在生成回复/);
   assert.match(generatingSource, /typing-dot/);
-  assert.match(generatingSource, />小酷</);
+  assert.doesNotMatch(generatingSource, />小酷</);
 });
 
 test("assistant message actions are a quiet teacher-facing component", () => {
-  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
+  const transcriptSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const actionsSource = readOptionalSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(transcriptSource, /import \{ MessageActions \}/);
-  assert.match(transcriptSource, /<MessageActions[\s\S]*?text=\{\[message\.title, message\.body\]/);
+  assert.match(transcriptSource, /<MessageActions[\s\S]*?text=\{\[custom\.title, custom\.body\]/);
   assert.doesNotMatch(transcriptSource, /function AssistantMessageActions/);
 
   assert.match(actionsSource, /aria-label="复制回复"/);

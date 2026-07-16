@@ -27,6 +27,7 @@ describe("V1 Stage 3B key sample PPTX composer", () => {
   it("refuses to compose when a manifest file is not resolvable", async () => {
     const fixtures = validPptSampleFixtures();
     fixtures.manifest.entries[0].storageRef = "image-artifacts/does-not-exist.png";
+    fixtures.manifest.entries[0].normalizedAsset.storageRef = "image-artifacts/does-not-exist.png";
     refreshManifestDigest(fixtures.manifest);
 
     await expect(composePptKeySamplePptx(fixtures)).rejects.toThrow(/asset_file_missing/);
@@ -62,12 +63,32 @@ async function materializeManifestImages(manifest: ReturnType<typeof validPptSam
       },
     }).png().toBuffer();
     const stored = writeLocalArtifact({ category: "image-artifacts", fileName: `sample-composer-${entry.assetId}.png`, buffer });
+    const rawStored = writeLocalArtifact({ category: "image-artifacts", fileName: `sample-composer-${entry.assetId}-provider-raw.png`, buffer });
+    const digest = createHash("sha256").update(buffer).digest("hex");
     entry.fileName = `sample-composer-${entry.assetId}.png`;
     entry.storageRef = stored.localOutput;
-    entry.sha256 = createHash("sha256").update(buffer).digest("hex");
+    entry.sha256 = digest;
     entry.bytes = buffer.length;
     entry.width = 32;
     entry.height = 32;
+    entry.rawAsset = {
+      fileName: `sample-composer-${entry.assetId}-provider-raw.png`,
+      storageRef: rawStored.localOutput,
+      sha256: digest,
+      bytes: buffer.length,
+      width: 32,
+      height: 32,
+      mime: "image/png",
+    };
+    entry.normalizedAsset = {
+      fileName: entry.fileName,
+      storageRef: entry.storageRef,
+      sha256: digest,
+      bytes: buffer.length,
+      width: 32,
+      height: 32,
+      mime: "image/png",
+    };
   }
   refreshManifestDigest(manifest);
 }

@@ -38,30 +38,11 @@ test("production preflight passes with complete local production env without lea
   const result = await runProductionPreflight({
     cwd,
     env: {
-      SHANHAI_PRODUCTION_PREFLIGHT_SKIP_DOTENV: "1",
-      SHANHAI_AUTH_MODE: "password",
-      SHANHAI_TRUST_PROXY: "1",
-      NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
-      SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
-      NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
-      SHANHAI_ADMIN_BOOTSTRAP_CONFIRMED: "1",
-      SHANHAI_APP_INSTANCE_COUNT: "1",
-      DATABASE_URL: `file:${databasePath}`,
-      ARTIFACT_STORAGE_ROOT: storageRoot,
+      ...completeEnv(storageRoot, { databasePath }),
       AGENT_BRAIN_CHANNEL: "fallback",
       AGENT_BRAIN_FALLBACK_API_KEY: "test-fallback-key-do-not-print",
       AGENT_BRAIN_FALLBACK_BASE_URL: "https://fallback-private.invalid/v1",
       AGENT_BRAIN_FALLBACK_MODEL: "fallback-private-model",
-      COZE_API_TOKEN: "test-coze-token-do-not-print",
-      COZE_PPT_RUN_URL: "https://coze-private.invalid/run",
-      IMAGE_PROVIDER_CHANNEL: "free",
-      IMAGEGEN_FREE_API_KEY: "test-image-key-do-not-print",
-      IMAGEGEN_FREE_BASE_URL: "https://image-private.invalid/v1",
-      IMAGEGEN_FREE_MODEL: "test-image-model",
-      OCTO_API_KEY: "test-video-key-do-not-print",
-      OCTO_BASE_URL: "https://video-private.invalid/v1",
-      VIDEO_MODEL: "test-video-model",
-      MINIMAX_TTS_API_KEY: "test-tts-key-do-not-print",
     },
   });
   const serialized = JSON.stringify(result);
@@ -79,11 +60,10 @@ test("production preflight passes with complete local production env without lea
   assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
 });
 
-test("production preflight accepts the same image defaults and Evolink aliases as the runtime", async () => {
+test("production preflight keeps MiniMax image authority while accepting the configured Evolink video runtime", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
   const env = completeEnv(makeExternalStorageRoot());
-  delete env.IMAGEGEN_FREE_MODEL;
   delete env.OCTO_API_KEY;
   delete env.OCTO_BASE_URL;
   delete env.VIDEO_MODEL;
@@ -97,38 +77,30 @@ test("production preflight accepts the same image defaults and Evolink aliases a
   const serialized = JSON.stringify(result);
 
   assert.equal(result.ok, true);
-  assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "free");
+  assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "provider_ledger:minimax");
   assert.equal(result.checks.find((check) => check.id === "provider-video")?.source, "evolink");
   assert.doesNotMatch(serialized, /test-evolink-key-do-not-print/);
 });
 
-test("production preflight requires MiniMax TTS using the same key aliases as the runtime", async () => {
+test("production preflight requires the exact MiniMax TTS fields declared by the ledger", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
   const storageRoot = makeExternalStorageRoot();
   const primaryEnv = completeEnv(storageRoot);
-  delete primaryEnv.MINIMAX_API_KEY;
-  Object.assign(primaryEnv, {
-    MINIMAX_TTS_API_KEY: "test-tts-key-do-not-print",
-    MINIMAX_TTS_BASE_URL: "https://tts-private.invalid",
-  });
+  delete primaryEnv.MINIMAX_TTS_MODEL;
 
   const primaryResult = await runProductionPreflight({ cwd, env: primaryEnv });
   const primaryCheck = primaryResult.checks.find((check) => check.id === "provider-tts");
   const serialized = JSON.stringify(primaryResult);
-  assert.equal(primaryCheck?.ok, true);
-  assert.equal(primaryCheck?.source, "minimax_tts");
+  assert.equal(primaryCheck?.ok, false);
+  assert.equal(primaryCheck?.source, "provider_ledger:minimax");
   assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
   assert.doesNotMatch(serialized, /tts-private\.invalid/);
 
-  const missingEnv = completeEnv(storageRoot);
-  delete missingEnv.MINIMAX_API_KEY;
-  delete missingEnv.MINIMAX_TTS_API_KEY;
-  const missingResult = await runProductionPreflight({ cwd, env: missingEnv });
-  const missingCheck = missingResult.checks.find((check) => check.id === "provider-tts");
-  assert.equal(missingResult.ok, false);
-  assert.equal(missingCheck?.ok, false);
-  assert.deepEqual(missingCheck?.missing, ["MINIMAX_TTS_API_KEY"]);
+  const completeResult = await runProductionPreflight({ cwd, env: completeEnv(storageRoot) });
+  const completeCheck = completeResult.checks.find((check) => check.id === "provider-tts");
+  assert.equal(completeCheck?.ok, true);
+  assert.equal(completeCheck?.source, "provider_ledger:minimax");
 });
 
 test("production preflight detects missing standalone output and package script", async () => {
@@ -296,19 +268,23 @@ function completeEnv(storageRoot, { databasePath = makeAuthDatabase({ admin: tru
     SHANHAI_APP_INSTANCE_COUNT: "1",
     DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: storageRoot,
-    OPENAI_API_KEY: "test-openai-key-do-not-print",
-    OPENAI_BASE_URL: "https://openai-private.invalid/v1",
-    OPENAI_MODEL: "test-openai-model",
+    SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
+    SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+    AGENT_BRAIN_CHANNEL: "primary",
+    AGENT_BRAIN_API_KEY: "test-agent-key-do-not-print",
+    AGENT_BRAIN_BASE_URL: "https://agent-private.invalid/v1",
+    AGENT_BRAIN_MODEL: "test-agent-model",
     COZE_API_TOKEN: "test-coze-token-do-not-print",
     COZE_PPT_RUN_URL: "https://coze-private.invalid/run",
-    IMAGE_PROVIDER_CHANNEL: "free",
-    IMAGEGEN_FREE_API_KEY: "test-image-key-do-not-print",
-    IMAGEGEN_FREE_BASE_URL: "https://image-private.invalid/v1",
-    IMAGEGEN_FREE_MODEL: "test-image-model",
+    IMAGE_PROVIDER_CHANNEL: "minimax",
+    MINIMAX_API_KEY: "test-minimax-key-do-not-print",
+    MINIMAX_BASE_URL: "https://minimax-private.invalid",
+    MINIMAX_IMAGE_MODEL: "test-image-model",
     OCTO_API_KEY: "test-video-key-do-not-print",
     OCTO_BASE_URL: "https://video-private.invalid/v1",
     VIDEO_MODEL: "test-video-model",
-    MINIMAX_API_KEY: "test-tts-key-do-not-print",
+    TTS_PROVIDER_MODE: "minimax",
+    MINIMAX_TTS_MODEL: "test-tts-model",
   };
 }
 

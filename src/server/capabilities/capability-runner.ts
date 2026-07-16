@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { getCapabilityDefinition } from "./capability-registry";
-import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput } from "@/server/agent-runtime/types";
+import type { AgentProjectContext, AgentRuntime, AgentRuntimeTask, ApprovedArtifactInput, BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { CapabilityId, CapabilityRunResult, SaveArtifactDraft } from "./types";
 import { validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
-import { validatePptDesignCandidate, type PptDesignCandidate } from "@/server/ppt-quality/ppt-design-candidate";
+import {
+  normalizePptDesignSemanticCandidate,
+  projectAuthoritativePptDesignCandidate,
+  type PptDesignSemanticCandidate,
+} from "@/server/ppt-quality/ppt-design-candidate";
+import {
+  hasValidExecutionEnvelope,
+  hasValidTaskBrief,
+  type ExecutionEnvelope,
+  type TaskBrief,
+} from "@/server/conversation/task-contract";
 
 export type AgentRuntimeCapabilityInput = {
   runtime: AgentRuntime;
@@ -14,7 +24,9 @@ export type AgentRuntimeCapabilityInput = {
   taskInput?: Record<string, unknown>;
   projectContext: AgentProjectContext;
   approvedArtifacts?: ApprovedArtifactInput[];
+  businessSkillContext?: BusinessSkillContext;
   sourceMessageId?: string;
+  executionEnvelope?: ExecutionEnvelope;
 };
 
 const capabilityRuntimeTaskMap: Partial<Record<CapabilityId, AgentRuntimeTask>> = {
@@ -71,6 +83,7 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     taskInput: input.taskInput,
     projectContext: input.projectContext,
     approvedArtifacts: input.approvedArtifacts ?? [],
+    businessSkillContext: input.businessSkillContext,
   });
 
   if (result.status !== "succeeded") {
@@ -79,6 +92,8 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       userMessage: result.assistantMessage.body || capability.failureRecovery.userMessage,
       retryable: result.failure?.retryable ?? capability.failureRecovery.retryable,
       errorCategory: result.failure?.category ?? "provider",
+      ...(result.failure?.reasonCode ? { reasonCode: result.failure.reasonCode } : {}),
+      ...(result.failure?.details?.length ? { reasonDetails: [...result.failure.details] } : {}),
       runtimeRun: {
         runId: result.run.runId,
         runtimeKind: result.run.runtimeKind,
@@ -117,18 +132,38 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     }
   }
   if (input.capabilityId === "ppt_design") {
-    const designCandidate = result.artifactDraft.structuredContent?.pptDesignCandidate as PptDesignCandidate | undefined;
-    if (
-      !designCandidate ||
-      !hasTrustedPptEvidenceBindings(designCandidate, input.approvedArtifacts ?? []) ||
-      !isCandidateBoundToCurrentTask(designCandidate, input.taskInput)
-    ) {
-      return {
-        status: "failed",
-        userMessage: "逐页课件设计没有绑定当前可信上游证据，请重新生成设计候选。",
-        retryable: true,
-        errorCategory: "validation",
+    const candidateValue = result.artifactDraft.structuredContent?.pptDesignCandidate;
+    if (!candidateValue) return pptCandidateFailure("ppt_design_candidate_missing");
+    let semanticCandidate: PptDesignSemanticCandidate;
+    try {
+      semanticCandidate = normalizePptDesignSemanticCandidate(candidateValue);
+    } catch (error) {
+      return pptCandidateFailure("ppt_design_candidate_semantics_invalid", extractPptCandidateIssues(error));
+    }
+    const taskBinding = resolvePptTaskBinding(input);
+    if (!taskBinding) return pptCandidateFailure("ppt_design_task_binding_missing");
+    const scopeIssues = candidateSemanticScopeIssues(semanticCandidate, input);
+    if (scopeIssues.length > 0) {
+      return pptCandidateFailure("ppt_design_candidate_semantics_invalid", scopeIssues);
+    }
+    const trustedPptDraft = resolveTrustedPptDraft(input.approvedArtifacts ?? []);
+    if (!trustedPptDraft) return pptCandidateFailure("ppt_design_evidence_binding_missing");
+    try {
+      result.artifactDraft.structuredContent = {
+        ...result.artifactDraft.structuredContent,
+        pptDesignCandidate: projectAuthoritativePptDesignCandidate({
+          semanticCandidate,
+          taskBriefDigest: taskBinding.taskBrief.digest,
+          sourceArtifact: {
+            artifactId: trustedPptDraft.artifactId,
+            version: trustedPptDraft.version,
+            digest: trustedPptDraft.digest,
+            sourceType: "teacher_material",
+          },
+        }).candidate,
       };
+    } catch (error) {
+      return pptCandidateFailure("ppt_design_candidate_semantics_invalid", extractPptCandidateIssues(error));
     }
   }
 
@@ -156,19 +191,83 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
   };
 }
 
-function hasTrustedPptEvidenceBindings(candidate: PptDesignCandidate, artifacts: ApprovedArtifactInput[]): boolean {
-  const trusted = new Map(artifacts.flatMap((artifact) =>
-    artifact.artifactId && artifact.digest ? [[artifact.artifactId, artifact.digest] as const] : []));
-  return trusted.size > 0 && candidate.evidenceBindings.length > 0 &&
-    candidate.evidenceBindings.every((binding) => trusted.get(binding.sourceArtifactId) === binding.digest);
+function pptCandidateFailure(reasonCode: string, reasonDetails: string[] = []): Extract<CapabilityRunResult, { status: "failed" }> {
+  return {
+    status: "failed",
+    userMessage: "逐页课件设计候选没有通过当前任务校验，我会根据具体原因重新规划。",
+    retryable: true,
+    errorCategory: "validation",
+    reasonCode,
+    ...(reasonDetails.length > 0 ? { reasonDetails: [...new Set(reasonDetails)] } : {}),
+  };
 }
 
-function isCandidateBoundToCurrentTask(candidate: PptDesignCandidate, taskInput: Record<string, unknown> | undefined): boolean {
-  const taskBrief = isRecord(taskInput?.taskBrief) ? taskInput.taskBrief : null;
-  return (
-    validatePptDesignCandidate(candidate).valid &&
-    typeof taskBrief?.digest === "string" &&
-    taskBrief.digest === candidate.taskBriefDigest
+function resolvePptTaskBinding(input: AgentRuntimeCapabilityInput): { taskBrief: TaskBrief; envelope: ExecutionEnvelope } | undefined {
+  const envelope = input.executionEnvelope;
+  const taskBriefValue = input.taskInput?.taskBrief;
+  if (!envelope || !hasValidExecutionEnvelope(envelope) || !isRecord(taskBriefValue)) return undefined;
+  const taskBrief = taskBriefValue as unknown as TaskBrief;
+  if (!hasValidTaskBrief(taskBrief)) return undefined;
+  if (
+    envelope.projectId !== input.projectId ||
+    taskBrief.projectId !== input.projectId ||
+    envelope.projectId !== taskBrief.projectId ||
+    envelope.taskId !== taskBrief.taskId ||
+    envelope.intentEpoch !== taskBrief.intentEpoch ||
+    envelope.taskBriefDigest !== taskBrief.digest
+  ) return undefined;
+  return { taskBrief, envelope };
+}
+
+function candidateSemanticScopeIssues(
+  candidate: PptDesignSemanticCandidate,
+  input: AgentRuntimeCapabilityInput,
+): string[] {
+  const expected = input.projectContext;
+  const issues: string[] = [];
+  if (!hasMatchingSemanticScope(candidate.brief.grade, expected.grade)) issues.push("grade_mismatch");
+  if (!hasMatchingSemanticScope(candidate.brief.subject, expected.subject)) issues.push("subject_mismatch");
+  if (!hasMatchingSemanticScope(candidate.brief.topic, expected.topic)) issues.push("topic_mismatch");
+  const targetPageCount = input.taskInput?.targetPageCount;
+  if (Number.isInteger(targetPageCount) && candidate.brief.targetSlideCount !== targetPageCount) {
+    issues.push("target_slide_count_mismatch");
+  }
+  return issues;
+}
+
+function extractPptCandidateIssues(error: unknown) {
+  if (!(error instanceof Error)) return [];
+  const separator = error.message.indexOf(":");
+  if (separator < 0) return [];
+  return error.message.slice(separator + 1).split(",")
+    .map((issue) => issue.trim())
+    .filter((issue) => issue.length > 0 && issue.length <= 160 && /^[A-Za-z0-9_:[\].-]+$/.test(issue));
+}
+
+function resolveTrustedPptDraft(artifacts: ApprovedArtifactInput[]): Required<Pick<ApprovedArtifactInput, "artifactId" | "version" | "digest">> | undefined {
+  const candidates = artifacts
+    .filter((artifact): artifact is ApprovedArtifactInput & Required<Pick<ApprovedArtifactInput, "artifactId" | "version" | "digest">> =>
+      (artifact.nodeKey === "ppt_draft" || artifact.kind === "ppt_draft") &&
+      typeof artifact.artifactId === "string" && Boolean(artifact.artifactId.trim()) &&
+      Number.isInteger(artifact.version) && (artifact.version ?? 0) > 0 &&
+      typeof artifact.digest === "string" && /^[a-f0-9]{64}$/.test(artifact.digest))
+    .sort((left, right) => right.version - left.version || left.artifactId.localeCompare(right.artifactId));
+  if (!candidates.length) return undefined;
+  if (candidates.length > 1 && candidates[0].version === candidates[1].version) return undefined;
+  return candidates[0];
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, "").toLocaleLowerCase("zh-CN");
+}
+
+function hasMatchingSemanticScope(actual: string, expected: string): boolean {
+  const normalizedActual = normalizeText(actual);
+  const normalizedExpected = normalizeText(expected);
+  return Boolean(normalizedActual && normalizedExpected) && (
+    normalizedActual === normalizedExpected ||
+    normalizedActual.includes(normalizedExpected) ||
+    normalizedExpected.includes(normalizedActual)
   );
 }
 
@@ -183,6 +282,8 @@ export function normalizeCapabilityRunResult(result: CapabilityRunResult): Capab
       userMessage: result.userMessage.trim() || "这一步暂时没有完成，可以稍后重试。",
       retryable: result.retryable,
       errorCategory: result.errorCategory,
+      ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+      ...(result.reasonDetails?.length ? { reasonDetails: [...result.reasonDetails] } : {}),
       ...(result.runtimeRun ? { runtimeRun: result.runtimeRun } : {}),
     };
   }

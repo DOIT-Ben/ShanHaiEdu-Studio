@@ -22,6 +22,7 @@ import { validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-samp
 import type { PptFullDeckCandidate } from "@/server/ppt-quality/ppt-production-types";
 import { validatePptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import type { PptDesignPackage, PptDesignValidationIssue } from "@/server/ppt-quality/ppt-quality-types";
+import { validatePptDesignCandidate, type PptDesignCandidate } from "@/server/ppt-quality/ppt-design-candidate";
 import { resolveRuntimeContract } from "./runtime-contract";
 
 const VALIDATOR_ID = "runtime_contract";
@@ -29,6 +30,7 @@ const VALIDATOR_VERSION = "v1";
 
 type ToolResultForValidation = {
   status: string;
+  reasonCode?: string;
   artifactDraft?: SaveArtifactDraft;
   artifactTruth?: ToolArtifactTruth;
   qualityGate?: ToolQualityGateResult;
@@ -115,7 +117,7 @@ export function validateToolExecutionResult(input: {
       evidenceRefs: [],
       locators: [{ kind: "tool", toolId: input.tool.id }],
       stage: contract.capabilityId,
-      reasonCode: "tool_execution_not_succeeded",
+      reasonCode: input.result.reasonCode ?? "tool_execution_not_succeeded",
     }));
   } else {
     gates.push(gate({
@@ -287,19 +289,33 @@ function validatePptQualityArtifact(artifactDraft: SaveArtifactDraft): Validatio
         : "ppt_generation_mode_missing",
   })];
 
+  const candidateValue = structuredContent.pptDesignCandidate;
   const packageValue = structuredContent.pptDesignPackage;
-  if (!packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) {
+  if (candidateValue && typeof candidateValue === "object" && !Array.isArray(candidateValue)) {
+    const candidateValidation = validatePptDesignCandidate(candidateValue as PptDesignCandidate);
     gates.push(gate({
-      gateId: "ppt_design_package",
+      gateId: "ppt_design_candidate",
+      status: candidateValidation.valid ? "passed" : "failed",
+      evidenceRefs: candidateValidation.valid
+        ? [`ppt_design_candidate:${(candidateValue as PptDesignCandidate).candidateDigest}`]
+        : [],
+      locators: [{ kind: "artifact", artifactKind: artifactDraft.kind }],
+      stage: "ppt_design",
+      reasonCode: candidateValidation.valid ? undefined : "ppt_design_candidate_semantics_invalid",
+    }));
+  } else if (!packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) {
+    gates.push(gate({
+      gateId: "ppt_design_candidate",
       status: "failed",
       evidenceRefs: [],
       locators: [{ kind: "artifact", artifactKind: artifactDraft.kind }],
       stage: "ppt_design",
-      reasonCode: "ppt_design_package_missing",
+      reasonCode: "ppt_design_candidate_missing",
     }));
     return gates;
   }
 
+  if (!packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) return gates;
   const validation = safelyValidatePptDesignPackage(packageValue);
   gates.push(gate({
     gateId: "ppt_design_package",

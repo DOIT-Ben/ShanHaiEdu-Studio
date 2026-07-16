@@ -16,6 +16,10 @@ output/
 .env.*
 dev.db
 dev.db-journal
+dev.db-wal
+dev.db-shm
+*.db-wal
+*.db-shm
 data/
 artifact-storage-root/
 prisma/*.db
@@ -29,7 +33,10 @@ output/playwright/
 
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip
+/API台账系统*.zip
 ShanHaiEdu-API-Ledger-Standalone/
 API台账系统/PRIVATE-LOCAL-SECRETS/
 
 /src/generated/prisma
+/graphify-out/
+/src/graphify-out/

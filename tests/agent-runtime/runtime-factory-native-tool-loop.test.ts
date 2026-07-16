@@ -1,3 +1,4 @@
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRuntimeInput } from "@/server/agent-runtime/types";
 
@@ -41,7 +42,7 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
     expect(responsePayloads[0]).not.toHaveProperty("parallel_tool_calls");
   });
 
-  it("enables a single ToolRegistry function tool when the explicit env switch is enabled", async () => {
+  it("does not let the legacy env switch inject a second Tool loop into the production runtime", async () => {
     const { createAgentRuntimeFromEnv } = await import("@/server/agent-runtime/runtime-factory");
     responseQueue.push({ output_text: structuredLessonPlanOutput() });
 
@@ -53,17 +54,9 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
 
     expect(result.status).toBe("succeeded");
     expect(responsePayloads).toHaveLength(1);
-    expect(responsePayloads[0]).toMatchObject({
-      tools: [
-        expect.objectContaining({
-          type: "function",
-          name: "create_lesson_plan",
-          strict: true,
-        }),
-      ],
-      tool_choice: "auto",
-      parallel_tool_calls: false,
-    });
+    expect(responsePayloads[0]).not.toHaveProperty("tools");
+    expect(responsePayloads[0]).not.toHaveProperty("tool_choice");
+    expect(responsePayloads[0]).not.toHaveProperty("parallel_tool_calls");
   });
 
   it("returns the real runtime failure instead of creating a deterministic draft after a 60-second-equivalent failure", async () => {
@@ -91,9 +84,12 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
 
 function openAIEnv() {
   return {
-    OPENAI_API_KEY: "test-key",
-    OPENAI_BASE_URL: "https://example.invalid/v1",
-    OPENAI_MODEL: "gpt-test",
+    SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
+    SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret" as const,
+    AGENT_BRAIN_CHANNEL: "primary",
+    AGENT_BRAIN_API_KEY: "test-key",
+    AGENT_BRAIN_BASE_URL: "https://example.invalid/v1",
+    AGENT_BRAIN_MODEL: "gpt-test",
   };
 }
 

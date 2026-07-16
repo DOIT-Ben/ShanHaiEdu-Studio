@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { GET as getGenerationJobsRoute } from "@/app/api/workbench/projects/[projectId]/generation-jobs/route";
 import { POST as postImageRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { createWorkbenchActor } from "@/server/auth/actor";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
@@ -145,13 +147,35 @@ describe("Local Real MVP M30 generation job queue", () => {
       fileName: "percentage-intro.png",
       localOutput: ".tmp/image-artifacts/percentage-intro.png",
       bytes: 1024,
-      sha256: "fake-image-sha256",
+      sha256: "d".repeat(64),
       imageValid: true,
       mime: "image/png",
+      provider: "minimax",
+      model: "image-01",
+      width: 1920,
+      height: 1080,
+      promptDigest: "f".repeat(64),
+      rawAsset: {
+        fileName: "percentage-intro-raw.png",
+        localOutput: ".tmp/image-artifacts/percentage-intro-raw.png",
+        bytes: 1024,
+        sha256: "a".repeat(64),
+        mime: "image/png",
+      },
+      normalizedAsset: {
+        fileName: "percentage-intro.png",
+        localOutput: ".tmp/image-artifacts/percentage-intro.png",
+        bytes: 1024,
+        sha256: "d".repeat(64),
+        mime: "image/png",
+        width: 1920,
+        height: 1080,
+      },
     });
 
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M30 route success job" });
+    await activateRouteTask(project, `message:${project.id}:route-success`);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -191,6 +215,7 @@ describe("Local Real MVP M30 generation job queue", () => {
 
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M30 route failed job" });
+    await activateRouteTask(project, `message:${project.id}:route-failure`);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -219,3 +244,39 @@ describe("Local Real MVP M30 generation job queue", () => {
     expect(jobs.at(-1)?.errorMessage).toBe("课堂视觉图生成服务暂时没有完成这一步，可以稍后重试。");
   });
 });
+
+async function activateRouteTask(
+  project: Awaited<ReturnType<ReturnType<typeof createWorkbenchService>["createProject"]>>,
+  sourceMessageId: string,
+) {
+  const taskBrief = createTaskBrief({
+    taskId: `task:${project.id}`,
+    projectId: project.id,
+    intentEpoch: project.intentEpoch ?? 0,
+    goal: "根据已确认大纲生成课堂视觉图",
+    requestedOutputs: ["image_prompts"],
+    constraints: ["offline_fixture_only"],
+    excludedOutputs: ["real_provider"],
+    generationIntensity: project.generationIntensity ?? "standard",
+    sourceMessageId,
+  });
+  const intentGrant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId: taskBrief.projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: taskBrief.generationIntensity,
+    budgetPolicyVersion: "offline-fixture.v1",
+    maxCostCredits: 0,
+    maxExternalProviderCalls: 1,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  await createControlPlaneStore().upsertTaskAggregate({
+    taskBrief,
+    intentGrant,
+    plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
+}

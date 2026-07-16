@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildVersionedFinalPackage, verifyFinalPackageBuffer, type ClassroomRunSpec, type FinalPackageFile } from "@/server/package/versioned-final-package";
 
@@ -29,7 +30,7 @@ function fixture() {
       sourceArtifactDigest: createHash("sha256").update(`artifact-${role}`).digest("hex"),
     };
   });
-  const classroomRunSpec: ClassroomRunSpec = { schemaVersion: "classroom-run-spec.v1", courseVersionId: "percentage-v1", courseAnchor: "百分数的意义", reviewBatchId: "review-20260712", sequence: [
+  const classroomRunSpec: ClassroomRunSpec = { schemaVersion: "classroom-run-spec.v1", courseVersionId: "percentage-v1", courseAnchor: "百分数的意义", reviewBatchId: "review-20260712", pptSlideCount: 10, sequence: [
     { ordinal: 1, action: "play_intro_video", artifactRole: "video", instruction: "播放导入视频。" },
     { ordinal: 2, action: "ask_return_question", instruction: "提出回接问题。" },
     { ordinal: 3, action: "open_ppt", artifactRole: "pptx", pptPage: 1, instruction: "打开课件。" },
@@ -40,9 +41,9 @@ function fixture() {
 }
 
 const inspectors = {
-  pptx: async () => ({ slideCount: 12 }),
-  pdf: () => ({ pageCount: 12 }),
-  video: () => ({ durationSeconds: 18.125, width: 752, height: 416, fps: 24, videoCodec: "h264", audioCodec: "aac" }),
+  pptx: async () => ({ slideCount: 10 }),
+  pdf: () => ({ pageCount: 10 }),
+  video: () => ({ durationSeconds: 30.125, width: 752, height: 416, fps: 24, videoCodec: "h264", audioCodec: "aac" }),
 };
 
 describe("V1 Stage 5 versioned final package", () => {
@@ -50,7 +51,7 @@ describe("V1 Stage 5 versioned final package", () => {
     const fixtureValue = fixture();
     const result = await buildVersionedFinalPackage({ ...fixtureValue, teacherSignoff: false, inspectors });
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.manifest).toMatchObject({ courseVersionId: "percentage-v1", reviewBatchId: "review-20260712", requiredRoles: ["lesson_plan", "pptx", "pdf", "image", "video"], packageStatus: "integration_review_passed", teacherSignoff: false, mediaEvidence: { pptx: { slideCount: 12 }, pdf: { pageCount: 12 } }, files: { image: { sourceArtifactId: "artifact-image", sourceArtifactVersion: 2 } } });
+    expect(result.manifest).toMatchObject({ courseVersionId: "percentage-v1", reviewBatchId: "review-20260712", pptSlideCount: 10, requiredRoles: ["lesson_plan", "pptx", "pdf", "image", "video"], packageStatus: "integration_review_passed", teacherSignoff: false, mediaEvidence: { pptx: { slideCount: 10 }, pdf: { pageCount: 10 } }, files: { image: { sourceArtifactId: "artifact-image", sourceArtifactVersion: 2 } } });
     await expect(verifyFinalPackageBuffer(result.buffer, result.manifest)).resolves.toBeUndefined();
   });
 
@@ -72,5 +73,41 @@ describe("V1 Stage 5 versioned final package", () => {
     await expect(buildVersionedFinalPackage({ ...stale, teacherSignoff: false, inspectors })).rejects.toThrow("final_package_sha256_mismatch:lesson_plan");
     const badPdf = fixture();
     await expect(buildVersionedFinalPackage({ ...badPdf, teacherSignoff: false, inspectors: { ...inspectors, pdf: () => ({ pageCount: 11 }) } })).rejects.toThrow("final_package_pdf_page_count_invalid");
+    const shortVideo = fixture();
+    await expect(buildVersionedFinalPackage({ ...shortVideo, teacherSignoff: false, inspectors: { ...inspectors, video: () => ({ ...inspectors.video(), durationSeconds: 29.999 }) } })).rejects.toThrow("final_package_video_evidence_invalid");
+  });
+
+  it("probes the same verified bytes that enter the ZIP when source paths change before path probes", async () => {
+    const fixtureValue = fixture();
+    const pdf = fixtureValue.files.find((file) => file.role === "pdf")!;
+    const video = fixtureValue.files.find((file) => file.role === "video")!;
+    const verifiedPdf = readFileSync(pdf.filePath);
+    const verifiedVideo = readFileSync(video.filePath);
+
+    const result = await buildVersionedFinalPackage({
+      ...fixtureValue,
+      teacherSignoff: false,
+      inspectors: {
+        pptx: async () => {
+          writeFileSync(pdf.filePath, Buffer.from("overwritten-after-hash-pdf"));
+          writeFileSync(video.filePath, Buffer.from("overwritten-after-hash-video"));
+          return { slideCount: 10 };
+        },
+        pdf: (probePath) => {
+          expect(probePath).not.toBe(pdf.filePath);
+          expect(readFileSync(probePath)).toEqual(verifiedPdf);
+          return { pageCount: 10 };
+        },
+        video: (probePath) => {
+          expect(probePath).not.toBe(video.filePath);
+          expect(readFileSync(probePath)).toEqual(verifiedVideo);
+          return { durationSeconds: 30.125, width: 752, height: 416, fps: 24, videoCodec: "h264", audioCodec: "aac" };
+        },
+      },
+    });
+
+    const zip = await JSZip.loadAsync(result.buffer);
+    expect(Buffer.from(await zip.file(pdf.packageFileName)!.async("uint8array"))).toEqual(verifiedPdf);
+    expect(Buffer.from(await zip.file(video.packageFileName)!.async("uint8array"))).toEqual(verifiedVideo);
   });
 });

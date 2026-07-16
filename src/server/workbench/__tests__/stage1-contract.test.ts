@@ -33,6 +33,7 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
       "asset_image_generate",
       "video_segment_plan",
       "video_segment_generate",
+      "video_narration_generate",
       "concat_only_assemble",
       "image_prompts",
       "video_storyboard",

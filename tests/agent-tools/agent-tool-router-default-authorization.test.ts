@@ -74,26 +74,32 @@ describe("V1-2 Agent Tool default database authorization", () => {
       kind: fixture.reviewArtifactKind,
       version: fixture.oldReviewArtifactVersion,
       digest: fixture.oldReviewArtifactDigest,
-    }), "agent_tool_unauthorized"],
+    }), "agent_tool_arguments_invalid", "review_target_stale", "fix_inputs"],
     ["other project", (fixture: Fixture) => ({
       artifactId: fixture.otherReviewArtifactId,
       kind: fixture.reviewArtifactKind,
       version: fixture.reviewArtifactVersion,
       digest: fixture.otherReviewArtifactDigest,
-    }), "agent_tool_unauthorized"],
+    }), "agent_tool_arguments_invalid", "review_target_not_found", "fix_inputs"],
     ["wrong kind", (fixture: Fixture) => ({
       artifactId: fixture.reviewArtifactId,
       kind: "pptx_artifact",
       version: fixture.reviewArtifactVersion,
       digest: fixture.reviewArtifactDigest,
-    }), "agent_tool_arguments_invalid"],
+    }), "agent_tool_arguments_invalid", "course_anchor_review_target_kind_invalid", "fix_inputs"],
     ["wrong digest", (fixture: Fixture) => ({
       artifactId: fixture.reviewArtifactId,
       kind: fixture.reviewArtifactKind,
       version: fixture.reviewArtifactVersion,
       digest: "e".repeat(64),
-    }), "agent_tool_unauthorized"],
-  ])("rejects an invalid Critic review target: %s", async (_name, createRef, expectedCategory) => {
+    }), "agent_tool_arguments_invalid", "review_target_digest_mismatch", "fix_inputs"],
+  ])("rejects an invalid Critic review target: %s", async (
+    _name,
+    createRef,
+    expectedCategory,
+    expectedReasonCode,
+    expectedNextAction,
+  ) => {
     const fixture = await createFixture();
     const reviewTargetRef = createRef(fixture);
     const executor = successfulCriticExecutor(
@@ -106,7 +112,15 @@ describe("V1-2 Agent Tool default database authorization", () => {
       executor,
       authorizationDb: client,
     });
-    expect(result).toMatchObject({ status: "failed", errorCategory: expectedCategory, artifactCreated: false });
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCategory: expectedCategory,
+      artifactCreated: false,
+      observation: {
+        reasonCode: expectedReasonCode,
+        retryPolicy: { retryable: false, nextAction: expectedNextAction },
+      },
+    });
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -117,7 +131,12 @@ describe("V1-2 Agent Tool default database authorization", () => {
       identity: { actorUserId: fixture.otherUserId, actorAuthMode: "password", authSessionId: fixture.ownerSessionId },
     });
 
-    await expectUnauthorized(envelope, executor);
+    await expectDenied(envelope, executor, {
+      errorCategory: "agent_tool_unauthorized",
+      reasonCode: "execution_identity_session_inactive",
+      observationKind: "blocked_by_policy",
+      nextAction: "ask_teacher",
+    });
   });
 
   it("rejects an actor without project write permission", async () => {
@@ -127,21 +146,36 @@ describe("V1-2 Agent Tool default database authorization", () => {
       identity: { actorUserId: fixture.otherUserId, actorAuthMode: "password", authSessionId: fixture.otherSessionId },
     });
 
-    await expectUnauthorized(envelope, executor);
+    await expectDenied(envelope, executor, {
+      errorCategory: "agent_tool_unauthorized",
+      reasonCode: "execution_identity_project_write_denied",
+      observationKind: "blocked_by_policy",
+      nextAction: "ask_teacher",
+    });
   });
 
   it("rejects a source message from another project", async () => {
     const fixture = await createFixture();
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture, { sourceMessageId: fixture.otherMessageId }), executor);
+    await expectDenied(buildEnvelope(fixture, { sourceMessageId: fixture.otherMessageId }), executor, {
+      errorCategory: "invocation_integrity_failed",
+      reasonCode: "source_message_not_in_project",
+      observationKind: "tool_failed",
+      nextAction: "skip_or_replan",
+    });
   });
 
   it("rejects a stale IntentEpoch", async () => {
     const fixture = await createFixture();
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture, { intentEpoch: fixture.intentEpoch - 1 }), executor);
+    await expectDenied(buildEnvelope(fixture, { intentEpoch: fixture.intentEpoch - 1 }), executor, {
+      errorCategory: "invocation_integrity_failed",
+      reasonCode: "intent_epoch_stale",
+      observationKind: "tool_failed",
+      nextAction: "skip_or_replan",
+    });
   });
 
   it.each([
@@ -151,7 +185,12 @@ describe("V1-2 Agent Tool default database authorization", () => {
     const fixture = await createFixture({ artifactApproval: approval });
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture), executor);
+    await expectDenied(buildEnvelope(fixture), executor, {
+      errorCategory: "agent_tool_arguments_invalid",
+      reasonCode: "approved_artifact_not_trusted",
+      observationKind: "quality_gate_failed",
+      nextAction: "fix_inputs",
+    });
   });
 
   it.each([
@@ -169,7 +208,12 @@ describe("V1-2 Agent Tool default database authorization", () => {
       fixture.reviewArtifactKind,
     );
 
-    await expectUnauthorized(buildCriticEnvelope(fixture), executor);
+    await expectDenied(buildCriticEnvelope(fixture), executor, {
+      errorCategory: "agent_tool_arguments_invalid",
+      reasonCode: "review_target_approval_state_invalid",
+      observationKind: "quality_gate_failed",
+      nextAction: "fix_inputs",
+    });
   });
 
   it("rejects malformed structured content for approved inputs and review targets", async () => {
@@ -178,9 +222,15 @@ describe("V1-2 Agent Tool default database authorization", () => {
       where: { id: approvedFixture.artifactId },
       data: { structuredContentJson: "{" },
     });
-    await expectUnauthorized(
+    await expectDenied(
       buildEnvelope(approvedFixture),
       successfulExecutor(approvedFixture.invocationId),
+      {
+        errorCategory: "agent_tool_arguments_invalid",
+        reasonCode: "approved_artifact_content_invalid",
+        observationKind: "quality_gate_failed",
+        nextAction: "fix_inputs",
+      },
     );
 
     const reviewFixture = await createFixture();
@@ -188,13 +238,19 @@ describe("V1-2 Agent Tool default database authorization", () => {
       where: { id: reviewFixture.reviewArtifactId },
       data: { structuredContentJson: "[]" },
     });
-    await expectUnauthorized(
+    await expectDenied(
       buildCriticEnvelope(reviewFixture),
       successfulCriticExecutor(
         reviewFixture.criticInvocationId,
         reviewFixture.reviewArtifactId,
         reviewFixture.reviewArtifactKind,
       ),
+      {
+        errorCategory: "agent_tool_arguments_invalid",
+        reasonCode: "review_target_content_invalid",
+        observationKind: "quality_gate_failed",
+        nextAction: "fix_inputs",
+      },
     );
   });
 
@@ -202,51 +258,81 @@ describe("V1-2 Agent Tool default database authorization", () => {
     const fixture = await createFixture();
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture, {
+    await expectDenied(buildEnvelope(fixture, {
       approvedArtifactRefs: [{
         artifactId: fixture.otherArtifactId,
         kind: fixture.artifactKind,
         version: fixture.artifactVersion,
         digest: fixture.otherArtifactDigest,
       }],
-    }), executor);
+    }), executor, {
+      errorCategory: "agent_tool_arguments_invalid",
+      reasonCode: "approved_artifact_ref_missing",
+      observationKind: "quality_gate_failed",
+      nextAction: "fix_inputs",
+    });
   });
 
   it("rejects an Artifact version mismatch", async () => {
     const fixture = await createFixture();
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture, {
+    await expectDenied(buildEnvelope(fixture, {
       approvedArtifactRefs: [{
         artifactId: fixture.artifactId,
         kind: fixture.artifactKind,
         version: fixture.artifactVersion + 1,
         digest: fixture.artifactDigest,
       }],
-    }), executor);
+    }), executor, {
+      errorCategory: "agent_tool_arguments_invalid",
+      reasonCode: "approved_artifact_version_mismatch",
+      observationKind: "quality_gate_failed",
+      nextAction: "fix_inputs",
+    });
   });
 
   it("rejects an Artifact digest mismatch", async () => {
     const fixture = await createFixture();
     const executor = successfulExecutor(fixture.invocationId);
 
-    await expectUnauthorized(buildEnvelope(fixture, {
+    await expectDenied(buildEnvelope(fixture, {
       approvedArtifactRefs: [{
         artifactId: fixture.artifactId,
         kind: fixture.artifactKind,
         version: fixture.artifactVersion,
         digest: "f".repeat(64),
       }],
-    }), executor);
+    }), executor, {
+      errorCategory: "agent_tool_arguments_invalid",
+      reasonCode: "approved_artifact_digest_mismatch",
+      observationKind: "quality_gate_failed",
+      nextAction: "fix_inputs",
+    });
   });
 });
 
-async function expectUnauthorized(
+async function expectDenied(
   envelope: ReturnType<typeof buildEnvelope>,
   executor: AgentToolExecutor<ReturnType<typeof buildEnvelope>>,
+  expected: {
+    errorCategory: string;
+    reasonCode: string;
+    observationKind: string;
+    nextAction: string;
+  },
 ) {
   const result = await routeAgentToolCall(envelope, { executor, authorizationDb: client });
-  expect(result).toMatchObject({ status: "failed", errorCategory: "agent_tool_unauthorized", artifactCreated: false });
+  expect(result).toMatchObject({
+    status: "failed",
+    errorCategory: expected.errorCategory,
+    artifactCreated: false,
+    observation: {
+      kind: expected.observationKind,
+      reasonCode: expected.reasonCode,
+      retryPolicy: { retryable: false, nextAction: expected.nextAction },
+    },
+  });
   expect(executor).not.toHaveBeenCalled();
 }
 

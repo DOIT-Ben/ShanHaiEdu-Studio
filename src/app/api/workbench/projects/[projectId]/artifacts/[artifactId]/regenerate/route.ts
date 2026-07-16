@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
+import { sanitizeTeacherArtifactStructuredContent } from "@/server/quality/artifact-truth-boundary";
 
 type RouteContext = {
   params: Promise<{ projectId: string; artifactId: string }>;
@@ -15,7 +16,7 @@ export async function POST(request: Request, context: RouteContext) {
         expectedLatestVersion: optionalNumber(body.expectedLatestVersion),
         summary: String(body.summary ?? ""),
         markdownContent: String(body.markdownContent ?? ""),
-        structuredContent: typeof body.structuredContent === "object" && body.structuredContent ? body.structuredContent : {},
+        structuredContent: sanitizeTeacherArtifactStructuredContent(body.structuredContent),
       });
       return NextResponse.json({ artifact }, { status: 201 });
     } catch (error) {

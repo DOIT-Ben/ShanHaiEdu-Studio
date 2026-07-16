@@ -2,10 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
-import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
 const root = process.cwd();
 
 function readSource(relativePath) {
@@ -46,44 +43,9 @@ test("M58 renders download actions in chat cards and full reading surfaces", () 
   assert.doesNotMatch(railSource, /projectId=\{projectId\}/);
 });
 
-test("M58 derives top progress from artifacts and execution feedback", () => {
-  const { deriveWorkbenchStageIndex } = loadWorkbenchProgressModule();
-
-  assert.equal(
-    deriveWorkbenchStageIndex({
-      project: { currentStep: "确定目标" },
-      artifacts: [{ nodeKey: "lesson_plan", kind: "lesson_plan", status: "approved" }],
-      executionFeedback: null,
-    }),
-    1,
-  );
-
-  assert.equal(
-    deriveWorkbenchStageIndex({
-      project: { currentStep: "教学设计" },
-      artifacts: [{ nodeKey: "ppt_draft", kind: "ppt_draft", status: "approved" }],
-      executionFeedback: null,
-    }),
-    2,
-  );
-
-  assert.equal(
-    deriveWorkbenchStageIndex({
-      project: { currentStep: "资源生成" },
-      artifacts: [{ nodeKey: "final_delivery", kind: "final_delivery", status: "approved" }],
-      executionFeedback: null,
-    }),
-    4,
-  );
-
-  assert.equal(
-    deriveWorkbenchStageIndex({
-      project: { currentStep: "确定目标" },
-      artifacts: [],
-      executionFeedback: { stageIndex: 3, label: "正在保存成果" },
-    }),
-    3,
-  );
+test("M58 no longer derives a fixed macro stage from artifacts or text", () => {
+  assert.equal(existsSync(path.join(root, "src/lib/workbench-progress.ts")), false);
+  assert.equal(existsSync(path.join(root, "src/components/conversation/StageProgress.tsx")), false);
 });
 
 test("M58 shows teacher-readable execution feedback while sending", () => {
@@ -96,28 +58,11 @@ test("M58 shows teacher-readable execution feedback while sending", () => {
   assert.match(controllerSource, /正在组织教案、课件和素材任务/);
   assert.match(controllerSource, /正在保存本轮成果/);
   assert.match(conversationSource, /executionFeedback/);
-  assert.match(conversationSource, /deriveWorkbenchStageIndex/);
-  assert.match(indicatorSource, /label \?\? getTeacherGeneratingLabel\(state\)/);
+  assert.doesNotMatch(controllerSource, /stageIndex/);
+  assert.doesNotMatch(conversationSource, /deriveWorkbenchStageIndex|StageProgress/);
+  assert.match(indicatorSource, /小酷正在回复/);
+  assert.doesNotMatch(indicatorSource, /正在理解要求并选择下一步/);
+  assert.match(indicatorSource, /elapsedSeconds/);
+  assert.match(indicatorSource, /已运行 \{elapsedSeconds\} 秒/);
+  assert.doesNotMatch(indicatorSource, /模拟进度|progressPercent|\d+%/);
 });
-
-function loadWorkbenchProgressModule() {
-  const sourcePath = path.join(root, "src", "lib", "workbench-progress.ts");
-  const ts = require("typescript");
-  const compiled = ts.transpileModule(readFileSync(sourcePath, "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2020,
-      esModuleInterop: true,
-    },
-  }).outputText;
-
-  const module = { exports: {} };
-  vm.runInNewContext(compiled, {
-    module,
-    exports: module.exports,
-    require: () => {
-      throw new Error("Unexpected import in workbench progress test");
-    },
-  });
-  return module.exports;
-}

@@ -7,15 +7,266 @@ import { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
-import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
+import { buildAgentHarnessBudgetEvent, countSubmittedExternalProviderCalls, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
 import { buildCapabilityAvailability } from "@/server/capabilities/capability-availability";
 import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { validPptDirectorOutput } from "../support/ppt-director-output-fixture";
-import { createTaskBrief } from "@/server/conversation/task-contract";
+import { createTaskBrief, type IntentGrant, type TaskBrief } from "@/server/conversation/task-contract";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent-react-checkpoint";
+import type { BusinessToolSkillRuntime } from "@/server/skills/business-tool-skill-runtime";
+import type { ToolRouterInput } from "@/server/tools/tool-router";
+import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
 describe("V1-3 Main Agent Agent Tool loop config", () => {
+  it("atomically persists production ReAct segment checkpoints with the current semantic snapshot", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({
+      title: `V1-control-plane-segment-${crypto.randomUUID()}`,
+      grade: "五年级",
+      subject: "数学",
+      lessonTopic: "百分数",
+    });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "制作一份百分数公开课PPT。" });
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: ["十页"],
+      excludedOutputs: ["video"],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service,
+        project,
+        triggerMessage: message,
+        artifacts: [],
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        fence,
+        executor: async () => { throw new Error("Tool execution is not part of this checkpoint test"); },
+        taskBrief,
+        intentGrant,
+        controlPlaneStore,
+      });
+      const checkpoint = createMainAgentReActCheckpoint({
+        request: { instructions: "test", input: taskBrief.goal },
+        seed: config!.getCheckpointSeed?.(),
+        records: [],
+        currentToolNames: config!.allowedToolNames,
+      });
+
+      expect(config?.maxToolRoundsPerSegment).toBe(8);
+      await config!.onSegmentCheckpoint?.({
+        segmentIndex: 1,
+        toolRoundsUsed: 8,
+        pendingToolName: "create_ppt_outline",
+        observationIds: [],
+        checkpoint,
+      });
+
+      expect((await controlPlaneStore.getTaskAggregate(project.id, taskBrief.intentEpoch))?.checkpoint)
+        .toMatchObject({ schemaVersion: "react-checkpoint.v1", checkpointDigest: checkpoint.checkpointDigest });
+      expect((await controlPlaneStore.getLatestSemanticSnapshot({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        intentEpoch: taskBrief.intentEpoch,
+        maxPlanRevision: 0,
+      }))?.snapshot).toMatchObject({
+        taskBrief: { digest: taskBrief.digest },
+        plan: { revision: 0, status: "active" },
+      });
+      expect(await controlPlaneStore.listEvents(project.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "task_updated",
+          payload: expect.objectContaining({ checkpointDigest: checkpoint.checkpointDigest, segmentIndex: 1 }),
+        }),
+      ]));
+
+      await config!.onRecoveryCheckpoint?.({
+        reason: "repeated_tool_failure",
+        toolRoundsUsed: 8,
+        observationIds: ["latest-observation"],
+        checkpoint,
+      });
+
+      expect(readLatestRunCheckpointFromMessages(await service.getMessages(project.id))).toMatchObject({
+        checkpointId: checkpoint.checkpointDigest,
+        reason: "repeated_failure",
+        observationRefs: ["latest-observation"],
+      });
+
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("persists an adapter failure checkpoint as a teacher-resumable turn boundary", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-adapter-checkpoint-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "继续制作七年级语文《春》课件。" });
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: ["七年级", "语文"],
+      excludedOutputs: ["video"],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service,
+        project,
+        triggerMessage: message,
+        artifacts: [],
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        fence,
+        executor: async () => { throw new Error("Tool execution is not part of this checkpoint test"); },
+        taskBrief,
+        intentGrant,
+        controlPlaneStore,
+      });
+      const checkpoint = createMainAgentReActCheckpoint({
+        request: { instructions: "test", input: taskBrief.goal },
+        seed: config!.getCheckpointSeed?.(),
+        records: [{
+          round: 1,
+          toolName: "create_ppt_outline",
+          callDigest: "a".repeat(64),
+          observation: {
+            observationId: "observation-ppt-outline",
+            status: "succeeded",
+            reasonCodes: ["business_tool_succeeded"],
+          },
+        }],
+        currentToolNames: config!.allowedToolNames,
+      });
+
+      await config!.onRecoveryCheckpoint?.({
+        reason: "adapter_failed",
+        toolRoundsUsed: 1,
+        observationIds: ["observation-ppt-outline"],
+        checkpoint,
+      });
+
+      expect(readLatestRunCheckpointFromMessages(await service.getMessages(project.id))).toMatchObject({
+        checkpointId: checkpoint.checkpointDigest,
+        reason: "adapter_failed",
+        observationRefs: ["observation-ppt-outline"],
+      });
+      expect(await controlPlaneStore.getTaskAggregate(project.id, taskBrief.intentEpoch)).toMatchObject({
+        status: "paused_recovery",
+        checkpoint: expect.objectContaining({ checkpointDigest: checkpoint.checkpointDigest }),
+      });
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("persists a HumanGate terminal checkpoint without creating an Artifact", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-human-gate-checkpoint-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "继续生成PPT样张。" });
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const deniedGrant = { ...standardIntentGrant(taskBrief), standardWorkAuthorized: false };
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service,
+        project,
+        triggerMessage: message,
+        artifacts: [],
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        fence,
+        executor: async () => { throw new Error("Tool execution is not part of this checkpoint test"); },
+        taskBrief,
+        controlPlaneStore,
+      });
+      const checkpoint = createMainAgentReActCheckpoint({
+        request: { instructions: "test", input: taskBrief.goal },
+        seed: config!.getCheckpointSeed?.(),
+        records: [{
+          round: 1,
+          toolName: "generate_ppt_sample_assets",
+          callDigest: "a".repeat(64),
+          observation: {
+            observationId: "observation-human-gate",
+            status: "blocked",
+            reasonCodes: ["missing_grant"],
+            nextAction: "ask_teacher",
+          },
+        }],
+        currentToolNames: config!.allowedToolNames,
+      });
+
+      await config!.onRecoveryCheckpoint?.({
+        reason: "human_gate_required",
+        toolRoundsUsed: 1,
+        observationIds: ["observation-human-gate"],
+        checkpoint,
+      });
+
+      expect(await controlPlaneStore.getTaskAggregate(project.id, taskBrief.intentEpoch)).toMatchObject({
+        status: "paused_recovery",
+        checkpoint: expect.objectContaining({ checkpointDigest: checkpoint.checkpointDigest }),
+      });
+      expect(readLatestRunCheckpointFromMessages(await service.getMessages(project.id))).toMatchObject({
+        checkpointId: checkpoint.checkpointDigest,
+        reason: "human_gate_required",
+        observationRefs: ["observation-human-gate"],
+      });
+      expect(await service.getArtifacts(project.id)).toHaveLength(0);
+      expect(await controlPlaneStore.listEvents(project.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "task_updated",
+          payload: expect.objectContaining({
+            status: "paused_recovery",
+            reasonCode: "human_gate_required",
+          }),
+        }),
+      ]));
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
   it("persists a signed Agent Tool report and observation under the active project lease", async () => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
@@ -24,6 +275,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const outline = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT大纲", status: "needs_review",
       summary: "可信逐页大纲", markdownContent: "# PPT大纲",
+      origin: "tool_result",
       structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
     });
     const holderId = `worker-${crypto.randomUUID()}`;
@@ -38,6 +290,13 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       assistantSummary: "已形成样张规划。",
       artifactCreated: false as const,
     }));
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content, requestedOutputs: ["ppt"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
     try {
       const config = createMainAgentToolLoopOptions({
         service,
@@ -47,8 +306,12 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         fence,
         executor,
+        taskBrief,
+        intentGrant,
+        controlPlaneStore,
       });
       expect(config?.allowedToolNames).toContain("ppt_director_plan_or_repair");
+      await config!.prepareTools?.();
       const result = await config!.dispatch({
         callId: "call-1",
         toolName: "ppt_director_plan_or_repair",
@@ -86,6 +349,10 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       ]);
       expect(messages.find((item) => item.id === message.id)?.metadata.mainAgentToolExposureTrace).toEqual(expect.arrayContaining([
         expect.objectContaining({
+          event: "tools_exposed",
+          allowedToolNames: expect.arrayContaining(["ppt_director_plan_or_repair"]),
+        }),
+        expect.objectContaining({
           event: "tool_rejected",
           selectedToolName: "ppt_director_plan_or_repair",
           rejectionReason: "repeated_tool_call",
@@ -97,6 +364,86 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       expect(readAgentObservationsFromMessages(messages)).toEqual([
         expect.objectContaining({ projectId: project.id, actionKey: "ppt_director.plan_or_repair", status: "succeeded" }),
       ]);
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("returns a Director blocked decision to the Main Agent for repair instead of inventing a HumanGate", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-9R-A21-director-repair-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "请规划PPT样张。" });
+    const outline = await service.saveArtifact(project.id, {
+      nodeKey: "ppt_draft",
+      kind: "ppt_draft",
+      title: "PPT大纲",
+      status: "needs_review",
+      summary: "可信逐页大纲",
+      markdownContent: "# PPT大纲",
+      origin: "tool_result",
+      structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
+    });
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const executor = vi.fn(async (envelope) => ({
+      status: "succeeded" as const,
+      toolId: "ppt_director.plan_or_repair" as const,
+      invocationId: envelope.invocationId,
+      structuredOutput: {
+        ...validPptDirectorOutput(),
+        decision: "blocked",
+        summary: "当前设计语义需要由 Main Agent 修复。",
+        nextToolIntents: [],
+      },
+      assistantSummary: "当前设计语义需要修复。",
+      artifactCreated: false as const,
+    }));
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service,
+        project,
+        triggerMessage: message,
+        artifacts: [outline],
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        fence,
+        executor,
+        taskBrief,
+        intentGrant,
+        controlPlaneStore,
+      });
+      const result = await config!.dispatch({
+        callId: "director-blocked",
+        toolName: "ppt_director_plan_or_repair",
+        arguments: { goal: "规划课件", stage: "sample_plan", targetPageIds: [], focus: null },
+      });
+
+      expect(result).toMatchObject({
+        status: "blocked",
+        observation: { nextAction: "repair_upstream" },
+      });
+      expect(readAgentObservationsFromMessages(await service.getMessages(project.id))).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          actionKey: "ppt_director.plan_or_repair",
+          status: "blocked",
+          minimalNextAction: "repair_upstream",
+        }),
+      ]));
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }
@@ -115,6 +462,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const outline = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft", kind: "ppt_draft", title: "百分数课件大纲", status: "needs_review",
       summary: "十页投篮命中率叙事大纲。", markdownContent: "# 百分数课件大纲",
+      origin: "tool_result",
       structuredContent: {
         artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" },
       },
@@ -129,9 +477,8 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       structuredContent: artifacts[0].structuredContent,
     });
     const directorOutput: any = validPptDirectorOutput();
-    directorOutput.evidence_bindings[0].source_artifact_id = outline.id;
+    directorOutput.evidence_bindings[0].source_artifact_kind = outline.kind;
     directorOutput.evidence_bindings[0].source_type = "teacher_material";
-    directorOutput.evidence_bindings[0].digest = outlineDigest;
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -151,21 +498,18 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       artifactCreated: false as const,
     }));
     const taskBrief = createTaskBrief({
-      taskId: "task-ppt-director", projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
       goal: message.content, requestedOutputs: ["ppt"], constraints: ["十页"], excludedOutputs: [],
       generationIntensity: "standard", sourceMessageId: message.id,
     });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
 
     try {
       const config = createMainAgentToolLoopOptions({
         service, runtime, project, triggerMessage: message, artifacts,
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence, executor,
-        taskBrief, intentGrant: {
-          schemaVersion: "intent-grant.v1", taskId: "task-ppt-director", projectId: project.id,
-          intentEpoch: project.intentEpoch ?? 0, standardWorkAuthorized: true, intensity: "standard",
-          budgetPolicyVersion: "v1-standard", maxCostCredits: null, maxExternalProviderCalls: null,
-          requiredCheckpoints: [], expiresAt: null,
-        },
+        taskBrief, intentGrant, controlPlaneStore,
       });
 
       expect(config?.allowedToolNames).toContain("create_ppt_design_draft");
@@ -210,6 +554,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const design = await service.saveArtifact(project.id, {
       nodeKey: "ppt_design_draft", kind: "ppt_design_draft", title: "内部审查通过的设计", status: "needs_review",
       summary: "逐页设计", markdownContent: "# 逐页设计",
+      origin: "tool_result",
       structuredContent: {
         artifactQualityState: {
           validationStatus: "passed",
@@ -221,17 +566,48 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: project.generationIntensity ?? "standard",
+      sourceMessageId: message.id,
+    });
+    const deniedGrant = { ...standardIntentGrant(taskBrief), standardWorkAuthorized: false };
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant);
+    const executor = vi.fn(async () => { throw new Error("agent executor must not be called"); });
     try {
       const config = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts: [await service.getArtifact(project.id, design.id)],
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
-        executor: async () => { throw new Error("agent executor must not be called"); },
+        executor, taskBrief, controlPlaneStore,
       });
       expect(config?.allowedToolNames).toContain("generate_ppt_sample_assets");
       expect(config?.allowedToolNames).not.toContain("raw_provider_submit");
 
       const result = await config!.dispatch({ callId: "business-without-grant", toolName: "generate_ppt_sample_assets", arguments: {} });
       expect(result).toMatchObject({ status: "blocked", observation: { reasonCodes: ["missing_grant"], nextAction: "ask_teacher" } });
+      expect(executor).not.toHaveBeenCalled();
+      const events = await controlPlaneStore.listEvents(project.id);
+      const blockedEvent = events.find((event) => event.kind === "tool_observed");
+      expect(blockedEvent).toMatchObject({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        payload: { status: "blocked" },
+      });
+      const observationId = String(blockedEvent?.payload.observationId ?? "");
+      const observation = await controlPlaneStore.getObservation(observationId);
+      expect(observation).toMatchObject({ status: "blocked", reasonCodes: ["missing_grant"] });
+      if (!observation?.invocationId) throw new Error("Blocked policy observation must bind its ToolInvocation.");
+      await expect(controlPlaneStore.getToolInvocation(observation.invocationId)).resolves.toMatchObject({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        status: "failed",
+      });
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }
@@ -239,9 +615,10 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
 
   it.each([
     ["一句话 PPT", "请做五年级数学百分数公开课 PPT，约 10 页。", ["ppt"]],
+    ["大学课程 PPT", "请做大学计算机《数据结构》课程 PPT，约 10 页。", ["ppt"]],
     ["局部视频脚本", "只做五年级数学百分数独立创意导入视频脚本。", ["video_script"]],
     ["完整材料包", "请做五年级数学百分数公开课完整材料包。", ["lesson_plan", "ppt", "image", "video", "package"]],
-  ])("exposes create_requirement_spec first for an explicit %s task without exposing Director or Critic", async (_label, content, requestedOutputs) => {
+  ])("exposes the first-artifact Tool and semantic collaboration control for an explicit %s task without Director or Critic", async (_label, content, requestedOutputs) => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
     const project = await service.createProject({ title: `V1-9R3-initial-tools-${crypto.randomUUID()}` });
@@ -268,7 +645,9 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         executor, taskBrief,
       });
 
-      expect(config?.allowedToolNames).toEqual(["create_requirement_spec"]);
+      expect(config?.allowedToolNames).toEqual(expect.arrayContaining(["request_teacher_decision", "create_requirement_spec"]));
+      expect(config?.allowedToolNames).not.toContain("ppt_director_plan_or_repair");
+      expect(config?.allowedToolNames).not.toContain("delivery_critic_review");
       expect(executor).not.toHaveBeenCalled();
     } finally {
       await service.releaseProjectExecutionLease(fence);
@@ -304,6 +683,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       requiredCheckpoints: [],
       expiresAt: null,
     };
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -347,9 +727,10 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         businessToolRouter,
         taskBrief,
         intentGrant,
+        controlPlaneStore,
       });
 
-      expect(config?.allowedToolNames).toEqual(["create_requirement_spec"]);
+      expect(config?.allowedToolNames).toEqual(expect.arrayContaining(["request_teacher_decision", "create_requirement_spec"]));
       await expect(config!.dispatch({ callId: "requirement", toolName: "create_requirement_spec", arguments: {} }))
         .resolves.toMatchObject({ status: "succeeded" });
 
@@ -368,7 +749,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         expect.objectContaining({
           event: "tool_selected",
           selectedToolName: "create_requirement_spec",
-          allowedToolNames: ["create_requirement_spec"],
+          allowedToolNames: expect.arrayContaining(["request_teacher_decision", "create_requirement_spec"]),
           intentEpoch: project.intentEpoch ?? 0,
         }),
         expect.objectContaining({
@@ -422,6 +803,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const requirement = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec", kind: "requirement_spec", title: "可信任务规格", status: "needs_review",
       summary: "任务范围和排除项完整。", markdownContent: "# 任务规格",
+      origin: "tool_result",
       structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
     });
     const taskBrief = createTaskBrief({
@@ -459,11 +841,11 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const qualityState = { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" };
     const requirement = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec", kind: "requirement_spec", title: "可信任务规格", status: "needs_review",
-      summary: "任务范围完整。", markdownContent: "# 任务规格", structuredContent: { artifactQualityState: qualityState },
+      summary: "任务范围完整。", markdownContent: "# 任务规格", origin: "tool_result", structuredContent: { artifactQualityState: qualityState },
     });
     const lessonPlan = await service.saveArtifact(project.id, {
       nodeKey: "lesson_plan", kind: "lesson_plan", title: "可信教案", status: "needs_review",
-      summary: "教案结构完整。", markdownContent: "# 教案", structuredContent: { artifactQualityState: qualityState },
+      summary: "教案结构完整。", markdownContent: "# 教案", origin: "tool_result", structuredContent: { artifactQualityState: qualityState },
     });
     const taskBrief = createTaskBrief({
       taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
@@ -502,7 +884,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
     const taskBrief = createTaskBrief({
-      taskId: "task-1", projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
       goal: "只完成当前 PPT 关键样张。",
       requestedOutputs: ["ppt"], constraints: ["只处理关键页"], excludedOutputs: ["video", "package"],
       generationIntensity: "standard", sourceMessageId: message.id,
@@ -512,6 +894,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       standardWorkAuthorized: true, intensity: "standard" as const, budgetPolicyVersion: "v1-standard", maxCostCredits: 10, maxExternalProviderCalls: null,
       requiredCheckpoints: [], expiresAt: null,
     };
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, 5);
     const businessToolRouter = vi.fn(async (input) => ({
       status: "succeeded" as const,
       toolId: "assemble_ppt_key_samples",
@@ -519,7 +902,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       artifactDraft: {
         nodeKey: "image_prompts" as const, kind: "image_prompts" as const, title: "关键样张",
         summary: "已生成关键样张。", markdownContent: "# 关键样张",
-        structuredContent: { taskId: "task-1", inputHash: input.executionInputHash },
+        structuredContent: { taskId: taskBrief.taskId, inputHash: input.executionInputHash },
       },
       assistantSummary: "关键样张已生成。",
       budgetEvent: buildAgentHarnessBudgetEvent({ capabilityId: "ppt_key_samples", actionKey: "assemble_ppt_key_samples:ppt_key_samples", status: "succeeded", kind: "tool_succeeded" }),
@@ -533,6 +916,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         taskBrief,
         planRevision: 5,
         intentGrant,
+        controlPlaneStore,
       });
       const result = await config!.dispatch({ callId: "business-success", toolName: "assemble_ppt_key_samples", arguments: { pageIds: ["page-1"] } });
 
@@ -557,7 +941,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         }),
         toolName: "assemble_ppt_key_samples", toolInput: expect.objectContaining({
           pageIds: ["page-1"], generationIntensity: "standard", intentEpoch: project.intentEpoch,
-          intentGrant: expect.objectContaining({ taskId: "task-1", standardWorkAuthorized: true }),
+          intentGrant: expect.objectContaining({ taskId: taskBrief.taskId, standardWorkAuthorized: true }),
         }), executionInputHash: expect.any(String),
       }));
       expect(readAgentObservationsFromMessages(await service.getMessages(project.id))).toEqual([
@@ -578,10 +962,12 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const message = await service.addMessage(project.id, { role: "teacher", content: "继续制作完整课件。" });
     const artifacts = await createApprovedPptToolPrerequisites(service, project.id);
     const taskBrief = createTaskBrief({
-      taskId: "task-1", projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
       goal: message.content, requestedOutputs: ["ppt"], constraints: [], excludedOutputs: [],
       generationIntensity: "standard", sourceMessageId: message.id,
     });
+    const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 1 });
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -600,26 +986,39 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         actionKey: input.toolName,
         status: "succeeded",
         kind: "tool_succeeded",
+        providerSubmitted: input.toolName === "generate_ppt_sample_assets",
       }),
     }));
+    const businessSkillRuntime = createPptSampleAssetsSkillRuntime();
 
     try {
       const config = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts,
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
         executor: async () => { throw new Error("agent executor must not be called"); }, businessToolRouter,
-        taskBrief, intentGrant: {
-          schemaVersion: "intent-grant.v1", taskId: "task-1", projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
-          standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "v1-standard", maxCostCredits: null,
-          maxExternalProviderCalls: 1, requiredCheckpoints: [], expiresAt: null,
-        },
+        taskBrief, intentGrant, controlPlaneStore, businessSkillRuntime,
       });
 
       await expect(config!.dispatch({ callId: "package", toolName: "assemble_ppt_key_samples", arguments: {} }))
         .resolves.toMatchObject({ status: "succeeded" });
       await expect(config!.dispatch({ callId: "external-1", toolName: "generate_ppt_sample_assets", arguments: {} }))
         .resolves.toMatchObject({ status: "succeeded" });
-      await expect(config!.dispatch({ callId: "external-2", toolName: "generate_ppt_sample_assets", arguments: {} }))
+      const persistedMessage = (await service.getMessages(project.id)).find((item) => item.id === message.id)!;
+      const persistedEvents = readAgentHarnessBudgetEventsFromMessages([persistedMessage]);
+      expect(countSubmittedExternalProviderCalls(persistedEvents)).toBe(1);
+      expect(persistedEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({ capabilityId: "ppt_sample_assets", providerSubmitted: true }),
+      ]));
+      const persistedAggregate = await controlPlaneStore.getTaskAggregate(project.id, project.intentEpoch ?? 0);
+      const rebuilt = createMainAgentToolLoopOptions({
+        service, project, triggerMessage: persistedMessage, artifacts,
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
+        executor: async () => { throw new Error("agent executor must not be called"); }, businessToolRouter,
+        taskBrief, intentGrant, controlPlaneStore, businessSkillRuntime,
+        planRevision: persistedAggregate!.plan.revision,
+        externalProviderCallsUsed: countSubmittedExternalProviderCalls(persistedEvents),
+      });
+      await expect(rebuilt!.dispatch({ callId: "external-2", toolName: "generate_ppt_sample_assets", arguments: {} }))
         .resolves.toMatchObject({ status: "blocked", observation: { reasonCodes: ["budget_upgrade"], nextAction: "ask_teacher" } });
       expect(businessToolRouter).toHaveBeenCalledTimes(2);
     } finally {
@@ -627,7 +1026,262 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     }
   });
 
-  it("persists the same-action failure budget across outer Replan loop reconstruction", async () => {
+  it("scopes a business Tool model request to its own instruction and required trusted artifacts", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-9-storyboard-context-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "请完成教案、PPT、视频和整包。" });
+    const trusted = async (kind: "requirement_spec" | "lesson_plan" | "video_script_generate", title: string) => service.saveArtifact(project.id, {
+      nodeKey: kind,
+      kind,
+      title,
+      status: "needs_review",
+      summary: `${title}摘要`,
+      markdownContent: `# ${title}\n\n这是只属于 ${kind} 的完整内容。`,
+      origin: "tool_result",
+      structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
+    });
+    const artifacts = [
+      await trusted("requirement_spec", "任务规格"),
+      await trusted("lesson_plan", "教案"),
+      await trusted("video_script_generate", "视频脚本"),
+    ];
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["video"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const businessToolRouter = vi.fn(async (_input: ToolRouterInput): Promise<ToolExecutionResult> => ({
+      status: "failed" as const,
+      toolId: "generate_video_storyboard",
+      capabilityId: "storyboard_generate",
+      errorCategory: "validation",
+      artifactCreated: false as const,
+      observation: createToolObservation({
+        projectId: project.id,
+        capabilityId: "storyboard_generate",
+        expectedArtifactKind: "storyboard_generate",
+        kind: "quality_gate_failed",
+        teacherSafeSummary: "诊断完成。",
+        internalReasonSanitized: "diagnostic_only",
+        retryPolicy: { retryable: false, nextAction: "fix_inputs" },
+      }),
+      budgetEvent: buildAgentHarnessBudgetEvent({ capabilityId: "storyboard_generate", actionKey: "generate_video_storyboard", status: "failed", kind: "tool_failed" }),
+    }));
+    const toolInstruction = "只根据冻结视频脚本生成57秒灯塔岛分镜。";
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service, project, triggerMessage: message, artifacts,
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
+        executor: async () => { throw new Error("agent executor must not be called"); },
+        businessToolRouter, taskBrief, intentGrant, controlPlaneStore,
+      });
+      await config!.dispatch({ callId: "storyboard", toolName: "generate_video_storyboard", arguments: { userInstruction: toolInstruction } });
+
+      const routed = businessToolRouter.mock.calls[0][0];
+      expect(routed.userInstruction).toBe(toolInstruction);
+      expect(routed.approvedArtifacts).toEqual([
+        expect.objectContaining({ kind: "video_script_generate", artifactId: artifacts[2].id }),
+      ]);
+      expect(routed.toolInput).toEqual(expect.objectContaining({
+        userInstruction: toolInstruction,
+        taskBrief: expect.objectContaining({ taskId: taskBrief.taskId, goal: taskBrief.goal }),
+      }));
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("binds a native Provider Tool to one recoverable GenerationJob and the committed Artifact", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-9-native-provider-job-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "继续生成课件关键样张。" });
+    const artifacts = await createApprovedPptToolPrerequisites(service, project.id);
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const businessToolRouter = vi.fn(async (input) => {
+      await input.generationTaskLifecycle?.onTaskAccepted?.("provider-task-native-1");
+      return {
+        status: "succeeded" as const,
+        toolId: "generate_ppt_sample_assets",
+        capabilityId: "ppt_sample_assets",
+        artifactDraft: {
+          nodeKey: "image_prompts" as const,
+          kind: "image_prompts" as const,
+          title: "真实课件样张资产",
+          summary: "真实服务已返回课件样张资产。",
+          markdownContent: "# 样张资产",
+          structuredContent: { assetMode: "provider_generated" },
+        },
+        assistantSummary: "已生成课件样张资产。",
+        budgetEvent: buildAgentHarnessBudgetEvent({
+          capabilityId: "ppt_sample_assets",
+          actionKey: "generate_ppt_sample_assets:ppt_sample_assets",
+          status: "succeeded",
+          kind: "tool_succeeded",
+          providerSubmitted: true,
+        }),
+      };
+    });
+    const businessSkillRuntime = createPptSampleAssetsSkillRuntime();
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service,
+        project,
+        triggerMessage: message,
+        artifacts,
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
+        fence,
+        executor: async () => { throw new Error("agent executor must not be called"); },
+        businessToolRouter,
+        taskBrief,
+        intentGrant,
+        controlPlaneStore,
+        businessSkillRuntime,
+      });
+
+      const result = await config!.dispatch({
+        callId: "native-provider-call",
+        toolName: "generate_ppt_sample_assets",
+        arguments: { pageIds: ["page-1"] },
+      });
+
+      expect(businessToolRouter).toHaveBeenCalledWith(expect.objectContaining({
+        generationTaskLifecycle: expect.objectContaining({
+          providerTaskId: null,
+          onTaskAccepted: expect.any(Function),
+        }),
+      }));
+      const artifactId = result.observation.artifactRefs?.[0]?.artifactId;
+      expect(await service.getGenerationJobs(project.id)).toEqual([
+        expect.objectContaining({
+          kind: "image",
+          status: "succeeded",
+          resultArtifactId: artifactId,
+        }),
+      ]);
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("resumes a native Provider Tool from the persisted providerTaskId without submitting twice", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-9-native-provider-resume-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "继续生成课件关键样张。" });
+    const artifacts = await createApprovedPptToolPrerequisites(service, project.id);
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`,
+      projectId: project.id,
+      intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    let submits = 0;
+    const crashingRouter = vi.fn(async (routerInput) => {
+      submits += 1;
+      await routerInput.generationTaskLifecycle?.onTaskAccepted?.("provider-task-resume-1");
+      throw new Error("simulated_process_interruption_after_provider_accept");
+    });
+    const businessSkillRuntime = createPptSampleAssetsSkillRuntime();
+
+    try {
+      const first = createMainAgentToolLoopOptions({
+        service, project, triggerMessage: message, artifacts,
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
+        executor: async () => { throw new Error("agent executor must not be called"); },
+        businessToolRouter: crashingRouter, taskBrief, intentGrant, controlPlaneStore, businessSkillRuntime,
+      });
+      await expect(first!.dispatch({
+        callId: "provider-before-crash",
+        toolName: "generate_ppt_sample_assets",
+        arguments: { pageIds: ["page-1"] },
+      })).rejects.toThrow("simulated_process_interruption_after_provider_accept");
+
+      const resumedRouter = vi.fn(async (routerInput) => ({
+        status: "succeeded" as const,
+        toolId: "generate_ppt_sample_assets",
+        capabilityId: "ppt_sample_assets",
+        artifactDraft: {
+          nodeKey: "image_prompts" as const,
+          kind: "image_prompts" as const,
+          title: "恢复后的真实课件样张资产",
+          summary: `复用任务 ${routerInput.generationTaskLifecycle?.providerTaskId}`,
+          markdownContent: "# 恢复样张资产",
+          structuredContent: { recoveredProviderTaskId: routerInput.generationTaskLifecycle?.providerTaskId },
+        },
+        assistantSummary: "已从原生成任务恢复。",
+        budgetEvent: buildAgentHarnessBudgetEvent({
+          capabilityId: "ppt_sample_assets",
+          actionKey: "generate_ppt_sample_assets:ppt_sample_assets",
+          status: "succeeded",
+          kind: "tool_succeeded",
+          providerSubmitted: false,
+        }),
+      }));
+      const resumed = createMainAgentToolLoopOptions({
+        service, project, triggerMessage: message, artifacts,
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
+        executor: async () => { throw new Error("agent executor must not be called"); },
+        businessToolRouter: resumedRouter, taskBrief, intentGrant, planRevision: 0, controlPlaneStore, businessSkillRuntime,
+      });
+      await expect(resumed!.dispatch({
+        callId: "provider-after-restart",
+        toolName: "generate_ppt_sample_assets",
+        arguments: { pageIds: ["page-1"] },
+      })).resolves.toMatchObject({ status: "succeeded" });
+
+      expect(submits).toBe(1);
+      expect(resumedRouter).toHaveBeenCalledWith(expect.objectContaining({
+        generationTaskLifecycle: expect.objectContaining({ providerTaskId: "provider-task-resume-1" }),
+      }));
+      expect(await service.getGenerationJobs(project.id)).toEqual([
+        expect.objectContaining({ status: "succeeded", resultArtifactId: expect.any(String) }),
+      ]);
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
+
+  it("does not let the dispatch adapter stop a repaired Tool call with materially changed inputs", async () => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
     const project = await service.createProject({ title: `V1-9R17-cycle-${crypto.randomUUID()}` });
@@ -646,6 +1300,8 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         capabilityId: "ppt_key_samples",
         expectedArtifactKind: "image_prompts",
         kind: "quality_gate_failed",
+        reasonCode: "ppt_design_candidate_semantics_invalid",
+        reasonDetails: ["topic_mismatch"],
         teacherSafeSummary: "课件样张没有通过校验。",
         internalReasonSanitized: "Tool output failed deterministic runtime contract validation.",
         retryPolicy: { retryable: false, nextAction: "fix_inputs" },
@@ -682,7 +1338,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     }));
     const intentGrant = {
       schemaVersion: "intent-grant.v1" as const,
-      taskId: "task-cycle",
+      taskId: `task-${crypto.randomUUID()}`,
       projectId: project.id,
       intentEpoch: project.intentEpoch ?? 0,
       standardWorkAuthorized: true,
@@ -698,15 +1354,16 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       goal: message.content, requestedOutputs: ["ppt"], constraints: [], excludedOutputs: [],
       generationIntensity: "standard", sourceMessageId: message.id,
     });
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
     try {
       const firstConfig = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts,
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         fence, executor: async () => { throw new Error("agent executor must not be called"); },
-        businessToolRouter, intentGrant, taskBrief,
+        businessToolRouter, intentGrant, taskBrief, controlPlaneStore,
       });
       await expect(firstConfig!.dispatch({ callId: "failure-1", toolName: "assemble_ppt_key_samples", arguments: { revision: 1 } }))
-        .resolves.toMatchObject({ status: "failed", observation: { reasonCodes: expect.arrayContaining(["sample_high_risk_page_missing"]) } });
+        .resolves.toMatchObject({ status: "failed", observation: { reasonCodes: expect.arrayContaining(["sample_high_risk_page_missing", "ppt_design_candidate_semantics_invalid", "topic_mismatch"]) } });
       await expect(firstConfig!.dispatch({ callId: "failure-2", toolName: "assemble_ppt_key_samples", arguments: { revision: 2 } }))
         .resolves.toMatchObject({ status: "failed" });
 
@@ -715,21 +1372,16 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         service, project, triggerMessage: refreshedMessage, artifacts,
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         fence, executor: async () => { throw new Error("agent executor must not be called"); },
-        businessToolRouter, intentGrant, taskBrief,
+        businessToolRouter, intentGrant, taskBrief, planRevision: 2, controlPlaneStore,
       });
       await expect(rebuiltConfig!.dispatch({ callId: "failure-3", toolName: "assemble_ppt_key_samples", arguments: { revision: 3 } }))
-        .resolves.toMatchObject({ status: "blocked", observation: { reasonCodes: expect.arrayContaining(["repeated_tool_failure", "retry_budget_exhausted"]), nextAction: "pause" } });
+        .resolves.toMatchObject({ status: "failed", observation: { reasonCodes: expect.arrayContaining(["sample_high_risk_page_missing"]) } });
 
-      expect(businessToolRouter).toHaveBeenCalledTimes(2);
+      expect(businessToolRouter).toHaveBeenCalledTimes(3);
       const messages = await service.getMessages(project.id);
       expect(readAgentObservationsFromMessages(messages).at(-1)?.reasonCodes)
         .toContain("sample_high_risk_page_missing");
-      expect(readLatestRunCheckpointFromMessages(messages)).toMatchObject({
-        projectId: project.id,
-        reason: "repeated_failure",
-        actionKey: "assemble_ppt_key_samples",
-        status: "paused",
-      });
+      expect(readLatestRunCheckpointFromMessages(messages)).toBeNull();
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }
@@ -811,6 +1463,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const outline = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT大纲", status: "needs_review",
       summary: "可信逐页大纲", markdownContent: "# PPT大纲",
+      origin: "tool_result",
       structuredContent: { artifactQualityState: { validationStatus: "passed", reviewStatus: "passed", downstreamEligibility: "eligible" } },
     });
     const holderId = `worker-${crypto.randomUUID()}`;
@@ -897,12 +1550,20 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       },
       assistantSummary: "课程锚点审查通过。", artifactCreated: false as const,
     }));
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content, requestedOutputs: ["video"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
 
     try {
       const artifacts = [concept];
       const config = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts,
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence, executor,
+        taskBrief, intentGrant, controlPlaneStore,
       });
       const result = await config!.dispatch({
         callId: "call-anchor", toolName: "delivery_critic_review",
@@ -934,7 +1595,167 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       await service.releaseProjectExecutionLease(fence);
     }
   });
+
+  it("does not persist a Critic review Artifact when its atomic control-plane commit fails", async () => {
+    const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
+    const service = createWorkbenchService(undefined, actor);
+    const project = await service.createProject({ title: `V1-critic-atomic-${crypto.randomUUID()}` });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "审查当前视频创意。" });
+    const concept = await service.saveArtifact(project.id, {
+      nodeKey: "creative_theme_generate", kind: "creative_theme_generate", title: "独立创意候选",
+      status: "needs_review", summary: "等待课程锚点审查。", markdownContent: "# 独立创意候选",
+      structuredContent: { conceptSelection: { selectedConceptId: "concept-a" } },
+    });
+    const digest = hashArtifactDraft({
+      nodeKey: concept.nodeKey, kind: concept.kind, title: concept.title, summary: concept.summary,
+      markdownContent: concept.markdownContent, structuredContent: concept.structuredContent,
+    });
+    const holderId = `worker-${crypto.randomUUID()}`;
+    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
+    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
+    const executor = vi.fn(async (envelope) => ({
+      status: "succeeded" as const, toolId: "delivery_critic.review" as const, invocationId: envelope.invocationId,
+      structuredOutput: {
+        recommendation: "pass", summary: "六个硬门全部通过。", findings: [],
+        targetLocators: [{ kind: "artifact", artifactKind: concept.kind, artifactId: concept.id }],
+        responsibleStage: "video_concept_selection", minimalFix: "无需返修。", inconclusiveReasons: [],
+        hardGateResults: videoCourseAnchorHardGateIds.map((gateId) => ({ gateId, status: "passed", evidenceRefs: [`evidence:${gateId}`], rationale: "证据满足。", findingIds: [] })),
+      },
+      assistantSummary: "课程锚点审查通过。", artifactCreated: false as const,
+    }));
+    const taskBrief = createTaskBrief({
+      taskId: `task-${crypto.randomUUID()}`, projectId: project.id, intentEpoch: project.intentEpoch ?? 0,
+      goal: message.content, requestedOutputs: ["video"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: message.id,
+    });
+    const intentGrant = standardIntentGrant(taskBrief);
+    const store = await persistTaskAggregate(taskBrief, intentGrant);
+    const injectedFailure = new Error("injected_critic_atomic_commit_failure");
+    const controlPlaneStore = {
+      ...store,
+      commitToolResult: vi.fn(async () => { throw injectedFailure; }),
+      commitToolObservation: vi.fn(async () => { throw injectedFailure; }),
+    };
+    const beforeCount = (await service.getArtifacts(project.id)).length;
+
+    try {
+      const config = createMainAgentToolLoopOptions({
+        service, project, triggerMessage: message, artifacts: [concept],
+        identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence, executor,
+        taskBrief, intentGrant, controlPlaneStore,
+      });
+      await expect(config!.dispatch({
+        callId: "call-anchor-atomic", toolName: "delivery_critic_review",
+        arguments: {
+          domain: "video", stage: "course_anchor",
+          targetLocators: [{ kind: "artifact", artifactKind: concept.kind, artifactId: concept.id }],
+          reviewFocus: null, courseAnchorRef: { artifactId: concept.id, version: concept.version, digest },
+          rubricRef: { id: "video-course-anchor", version: "v1", digest: "b".repeat(64) },
+          generatorInvocationId: "generator-a",
+        },
+      })).rejects.toThrow("injected_critic_atomic_commit_failure");
+      expect(await service.getArtifacts(project.id)).toHaveLength(beforeCount);
+    } finally {
+      await service.releaseProjectExecutionLease(fence);
+    }
+  });
 });
+
+function standardIntentGrant(
+  taskBrief: TaskBrief,
+  overrides: Partial<IntentGrant> = {},
+): IntentGrant {
+  return {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId: taskBrief.projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: taskBrief.generationIntensity,
+    budgetPolicyVersion: "v1-standard-task-scope.v1",
+    maxCostCredits: null,
+    maxExternalProviderCalls: null,
+    requiredCheckpoints: [],
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
+async function persistTaskAggregate(taskBrief: TaskBrief, intentGrant: IntentGrant, revision = 0) {
+  const store = createControlPlaneStore();
+  await store.upsertTaskAggregate({
+    taskBrief,
+    intentGrant,
+    plan: { planId: `plan:${taskBrief.taskId}`, revision, status: "active" },
+    status: "active",
+    checkpoint: null,
+  });
+  return store;
+}
+
+function createPptSampleAssetsSkillRuntime(): BusinessToolSkillRuntime {
+  return {
+    loadForSelectedTool: vi.fn(async (input) => {
+      if (input.businessToolName !== "generate_ppt_sample_assets") {
+        throw new Error(`Unexpected formal Skill Tool in test Runtime: ${input.businessToolName}`);
+      }
+      return {
+        skillName: "shanhai-imagegen",
+        skillVersion: "1.1",
+        displayName: "山海图片生成",
+        responsibility: "执行当前Tool已定义的图片请求",
+        semanticSlice: {
+          schemaVersion: "business-tool-skill-slice.v1" as const,
+          bindingMode: "formal_contract" as const,
+          artifactContractAuthority: "skill" as const,
+          toolName: "generate_ppt_sample_assets",
+          responsibility: "执行当前Tool已定义的图片请求",
+          contracts: {
+            tool: { consumes: ["ppt_design_draft"], produces: ["image_prompts"] },
+            skill: {
+              consumes: [],
+              produces: [{
+                artifactType: "image-generation-result",
+                contractVersion: "shanhai-imagegen/v2",
+              }],
+            },
+          },
+          guidance: [{
+            sourcePath: "references/result-contract.md",
+            content: "绑定真实图片结果与质量证据。",
+          }],
+        },
+        provenance: {
+          schemaVersion: "business-tool-skill-provenance.v1" as const,
+          entrypointSha256: `sha256:${"a".repeat(64)}`,
+          references: [{
+            sourcePath: "references/result-contract.md",
+            sha256: `sha256:${"b".repeat(64)}`,
+          }],
+          bindingPolicyDigest: `sha256:${"c".repeat(64)}`,
+        },
+      };
+    }),
+    validateSelectedToolResult: vi.fn(async (input) => {
+      if (input.businessToolName !== "generate_ppt_sample_assets") {
+        throw new Error(`Unexpected formal Skill validation in test Runtime: ${input.businessToolName}`);
+      }
+      return {
+        status: "passed" as const,
+        bindingMode: "formal_contract" as const,
+        contract: {
+          skillName: "shanhai-imagegen",
+          skillVersion: "1.1",
+          artifactType: "image-generation-result",
+          contractVersion: "shanhai-imagegen/v2",
+          adapterId: "image-result-batch.v2",
+          schemaDigest: `sha256:${"d".repeat(64)}`,
+          payloadDigest: `sha256:${"e".repeat(64)}`,
+        },
+      };
+    }),
+  };
+}
 
 async function createApprovedPptToolPrerequisites(
   service: ReturnType<typeof createWorkbenchService>,

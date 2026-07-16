@@ -12,7 +12,7 @@ import { executePackageTool } from "@/server/tools/package-tool-adapter";
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { buildPptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
-import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
+import { setMaterializedPptAssetFixtureEvidence, validPptSampleFixtures } from "./support/ppt-sample-fixture";
 import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
 import { buildPptFullDeckCandidate, sealPptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import { validPptFullProductionFixtures } from "./support/ppt-full-production-fixture";
@@ -113,6 +113,21 @@ function realMp3Buffer(durationSeconds = 0.8) {
   try { return readFileSync(output); } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+function narrationArtifact(script: ReturnType<typeof createVideoNarrationScript>, audioBuffer: Buffer, transcriptBuffer: Buffer) {
+  const audio = writeLocalArtifact({ category: "video-artifacts", fileName: `narration-${script.scriptDigest}.mp3`, buffer: audioBuffer });
+  const transcript = writeLocalArtifact({ category: "video-artifacts", fileName: `narration-${script.scriptDigest}.srt`, buffer: transcriptBuffer });
+  return artifact("video_narration_generate", "narration-1", {
+    structuredContent: {
+      narrationProviderEvidence: { model: "speech-test", voiceId: "ledger-voice", requestedVoiceId: script.voiceId, voiceBindingSource: "provider_ledger", scriptDigest: script.scriptDigest, reportedDurationMs: 800 },
+      cues: [{ text: "装置为什么连续发生变化？", startMs: 0, endMs: 750 }],
+      storage: {
+        audioTrack: { localOutput: audio.localOutput, sha256: createHash("sha256").update(audioBuffer).digest("hex") },
+        transcript: { localOutput: transcript.localOutput, sha256: createHash("sha256").update(transcriptBuffer).digest("hex") },
+      },
+    },
+  });
+}
+
 function pngBuffer() {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -203,7 +218,7 @@ async function versionedFinalPackageFixture() {
     } }),
     artifact("image_prompts", "image", { structuredContent: { storage: { imageAsset: { fileName: "visual.png", localOutput: imageStored.localOutput, sha256: imageSha256, mime: "image/png" } } } }),
     artifact("video_script_generate", "script", { structuredContent: modelGeneratedStructuredContent({ videoNarrationScript: narrationScript }) }),
-    artifact("concat_only_assemble", "video", { structuredContent: {
+    artifact("concat_only_assemble", "video", { status: "needs_review", isApproved: false, structuredContent: {
       storage: { videoAsset: { fileName: "intro.mp4", localOutput: videoStored.localOutput, sha256: videoSha256, mime: "video/mp4" } },
       videoFinalReviewEvidence: {
         storyboard: { artifactId: "storyboard-a", artifactVersion: 1, manifestDigest: "d".repeat(64), targetDurationRange: { minSeconds: 30, maxSeconds: 60 }, shotIds: ["shot_01", "shot_02", "shot_03"] },
@@ -214,7 +229,7 @@ async function versionedFinalPackageFixture() {
         audioTrack: { trackId: "audio-main", storageRef: "tracks/audio.aac", sha256: "c".repeat(64) },
       },
       videoFinalReview: { overallStatus: "passed", evidenceDigest: videoReviewDigest },
-      videoFinalApproval: { decision: "approved", reviewEvidenceDigest: videoReviewDigest },
+      artifactQualityState: { validationStatus: "not_required", reviewStatus: "passed", downstreamEligibility: "eligible" },
     } }),
   ];
   return {
@@ -239,6 +254,25 @@ async function versionedFinalPackageFixture() {
 }
 
 describe("M68 PackageToolAdapter", () => {
+  it("returns unsupported package capability to the Main Agent instead of asking the teacher", async () => {
+    const result = await executePackageTool({
+      tool: { ...getToolDefinition("create_final_package"), implemented: false },
+      projectId: "project-a",
+      artifactRefs: [],
+      resolvedArtifacts: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCategory: "unsupported_package_tool",
+      observation: {
+        kind: "tool_failed",
+        retryPolicy: { retryable: false, nextAction: "skip_or_replan" },
+      },
+      artifactCreated: false,
+    });
+  });
+
   it("runs the real PPT sample composer, LibreOffice renderer, and three-overview pipeline", async () => {
     await withArtifactStorage(async () => {
       const fixtures = validPptSampleFixtures();
@@ -253,12 +287,32 @@ describe("M68 PackageToolAdapter", () => {
             background: entry.assetKind === "AI_SCENE" ? { r: 225, g: 238, b: 242, alpha: 1 } : { r: 50, g: 120, b: 105, alpha: 0 },
           },
         }).png().toBuffer();
-        const stored = writeLocalArtifact({ category: "image-artifacts", fileName: entry.fileName, buffer });
-        entry.storageRef = stored.localOutput;
-        entry.sha256 = createHash("sha256").update(buffer).digest("hex");
-        entry.bytes = buffer.length;
-        entry.width = width;
-        entry.height = height;
+        const normalizedFileName = entry.fileName;
+        const rawFileName = entry.rawAsset.fileName;
+        const normalizedStored = writeLocalArtifact({ category: "image-artifacts", fileName: normalizedFileName, buffer });
+        const rawStored = writeLocalArtifact({ category: "image-artifacts", fileName: rawFileName, buffer });
+        const sha256 = createHash("sha256").update(buffer).digest("hex");
+        setMaterializedPptAssetFixtureEvidence({
+          entry,
+          rawAsset: {
+            fileName: rawFileName,
+            storageRef: rawStored.localOutput,
+            sha256,
+            bytes: buffer.length,
+            width,
+            height,
+            mime: "image/png",
+          },
+          normalizedAsset: {
+            fileName: normalizedFileName,
+            storageRef: normalizedStored.localOutput,
+            sha256,
+            bytes: buffer.length,
+            width,
+            height,
+            mime: "image/png",
+          },
+        });
       }
       const { manifestDigest: _digest, ...semanticManifest } = fixtures.manifest;
       fixtures.manifest.manifestDigest = createPptAssetManifestDigest(semanticManifest);
@@ -434,6 +488,7 @@ describe("M68 PackageToolAdapter", () => {
       const scriptArtifact = artifact("video_script_generate", "script-1", { structuredContent: { videoNarrationScript: narrationScript } });
       const audioBuffer = realMp3Buffer();
       const transcriptBuffer = Buffer.from("1\n00:00:00,000 --> 00:00:00,750\n装置为什么连续发生变化？", "utf8");
+      const narration = narrationArtifact(narrationScript, audioBuffer, transcriptBuffer);
 
       const result = await executePackageTool({
         tool: getToolDefinition("concat_only_assemble"),
@@ -444,9 +499,9 @@ describe("M68 PackageToolAdapter", () => {
           { kind: "video_segment_generate", artifactId: "segment-3" },
           { kind: "storyboard_generate", artifactId: storyboardArtifact.id },
           { kind: "video_script_generate", artifactId: "script-1" },
+          { kind: "video_narration_generate", artifactId: narration.id },
         ],
-        resolvedArtifacts: [...segments, storyboardArtifact, scriptArtifact],
-        runVideoNarration: async () => ({ audioBuffer, transcriptBuffer, cues: [{ text: "装置为什么连续发生变化？", startMs: 0, endMs: 750 }], providerEvidence: { model: "speech-test", voiceId: narrationScript.voiceId, scriptDigest: narrationScript.scriptDigest, reportedDurationMs: 800 } }),
+        resolvedArtifacts: [...segments, storyboardArtifact, scriptArtifact, narration],
       });
 
       expect(result).toMatchObject({
@@ -460,7 +515,7 @@ describe("M68 PackageToolAdapter", () => {
             storage: {
               videoAsset: {
                 generationMode: "ffmpeg_timeline_assembled",
-                sourceArtifactIds: ["segment-1", "segment-2", "segment-3", "storyboard-1", "script-1"],
+                sourceArtifactIds: ["segment-1", "segment-2", "segment-3", "storyboard-1", "script-1", "narration-1"],
               },
             },
             videoFinalReviewEvidence: {
@@ -500,7 +555,6 @@ describe("M68 PackageToolAdapter", () => {
       const stored = writeLocalArtifact({ category: "video-artifacts", fileName: "only-one.mp4", buffer });
       const storyboardArtifact = fullIntroStoryboardArtifact();
       const narrationScript = createVideoNarrationScript({ schemaVersion: "video-narration-script.v1", language: "zh-CN", voiceId: "Chinese (Mandarin)_Gentleman", text: "装置为什么连续发生变化？带着这个问题回到课堂。", courseAnchor: "带着问题回到课堂", answerDisclosureBoundary: "不解释答案" });
-      let narrationCalls = 0;
       const result = await executePackageTool({
         tool: getToolDefinition("concat_only_assemble"),
         projectId: "project-a",
@@ -514,9 +568,7 @@ describe("M68 PackageToolAdapter", () => {
           storyboardArtifact,
           artifact("video_script_generate", "script-1", { structuredContent: { videoNarrationScript: narrationScript } }),
         ],
-        runVideoNarration: async () => { narrationCalls += 1; throw new Error("must_not_run"); },
       });
-      expect(narrationCalls).toBe(0);
       expect(result).toMatchObject({ status: "failed", observation: { kind: "quality_gate_failed" } });
     });
   });
@@ -534,7 +586,7 @@ describe("M68 PackageToolAdapter", () => {
     });
   });
 
-  it("builds a persisted version-bound final package only from reviewed and approved assets", async () => {
+  it("builds a persisted version-bound final package from a video passed by the internal Critic without teacher approval", async () => {
     await withArtifactStorage(async () => {
       const fixture = await versionedFinalPackageFixture();
 
@@ -639,11 +691,11 @@ describe("M68 PackageToolAdapter", () => {
     });
   });
 
-  it("blocks final packaging until the final video review has explicit teacher approval", async () => {
+  it("blocks final packaging when the product-internal final video Critic review is missing", async () => {
     await withArtifactStorage(async () => {
       const fixture = await versionedFinalPackageFixture();
       const video = fixture.artifacts.find((item) => item.kind === "concat_only_assemble")!;
-      delete video.structuredContent.videoFinalApproval;
+      delete video.structuredContent.videoFinalReview;
       const result = await executePackageTool({
         tool: getToolDefinition("create_final_package"),
         projectId: "project-a",

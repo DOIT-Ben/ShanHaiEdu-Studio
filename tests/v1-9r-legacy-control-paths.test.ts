@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import JSZip from "jszip";
@@ -9,6 +9,10 @@ import { GET as downloadPackageRoute } from "@/app/api/workbench/projects/[proje
 import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("V1-9R4 legacy control paths", () => {
+  it("removes the deterministic M2 auto-advance implementation after production references reach zero", () => {
+    expect(existsSync(path.join(process.cwd(), "src/server/workbench/m2-orchestrator.ts"))).toBe(false);
+  });
+
   it("keeps package download as a stored-asset read without latest-artifact assembly", () => {
     const source = readFileSync(path.join(process.cwd(), "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/package/route.ts"), "utf8");
     expect(source).not.toMatch(/getLatestPptArtifact|getLatestImageDownload|getLatestVideoDownload|buildFinalMaterialPackageDownload/);

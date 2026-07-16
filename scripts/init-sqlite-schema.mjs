@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,10 +62,88 @@ CREATE TABLE IF NOT EXISTS "ConversationMessage" (
   "projectId" TEXT NOT NULL,
   "role" TEXT NOT NULL,
   "content" TEXT NOT NULL,
+  "partsJson" TEXT NOT NULL DEFAULT '[]',
   "artifactRefsJson" TEXT NOT NULL DEFAULT '[]',
   "metadataJson" TEXT NOT NULL DEFAULT '{}',
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ConversationMessage_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "TaskAggregate" (
+  "taskId" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "intentEpoch" INTEGER NOT NULL,
+  "taskBriefJson" TEXT NOT NULL,
+  "intentGrantJson" TEXT NOT NULL,
+  "planId" TEXT NOT NULL,
+  "planRevision" INTEGER NOT NULL DEFAULT 0,
+  "status" TEXT NOT NULL DEFAULT 'active',
+  "checkpointJson" TEXT NOT NULL DEFAULT 'null',
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL,
+  CONSTRAINT "TaskAggregate_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "AgentEventRecord" (
+  "eventId" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "taskId" TEXT NOT NULL,
+  "runId" TEXT NOT NULL,
+  "intentEpoch" INTEGER NOT NULL,
+  "sequence" INTEGER NOT NULL,
+  "kind" TEXT NOT NULL,
+  "visibility" TEXT NOT NULL,
+  "envelopeJson" TEXT NOT NULL,
+  "payloadJson" TEXT NOT NULL,
+  "occurredAt" DATETIME NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "AgentEventRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "ToolInvocationRecord" (
+  "invocationId" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "taskId" TEXT NOT NULL,
+  "intentEpoch" INTEGER NOT NULL,
+  "planRevision" INTEGER NOT NULL,
+  "toolName" TEXT NOT NULL,
+  "executionEnvelopeJson" TEXT NOT NULL,
+  "requestJson" TEXT NOT NULL,
+  "idempotencyKey" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'running',
+  "artifactId" TEXT,
+  "observationId" TEXT,
+  "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "finishedAt" DATETIME,
+  CONSTRAINT "ToolInvocationRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "ObservationRecord" (
+  "observationId" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "taskId" TEXT NOT NULL,
+  "invocationId" TEXT,
+  "intentEpoch" INTEGER NOT NULL,
+  "status" TEXT NOT NULL,
+  "reasonCodesJson" TEXT NOT NULL DEFAULT '[]',
+  "payloadJson" TEXT NOT NULL,
+  "artifactId" TEXT,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "ObservationRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "ObservationRecord_invocationId_fkey" FOREIGN KEY ("invocationId") REFERENCES "ToolInvocationRecord" ("invocationId") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "SemanticContextSnapshotRecord" (
+  "snapshotId" TEXT NOT NULL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  "taskId" TEXT NOT NULL,
+  "intentEpoch" INTEGER NOT NULL,
+  "planRevision" INTEGER NOT NULL,
+  "snapshotDigest" TEXT NOT NULL,
+  "payloadJson" TEXT NOT NULL,
+  "lastEventSequence" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "SemanticContextSnapshotRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "WorkflowNode" (
@@ -85,6 +164,11 @@ CREATE TABLE IF NOT EXISTS "WorkflowNode" (
 CREATE TABLE IF NOT EXISTS "Artifact" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "projectId" TEXT NOT NULL,
+  "taskId" TEXT,
+  "taskBriefDigest" TEXT,
+  "intentEpoch" INTEGER,
+  "planRevision" INTEGER,
+  "origin" TEXT NOT NULL DEFAULT 'legacy',
   "nodeKey" TEXT NOT NULL,
   "title" TEXT NOT NULL,
   "kind" TEXT NOT NULL,
@@ -294,6 +378,10 @@ CREATE TABLE IF NOT EXISTS "ConversationTurnJob" (
   "lockedUntil" DATETIME,
   "errorCode" TEXT,
   "errorMessage" TEXT,
+  "failureCategory" TEXT,
+  "failureRetryability" TEXT,
+  "failureEvidenceDigest" TEXT,
+  "recoveryEvidenceDigest" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
   "startedAt" DATETIME,
@@ -424,13 +512,24 @@ ensureColumn(db, "Project", "lifecycleVersion", 'ALTER TABLE "Project" ADD COLUM
 ensureColumn(db, "Project", "intentEpoch", 'ALTER TABLE "Project" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');
 ensureColumn(db, "Project", "generationIntensity", 'ALTER TABLE "Project" ADD COLUMN "generationIntensity" TEXT NOT NULL DEFAULT \'standard\'');
 ensureColumn(db, "Project", "intensityVersion", 'ALTER TABLE "Project" ADD COLUMN "intensityVersion" INTEGER NOT NULL DEFAULT 0');
+ensureColumn(db, "ConversationMessage", "partsJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "partsJson" TEXT NOT NULL DEFAULT \'[]\'');
 ensureColumn(db, "ConversationMessage", "metadataJson", 'ALTER TABLE "ConversationMessage" ADD COLUMN "metadataJson" TEXT NOT NULL DEFAULT \'{}\'');
+ensureColumn(db, "Artifact", "taskId", 'ALTER TABLE "Artifact" ADD COLUMN "taskId" TEXT');
+ensureColumn(db, "Artifact", "taskBriefDigest", 'ALTER TABLE "Artifact" ADD COLUMN "taskBriefDigest" TEXT');
+ensureColumn(db, "Artifact", "intentEpoch", 'ALTER TABLE "Artifact" ADD COLUMN "intentEpoch" INTEGER');
+ensureColumn(db, "Artifact", "planRevision", 'ALTER TABLE "Artifact" ADD COLUMN "planRevision" INTEGER');
+ensureColumn(db, "Artifact", "origin", 'ALTER TABLE "Artifact" ADD COLUMN "origin" TEXT NOT NULL DEFAULT \'legacy\'');
+migrateUnprovenLegacyArtifactApprovals(db);
 ensureColumn(db, "ConversationTurnJob", "actorUserId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorUserId" TEXT');
 ensureColumn(db, "ConversationTurnJob", "actorAuthMode", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "actorAuthMode" TEXT');
 ensureColumn(db, "ConversationTurnJob", "authSessionId", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "authSessionId" TEXT');
 ensureColumn(db, "ConversationTurnJob", "fencingToken", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "fencingToken" INTEGER');
 ensureColumn(db, "ConversationTurnJob", "generationIntensity", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "generationIntensity" TEXT NOT NULL DEFAULT \'standard\'');
 ensureColumn(db, "ConversationTurnJob", "intensityVersion", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "intensityVersion" INTEGER NOT NULL DEFAULT 0');
+ensureColumn(db, "ConversationTurnJob", "failureCategory", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "failureCategory" TEXT');
+ensureColumn(db, "ConversationTurnJob", "failureRetryability", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "failureRetryability" TEXT');
+ensureColumn(db, "ConversationTurnJob", "failureEvidenceDigest", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "failureEvidenceDigest" TEXT');
+ensureColumn(db, "ConversationTurnJob", "recoveryEvidenceDigest", 'ALTER TABLE "ConversationTurnJob" ADD COLUMN "recoveryEvidenceDigest" TEXT');
 ensureColumn(db, "GenerationJob", "runInputSnapshotId", 'ALTER TABLE "GenerationJob" ADD COLUMN "runInputSnapshotId" TEXT');
 ensureColumn(db, "GenerationJob", "unitId", 'ALTER TABLE "GenerationJob" ADD COLUMN "unitId" TEXT');
 ensureColumn(db, "GenerationJob", "intentEpoch", 'ALTER TABLE "GenerationJob" ADD COLUMN "intentEpoch" INTEGER NOT NULL DEFAULT 0');
@@ -455,12 +554,24 @@ ensureColumn(db, "FeedbackAttachment", "kind", 'ALTER TABLE "FeedbackAttachment"
 assertNoFeedbackIdempotencyConflicts(db);
 db.exec(`
 CREATE INDEX IF NOT EXISTS "ConversationMessage_projectId_createdAt_idx" ON "ConversationMessage"("projectId", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "TaskAggregate_projectId_intentEpoch_key" ON "TaskAggregate"("projectId", "intentEpoch");
+CREATE INDEX IF NOT EXISTS "TaskAggregate_projectId_status_updatedAt_idx" ON "TaskAggregate"("projectId", "status", "updatedAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "AgentEventRecord_projectId_sequence_key" ON "AgentEventRecord"("projectId", "sequence");
+CREATE INDEX IF NOT EXISTS "AgentEventRecord_projectId_taskId_sequence_idx" ON "AgentEventRecord"("projectId", "taskId", "sequence");
+CREATE UNIQUE INDEX IF NOT EXISTS "ToolInvocationRecord_projectId_idempotencyKey_key" ON "ToolInvocationRecord"("projectId", "idempotencyKey");
+CREATE INDEX IF NOT EXISTS "ToolInvocationRecord_projectId_taskId_startedAt_idx" ON "ToolInvocationRecord"("projectId", "taskId", "startedAt");
+CREATE INDEX IF NOT EXISTS "ObservationRecord_projectId_taskId_createdAt_idx" ON "ObservationRecord"("projectId", "taskId", "createdAt");
+CREATE INDEX IF NOT EXISTS "ObservationRecord_invocationId_idx" ON "ObservationRecord"("invocationId");
+CREATE UNIQUE INDEX IF NOT EXISTS "SemanticContextSnapshotRecord_projectId_taskId_intentEpoch_planRevision_key" ON "SemanticContextSnapshotRecord"("projectId", "taskId", "intentEpoch", "planRevision");
+CREATE INDEX IF NOT EXISTS "SemanticContextSnapshotRecord_projectId_createdAt_idx" ON "SemanticContextSnapshotRecord"("projectId", "createdAt");
 CREATE INDEX IF NOT EXISTS "Project_ownerUserId_updatedAt_idx" ON "Project"("ownerUserId", "updatedAt");
 CREATE INDEX IF NOT EXISTS "Project_archivedAt_deletedAt_updatedAt_idx" ON "Project"("archivedAt", "deletedAt", "updatedAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "LocalUser_email_key" ON "LocalUser"("email");
 CREATE INDEX IF NOT EXISTS "WorkflowNode_projectId_order_idx" ON "WorkflowNode"("projectId", "order");
 CREATE UNIQUE INDEX IF NOT EXISTS "WorkflowNode_projectId_key_key" ON "WorkflowNode"("projectId", "key");
 CREATE INDEX IF NOT EXISTS "Artifact_projectId_nodeKey_version_idx" ON "Artifact"("projectId", "nodeKey", "version");
+CREATE INDEX IF NOT EXISTS "Artifact_projectId_intentEpoch_kind_idx" ON "Artifact"("projectId", "intentEpoch", "kind");
+CREATE INDEX IF NOT EXISTS "Artifact_taskId_idx" ON "Artifact"("taskId");
 CREATE INDEX IF NOT EXISTS "AgentRun_projectId_nodeKey_startedAt_idx" ON "AgentRun"("projectId", "nodeKey", "startedAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_status_createdAt_idx" ON "GenerationJob"("projectId", "status", "createdAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_sourceArtifactId_idx" ON "GenerationJob"("sourceArtifactId");
@@ -535,4 +646,108 @@ function assertNoFeedbackIdempotencyConflicts(db) {
   if (conflict) {
     throw new Error("Feedback idempotency conflict detected; resolve duplicate rows before retrying schema initialization.");
   }
+}
+
+function migrateUnprovenLegacyArtifactApprovals(db) {
+  const candidates = db.prepare(`
+    SELECT "id", "projectId", "nodeKey", "kind", "title", "status", "summary", "markdownContent",
+      "structuredContentJson", "isApproved"
+    FROM "Artifact"
+    WHERE "origin" = 'legacy' AND "status" = 'approved' AND "isApproved" = 1
+  `).all();
+  if (candidates.length === 0) return;
+
+  const updateArtifact = db.prepare(`
+    UPDATE "Artifact"
+    SET "status" = 'needs_review', "isApproved" = 0, "structuredContentJson" = ?, "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "id" = ? AND "origin" = 'legacy' AND "status" = 'approved' AND "isApproved" = 1
+  `);
+  const updateNode = db.prepare(`
+    UPDATE "WorkflowNode"
+    SET "status" = 'needs_review', "approvedArtifactId" = NULL,
+      "staleReason" = '历史批准记录缺少当前可审计证据，请重新审核。', "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "projectId" = ? AND "approvedArtifactId" = ?
+  `);
+  const migrate = db.transaction(() => {
+    for (const artifact of candidates) {
+      const structuredContent = parseJsonObject(artifact.structuredContentJson);
+      if (hasValidLegacyReapprovalEvidence(artifact, structuredContent)) continue;
+      const existingMigration = structuredContent.legacyApprovalMigration;
+      const legacyApprovalMigration = hasLegacyApprovalMigration(existingMigration)
+        ? existingMigration
+        : {
+            schemaVersion: "legacy-artifact-approval-migration.v1",
+            reasonCode: "legacy_approval_evidence_missing",
+            migratedFromStatus: "approved",
+            migratedFromApproved: true,
+            migratedAt: new Date().toISOString(),
+          };
+      const result = updateArtifact.run(JSON.stringify({ ...structuredContent, legacyApprovalMigration }), artifact.id);
+      if (result.changes > 0) updateNode.run(artifact.projectId, artifact.id);
+    }
+  });
+  migrate();
+}
+
+function hasValidLegacyReapprovalEvidence(artifact, structuredContent) {
+  if (!hasLegacyApprovalMigration(structuredContent.legacyApprovalMigration)) return false;
+  const evidence = structuredContent.artifactApprovalEvidence;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) ||
+      evidence.schemaVersion !== "artifact-approval-evidence.v1" || evidence.sourceAuthority !== "legacy_reapproved" ||
+      !isSha256(evidence.artifactDigest) || !isIsoDate(evidence.approvedAt)) return false;
+  const {
+    artifactApprovalEvidence: _approval,
+    pptSampleApproval: _pptSampleApproval,
+    routeGenerationActions: _routeGenerationActions,
+    videoCourseAnchorApproval: _videoCourseAnchorApproval,
+    videoFinalApproval: _videoFinalApproval,
+    ...contentWithoutApproval
+  } = structuredContent;
+  const expectedDigest = hashCanonicalJson({
+    nodeKey: artifact.nodeKey,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    markdownContent: artifact.markdownContent ?? "",
+    structuredContent: contentWithoutApproval,
+  });
+  return evidence.artifactDigest.toLowerCase() === expectedDigest;
+}
+
+function hasLegacyApprovalMigration(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) &&
+    value.schemaVersion === "legacy-artifact-approval-migration.v1" &&
+    value.reasonCode === "legacy_approval_evidence_missing" &&
+    value.migratedFromStatus === "approved" && value.migratedFromApproved === true && isIsoDate(value.migratedAt));
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function hashCanonicalJson(value) {
+  return createHash("sha256").update(JSON.stringify(normalizeJson(value)), "utf8").digest("hex");
+}
+
+function normalizeJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return value;
+  if (Array.isArray(value)) return value.map(normalizeJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalizeJson(value[key])]));
+  }
+  return null;
+}
+
+function isSha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+function isIsoDate(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }

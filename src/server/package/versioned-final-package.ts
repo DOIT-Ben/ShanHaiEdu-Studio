@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import { hashRunInput } from "@/server/execution/run-input-snapshot";
 
 export type FinalPackageRole = "lesson_plan" | "pptx" | "pdf" | "image" | "video";
 
@@ -25,6 +27,7 @@ export type ClassroomRunSpec = {
   courseVersionId: string;
   courseAnchor: string;
   reviewBatchId: string;
+  pptSlideCount: number;
   sequence: Array<{
     ordinal: number;
     action: "play_intro_video" | "ask_return_question" | "open_ppt" | "teacher_explain" | "reveal_answer";
@@ -44,6 +47,28 @@ export type FinalPackageInspectors = {
   pptx: (buffer: Buffer) => Promise<FinalPackageMediaEvidence["pptx"]>;
   pdf: (filePath: string) => FinalPackageMediaEvidence["pdf"];
   video: (filePath: string) => FinalPackageMediaEvidence["video"];
+};
+
+type FinalPackageManifestFileEvidence = {
+  fileName?: string;
+  bytes?: number;
+  sha256?: string;
+  deliveryStatus?: string;
+  sourceArtifactId?: string;
+  sourceArtifactVersion?: number;
+  sourceArtifactDigest?: string;
+};
+
+type FinalPackageManifest = {
+  schemaVersion?: string;
+  courseVersionId?: string;
+  courseAnchor?: string;
+  reviewBatchId?: string;
+  pptSlideCount?: number;
+  packageStatus?: string;
+  teacherSignoff?: boolean;
+  requiredRoles?: string[];
+  files?: Record<string, FinalPackageManifestFileEvidence>;
 };
 
 export async function buildVersionedFinalPackage(input: {
@@ -68,18 +93,15 @@ export async function buildVersionedFinalPackage(input: {
     buffers.set(file.role, buffer);
   }
 
-  const mediaEvidence: FinalPackageMediaEvidence = {
-    pptx: await inspectors.pptx(buffers.get("pptx")!),
-    pdf: inspectors.pdf(fileByRole(files, "pdf").filePath),
-    video: inspectors.video(fileByRole(files, "video").filePath),
-  };
-  validateMediaEvidence(mediaEvidence);
+  const mediaEvidence = await inspectVerifiedMediaBytes(buffers, inspectors);
+  validateMediaEvidence(mediaEvidence, input.classroomRunSpec.pptSlideCount);
 
   const manifest = {
     schemaVersion: "final-package-manifest.v1",
     courseVersionId: files[0].courseVersionId,
     courseAnchor: files[0].courseAnchor,
     reviewBatchId: files[0].reviewBatchId,
+    pptSlideCount: input.classroomRunSpec.pptSlideCount,
     packageStatus: input.teacherSignoff ? "teacher_signed_off" : "integration_review_passed",
     teacherSignoff: input.teacherSignoff,
     requiredRoles: ["lesson_plan", "pptx", "pdf", "image", "video"],
@@ -105,37 +127,103 @@ export async function buildVersionedFinalPackage(input: {
   return { buffer, manifest, sha256: createHash("sha256").update(buffer).digest("hex") };
 }
 
-export async function verifyFinalPackageBuffer(buffer: Buffer, expectedManifest?: Record<string, unknown>): Promise<void> {
+async function inspectVerifiedMediaBytes(
+  buffers: Map<FinalPackageRole, Buffer>,
+  inspectors: FinalPackageInspectors,
+): Promise<FinalPackageMediaEvidence> {
+  const probeRoot = await mkdtemp(path.join(os.tmpdir(), "shanhai-final-package-probe-"));
+  const pdfProbePath = path.join(probeRoot, "verified-source.pdf");
+  const videoProbePath = path.join(probeRoot, "verified-source.mp4");
+  try {
+    await Promise.all([
+      writeFile(pdfProbePath, buffers.get("pdf")!),
+      writeFile(videoProbePath, buffers.get("video")!),
+    ]);
+    return {
+      pptx: await inspectors.pptx(buffers.get("pptx")!),
+      pdf: inspectors.pdf(pdfProbePath),
+      video: inspectors.video(videoProbePath),
+    };
+  } finally {
+    await rm(probeRoot, { recursive: true, force: true });
+  }
+}
+
+export function createFinalPackageManifestDigest(manifest: Record<string, unknown>): string {
+  return hashRunInput(manifest);
+}
+
+export async function verifyFinalPackageBuffer(
+  buffer: Buffer,
+  expectedManifest?: Record<string, unknown>,
+  expectedRunSpec?: ClassroomRunSpec,
+): Promise<void> {
   const zip = await JSZip.loadAsync(buffer);
   const manifestEntry = zip.file("manifest.json");
   const runSpecEntry = zip.file("classroom-run-spec.json");
   if (!manifestEntry || !runSpecEntry) throw new Error("final_package_required_metadata_missing");
-  const manifest = JSON.parse(await manifestEntry.async("string")) as {
-    courseVersionId?: string;
-    courseAnchor?: string;
-    reviewBatchId?: string;
-    requiredRoles?: string[];
-    files?: Record<string, { fileName?: string; bytes?: number; sha256?: string }>;
-  };
-  if (expectedManifest && JSON.stringify(manifest) !== JSON.stringify(expectedManifest)) throw new Error("final_package_manifest_changed");
+  const manifest = JSON.parse(await manifestEntry.async("string")) as FinalPackageManifest;
+  if (expectedManifest && createFinalPackageManifestDigest(manifest as Record<string, unknown>) !== createFinalPackageManifestDigest(expectedManifest)) {
+    throw new Error("final_package_manifest_changed");
+  }
+  validateManifestIdentity(manifest);
   const requiredRoles: FinalPackageRole[] = ["lesson_plan", "pptx", "pdf", "image", "video"];
   if (manifest.requiredRoles?.length !== requiredRoles.length || Object.keys(manifest.files ?? {}).length !== requiredRoles.length ||
       requiredRoles.some((role) => !manifest.requiredRoles?.includes(role) || !manifest.files?.[role])) {
     throw new Error("final_package_manifest_roles_invalid");
   }
   const runSpec = JSON.parse(await runSpecEntry.async("string")) as Partial<ClassroomRunSpec>;
-  if (runSpec.courseVersionId !== manifest.courseVersionId || runSpec.courseAnchor !== manifest.courseAnchor || runSpec.reviewBatchId !== manifest.reviewBatchId) {
+  if (runSpec.courseVersionId !== manifest.courseVersionId || runSpec.courseAnchor !== manifest.courseAnchor || runSpec.reviewBatchId !== manifest.reviewBatchId || runSpec.pptSlideCount !== manifest.pptSlideCount) {
     throw new Error("final_package_run_spec_binding_invalid");
   }
   validateClassroomRunSpec(runSpec as ClassroomRunSpec);
+  if (expectedRunSpec && hashRunInput(runSpec) !== hashRunInput(expectedRunSpec)) {
+    throw new Error("final_package_run_spec_changed");
+  }
+  const packageFileNames = new Set<string>();
   for (const [role, evidence] of Object.entries(manifest.files ?? {})) {
-    if (!evidence.fileName || !evidence.sha256) throw new Error(`final_package_manifest_file_invalid:${role}`);
+    if (!isManifestFileEvidence(evidence)) throw new Error(`final_package_manifest_file_invalid:${role}`);
+    if (packageFileNames.has(evidence.fileName.toLowerCase())) throw new Error("final_package_duplicate_file_name");
+    packageFileNames.add(evidence.fileName.toLowerCase());
     const entry = zip.file(evidence.fileName);
     if (!entry) throw new Error(`final_package_entry_missing:${role}`);
     const bytes = Buffer.from(await entry.async("uint8array"));
     if (bytes.length !== evidence.bytes) throw new Error(`final_package_entry_size_mismatch:${role}`);
     if (createHash("sha256").update(bytes).digest("hex") !== evidence.sha256) throw new Error(`final_package_entry_hash_mismatch:${role}`);
   }
+}
+
+function validateManifestIdentity(manifest: FinalPackageManifest): void {
+  if (
+    manifest.schemaVersion !== "final-package-manifest.v1" ||
+    !manifest.courseVersionId?.trim() ||
+    !manifest.courseAnchor?.trim() ||
+    !manifest.reviewBatchId?.trim() ||
+    !Number.isInteger(manifest.pptSlideCount) ||
+    (manifest.pptSlideCount ?? 0) < 1 ||
+    !["integration_review_passed", "teacher_signed_off"].includes(manifest.packageStatus ?? "") ||
+    typeof manifest.teacherSignoff !== "boolean" ||
+    (manifest.packageStatus === "teacher_signed_off") !== manifest.teacherSignoff
+  ) {
+    throw new Error("final_package_manifest_identity_invalid");
+  }
+}
+
+function isManifestFileEvidence(evidence: FinalPackageManifestFileEvidence): evidence is Required<FinalPackageManifestFileEvidence> {
+  return Boolean(
+    evidence.fileName?.trim() &&
+    path.basename(evidence.fileName) === evidence.fileName &&
+    Number.isInteger(evidence.bytes) &&
+    (evidence.bytes ?? 0) > 0 &&
+    typeof evidence.sha256 === "string" &&
+    /^[a-f0-9]{64}$/.test(evidence.sha256) &&
+    evidence.deliveryStatus === "final_eligible" &&
+    evidence.sourceArtifactId?.trim() &&
+    Number.isInteger(evidence.sourceArtifactVersion) &&
+    (evidence.sourceArtifactVersion ?? 0) >= 1 &&
+    typeof evidence.sourceArtifactDigest === "string" &&
+    /^[a-f0-9]{64}$/.test(evidence.sourceArtifactDigest)
+  );
 }
 
 function validateFileSet(files: FinalPackageFile[], runSpec: ClassroomRunSpec): FinalPackageFile[] {
@@ -161,7 +249,7 @@ function validateFileSet(files: FinalPackageFile[], runSpec: ClassroomRunSpec): 
 }
 
 function validateClassroomRunSpec(spec: ClassroomRunSpec): void {
-  if (spec.schemaVersion !== "classroom-run-spec.v1" || spec.sequence.length < 5) throw new Error("classroom_run_spec_incomplete");
+  if (spec.schemaVersion !== "classroom-run-spec.v1" || !Number.isInteger(spec.pptSlideCount) || spec.pptSlideCount < 1 || spec.sequence.length < 5) throw new Error("classroom_run_spec_incomplete");
   const allowedActions = new Set(["play_intro_video", "ask_return_question", "open_ppt", "teacher_explain", "reveal_answer"]);
   if (spec.sequence.some((step, index) => step.ordinal !== index + 1 || !allowedActions.has(step.action) || !step.instruction.trim())) throw new Error("classroom_run_spec_sequence_invalid");
   const actions = spec.sequence.map((step) => step.action);
@@ -179,7 +267,7 @@ function validateClassroomRunSpec(spec: ClassroomRunSpec): void {
   const questionStep = spec.sequence[questionIndex];
   const pptSteps = spec.sequence.filter((step) => step.action === "open_ppt" || step.action === "teacher_explain" || step.action === "reveal_answer");
   if (videoStep.artifactRole !== "video" || questionStep.artifactRole !== undefined || questionStep.pptPage !== undefined ||
-      pptSteps.some((step) => step.artifactRole !== "pptx" || !Number.isInteger(step.pptPage) || step.pptPage! < 1 || step.pptPage! > 12)) {
+      pptSteps.some((step) => step.artifactRole !== "pptx" || !Number.isInteger(step.pptPage) || step.pptPage! < 1 || step.pptPage! > spec.pptSlideCount)) {
     throw new Error("classroom_run_spec_artifact_binding_invalid");
   }
 }
@@ -208,14 +296,10 @@ function inspectVideo(filePath: string): FinalPackageMediaEvidence["video"] {
   return { durationSeconds: Number(payload.format?.duration ?? 0), width: video?.width ?? 0, height: video?.height ?? 0, fps: denominator ? numerator / denominator : 0, videoCodec: video?.codec_name ?? "", audioCodec: audio?.codec_name ?? "" };
 }
 
-function validateMediaEvidence(evidence: FinalPackageMediaEvidence): void {
-  if (evidence.pptx.slideCount !== 12) throw new Error("final_package_pptx_slide_count_invalid");
-  if (evidence.pdf.pageCount !== 12) throw new Error("final_package_pdf_page_count_invalid");
-  if (evidence.video.durationSeconds < 15 || evidence.video.durationSeconds > 90 || evidence.video.videoCodec !== "h264" || evidence.video.audioCodec !== "aac" || evidence.video.fps !== 24) {
+function validateMediaEvidence(evidence: FinalPackageMediaEvidence, expectedSlideCount: number): void {
+  if (evidence.pptx.slideCount !== expectedSlideCount) throw new Error("final_package_pptx_slide_count_invalid");
+  if (evidence.pdf.pageCount !== expectedSlideCount) throw new Error("final_package_pdf_page_count_invalid");
+  if (evidence.video.durationSeconds < 30 || evidence.video.durationSeconds > 90 || evidence.video.videoCodec !== "h264" || evidence.video.audioCodec !== "aac" || evidence.video.fps !== 24) {
     throw new Error("final_package_video_evidence_invalid");
   }
-}
-
-function fileByRole(files: FinalPackageFile[], role: FinalPackageRole): FinalPackageFile {
-  return files.find((file) => file.role === role)!;
 }

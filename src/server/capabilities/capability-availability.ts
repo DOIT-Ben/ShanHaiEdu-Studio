@@ -1,6 +1,9 @@
 import type { CapabilityDefinition, CapabilityId } from "./types";
 import type { ArtifactRecord } from "../workbench/types";
 import { isArtifactTrustedForDownstream } from "../quality/artifact-quality-state";
+import { isArtifactBoundToTask } from "../quality/artifact-truth-boundary";
+import type { TaskBrief } from "../conversation/task-contract";
+import { tryResolveProviderLedgerValueBag, type ProviderLedgerEnv } from "../provider-ledger/provider-ledger-adapter";
 
 export type CapabilityAvailabilityStatus =
   | "available"
@@ -21,6 +24,7 @@ export type BuildCapabilityAvailabilityInput = {
   capabilityDefinitions: CapabilityDefinition[];
   artifacts: ArtifactRecord[];
   providerAvailability?: Partial<Record<CapabilityId, boolean>>;
+  taskBrief?: TaskBrief;
 };
 
 export function resolveRuntimeProviderAvailability(env: Partial<NodeJS.ProcessEnv> = process.env): Partial<Record<CapabilityId, boolean>> {
@@ -32,6 +36,7 @@ export function resolveRuntimeProviderAvailability(env: Partial<NodeJS.ProcessEn
     ...(hasImageProvider(env) ? { ppt_sample_assets: true as const } : {}),
     ...(hasImageProvider(env) ? { ppt_full_assets: true as const } : {}),
     ...(hasVideoProvider(env) ? { video_segment_generate: true as const } : {}),
+    ...(hasVideoNarrationProvider(env) ? { video_narration_generate: true as const } : {}),
   };
 }
 
@@ -41,7 +46,7 @@ export function buildCapabilityAvailability(input: BuildCapabilityAvailabilityIn
   return input.capabilityDefinitions.map((definition) => {
     const missingApprovedInputs = definition.upstreamCapabilities.filter((upstreamCapabilityId) => {
       const upstreamDefinition = definitionsById.get(upstreamCapabilityId);
-      return !upstreamDefinition || !hasApprovedArtifactForCapability(input.artifacts, upstreamDefinition);
+      return !upstreamDefinition || !hasApprovedArtifactForCapability(input.artifacts, upstreamDefinition, input.taskBrief);
     });
 
     if (missingApprovedInputs.length > 0) {
@@ -93,10 +98,15 @@ function buildMissingApprovedInputsReason(
   return `要继续${definition.userLabel}，还缺少已确认的${missingLabels.join("、")}。请先补充或确认这些内容，再继续当前任务。`;
 }
 
-function hasApprovedArtifactForCapability(artifacts: ArtifactRecord[], definition: CapabilityDefinition): boolean {
+function hasApprovedArtifactForCapability(
+  artifacts: ArtifactRecord[],
+  definition: CapabilityDefinition,
+  taskBrief?: TaskBrief,
+): boolean {
   return artifacts.some(
     (artifact) =>
       isArtifactTrustedForDownstream(artifact) &&
+      (!taskBrief || isArtifactBoundToTask(artifact, taskBrief)) &&
       (artifact.kind === definition.artifactKind || artifact.nodeKey === definition.workflowNodeKey),
   );
 }
@@ -108,29 +118,40 @@ function requiresUnavailableProvider(definition: CapabilityDefinition): boolean 
 function hasCozePptProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
   const channel = env.COZE_PPT_CHANNEL?.trim().toLowerCase();
   if (channel === "cli" || env.COZE_PPT_USE_CLI === "1") return true;
-  const token = env.COZE_API_TOKEN?.trim();
+  const values = tryResolveProviderLedgerValueBag({ capability: "coze_ppt", ambientEnv: env as ProviderLedgerEnv });
+  const token = values?.get("COZE_API_TOKEN");
   if (!token) return false;
-  return Boolean(env.COZE_PPT_RUN_URL?.trim() || env.COZE_PPT_BOT_ID?.trim());
+  return Boolean(values?.get("COZE_PPT_RUN_URL") || values?.get("COZE_PPT_BOT_ID"));
 }
 
 function hasImageProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
-  const channel = env.IMAGE_PROVIDER_CHANNEL?.trim() || "primary";
+  const values = tryResolveProviderLedgerValueBag({ capability: "image_generation", ambientEnv: env as ProviderLedgerEnv });
+  const channel = env.IMAGE_PROVIDER_CHANNEL?.trim() || values?.get("IMAGE_PROVIDER_CHANNEL") || values?.get("IMAGE_PROVIDER_MODE");
+  if (channel !== "minimax") return false;
   const map = {
     primary: ["IMAGEGEN_MYSELF_PRIMARY_API_KEY", "IMAGEGEN_MYSELF_PRIMARY_BASE_URL"],
     free: ["IMAGEGEN_FREE_API_KEY", "IMAGEGEN_FREE_BASE_URL"],
     free_primary: ["IMAGEGEN_FREE_PRIMARY_API_KEY", "IMAGEGEN_FREE_PRIMARY_BASE_URL"],
     myself_fallback: ["IMAGEGEN_MYSELF_FALLBACK_API_KEY", "IMAGEGEN_MYSELF_FALLBACK_BASE_URL"],
+    minimax: ["MINIMAX_API_KEY", "MINIMAX_BASE_URL"],
   } as const;
-  const [apiKeyName, baseUrlName] = map[channel as keyof typeof map] ?? map.primary;
-  return Boolean(env[apiKeyName]?.trim() && env[baseUrlName]?.trim());
+  const [apiKeyName, baseUrlName] = map[channel];
+  return Boolean(values?.get(apiKeyName) && values?.get(baseUrlName) && values?.get("MINIMAX_IMAGE_MODEL"));
 }
 
 function hasVideoProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
-  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
+  const values = tryResolveProviderLedgerValueBag({ capability: "video_generation", ambientEnv: env as ProviderLedgerEnv });
+  if (!values) return false;
+  const wantsEvolink = values.get("VIDEO_PROVIDER_MODE") === "evolink" || Boolean(values.get("EVOLINK_API_KEY"));
   if (wantsEvolink) {
-    return Boolean((env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim()) && (env.EVOLINK_VIDEO_BASE_URL?.trim() || env.EVOLINK_BASE_URL?.trim() || "https://api.evolink.ai"));
+    return Boolean(values.get("EVOLINK_API_KEY") && (values.get("EVOLINK_BASE_URL") || "https://api.evolink.ai"));
   }
-  return Boolean((env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim()) && (env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim()));
+  return Boolean(values.get("OCTO_API_KEY") && values.get("OCTO_BASE_URL"));
+}
+
+function hasVideoNarrationProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
+  const values = tryResolveProviderLedgerValueBag({ capability: "tts_minimax", ambientEnv: env as ProviderLedgerEnv });
+  return Boolean(values?.get("MINIMAX_API_KEY"));
 }
 
 function buildEntry(input: {

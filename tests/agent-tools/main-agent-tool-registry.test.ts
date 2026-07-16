@@ -23,7 +23,9 @@ const expectedBusinessTools = [
   "generate_ppt_full_assets",
   "assemble_ppt_full_deck",
   "repair_ppt_full_deck_pages",
+  "generate_classroom_image",
   "generate_video_assets",
+  "generate_video_narration",
   "generate_video_shot",
   "assemble_video",
   "create_final_package",
@@ -35,11 +37,13 @@ const expectedAgentTools = [
   "delivery_critic.review",
 ];
 
+const expectedControlTools = ["request_teacher_decision"];
+
 describe("V1-3 Main Agent visible tool registry", () => {
   it("exposes only approved high-level business and Agent Tools", () => {
     const definitions = listMainAgentToolDefinitions();
 
-    expect(definitions.map((tool) => tool.id)).toEqual([...expectedAgentTools, ...expectedBusinessTools]);
+    expect(definitions.map((tool) => tool.id)).toEqual([...expectedAgentTools, ...expectedControlTools, ...expectedBusinessTools]);
     expect(definitions.every((tool) => tool.modelVisible)).toBe(true);
   });
 
@@ -53,7 +57,7 @@ describe("V1-3 Main Agent visible tool registry", () => {
   });
 
   it("exposes only the three controlled read-only Agent Tools plus approved business Tools", () => {
-    expect(listMainAgentExecutableToolDefinitions().map((tool) => tool.id)).toEqual([...expectedAgentTools, ...expectedBusinessTools]);
+    expect(listMainAgentExecutableToolDefinitions().map((tool) => tool.id)).toEqual([...expectedAgentTools, ...expectedControlTools, ...expectedBusinessTools]);
   });
 
   it("resolves only canonical ids or registered transport names", () => {
@@ -79,5 +83,49 @@ describe("V1-3 Main Agent visible tool registry", () => {
     for (const keyword of ["allOf", "anyOf", "oneOf", "contains", "minItems"]) {
       expect(serialized).not.toContain(`\"${keyword}\"`);
     }
+  });
+
+  it("lets Main Agent pass exact validation issues when repairing a PPT design candidate", () => {
+    const designTool = resolveMainAgentToolDefinition("create_ppt_design_draft");
+
+    expect(designTool.inputSchema).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        repairIssues: {
+          type: "array",
+          maxItems: 12,
+          uniqueItems: true,
+          items: { type: "string" },
+        },
+      },
+      required: ["repairIssues"],
+    });
+  });
+
+  it("exposes a semantic collaboration control Tool without classifying it as HumanGate or a business Tool", () => {
+    const control = resolveMainAgentToolDefinition("request_teacher_decision");
+
+    expect(control).toMatchObject({
+      id: "request_teacher_decision",
+      transportName: "request_teacher_decision",
+      controlKind: "dialogue_checkpoint",
+      requiresHumanGate: false,
+      sideEffectLevel: "none",
+      modelVisible: true,
+      mainAgentExecutable: true,
+    });
+    expect(control.description).toMatch(/多个合理理解|实质改变结果/);
+    expect(control.description).not.toMatch(/每一步都|必须逐节点确认/);
+  });
+
+  it("keeps model-facing Tool instructions separate from teacher-visible progress copy", () => {
+    const tool = resolveMainAgentToolDefinition("create_ppt_design_draft");
+
+    expect(tool.description).toMatch(/TaskBrief|Observation|Director/);
+    expect(tool).toMatchObject({
+      teacherDescription: expect.stringContaining("逐页 PPT 设计候选"),
+    });
+    expect(JSON.stringify((tool as { teacherDescription?: string }).teacherDescription))
+      .not.toMatch(/TaskBrief|Observation|reasonCodes|Director|repairIssues|schema/i);
   });
 });

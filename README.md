@@ -1,62 +1,50 @@
 # ShanHaiEdu Studio
 
-山海智教：基于智能体驱动的小学课件自动化生产系统。
+山海智教是由产品 Main Agent 自主编排的教师备课与多媒体交付工作台。教师可以用自然语言提出完整任务或局部任务，系统在授权、预算、质量和副作用边界内生成教案、PPT、课堂视觉、独立创意导入短片和版本一致的材料包。
 
-## 当前项目
+## 当前入口
 
-`ShanHaiEdu-Studio` 是由 Main Agent 自主编排的非固定 DAG 备课制作工作台。教师可以从一句话需求、已有材料或局部任务切入，系统在授权、费用、质量和副作用门禁内生成教案、PPT、导入视频及最终交付包。
-
-## 本地目录
-
-总目录：
-
-```powershell
-E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio
-```
-
-当前活动 checkout：
+当前唯一工程 checkout：
 
 ```powershell
 E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 ```
 
-历史并行主线已经合并或退场，不再以固定目录清单作为当前入口。需要核对本机有效 worktree 时运行：
+开始工作前按顺序读取：
 
-```powershell
-git worktree list
+1. `AGENTS.md`
+2. `docs\README.md`
+3. `docs\product\current-requirements-baseline.md`
+4. `docs\mainlines\current-mainline-status.md`
+5. `docs\stages\README.md`
+
+当前状态：R5历史验收保留；V1-9尚未启动，先关闭主线状态中列出的4个Runner/installed-tree完整性缺口。V1发布前不新增390px真实黑盒，不重跑R5，也不以离线fixture冒充真实产品链路。
+
+## 文档分区
+
+```text
+docs/product/       当前需求基线与未完成总账
+docs/mainlines/     当前事实、阻塞与下一动作
+docs/architecture/  当前架构入口与已接受ADR
+docs/stages/        唯一活动阶段
+docs/contracts/     当前生效合同
+docs/ui/            当前前端与证据入口
+docs/roadmap/       已接受但尚未启动的未来工作
+docs/archive/       历史原文与迁移证据，默认不参与执行
 ```
 
-## 核心文档
-
-- `AGENTS.md`：项目长期工程准则。
-- `docs\README.md`：文档分类和权威入口。
-- `docs\product\current-requirements-baseline.md`：当前需求与质量门禁最高口径。
-- `docs\product\requirements-backlog.md`：已接受、延期和后续版本需求总账。
-- `docs\mainlines\current-mainline-status.md`：当前主线状态和恢复入口。
-- `docs\stages\README.md`：活动阶段、后续规划和历史阶段索引。
-- `docs\private-api-ledger.md`：私有 API 台账位置、用途和安全边界。
-
-历史原始需求和复盘材料继续保留在仓库根目录，仅作证据，不覆盖当前需求基线：
-
-- `REQUIREMENTS_DECISION_V1.md`
-- `原始需求记录_V1.md`
-- `SHANHAIEDU_LEGACY_RETROSPECTIVE.md`
-
-## 本地运行
+## 本地验证
 
 ```powershell
 npm install
 npm run dev
-```
-
-构建验证：
-
-```powershell
+npx tsc --noEmit
+npm test
 npm run build
 ```
 
-## 安全说明
+测试必须按当前阶段文档限制worker和外部调用。没有明确阶段授权时，不调用真实媒体或整包Provider。
 
-私有 API 台账、密钥、provider 配置和本地凭据不得提交到仓库。仓库只保留可公开的代码、规划和脱敏文档。
+## 安全边界
 
-本地 API 台账位于 `ShanHaiEdu-API-Ledger-Standalone-PRIVATE.zip`，用于查询各环节可用 API 和能力证据；使用前先读 `docs\private-api-ledger.md`。
+密钥、私有API台账、SQLite、用户上传、Artifact和真实运行证据不属于文档治理范围。未经要求不commit、不push、不部署、不移动历史标签。

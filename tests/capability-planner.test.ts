@@ -32,6 +32,7 @@ const fullDeliveryCapabilityIds = [
   "asset_image_generate",
   "video_segment_plan",
   "video_segment_generate",
+  "video_narration_generate",
   "concat_only_assemble",
   "final_package",
 ];
@@ -161,6 +162,20 @@ describe("M54-B CapabilityPlanner", () => {
     });
   });
 
+  it("recognizes a junior-high grade as a valid task fact without restricting Tool planning", () => {
+    const plan = planCapabilityForRequest({
+      userMessage: "帮我做七年级语文《春》的课件",
+      availableArtifactKinds: [],
+      intentGrant: { standardWorkAuthorized: true },
+    });
+
+    expect(plan).toMatchObject({
+      capabilityId: "requirement_spec",
+      requiresConfirmation: false,
+    });
+    expect(plan?.missingInputs).not.toContain("grade");
+  });
+
   it("builds a full delivery plan for one-sentence material package requests", () => {
     const plan = planDeliveryForRequest({
       userMessage: "帮我做五年级数学百分数公开课完整材料包，包括教案、PPT、图片和导入视频",
@@ -174,6 +189,7 @@ describe("M54-B CapabilityPlanner", () => {
     expect(plan?.steps.map((step) => step.capabilityId)).toEqual(fullDeliveryCapabilityIds);
     expect(plan?.steps.map((step) => step.status)).toEqual([
       "awaiting_confirmation",
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -231,6 +247,7 @@ describe("M54-B CapabilityPlanner", () => {
       ["asset_image_generate", "pending"],
       ["video_segment_plan", "pending"],
       ["video_segment_generate", "pending"],
+      ["video_narration_generate", "pending"],
       ["concat_only_assemble", "pending"],
       ["final_package", "pending"],
     ]);
@@ -266,6 +283,7 @@ describe("M54-B CapabilityPlanner", () => {
       ["asset_image_generate", "pending"],
       ["video_segment_plan", "pending"],
       ["video_segment_generate", "pending"],
+      ["video_narration_generate", "pending"],
       ["concat_only_assemble", "pending"],
       ["final_package", "pending"],
     ]);

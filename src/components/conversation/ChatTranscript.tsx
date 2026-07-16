@@ -8,7 +8,7 @@ import { GeneratingIndicator } from "@/components/conversation/messages/Generati
 import { MessageActions } from "@/components/conversation/messages/MessageActions";
 import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
 import { ArtifactDownloadActions } from "@/components/artifacts/ArtifactDownloadActions";
-import type { WorkbenchExecutionFeedback } from "@/lib/workbench-progress";
+import type { WorkbenchExecutionFeedback } from "@/lib/workbench-execution-feedback";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
 
 type ChatTranscriptProps = {

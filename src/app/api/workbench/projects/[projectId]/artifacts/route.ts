@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
-import type { ArtifactKind, ArtifactStatus, WorkflowNodeKey } from "@/server/workbench/types";
+import { sanitizeTeacherArtifactStructuredContent } from "@/server/quality/artifact-truth-boundary";
+import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -28,8 +29,6 @@ const nodeKeys = new Set<WorkflowNodeKey>([
   "final_delivery",
 ]);
 
-const artifactStatuses = new Set<ArtifactStatus>(["not_started", "in_progress", "needs_review", "approved", "blocked", "stale", "failed"]);
-
 export async function GET(request: Request, context: RouteContext) {
   return withLocalWorkbenchActor(request, async ({ service }) => {
     try {
@@ -50,15 +49,15 @@ export async function POST(request: Request, context: RouteContext) {
       const { projectId } = await context.params;
       const body = await request.json();
       const nodeKey = assertNodeKey(body.nodeKey);
-      const status = assertArtifactStatus(body.status);
       const artifact = await service.saveArtifact(projectId, {
         nodeKey,
         kind: assertArtifactKind(body.kind ?? body.nodeKey),
         title: String(body.title ?? "未命名产物"),
-        status,
+        status: "needs_review",
         summary: String(body.summary ?? ""),
         markdownContent: String(body.markdownContent ?? ""),
-        structuredContent: typeof body.structuredContent === "object" && body.structuredContent ? body.structuredContent : {},
+        structuredContent: sanitizeTeacherArtifactStructuredContent(body.structuredContent),
+        origin: "teacher_input",
       });
 
       return NextResponse.json({ artifact }, { status: 201 });
@@ -79,11 +78,4 @@ function assertNodeKey(value: unknown): WorkflowNodeKey {
 
 function assertArtifactKind(value: unknown): ArtifactKind {
   return assertNodeKey(value);
-}
-
-function assertArtifactStatus(value: unknown): ArtifactStatus {
-  if (typeof value === "string" && artifactStatuses.has(value as ArtifactStatus)) {
-    return value as ArtifactStatus;
-  }
-  return "needs_review";
 }

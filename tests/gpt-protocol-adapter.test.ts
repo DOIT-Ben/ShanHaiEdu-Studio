@@ -18,6 +18,7 @@ describe("GptProtocolAdapter", () => {
       model: "test-model",
       instructions: "只输出教师可读内容。",
       input: "生成一段导入语。",
+      stream: true,
       text: { format: { type: "text" } },
       reasoning: { effort: "high" },
     });
@@ -61,11 +62,93 @@ describe("GptProtocolAdapter", () => {
       model: "test-model",
       instructions: "只输出教师可读内容。",
       input: inputItems,
+      stream: true,
       text: { format: { type: "text" } },
       tools,
       tool_choice: "auto",
       parallel_tool_calls: false,
     });
+  });
+
+  it("streams text before the final response and records cache telemetry", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const client = fakeStreamingResponsesClient([
+      { type: "response.created", response: { id: "resp_1" } },
+      { type: "response.output_text.delta", delta: "老师" },
+      { type: "response.output_text.delta", delta: "您好" },
+      {
+        type: "response.completed",
+        response: {
+          id: "resp_1",
+          output_text: "老师您好",
+          output: [],
+          usage: {
+            input_tokens: 1200,
+            output_tokens: 8,
+            total_tokens: 1208,
+            input_tokens_details: { cached_tokens: 1024, cache_write_tokens: 128 },
+          },
+        },
+      },
+    ]);
+    const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
+
+    const response = await adapter.createResponse({
+      instructions: "stable",
+      input: "dynamic",
+      promptCacheKey: "shanhai-main-agent:v1",
+      previousResponseId: "resp_previous",
+      onStreamEvent: (event) => { events.push(event); },
+    });
+
+    expect(client.lastPayload).toMatchObject({
+      stream: true,
+      prompt_cache_key: "shanhai-main-agent:v1",
+      previous_response_id: "resp_previous",
+    });
+    expect(events.map((event) => event.type)).toEqual([
+      "response_started",
+      "text_delta",
+      "text_delta",
+      "response_completed",
+    ]);
+    expect(events[1]).toMatchObject({ type: "text_delta", delta: "老师" });
+    expect(response).toMatchObject({
+      assistantText: "老师您好",
+      responseId: "resp_1",
+      usage: { cachedTokens: 1024, cacheWriteTokens: 128 },
+      telemetry: { streamed: true, chunkCount: 4, textBytes: 12, timeToFirstTextMs: expect.any(Number) },
+    });
+  });
+
+  it("keeps function argument deltas separate from teacher-visible text deltas", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const client = fakeStreamingResponsesClient([
+      { type: "response.created", response: { id: "resp_tool" } },
+      { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '{"topic":"百分数"}' },
+      {
+        type: "response.completed",
+        response: {
+          id: "resp_tool",
+          output_text: "",
+          output: [{ type: "function_call", call_id: "call_1", name: "create_lesson", arguments: '{"topic":"百分数"}' }],
+        },
+      },
+    ]);
+    const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
+
+    const response = await adapter.createResponse({
+      instructions: "stable",
+      input: "dynamic",
+      onStreamEvent: (event) => { events.push(event); },
+    });
+
+    expect(events.filter((event) => event.type === "text_delta")).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "function_call_arguments_delta",
+      itemId: "fc_1",
+    }));
+    expect(response.functionCalls[0]).toMatchObject({ name: "create_lesson", callId: "call_1" });
   });
 
   it("parses function_call output items into protocol functionCalls", async () => {
@@ -261,6 +344,23 @@ function fakeResponsesClient(response: Record<string, unknown>) {
       async create(payload: Record<string, unknown>) {
         client.lastPayload = payload;
         return response;
+      },
+    },
+  };
+  return client;
+}
+
+function fakeStreamingResponsesClient(events: Array<Record<string, unknown>>) {
+  const client = {
+    lastPayload: undefined as Record<string, unknown> | undefined,
+    responses: {
+      async create(payload: Record<string, unknown>) {
+        client.lastPayload = payload;
+        return {
+          async *[Symbol.asyncIterator]() {
+            for (const event of events) yield event;
+          },
+        };
       },
     },
   };

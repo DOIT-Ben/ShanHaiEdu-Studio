@@ -5,17 +5,6 @@ if (process.env.SHANHAI_SMOKE_SKIP_DOTENV !== "1") {
 }
 
 function pickOpenAICompatibleConfig(env) {
-  const openaiCredential = env.OPENAI_API_KEY?.trim();
-  if (openaiCredential) {
-    return {
-      credential: openaiCredential,
-      credentialSource: "openai_env",
-      baseURL: env.OPENAI_BASE_URL?.trim(),
-      model: env.OPENAI_MODEL?.trim() || "gpt-5.6-terra",
-    };
-  }
-
-  const ledgerChannel = (env.AGENT_BRAIN_CHANNEL?.trim() || "primary").toLowerCase();
   const ledgerChannels = {
     primary: {
       credentialSource: "agent_brain_ledger_env",
@@ -37,9 +26,18 @@ function pickOpenAICompatibleConfig(env) {
     },
   };
 
-  const selectedLedgerChannel = ledgerChannels[ledgerChannel] ?? ledgerChannels.primary;
-  const ledgerCredential = env[selectedLedgerChannel.apiKey]?.trim();
-  if (ledgerCredential) {
+  const configuredLedgerChannel = env.AGENT_BRAIN_CHANNEL?.trim().toLowerCase();
+  if (configuredLedgerChannel && !Object.hasOwn(ledgerChannels, configuredLedgerChannel)) {
+    throw new Error("invalid_AGENT_BRAIN_CHANNEL");
+  }
+  const hasLedgerConfiguration = Boolean(
+    configuredLedgerChannel
+    || Object.values(ledgerChannels).some((channel) => env[channel.apiKey]?.trim()),
+  );
+  if (hasLedgerConfiguration) {
+    const selectedLedgerChannel = ledgerChannels[configuredLedgerChannel || "primary"];
+    const ledgerCredential = env[selectedLedgerChannel.apiKey]?.trim();
+    if (!ledgerCredential) return null;
     return {
       credential: ledgerCredential,
       credentialSource: selectedLedgerChannel.credentialSource,
@@ -48,10 +46,30 @@ function pickOpenAICompatibleConfig(env) {
     };
   }
 
+  const openaiCredential = env.OPENAI_API_KEY?.trim();
+  if (openaiCredential) {
+    return {
+      credential: openaiCredential,
+      credentialSource: "openai_env",
+      baseURL: env.OPENAI_BASE_URL?.trim(),
+      model: env.OPENAI_MODEL?.trim() || "gpt-5.6-terra",
+    };
+  }
+
   return null;
 }
 
-const config = pickOpenAICompatibleConfig(process.env);
+let config;
+try {
+  config = pickOpenAICompatibleConfig(process.env);
+} catch {
+  console.log(JSON.stringify({
+    ok: false,
+    code: "invalid_AGENT_BRAIN_CHANNEL",
+    message: "Select primary, third, or fallback before running the smoke request.",
+  }));
+  process.exit(2);
+}
 
 if (!config) {
   console.log(

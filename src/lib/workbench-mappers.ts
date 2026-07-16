@@ -1,4 +1,5 @@
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
+import { legacyContentToMessageParts, normalizeMessageParts, type MessagePart } from "@/lib/conversation-message-contract";
 import type {
   ArtifactItem,
   ArtifactKind,
@@ -37,6 +38,7 @@ export type BackendMessageRecord = {
   projectId: string;
   role: "teacher" | "assistant" | "system";
   content: string;
+  parts?: MessagePart[];
   artifactRefs: string[];
   metadata?: Record<string, unknown>;
   reaction?: "helpful" | "unhelpful";
@@ -115,6 +117,7 @@ export type BackendSnapshot = {
   artifacts: BackendArtifactRecord[];
   agentRuns?: unknown[];
   turnJobs?: BackendConversationTurnJobRecord[];
+  agentEventSequence?: number;
 };
 
 const nodeTitleByKey: Record<ArtifactKind, string> = {
@@ -134,6 +137,7 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   asset_image_generate: "资产图",
   video_segment_plan: "片段计划",
   video_segment_generate: "分镜视频",
+  video_narration_generate: "视频旁白与字幕",
   concat_only_assemble: "最终视频",
   image_prompts: "图片",
   video_storyboard: "视频",
@@ -179,16 +183,23 @@ function mapBackendProject(project: BackendProjectRecord): ProjectItem {
   };
 }
 
-function mapBackendMessage(message: BackendMessageRecord, turnJobsByTeacherMessageId = new Map<string, ConversationTurnJob>()): ChatMessage {
+function mapBackendMessage(
+  message: BackendMessageRecord,
+  turnJobsByTeacherMessageId = new Map<string, ConversationTurnJob>(),
+  turnJobsByAssistantMessageId = new Map<string, ConversationTurnJob>(),
+): ChatMessage {
   const pendingPlan = pendingDeliveryPlanFromMessage(message);
   const deliveryPlan = toChatDeliveryPlan(pendingPlan?.deliveryPlan, pendingActionId(pendingPlan));
   const quickReplies = quickRepliesFromPendingPlan(pendingPlan, deliveryPlan);
   const turnJob = message.role === "teacher" ? turnJobsByTeacherMessageId.get(message.id) : undefined;
+  const sourceTurnJob = message.role === "assistant" ? turnJobsByAssistantMessageId.get(message.id) : undefined;
 
   return {
     id: message.id,
     speaker: message.role === "assistant" ? "assistant" : "teacher",
+    ...(sourceTurnJob ? { turnSourceMessageId: sourceTurnJob.teacherMessageId } : {}),
     body: teacherVisibleMessageBody(message),
+    parts: message.parts ? normalizeMessageParts(message.parts) : legacyContentToMessageParts(message.content),
     timeLabel: formatDateLabel(message.createdAt),
     ...(turnJob && turnJob.status !== "succeeded" ? { turnStatus: turnJob.status, turnStatusLabel: turnJob.statusLabel } : {}),
     artifactRefs: message.artifactRefs,
@@ -517,6 +528,9 @@ export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
   if (!isBackendSnapshot(value)) return value as WorkbenchSnapshot;
   const turnJobs = (value.turnJobs ?? []).map(mapBackendTurnJob);
   const turnJobsByTeacherMessageId = new Map(turnJobs.map((job) => [job.teacherMessageId, job]));
+  const turnJobsByAssistantMessageId = new Map(turnJobs.flatMap((job) =>
+    job.assistantMessageId ? [[job.assistantMessageId, job] as const] : [],
+  ));
   const artifactsByNode = new Map<string, BackendArtifactRecord>();
   for (const artifact of value.artifacts) {
     const current = artifactsByNode.get(artifact.nodeKey);
@@ -543,9 +557,13 @@ export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
 
   return {
     project: mapBackendProject(value.project),
-    messages: value.messages.filter((message) => message.role !== "system").map((message) => mapBackendMessage(message, turnJobsByTeacherMessageId)),
+    messages: value.messages.filter((message) => message.role !== "system").map((message) =>
+      mapBackendMessage(message, turnJobsByTeacherMessageId, turnJobsByAssistantMessageId)),
     artifacts,
     turnJobs,
     activeArtifactKey: activeArtifact?.key ?? "",
+    agentEventSequence: Number.isInteger(value.agentEventSequence) && Number(value.agentEventSequence) >= 0
+      ? Number(value.agentEventSequence)
+      : 0,
   };
 }

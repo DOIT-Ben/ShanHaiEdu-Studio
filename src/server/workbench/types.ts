@@ -30,6 +30,7 @@ export type WorkflowNodeKey =
   | "asset_image_generate"
   | "video_segment_plan"
   | "video_segment_generate"
+  | "video_narration_generate"
   | "concat_only_assemble"
   | "image_prompts"
   | "video_storyboard"
@@ -71,6 +72,7 @@ export type ConversationMessageRecord = {
   projectId: string;
   role: MessageRole;
   content: string;
+  parts: import("@/lib/conversation-message-contract").MessagePart[];
   artifactRefs: string[];
   metadata: Record<string, unknown>;
   reaction?: MessageReactionValue;
@@ -93,6 +95,11 @@ export type WorkflowNodeRecord = {
 export type ArtifactRecord = {
   id: string;
   projectId: string;
+  taskId?: string | null;
+  taskBriefDigest?: string | null;
+  intentEpoch?: number | null;
+  planRevision?: number | null;
+  origin?: ArtifactOrigin;
   nodeKey: WorkflowNodeKey;
   title: string;
   kind: ArtifactKind;
@@ -105,6 +112,8 @@ export type ArtifactRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ArtifactOrigin = "teacher_input" | "tool_result" | "system_candidate" | "legacy";
 
 export type AgentRunRecord = {
   id: string;
@@ -119,7 +128,7 @@ export type AgentRunRecord = {
 
 export type AgentRunStatus = "running" | "succeeded" | "failed";
 
-export type GenerationJobKind = "pptx" | "image" | "video";
+export type GenerationJobKind = "pptx" | "image" | "audio" | "video";
 
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "submission_unknown" | "quarantined";
 
@@ -201,6 +210,10 @@ export type ConversationTurnJobRecord = {
   lockedUntil: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  failureCategory: string | null;
+  failureRetryability: import("@/server/conversation/main-agent-failure").MainAgentFailureRetryability | null;
+  failureEvidenceDigest: string | null;
+  recoveryEvidenceDigest: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -230,6 +243,7 @@ export type CreateProjectInput = {
 export type AddMessageInput = {
   role: MessageRole;
   content: string;
+  parts?: import("@/lib/conversation-message-contract").MessagePart[];
   artifactRefs?: string[];
   metadata?: Record<string, unknown>;
 };
@@ -247,6 +261,7 @@ export type SaveArtifactInput = {
   summary: string;
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
+  origin?: ArtifactOrigin;
   validationReport?: import("@/server/quality/quality-types").ValidationReport;
 };
 
@@ -350,10 +365,48 @@ export type FinishConversationTurnInput = {
   status?: Extract<ConversationTurnJobStatus, "succeeded" | "blocked">;
   errorCode?: string;
   errorMessage?: string;
+  taskTerminal?: {
+    taskId: string;
+    intentEpoch: number;
+    taskBriefDigest: string;
+    status: "completed" | "paused_recovery";
+    checkpoint: Record<string, unknown> | null;
+  };
 };
 
 export type FailConversationTurnInput = {
   assistantMessageId?: string;
   errorCode?: string;
   errorMessage: string;
+  failureCategory?: string;
+  retryability?: import("@/server/conversation/main-agent-failure").MainAgentFailureRetryability;
+  failureEvidenceDigest?: string;
+};
+
+export type RecoverConversationTurnInput = {
+  recoveryEvidenceDigest: string;
+  allowLegacyTurnFailed?: boolean;
+};
+
+export type RecoverConversationTurnAfterProviderHealthInput = {
+  projectId: string;
+  jobId: string;
+  teacherMessageId: string;
+  taskId: string;
+  intentEpoch: number;
+  expectedErrorCode: string;
+  recoveryEvidenceDigest: string;
+};
+
+export type RecoverConversationTurnAfterContractRepairInput = {
+  projectId: string;
+  jobId: string;
+  teacherMessageId: string;
+  taskId: string;
+  intentEpoch: number;
+  taskBriefDigest: string;
+  idempotencyKey: string;
+  failureObservationId: string;
+  expectedFailureSignature: string;
+  repairEvidenceDigest: string;
 };

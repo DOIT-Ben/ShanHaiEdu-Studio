@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
+import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { EvolinkReferenceUploadEvidence } from "./evolink-reference-upload";
 
@@ -22,6 +23,10 @@ export type VideoGenerationResult = {
   sha256: string;
   videoValid: true;
   mime: "video/mp4";
+  providerEvidence: {
+    name: string;
+    model: string;
+  };
   requestEvidence?: {
     shotId: string;
     durationSeconds: number;
@@ -98,6 +103,7 @@ export async function generateVideoFromArtifact(input: {
     sha256: createHash("sha256").update(videoBuffer).digest("hex"),
     videoValid: true,
     mime: "video/mp4",
+    providerEvidence: { name: config.channel, model: config.model },
     ...(input.shot ? { requestEvidence: { shotId: input.shot.shotId, durationSeconds: requestedDurationSeconds, references: input.shot.referenceEvidence } } : {}),
   };
 }
@@ -261,23 +267,25 @@ function isProviderDurationRange(range: { minSeconds: number; maxSeconds: number
 }
 
 function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {
-  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
-  const apiKey = wantsEvolink ? env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim() : env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
-  const baseUrl = wantsEvolink ? env.EVOLINK_VIDEO_BASE_URL?.trim() || env.EVOLINK_BASE_URL?.trim() || "https://api.evolink.ai" : env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
+  const values = resolveProviderLedgerValueBag({ capability: "video_generation", ambientEnv: env });
+  const providerMode = values.get("VIDEO_PROVIDER_MODE");
+  const wantsEvolink = providerMode === "evolink" || Boolean(values.get("EVOLINK_API_KEY"));
+  const apiKey = wantsEvolink ? values.get("EVOLINK_API_KEY") : values.get("OCTO_API_KEY");
+  const baseUrl = wantsEvolink ? values.get("EVOLINK_BASE_URL") || "https://api.evolink.ai" : values.get("OCTO_BASE_URL");
   if (!apiKey || !baseUrl) {
     throw new Error("missing_VIDEO_PROVIDER_ENV");
   }
 
   return {
-    channel: wantsEvolink ? "evolink" : env.OCTO_VIDEO_PROVIDER?.trim() || env.VIDEO_PROVIDER_MODE?.trim() || "octo",
+    channel: wantsEvolink ? "evolink" : values.get("OCTO_VIDEO_PROVIDER") || providerMode || "octo",
     apiKey,
     baseUrl: baseUrl.replace(/\/+$/, ""),
-    model: env.EVOLINK_VIDEO_MODEL?.trim() || env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim() || (wantsEvolink ? "grok-imagine-text-to-video-beta" : "omni_flash-10s"),
-    size: env.OMNI_DEFAULT_SIZE?.trim() || env.NEWAPI_DEFAULT_SIZE?.trim() || "1280x720",
-    duration: Number.parseInt(env.EVOLINK_VIDEO_DURATION_SECONDS || env.VIDEO_DURATION_SECONDS || "6", 10),
-    quality: env.EVOLINK_VIDEO_QUALITY?.trim() || env.VIDEO_QUALITY?.trim() || "480p",
-    mode: env.EVOLINK_VIDEO_STYLE_MODE?.trim() || env.VIDEO_STYLE_MODE?.trim() || "normal",
-    aspectRatio: env.EVOLINK_VIDEO_ASPECT_RATIO?.trim() || env.VIDEO_ASPECT_RATIO?.trim() || "16:9",
+    model: values.get("EVOLINK_VIDEO_MODEL") || values.get("VIDEO_MODEL") || values.get("OMNI_DEFAULT_MODEL") || values.get("NEWAPI_DEFAULT_MODEL") || (wantsEvolink ? "grok-imagine-text-to-video-beta" : "omni_flash-10s"),
+    size: values.get("OMNI_DEFAULT_SIZE") || values.get("NEWAPI_DEFAULT_SIZE") || "1280x720",
+    duration: Number.parseInt(values.get("EVOLINK_VIDEO_DURATION") || "6", 10),
+    quality: values.get("EVOLINK_VIDEO_QUALITY") || "480p",
+    mode: values.get("EVOLINK_VIDEO_MODE") || "normal",
+    aspectRatio: values.get("EVOLINK_VIDEO_ASPECT_RATIO") || "16:9",
     timeoutMs: Number.parseInt(env.VIDEO_SMOKE_TIMEOUT_MS || "600000", 10),
     pollIntervalMs: Number.parseInt(env.VIDEO_SMOKE_POLL_INTERVAL_MS || "5000", 10),
     maxPolls: Number.parseInt(env.VIDEO_SMOKE_MAX_POLLS || "72", 10),
@@ -296,7 +304,7 @@ async function submitVideoTask(
     },
     body: JSON.stringify(input.shot
       ? buildShotVideoRequestBody(config, input.shot)
-      : buildVideoRequestBody(config, buildPrompt(input.project, input.artifact))),
+      : buildVideoRequestBody(config, buildVideoArtifactPrompt(input.project, input.artifact))),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
 
@@ -437,12 +445,13 @@ async function downloadVideo(url: string, timeoutMs: number) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-function buildPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
+export function buildVideoArtifactPrompt(project: ProjectRecord, artifact: ArtifactRecord) {
   return [
-    "小学公开课导入视频分镜片段。",
+    "课程导入视频分镜片段。",
     "只根据已确认视频_segment_plan生成单段视频；知识锚点、创意主题、视频脚本、分镜和资产图必须已在上游完成。",
-    `课题：${project.lessonTopic || "百分数导入课"}。`,
-    `年级：${project.grade || "六年级"}。`,
+    `课题：${project.lessonTopic || "未指定课题"}。`,
+    `年级：${project.grade || "未指定年级"}。`,
+    `学科：${project.subject || "未指定学科"}。`,
     "画面温暖明亮，生活情境清晰，避免品牌、二维码、网址和复杂文字。",
     "当前分镜视频计划：",
     artifact.markdownContent.slice(0, 1600),

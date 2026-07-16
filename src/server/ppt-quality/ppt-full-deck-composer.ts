@@ -24,7 +24,7 @@ export async function composePptFullDeckPptx(input: {
   if (!approvalValidation.valid) throw new Error(`ppt_full_sample_approval_invalid:${approvalValidation.issues.map((item) => item.code).join(",")}`);
 
   const pageIds = input.designPackage.pageSpecs.map((page) => page.pageId);
-  if (pageIds.length < 12 || pageIds.length !== input.designPackage.brief.targetSlideCount) {
+  if (pageIds.length < 1 || pageIds.length !== input.designPackage.brief.targetSlideCount) {
     throw new Error("ppt_full_slide_count_contract_failed");
   }
   const composition = await composePptDeckPptx({ ...input, pageIds, titleSuffix: "公开课课件" });

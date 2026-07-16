@@ -32,7 +32,7 @@ test("M61 real generation routes require route-level PlanGuard/HumanGate before 
     const source = readSource(routeCase.routePath);
     const guardIndex = source.indexOf("assertRouteLevelGenerationConfirmation({");
     const createJobIndex = source.indexOf("createGenerationJob");
-    const commitResultIndex = source.indexOf("commitGenerationResult");
+    const commitResultIndex = source.indexOf("await commitArtifactRouteToolSuccess({");
 
     assert.match(source, /assertRouteLevelGenerationConfirmation/,
       `${routeCase.label} route must use a route-level PlanGuard/HumanGate helper`);
@@ -43,9 +43,13 @@ test("M61 real generation routes require route-level PlanGuard/HumanGate before 
     assert.ok(guardIndex >= 0 && createJobIndex >= 0 && guardIndex < createJobIndex,
       `${routeCase.label} route must guard before creating a generation job`);
     assert.ok(guardIndex >= 0 && commitResultIndex >= 0 && guardIndex < commitResultIndex,
-      `${routeCase.label} route must guard before atomically committing generated artifacts`);
+      `${routeCase.label} route must guard before the control-plane atomic result commit`);
     assert.match(source, /runWithProjectExecutionLease/,
       `${routeCase.label} route must hold a project execution lease across generation`);
+    assert.match(source, /claimArtifactRouteToolExecution/,
+      `${routeCase.label} route must claim a validated ExecutionEnvelope before Tool execution`);
+    assert.doesNotMatch(source, /commitGenerationResult|resumeStagedGenerationResult/,
+      `${routeCase.label} route must not bypass Invocation\/Observation\/Event with the legacy generation commit`);
     assert.doesNotMatch(source, /expectedActionId\s*[:=]\s*body\./,
       `${routeCase.label} route must not let the same request self-provide expectedActionId`);
   }

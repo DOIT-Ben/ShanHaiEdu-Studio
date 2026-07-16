@@ -13,7 +13,7 @@ const allKinds: ArtifactKind[] = [
   "ppt_draft", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_storyboard",
   "knowledge_anchor_extract", "creative_theme_generate", "video_script_generate", "storyboard_generate",
   "asset_brief_generate", "asset_image_generate", "video_segment_plan", "video_segment_generate",
-  "concat_only_assemble", "final_delivery", "final_delivery_checklist",
+  "video_narration_generate", "concat_only_assemble", "final_delivery", "final_delivery_checklist",
 ];
 
 function artifact(kind: ArtifactKind, status: ArtifactStatus = "approved", index = 0): ArtifactItem {
@@ -36,7 +36,7 @@ describe("artifact capability groups", () => {
   it("maps every ArtifactKind into exactly one of five semantic groups", () => {
     const validIds = artifactCapabilityGroups.map((group) => group.id);
     expect(artifactCapabilityGroups).toHaveLength(5);
-    expect(allKinds).toHaveLength(21);
+    expect(allKinds).toHaveLength(22);
     expect(allKinds.map(getArtifactCapabilityGroupId).every((id) => validIds.includes(id))).toBe(true);
     expect(new Set(allKinds.map((kind) => `${kind}:${getArtifactCapabilityGroupId(kind)}`)).size).toBe(allKinds.length);
   });

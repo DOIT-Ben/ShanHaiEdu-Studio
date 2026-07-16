@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   OpenAIConversationOrchestrator,
@@ -5,6 +6,8 @@ import {
   createDeterministicConversationOrchestrator,
 } from "../src/server/conversation/conversation-orchestrator";
 import { pickOpenAICompatibleConfig } from "../src/server/openai-compatible-config";
+
+const providerLedgerFixtureRoot = path.resolve("tests", "fixtures", "provider-ledger");
 
 const baseInput = {
   projectContext: {
@@ -18,6 +21,22 @@ const baseInput = {
 };
 
 describe("ConversationOrchestrator", () => {
+  it("does not classify a junior-high lesson request as casual or unsupported", async () => {
+    const orchestrator = createDeterministicConversationOrchestrator();
+
+    const decision = await orchestrator.decide({
+      ...baseInput,
+      projectContext: {},
+      userMessage: "七年级语文《春》",
+    });
+
+    expect(decision).toMatchObject({
+      intent: "start_requirement",
+      shouldGenerateRequirement: true,
+      normalizedBrief: { grade: "七年级", subject: "语文", topic: "春" },
+    });
+  });
+
   it("uses model intent to answer greetings without generating requirement artifacts", async () => {
     const calls: unknown[] = [];
     const orchestrator = new OpenAIConversationOrchestrator({
@@ -148,34 +167,56 @@ describe("ConversationOrchestrator", () => {
 });
 
 describe("OpenAI-compatible config", () => {
-  it("defaults Main Agent model selection to the standard Terra Medium level", () => {
+  it("uses the ledger reasoning default while requiring an explicit channel model", () => {
     const config = pickOpenAICompatibleConfig({
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+      AGENT_BRAIN_CHANNEL: "primary",
       AGENT_BRAIN_API_KEY: "ledger-secret",
+      AGENT_BRAIN_BASE_URL: "https://ledger.invalid/v1",
+      AGENT_BRAIN_MODEL: "gpt-5.6-terra",
     });
 
     expect(config).toMatchObject({
       model: "gpt-5.6-terra",
-      reasoningEffort: "medium",
+      reasoningEffort: "high",
     });
   });
 
-  it("selects OpenAI env before ledger env", () => {
+  it("fails closed when a manifest-bound channel is missing base URL or model", () => {
     const config = pickOpenAICompatibleConfig({
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+      AGENT_BRAIN_CHANNEL: "primary",
+      AGENT_BRAIN_API_KEY: "ledger-secret",
+    });
+
+    expect(config).toBeNull();
+  });
+
+  it("ignores generic OpenAI env and selects the provider ledger contract", () => {
+    const config = pickOpenAICompatibleConfig({
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+      AGENT_BRAIN_CHANNEL: "primary",
       OPENAI_API_KEY: "openai-secret",
       OPENAI_MODEL: "openai-model",
       AGENT_BRAIN_API_KEY: "ledger-secret",
+      AGENT_BRAIN_BASE_URL: "https://ledger.invalid/v1",
       AGENT_BRAIN_MODEL: "ledger-model",
     });
 
     expect(config).toMatchObject({
-      credential: "openai-secret",
-      credentialSource: "openai_env",
-      model: "openai-model",
+      credential: "ledger-secret",
+      credentialSource: "provider_ledger_deployment_secret",
+      model: "ledger-model",
     });
   });
 
   it("selects the requested ledger channel", () => {
     const config = pickOpenAICompatibleConfig({
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
       AGENT_BRAIN_CHANNEL: "third",
       AGENT_BRAIN_API_KEY: "primary-secret",
       AGENT_BRAIN_THIRD_API_KEY: "third-secret",
@@ -185,7 +226,7 @@ describe("OpenAI-compatible config", () => {
 
     expect(config).toMatchObject({
       credential: "third-secret",
-      credentialSource: "agent_brain_third_ledger_env",
+      credentialSource: "provider_ledger_deployment_secret",
       baseURL: "https://third.invalid/v1",
       model: "third-model",
     });

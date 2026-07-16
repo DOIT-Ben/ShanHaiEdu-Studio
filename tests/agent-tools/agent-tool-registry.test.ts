@@ -144,6 +144,14 @@ describe("V1-2 Agent Tool registry", () => {
     expect(videoCourseAnchorHardGateIds).toHaveLength(6);
   });
 
+  it("describes video creativity as independent before the single minimal course-anchor return", () => {
+    const videoDirector = getAgentToolDefinition("video_director.plan_or_repair");
+
+    expect(videoDirector.description).toContain("脱离教材仍成立");
+    expect(videoDirector.description).toContain("唯一最小课程锚点");
+    expect(videoDirector.description).not.toMatch(/根据课程锚点.*独立创意|围绕知识锚点/);
+  });
+
   it("freezes the PPT Director output as a complete executable page-design contract", () => {
     const output = getAgentToolDefinition("ppt_director.plan_or_repair").outputSchema;
     expect(output.required).toEqual(expect.arrayContaining([

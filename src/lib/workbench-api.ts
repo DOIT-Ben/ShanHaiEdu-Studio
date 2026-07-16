@@ -2,7 +2,7 @@ import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as s
 import { getWorkbenchCsrfToken, isWorkbenchCsrfRequired } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, GenerationIntensity, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, ConversationMessageSubmission, GenerationIntensity, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -98,6 +98,17 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
     }).then((response) => parseResponse<T>(response));
   }
 
+  function submitConversationMessage(projectId: string, submission: ConversationMessageSubmission) {
+    return request<unknown>(`/api/workbench/projects/${projectId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(buildConversationMessagePostBody(submission)),
+    }).then((turn) =>
+      request<unknown>(`/api/workbench/projects/${projectId}/snapshot`)
+        .then(normalizeSnapshot)
+        .then((snapshot) => mergeTurnAssistantMetadata(snapshot, turn as MessageTurnResponse)),
+    );
+  }
+
   return {
     listProjects(view = "active") {
       const query = view === "active" ? "" : `?view=${encodeURIComponent(view)}`;
@@ -113,15 +124,20 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
     getProjectSnapshot(projectId) {
       return request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot);
     },
-    sendMessage(projectId, body, reference, options) {
+    submitConversationMessage,
+    recoverConversationTurn(projectId, checkpointId) {
       return request<unknown>(`/api/workbench/projects/${projectId}/messages`, {
         method: "POST",
-        body: JSON.stringify(messagePostBody(body, reference, options)),
-      }).then((turn) =>
-        request<unknown>(`/api/workbench/projects/${projectId}/snapshot`)
-          .then(normalizeSnapshot)
-          .then((snapshot) => mergeTurnAssistantMetadata(snapshot, turn as MessageTurnResponse)),
-      );
+        body: JSON.stringify({ recoveryCheckpointId: checkpointId }),
+      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
+    },
+    sendMessage(projectId, body, reference, options) {
+      return submitConversationMessage(projectId, {
+        body,
+        reference,
+        artifactRefs: [],
+        ...messageSubmissionOptions(options),
+      });
     },
     setMessageReaction(projectId, messageId, value) {
       return request<unknown>(`/api/workbench/projects/${projectId}/messages/${messageId}/reaction`, {
@@ -189,13 +205,21 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
   };
 }
 
-function messagePostBody(body: string, reference: string | null, options?: WorkbenchSendMessageOptions) {
-  const confirmedActionId = normalizedConfirmedActionId(options);
+export function buildConversationMessagePostBody(submission: ConversationMessageSubmission) {
   return {
     role: "teacher",
-    content: body,
-    reference,
-    artifactRefs: reference ? [reference] : [],
+    content: submission.body,
+    reference: submission.reference,
+    artifactRefs: [...new Set(submission.artifactRefs.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))],
+    ...(submission.confirmedActionId?.trim() ? { confirmedActionId: submission.confirmedActionId.trim() } : {}),
+    ...(submission.idempotencyKey?.trim() ? { idempotencyKey: submission.idempotencyKey.trim() } : {}),
+    ...(submission.responseStyle ? { responseStyle: submission.responseStyle } : {}),
+  };
+}
+
+function messageSubmissionOptions(options?: WorkbenchSendMessageOptions) {
+  const confirmedActionId = normalizedConfirmedActionId(options);
+  return {
     ...(confirmedActionId ? { confirmedActionId } : {}),
     ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
     ...(options?.responseStyle ? { responseStyle: options.responseStyle } : {}),
@@ -300,6 +324,7 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
         artifacts: clone(source.artifacts),
         turnJobs: [],
         activeArtifactKey: preferredActiveArtifactKey(source.artifacts),
+        agentEventSequence: 0,
       });
     }
     return snapshots.get(projectId);
@@ -324,6 +349,33 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
     project.meta = "刚刚";
     project.currentStep = currentStep;
     project.status = "active";
+  }
+
+  async function submitDevelopmentConversationMessage(projectId: string, submission: ConversationMessageSubmission) {
+    const current = ensureSnapshot(projectId);
+    if (!current) throw new WorkbenchApiError("Snapshot was not created.");
+    const timestamp = Date.now();
+    current.messages.push({
+      id: `${projectId}-teacher-${timestamp}`,
+      speaker: "teacher",
+      body: submission.reference ? `${submission.body}\n\n引用：${submission.reference}` : submission.body,
+      artifactRefs: submission.artifactRefs,
+      turnStatus: "running",
+      turnStatusLabel: "正在生成",
+    });
+    current.messages.push({
+      id: `${projectId}-assistant-${timestamp}`,
+      speaker: "assistant",
+      title: "已收到，我会把它整理进当前备课链路。",
+      body: "下一步会同步更新右侧产物节点。请先确认生成内容是否适合作为后续输入。",
+      tone: "focus",
+    });
+    current.artifacts = current.artifacts.map((item, index) =>
+      index === 0 || item.key === "intro-video-plan" ? { ...item, status: "needs_review", updatedAt: "刚刚" } : item,
+    );
+    current.activeArtifactKey = preferredActiveArtifactKey(current.artifacts, current.activeArtifactKey);
+    touchProject(projectId, "等待确认");
+    return snapshot(projectId);
   }
 
   return {
@@ -356,10 +408,14 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
         artifacts: clone(source.artifacts).map((item) => ({ ...item, status: item.key === "textbook-evidence" ? "needs_review" : "not_started" })),
         turnJobs: [],
         activeArtifactKey: source.artifacts[0]?.key ?? "",
+        agentEventSequence: 0,
       });
       return snapshot(project.id);
     },
     async getProjectSnapshot(projectId) {
+      return snapshot(projectId);
+    },
+    async recoverConversationTurn(projectId, _checkpointId) {
       return snapshot(projectId);
     },
     async mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
@@ -406,30 +462,14 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
       project.intensityVersion = expectedVersion + 1;
       return { project: clone(project) };
     },
-    async sendMessage(projectId, body, reference) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      const timestamp = Date.now();
-      current.messages.push({
-        id: `${projectId}-teacher-${timestamp}`,
-        speaker: "teacher",
-        body: reference ? `${body}\n\n引用：${reference}` : body,
-        turnStatus: "running",
-        turnStatusLabel: "正在生成",
+    submitConversationMessage: submitDevelopmentConversationMessage,
+    async sendMessage(projectId, body, reference, options) {
+      return submitDevelopmentConversationMessage(projectId, {
+        body,
+        reference,
+        artifactRefs: [],
+        ...messageSubmissionOptions(options),
       });
-      current.messages.push({
-        id: `${projectId}-assistant-${timestamp}`,
-        speaker: "assistant",
-        title: "已收到，我会把它整理进当前备课链路。",
-        body: "下一步会同步更新右侧产物节点。请先确认生成内容是否适合作为后续输入。",
-        tone: "focus",
-      });
-      current.artifacts = current.artifacts.map((item, index) =>
-        index === 0 || item.key === "intro-video-plan" ? { ...item, status: "needs_review", updatedAt: "刚刚" } : item,
-      );
-      current.activeArtifactKey = preferredActiveArtifactKey(current.artifacts, current.activeArtifactKey);
-      touchProject(projectId, "等待确认");
-      return snapshot(projectId);
     },
     async setMessageReaction(projectId, messageId, value) {
       const current = ensureSnapshot(projectId);

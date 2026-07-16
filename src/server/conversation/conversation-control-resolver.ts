@@ -45,7 +45,7 @@ export function resolveConversationControl(input: {
   intentGrant?: IntentGrant;
   externalProviderCallsUsed?: number;
 }): { decision: ConversationControlDecision; turn: MainAgentTurn } {
-  const targetCapabilityId = resolveRequestedCapability(input.userMessage);
+  const targetCapabilityId = input.agentTurn.toolPlan?.capabilityId;
   const pendingCapabilityId = input.pendingPlan?.toolPlan.capabilityId;
 
   if (input.pendingPlan && isExplicitPause(input.userMessage)) {
@@ -92,21 +92,12 @@ export function resolveConversationControl(input: {
     };
   }
 
-  if (input.pendingPlan && targetCapabilityId && targetCapabilityId !== pendingCapabilityId) {
-    return {
-      decision: {
-        kind: "switch_to_capability",
-        reasonCode: "explicit_capability_switch",
-        targetCapabilityId,
-        supersedePendingAction: true,
-        pendingPlanStatus: "superseded",
-        advanceIntentEpoch: true,
-      },
-      turn: normalizeExecutionPolicy(input.agentTurn, input.intentGrant, input.externalProviderCallsUsed),
-    };
-  }
-
   if (input.pendingPlan?.status === "paused" && isExplicitResume(input.userMessage)) {
+    const requiresHumanGate = requiresHumanGateForPendingPlan(
+      input.pendingPlan,
+      pendingCapabilityId!,
+      input.externalProviderCallsUsed,
+    );
     return {
       decision: {
         kind: "resume_paused_offer",
@@ -117,40 +108,36 @@ export function resolveConversationControl(input: {
       },
       turn: {
         ...input.agentTurn,
-        assistantMessage: { body: "已恢复刚才的任务。为避免误操作，请确认后继续执行。" },
-        state: "awaiting_confirmation",
-        toolPlan: { ...input.pendingPlan.toolPlan, requiresConfirmation: true },
+        assistantMessage: {
+          body: requiresHumanGate
+            ? "已恢复刚才的任务。这一步需要先完成对应授权或预算决定。"
+            : input.pendingPlan.toolPlan.reasonForUser,
+        },
+        state: requiresHumanGate ? "awaiting_confirmation" : "running_tool",
+        toolPlan: { ...input.pendingPlan.toolPlan, requiresConfirmation: requiresHumanGate },
         deliveryPlan: input.pendingPlan.deliveryPlan,
-        shouldRunToolNow: false,
+        shouldRunToolNow: !requiresHumanGate,
         artifactRefs: [],
       },
     };
   }
 
-  if (input.pendingPlan && isActiveOfferRevision(input.userMessage)) {
+  if (input.pendingPlan && hasMainAgentSelectedReplacement(input.pendingPlan, input.agentTurn)) {
+    const changesCapability = targetCapabilityId !== pendingCapabilityId;
     return {
       decision: {
-        kind: "revise_active_offer",
-        reasonCode: "teacher_revised_active_offer",
-        targetCapabilityId: pendingCapabilityId,
+        kind: changesCapability ? "switch_to_capability" : "revise_active_offer",
+        reasonCode: changesCapability ? "main_agent_selected_capability_switch" : "main_agent_selected_plan_revision",
+        targetCapabilityId,
         supersedePendingAction: true,
         pendingPlanStatus: "superseded",
         advanceIntentEpoch: true,
       },
-      turn: {
-        ...input.agentTurn,
-        assistantMessage: { body: "我已按你的新要求更新这一步，旧版本不会继续执行。请确认后我再按新要求处理。" },
-        state: "awaiting_confirmation",
-        toolPlan: {
-          ...input.pendingPlan.toolPlan,
-          planId: `${input.pendingPlan.toolPlan.capabilityId}:revised-offer`,
-          inputDraft: { ...input.pendingPlan.toolPlan.inputDraft, teacherGoal: input.userMessage },
-          requiresConfirmation: true,
-        },
-        deliveryPlan: input.pendingPlan.deliveryPlan,
-        shouldRunToolNow: false,
-        artifactRefs: [],
-      },
+      turn: normalizeExecutionPolicy(
+        input.agentTurn,
+        input.intentGrant ?? input.pendingPlan.intentGrant,
+        input.externalProviderCallsUsed,
+      ),
     };
   }
 
@@ -318,22 +305,6 @@ function isExecutionReadyState(state: MainAgentTurn["state"]) {
     state === "running_tool" || state === "continuing_workflow";
 }
 
-function resolveRequestedCapability(text: string): CapabilityId | undefined {
-  const normalized = text.trim();
-  if (/完整|材料包|交付包|全套|一套|包括.*(?:教案|PPT|图片|视频)/i.test(normalized)) return undefined;
-  const matchers: Array<[CapabilityId, RegExp]> = [
-    ["video_segment_generate", /生成(?:最终)?视频|视频片段/],
-    ["storyboard_generate", /分镜/],
-    ["video_script_generate", /视频脚本|导入脚本/],
-    ["coze_ppt", /(?:真实|可下载|文件).*PPT|PPTX/i],
-    ["ppt_design", /PPT\s*设计稿|课件设计稿/i],
-    ["ppt_outline", /PPT\s*大纲|课件大纲/i],
-    ["lesson_plan", /教案|教学设计/],
-    ["requirement_spec", /需求规格|整理(?:备课)?需求/],
-  ];
-  return matchers.find(([, pattern]) => pattern.test(normalized))?.[0];
-}
-
 function isExplicitConfirmation(text: string, capabilityId?: CapabilityId): boolean {
   const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
   if (/^(确认开始|确认执行|就按这个做|按这个做|开始生成|确认生成|确认并开始)$/.test(normalized)) return true;
@@ -378,7 +349,10 @@ function isTaskControlConfirmation(text: string): boolean {
   return /^确定[。.!！]?$/.test(text.trim());
 }
 
-function isActiveOfferRevision(text: string): boolean {
-  const normalized = text.trim().replace(/\s+/g, "");
-  return /(?:修改|改成|改为|调整|换成|重写|重新做|不要按刚才|不是刚才)/.test(normalized);
+function hasMainAgentSelectedReplacement(plan: ConversationControlPendingPlan, turn: MainAgentTurn) {
+  const selected = turn.toolPlan;
+  if (!selected) return false;
+  return selected.capabilityId !== plan.toolPlan.capabilityId ||
+    selected.planId !== plan.toolPlan.planId ||
+    JSON.stringify(selected.inputDraft) !== JSON.stringify(plan.toolPlan.inputDraft);
 }

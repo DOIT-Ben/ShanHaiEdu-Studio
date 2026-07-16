@@ -19,6 +19,7 @@ export type CapabilityId =
   | "asset_image_generate"
   | "video_segment_plan"
   | "video_segment_generate"
+  | "video_narration_generate"
   | "concat_only_assemble"
   | "final_package";
 
@@ -103,6 +104,8 @@ export type CapabilityRunResult =
       userMessage: string;
       retryable: boolean;
       errorCategory: "provider" | "network" | "validation" | "permission" | "timeout" | "parse" | "missing_field" | "unknown";
+      reasonCode?: string;
+      reasonDetails?: string[];
       runtimeRun?: {
         runId: string;
         runtimeKind: "deterministic" | "openai";
@@ -149,4 +152,5 @@ export type MainAgentTurn = {
   shouldRunToolNow: boolean;
   runtimeKind: "openai" | "deterministic";
   artifactRefs?: string[];
+  failure?: import("@/server/conversation/main-agent-failure").MainAgentFailure;
 };

@@ -25,6 +25,7 @@ export type ToolDefinition = {
   id: string;
   label: string;
   description: string;
+  teacherDescription?: string;
   adapterKind: ToolAdapterKind;
   capabilityId?: CapabilityId;
   providerToolId?: string;
@@ -98,6 +99,8 @@ export type ToolExecutionResult =
       observation: ToolObservation;
       artifactCreated: false;
       errorCategory?: string;
+      reasonCode?: string;
+      reasonDetails?: string[];
       budgetEvent: AgentHarnessBudgetEvent;
       validationReport?: ValidationReport;
     };

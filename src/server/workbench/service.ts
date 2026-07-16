@@ -23,6 +23,9 @@ import type {
   ProjectLifecycleState,
   ProjectSnapshot,
   RegenerateArtifactInput,
+  RecoverConversationTurnInput,
+  RecoverConversationTurnAfterProviderHealthInput,
+  RecoverConversationTurnAfterContractRepairInput,
   SaveArtifactInput,
   SaveInteractiveCoursewareSpecInput,
   SetMessageReactionInput,
@@ -39,14 +42,18 @@ import type {
   VideoShotRecord,
 } from "./types";
 import { validateInteractiveCoursewareSpec } from "@/server/activities/interactive-courseware-spec";
-import { withArtifactQualityState } from "@/server/quality/artifact-quality-state";
 import { deriveGenerationIntensitySuggestion, normalizeGenerationIntensity, type GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot, WorkflowNode } from "@/generated/prisma/client";
-import { sealPptKeySampleCandidate, validatePptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
-import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleCandidate, PptKeySampleSet } from "@/server/ppt-quality/ppt-asset-types";
-import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
-import { sealPptFullDeckCandidate, validatePptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
-import type { PptFullDeckCandidate, PptFullDeckPackage } from "@/server/ppt-quality/ppt-production-types";
+import {
+  legacyContentToMessageParts,
+  normalizeMessageParts,
+  projectConversationMessageParts,
+} from "@/lib/conversation-message-contract";
+import { hashArtifactDraft } from "@/server/contracts/contract-validator";
+import type { TaskBrief } from "@/server/conversation/task-contract";
+import { buildPptFullDeckReviewArtifact, buildPptSampleReviewArtifact } from "@/server/ppt-quality/ppt-review-artifact";
+import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
+import { isArtifactBoundToRequestedOutput } from "@/server/quality/artifact-truth-boundary";
 
 export function createWorkbenchService(
   repository: WorkbenchRepository = createPrismaWorkbenchRepository(),
@@ -67,6 +74,49 @@ export function createWorkbenchService(
       throw new Error(`Project not found: ${projectId}`);
     }
     return project;
+  }
+
+  async function withProjectedMessageParts<T extends AddMessageInput>(projectId: string, input: T) {
+    if (input.parts) return { ...input, parts: normalizeMessageParts(input.parts) };
+    const referencedIds = input.artifactRefs ?? [];
+    const artifacts = referencedIds.length > 0 ? await repository.getArtifacts(projectId) : [];
+    const byId = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+    const artifactRefs = referencedIds.flatMap((artifactId) => {
+      const artifact = byId.get(artifactId);
+      if (!artifact) return [];
+      const structuredContent = parseJsonObject(artifact.structuredContentJson);
+      const qualityState = structuredContent.artifactQualityState &&
+        typeof structuredContent.artifactQualityState === "object" &&
+        !Array.isArray(structuredContent.artifactQualityState)
+        ? structuredContent.artifactQualityState as Record<string, unknown>
+        : {};
+      return [{
+        artifactId: artifact.id,
+        version: artifact.version,
+        digest: hashArtifactDraft({
+          nodeKey: artifact.nodeKey,
+          kind: artifact.kind,
+          title: artifact.title,
+          summary: artifact.summary,
+          markdownContent: artifact.markdownContent,
+          structuredContent,
+        }),
+        title: artifact.title,
+        summary: artifact.summary,
+        qualityOutcome: qualityState.downstreamEligibility === "eligible"
+          ? "passed" as const
+          : artifact.status === "failed" ? "failed" as const : "pending" as const,
+      }];
+    });
+    return {
+      ...input,
+      parts: projectConversationMessageParts({
+        role: input.role,
+        content: input.content,
+        artifactRefs,
+        metadata: input.metadata,
+      }),
+    };
   }
 
   return {
@@ -90,7 +140,7 @@ export function createWorkbenchService(
 
     async addMessage(projectId: string, input: AddMessageInput): Promise<ConversationMessageRecord> {
       await ensureProjectAccess(projectId, "write");
-      const message = await repository.addMessage(projectId, input);
+      const message = await repository.addMessage(projectId, await withProjectedMessageParts(projectId, input));
       return mapMessage(message);
     },
 
@@ -105,7 +155,15 @@ export function createWorkbenchService(
       metadata: Record<string, unknown>,
     ): Promise<ConversationMessageRecord> {
       await ensureProjectAccess(projectId, "write");
-      const message = await repository.updateMessageMetadata(projectId, messageId, metadata);
+      const existing = (await repository.getMessages(projectId)).find((candidate) => candidate.id === messageId);
+      if (!existing) throw new Error(`ConversationMessage not found: ${messageId}`);
+      const projected = await withProjectedMessageParts(projectId, {
+        role: existing.role as AddMessageInput["role"],
+        content: existing.content,
+        artifactRefs: parseJsonArray(existing.artifactRefsJson),
+        metadata,
+      });
+      const message = await repository.updateMessageMetadata(projectId, messageId, metadata, projected.parts);
       return mapMessage(message);
     },
 
@@ -168,50 +226,7 @@ export function createWorkbenchService(
       const stored = await repository.getArtifact(projectId, artifactId);
       if (!stored) throw new Error(`Artifact not found: ${artifactId}`);
       const artifact = mapArtifact(stored);
-      const candidate = artifact.structuredContent.pptKeySampleCandidate as PptKeySampleCandidate | undefined;
-      const designPackage = artifact.structuredContent.pptDesignPackage as PptDesignPackage | undefined;
-      const requestBatch = artifact.structuredContent.pptAssetRequestBatch as PptAssetRequestBatch | undefined;
-      const manifest = artifact.structuredContent.pptAssetManifest as PptAssetManifest | undefined;
-      if (!candidate || !designPackage || !requestBatch || !manifest || !validatePptKeySampleCandidate(candidate)) {
-        throw new Error("PPT key sample review evidence is incomplete.");
-      }
-      if (input.candidateDigest !== candidate.candidateDigest) throw new Error("PPT key sample review version conflict.");
-      assertPptSampleQa(candidate, input.qa);
-
-      const allPassed = input.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0);
-      const review = {
-        schemaVersion: "ppt-sample-review.v1",
-        candidateDigest: candidate.candidateDigest,
-        reviewSource: input.reviewSource,
-        reviewerMessageId: input.reviewerMessageId ?? null,
-        overallStatus: allPassed ? "passed" : "failed",
-        qa: input.qa.map((entry) => ({ ...entry, findings: [...entry.findings] })),
-        reviewedAt: new Date().toISOString(),
-      };
-      let sampleSet: PptKeySampleSet | undefined;
-      if (allPassed) {
-        sampleSet = sealPptKeySampleCandidate({ designPackage, requestBatch, manifest, candidate, qa: input.qa });
-      }
-      const nextStructuredContent = withArtifactQualityState({
-        ...artifact.structuredContent,
-        pptKeySampleReview: review,
-        ...(sampleSet ? { pptKeySampleSet: sampleSet } : {}),
-      }, {
-        validationStatus: "passed",
-        reviewStatus: allPassed ? "passed" : "repair",
-        downstreamEligibility: allPassed ? "eligible" : "blocked",
-      });
-      const saved = await repository.saveArtifact(projectId, {
-        nodeKey: artifact.nodeKey,
-        kind: artifact.kind,
-        title: sampleSet ? "PPT 关键样张验收包" : "PPT 关键样张返修包",
-        status: "needs_review",
-        summary: sampleSet ? "逐页 D/V/P 已通过，可继续内部下游；教师签收仍单独记录。" : "逐页 D/V/P 存在未关闭问题，需要定点返修后重新审查。",
-        markdownContent: sampleSet
-          ? "# PPT 关键样张验收包\n\n逐页 D/V/P 已全部通过，可以继续内部制作；教师签收仍是独立状态。"
-          : "# PPT 关键样张返修包\n\n存在未关闭的设计、视觉或来源问题，尚不能批准。",
-        structuredContent: nextStructuredContent,
-      });
+      const saved = await repository.saveArtifact(projectId, buildPptSampleReviewArtifact(artifact, input));
       return mapArtifact(saved);
     },
 
@@ -220,43 +235,7 @@ export function createWorkbenchService(
       const stored = await repository.getArtifact(projectId, artifactId);
       if (!stored) throw new Error(`Artifact not found: ${artifactId}`);
       const artifact = mapArtifact(stored);
-      const candidate = artifact.structuredContent.pptFullDeckCandidate as PptFullDeckCandidate | undefined;
-      if (!candidate || !validatePptFullDeckCandidate(candidate)) throw new Error("PPT full deck review evidence is incomplete.");
-      if (input.candidateDigest !== candidate.candidateDigest) throw new Error("PPT full deck review version conflict.");
-      assertPptFullDeckQa(candidate, input.qa);
-
-      const allPassed = input.qa.every((entry) =>
-        entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0);
-      const review = {
-        schemaVersion: "ppt-full-deck-review.v1",
-        candidateDigest: candidate.candidateDigest,
-        reviewSource: input.reviewSource,
-        reviewerMessageId: input.reviewerMessageId ?? null,
-        overallStatus: allPassed ? "passed" : "failed",
-        qa: input.qa.map((entry) => ({ ...entry, findings: [...entry.findings] })),
-        reviewedAt: new Date().toISOString(),
-      };
-      let deckPackage: PptFullDeckPackage | undefined;
-      if (allPassed) deckPackage = sealPptFullDeckCandidate(candidate, input.qa);
-      const saved = await repository.saveArtifact(projectId, {
-        nodeKey: artifact.nodeKey,
-        kind: artifact.kind,
-        title: deckPackage ? "完整 PPT 交付验收包" : "完整 PPT 页级返修包",
-        status: "needs_review",
-        summary: deckPackage ? "12 页 Delivery Critic 已通过，可继续内部下游；教师签收仍单独记录。" : "存在未关闭的页面问题，需要按页返修后重新审查。",
-        markdownContent: deckPackage
-          ? "# 完整 PPT 交付验收包\n\n全部页面的设计、视觉、来源和可读性审查通过，可以继续内部制作；教师签收仍是独立状态。"
-          : "# 完整 PPT 页级返修包\n\n存在未关闭的页面问题，尚不能进入最终交付。",
-        structuredContent: withArtifactQualityState({
-          ...artifact.structuredContent,
-          pptFullDeckReview: review,
-          ...(deckPackage ? { pptFullDeckPackage: deckPackage } : {}),
-        }, {
-          validationStatus: "passed",
-          reviewStatus: allPassed ? "passed" : "repair",
-          downstreamEligibility: allPassed ? "eligible" : "blocked",
-        }),
-      });
+      const saved = await repository.saveArtifact(projectId, buildPptFullDeckReviewArtifact(artifact, input));
       return mapArtifact(saved);
     },
 
@@ -266,7 +245,11 @@ export function createWorkbenchService(
       return mapArtifact(artifact);
     },
 
-    async getApprovedInputs(projectId: string, nodeKey: WorkflowNodeRecord["key"]): Promise<ArtifactRecord[]> {
+    async getApprovedInputs(
+      projectId: string,
+      nodeKey: WorkflowNodeRecord["key"],
+      taskBrief?: TaskBrief,
+    ): Promise<ArtifactRecord[]> {
       await ensureProjectAccess(projectId);
       const node = await repository.getNode(projectId, nodeKey);
       if (!node) {
@@ -275,9 +258,13 @@ export function createWorkbenchService(
 
       const upstreamNodeKeys = parseJsonArray(node.upstreamNodeKeysJson);
       const artifacts = await repository.getApprovedArtifactsByNodeKeys(projectId, upstreamNodeKeys);
-      return artifacts
+      const mapped = artifacts
         .map(mapArtifact)
         .sort((left, right) => upstreamNodeKeys.indexOf(left.nodeKey) - upstreamNodeKeys.indexOf(right.nodeKey));
+      return taskBrief
+        ? mapped.filter((artifact) =>
+            isArtifactTrustedForDownstream(artifact) && isArtifactBoundToRequestedOutput(artifact, taskBrief))
+        : mapped;
     },
 
     async startAgentRun(projectId: string, input: StartAgentRunInput): Promise<AgentRunRecord> {
@@ -431,7 +418,10 @@ export function createWorkbenchService(
       input: EnqueueMessageAndConversationTurnInput,
     ): Promise<{ message: ConversationMessageRecord; job: ConversationTurnJobRecord }> {
       await ensureProjectAccess(projectId, "write");
-      const result = await repository.enqueueMessageAndConversationTurn(projectId, { ...input, executionIdentity });
+      const result = await repository.enqueueMessageAndConversationTurn(projectId, {
+        ...await withProjectedMessageParts(projectId, input),
+        executionIdentity,
+      });
       return { message: mapMessage(result.message), job: mapConversationTurnJob(result.job) };
     },
 
@@ -454,6 +444,36 @@ export function createWorkbenchService(
       if (!executionGuard) await ensureProjectAccess(projectId, "generate");
       const job = await repository.failConversationTurnJob(projectId, jobId, input, executionGuard);
       return mapConversationTurnJob(job);
+    },
+
+    async requeueConversationTurnJobForRecovery(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnInput,
+    ): Promise<ConversationTurnJobRecord | null> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.requeueConversationTurnJobForRecovery(projectId, jobId, input);
+      return job ? mapConversationTurnJob(job) : null;
+    },
+
+    async requeueConversationTurnJobAfterProviderHealth(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnAfterProviderHealthInput,
+    ): Promise<ConversationTurnJobRecord | null> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.requeueConversationTurnJobAfterProviderHealth(projectId, jobId, input);
+      return job ? mapConversationTurnJob(job) : null;
+    },
+
+    async requeueConversationTurnJobAfterContractRepair(
+      projectId: string,
+      jobId: string,
+      input: RecoverConversationTurnAfterContractRepairInput,
+    ): Promise<ConversationTurnJobRecord | null> {
+      await ensureProjectAccess(projectId, "generate");
+      const job = await repository.requeueConversationTurnJobAfterContractRepair(projectId, jobId, input);
+      return job ? mapConversationTurnJob(job) : null;
     },
 
     async getConversationTurnJobs(projectId: string): Promise<ConversationTurnJobRecord[]> {
@@ -539,40 +559,6 @@ export function createWorkbenchService(
   };
 }
 
-function assertPptSampleQa(candidate: PptKeySampleCandidate, qa: SubmitPptSampleReviewInput["qa"]): void {
-  const expected = [...candidate.samplePageIds].sort();
-  const actual = qa.map((entry) => entry.pageId).sort();
-  if (actual.length !== expected.length || actual.some((pageId, index) => pageId !== expected[index])) {
-    throw new Error("PPT key sample review page set mismatch.");
-  }
-  for (const entry of qa) {
-    const failed = entry.design === "failed" || entry.visual === "failed" || entry.provenance === "failed";
-    if (failed && entry.findings.every((finding) => !finding.trim())) {
-      throw new Error(`PPT key sample review findings required: ${entry.pageId}`);
-    }
-    if (!failed && entry.findings.length > 0) {
-      throw new Error(`PPT key sample review has unresolved findings: ${entry.pageId}`);
-    }
-  }
-}
-
-function assertPptFullDeckQa(candidate: PptFullDeckCandidate, qa: SubmitPptFullDeckReviewInput["qa"]): void {
-  const expected = [...candidate.pageIds].sort();
-  const actual = qa.map((entry) => entry.pageId).sort();
-  if (actual.length !== expected.length || actual.some((pageId, index) => pageId !== expected[index])) {
-    throw new Error("PPT full deck review page set mismatch.");
-  }
-  for (const entry of qa) {
-    const failed = entry.design === "failed" || entry.visual === "failed" || entry.provenance === "failed" || entry.readability === "failed";
-    if (failed && entry.findings.every((finding) => !finding.trim())) {
-      throw new Error(`PPT full deck review findings required: ${entry.pageId}`);
-    }
-    if (!failed && entry.findings.length > 0) {
-      throw new Error(`PPT full deck review has unresolved findings: ${entry.pageId}`);
-    }
-  }
-}
-
 function canAccessProject(project: Project, actor: WorkbenchActor | undefined, access: "read" | "write" | "generate") {
   if (access === "write") return canWriteProjectContent(project, actor);
   if (access === "generate") return canTriggerGeneration(project, actor);
@@ -607,11 +593,17 @@ function mapMessage(message: ConversationMessage, reaction?: string): Conversati
     projectId: message.projectId,
     role: message.role as ConversationMessageRecord["role"],
     content: message.content,
+    parts: messagePartsFromRecord(message),
     artifactRefs: parseJsonArray(message.artifactRefsJson),
     metadata: parseJsonObject(message.metadataJson ?? "{}"),
     ...(reaction === "helpful" || reaction === "unhelpful" ? { reaction } : {}),
     createdAt: message.createdAt.toISOString(),
   };
+}
+
+function messagePartsFromRecord(message: ConversationMessage) {
+  const raw = parseJsonUnknownArray(message.partsJson ?? "[]");
+  return raw.length > 0 ? normalizeMessageParts(raw) : legacyContentToMessageParts(message.content);
 }
 
 function mapNode(node: WorkflowNode): WorkflowNodeRecord {
@@ -630,7 +622,7 @@ function mapNode(node: WorkflowNode): WorkflowNodeRecord {
 }
 
 function mapArtifact(artifact: Artifact): ArtifactRecord {
-  return {
+  const record: ArtifactRecord = {
     id: artifact.id,
     projectId: artifact.projectId,
     nodeKey: artifact.nodeKey as ArtifactRecord["nodeKey"],
@@ -645,6 +637,14 @@ function mapArtifact(artifact: Artifact): ArtifactRecord {
     createdAt: artifact.createdAt.toISOString(),
     updatedAt: artifact.updatedAt.toISOString(),
   };
+  Object.defineProperties(record, {
+    taskId: { value: artifact.taskId, enumerable: false },
+    taskBriefDigest: { value: artifact.taskBriefDigest, enumerable: false },
+    intentEpoch: { value: artifact.intentEpoch, enumerable: false },
+    planRevision: { value: artifact.planRevision, enumerable: false },
+    origin: { value: artifact.origin as ArtifactRecord["origin"], enumerable: false },
+  });
+  return record;
 }
 
 function mapAgentRun(run: AgentRun): AgentRunRecord {
@@ -718,6 +718,10 @@ function mapConversationTurnJob(job: ConversationTurnJob): ConversationTurnJobRe
     lockedUntil: job.lockedUntil?.toISOString() ?? null,
     errorCode: job.errorCode,
     errorMessage: job.errorMessage,
+    failureCategory: job.failureCategory,
+    failureRetryability: job.failureRetryability as ConversationTurnJobRecord["failureRetryability"],
+    failureEvidenceDigest: job.failureEvidenceDigest,
+    recoveryEvidenceDigest: job.recoveryEvidenceDigest,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
@@ -728,6 +732,15 @@ function mapConversationTurnJob(job: ConversationTurnJob): ConversationTurnJobRe
 function parseJsonArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
   return Array.isArray(parsed) ? parsed.map(String) : [];
+}
+
+function parseJsonUnknownArray(value: string): unknown[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {

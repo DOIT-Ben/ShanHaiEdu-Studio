@@ -47,6 +47,9 @@
     "test:stage7": "prisma generate && prisma db push && vitest run src/server/workbench/__tests__/stage7-mainline-contract.test.ts"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.14.26",
+    "@assistant-ui/react-markdown": "0.14.5",
+    "@openai/agents": "0.13.3",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -56,6 +59,8 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/postcss": "^4.1.11",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "better-sqlite3": "^12.11.1",
     "busboy": "^1.6.0",
     "class-variance-authority": "^0.7.1",
@@ -68,10 +73,14 @@
     "pptxgenjs": "^4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "remark-gfm": "4.0.1",
     "sharp": "0.34.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.11",
-    "tsx": "4.20.6"
+    "tsx": "4.20.6",
+    "yaml": "2.8.1",
+    "zod": "4.4.3",
+    "zustand": "5.0.14"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

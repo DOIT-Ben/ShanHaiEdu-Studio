@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { getToolDefinitions } from "@/server/tools/tool-registry";
-import { routeToolCall } from "@/server/tools/tool-router";
+import { routeToolCall as routeToolCallWithoutEnvelope } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
 import {
@@ -10,9 +11,50 @@ import {
   validateToolPreconditions,
 } from "@/server/contracts/contract-validator";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
+import { createPptDesignCandidateProjection, type PptDesignCandidateInput } from "@/server/ppt-quality/ppt-design-candidate";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 import { buildPptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
 import type { ArtifactRecord } from "@/server/workbench/types";
+
+const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies) => {
+  const intentEpoch = input.executionIntentEpoch ?? 0;
+  const brief = createTaskBrief({
+    taskId: `task:${input.projectId}`,
+    projectId: input.projectId,
+    intentEpoch,
+    goal: input.userInstruction ?? "Contract validation fixture",
+    requestedOutputs: [input.capabilityId ?? input.toolName ?? "contract_validation"],
+    constraints: ["offline_fixture_only"],
+    excludedOutputs: [],
+    generationIntensity: "standard",
+    sourceMessageId: input.sourceMessageId ?? `message:${input.projectId}`,
+  });
+  const grant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: brief.taskId,
+    projectId: brief.projectId,
+    intentEpoch: brief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: "standard",
+    budgetPolicyVersion: "offline-fixture.v1",
+    maxCostCredits: 0,
+    maxExternalProviderCalls: 0,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  return routeToolCallWithoutEnvelope({
+    ...input,
+    executionIntentEpoch: intentEpoch,
+    executionEnvelope: input.executionEnvelope ?? createExecutionEnvelope({
+      actorUserId: "teacher-fixture",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: input.toolName ?? input.capabilityId ?? "unknown_tool", arguments: input.toolInput ?? {} },
+    }),
+  }, dependencies);
+};
 
 describe("V1 Stage 2A runtime contracts", () => {
   it("projects every registered executable tool into a contract without forcing a next node", () => {
@@ -187,8 +229,9 @@ describe("V1 Stage 2A runtime contracts", () => {
     }));
   });
 
-  it("rejects model-generated PPT quality output without a structured design package", () => {
+  it("accepts a bound R5 candidate without weakening the later production package gate", () => {
     const tool = getToolDefinitions().find((definition) => definition.capabilityId === "ppt_design")!;
+    const candidate = createPptDesignCandidateProjection(validR5CandidateInput()).candidate;
     const report = validateToolExecutionResult({
       tool,
       projectId: "project-ppt-missing-package",
@@ -198,22 +241,66 @@ describe("V1 Stage 2A runtime contracts", () => {
           nodeKey: "ppt_design_draft",
           kind: "ppt_design_draft",
           title: "PPT 设计稿",
-          summary: "只有 Markdown。",
+          summary: "候选语义和权威绑定完整。",
           markdownContent: "# PPT 设计稿",
-          structuredContent: { generationMode: "model_generated" },
+          structuredContent: { generationMode: "model_generated", pptDesignCandidate: candidate },
         },
       },
     });
 
-    expect(report.overallStatus).toBe("failed");
+    expect(report.overallStatus).toBe("passed");
     expect(report.gates).toContainEqual(expect.objectContaining({
-      gateId: "ppt_design_package",
-      status: "failed",
-      reasonCode: "ppt_design_package_missing",
+      gateId: "ppt_design_candidate",
+      status: "passed",
     }));
+    expect(report.gates).not.toContainEqual(expect.objectContaining({ reasonCode: "ppt_design_package_missing" }));
   });
 
-  it("blocks persistence when routed PPT output misses the quality package", async () => {
+  it("keeps a candidate-only draft restricted to production design expansion", async () => {
+    const candidate = createPptDesignCandidateProjection(validR5CandidateInput()).candidate;
+    const result = await routeToolCall({
+      capabilityId: "ppt_design",
+      projectId: "project-ppt-candidate-scope",
+      userInstruction: "生成PPT设计候选",
+      approvedArtifacts: [{ nodeKey: "ppt_draft", title: "PPT大纲", summary: "已确认", markdown: "# PPT大纲" }],
+      runtime: {} as never,
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数", requestedOutputs: ["PPT设计候选"] },
+    }, {
+      internalExecutor: async ({ tool }): Promise<ToolExecutionResult> => ({
+        status: "succeeded",
+        toolId: tool.id,
+        capabilityId: "ppt_design",
+        artifactDraft: {
+          nodeKey: "ppt_design_draft",
+          kind: "ppt_design_draft",
+          title: "PPT设计候选",
+          summary: "候选语义完整。",
+          structuredContent: { generationMode: "model_generated", pptDesignCandidate: candidate },
+        },
+        assistantSummary: "已形成设计候选。",
+        budgetEvent: {
+          capabilityId: "ppt_design",
+          actionKey: "create_ppt_design_draft:ppt_design_draft",
+          status: "succeeded",
+          kind: "tool_succeeded",
+          createdAt: "2026-07-15T00:00:00.000Z",
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      validationReport: { overallStatus: "passed" },
+      artifactDraft: { structuredContent: { artifactQualityState: {
+        validationStatus: "passed",
+        reviewStatus: "passed",
+        downstreamEligibility: "blocked",
+        eligibleStages: ["production_design_expansion"],
+      } } },
+    });
+  });
+
+  it("blocks persistence when routed PPT output misses both candidate and production package", async () => {
     const result = await routeToolCall({
       capabilityId: "ppt_design",
       projectId: "project-ppt-post-gate",
@@ -257,8 +344,9 @@ describe("V1 Stage 2A runtime contracts", () => {
       validationReport: { overallStatus: "failed" },
     });
     expect(result.validationReport?.gates).toContainEqual(expect.objectContaining({
-      gateId: "ppt_design_package",
+      gateId: "ppt_design_candidate",
       status: "failed",
+      reasonCode: "ppt_design_candidate_missing",
     }));
   });
 
@@ -447,3 +535,52 @@ describe("V1 Stage 2A runtime contracts", () => {
     });
   });
 });
+
+function validR5CandidateInput(): PptDesignCandidateInput {
+  return {
+    schemaVersion: "ppt-design-candidate.v1",
+    taskBriefDigest: "b".repeat(64),
+    goalSummary: "五年级数学百分数公开课，用投篮命中率建立比较需求。",
+    brief: {
+      grade: "五年级",
+      subject: "数学",
+      topic: "百分数",
+      audience: "五年级学生",
+      useCase: "public_lesson",
+      targetSlideCount: 2,
+    },
+    evidenceBindings: [{
+      evidenceId: "evidence-outline",
+      sourceArtifactId: "artifact-outline",
+      sourceType: "teacher_material",
+      pageRefs: ["大纲第1-2页"],
+      claims: ["从投篮命中率比较进入百分数表达"],
+      digest: "a".repeat(64),
+    }],
+    objectives: [{ objectiveId: "objective-1", statement: "理解百分数表示比较关系", evidenceRefs: ["evidence-outline"] }],
+    narrative: {
+      openingTension: "两组命中数不同，不能直接判断谁更准。",
+      learningProgression: ["观察数据", "统一比较标准"],
+      closingResolution: "用百分数清楚说明命中水平。",
+    },
+    pagePlans: [
+      {
+        pageNumber: 1,
+        objectiveIds: ["objective-1"],
+        narrativeJob: "提出两组投篮数据能否直接比较的矛盾",
+        teachingAction: "引导学生说明仅看命中数为什么不公平",
+        takeawayTitle: "谁的投篮更准",
+        primaryVisualBrief: "两组投篮数据形成可观察的球场记分牌",
+      },
+      {
+        pageNumber: 2,
+        objectiveIds: ["objective-1"],
+        narrativeJob: "建立统一标准并形成百分数表达",
+        teachingAction: "组织学生把命中次数和投篮总数配对比较",
+        takeawayTitle: "统一标准才能公平比较",
+        primaryVisualBrief: "两块记分牌转化为统一百分比刻度",
+      },
+    ],
+    downstreamUse: "production_design_expansion",
+  };
+}

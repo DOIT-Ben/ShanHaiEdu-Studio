@@ -1,6 +1,7 @@
 import { getCapabilityDefinition } from "./capability-registry";
 import type { CapabilityAvailabilityEntry } from "./capability-availability";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan } from "./types";
+import { extractEducationGrade, extractEducationSubject, extractEducationTopic } from "@/server/education-context";
 
 export type CapabilityPlannerInput = {
   userMessage: string;
@@ -32,6 +33,7 @@ const fullDeliveryStepIds: CapabilityId[] = [
   "asset_image_generate",
   "video_segment_plan",
   "video_segment_generate",
+  "video_narration_generate",
   "concat_only_assemble",
   "final_package",
 ];
@@ -238,9 +240,9 @@ function wantsFullDelivery(text: string): boolean {
 
 function missingLessonInputs(text: string, projectContext: CapabilityPlannerInput["projectContext"]): string[] {
   const missing: string[] = [];
-  if (!projectContext?.grade && !/[一二三四五六1-6]年级/.test(text)) missing.push("grade");
-  if (!projectContext?.subject && !/数学|语文|英语|科学|道德与法治/.test(text)) missing.push("subject");
-  if (!projectContext?.topic && !/百分数|分数|小数|周长|面积|乘法|除法|课题/.test(text)) missing.push("topic");
+  if (!projectContext?.grade && !extractEducationGrade(text)) missing.push("grade");
+  if (!projectContext?.subject && !extractEducationSubject(text)) missing.push("subject");
+  if (!projectContext?.topic && !extractEducationTopic(text) && !/百分数|分数|小数|周长|面积|乘法|除法|课题/.test(text)) missing.push("topic");
   return missing;
 }
 

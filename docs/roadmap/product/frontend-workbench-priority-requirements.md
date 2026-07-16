@@ -1,0 +1,110 @@
+# 第一档：前端聊天式工作台待完成需求
+
+更新时间：2026-07-10
+
+状态：第一档规划；反馈中心之后优先收口。
+
+来源：M54-A 前端聊天式工作台深度规格、路线和测试计划。以下是现阶段仍未完整落地的需求，不等同于从零重做 UI。
+
+本文件保留教师可观察行为，不再定义第二套消息Runtime。V1只完成必要显示修复；V1.1的消息Part、真流式、活动、Tool状态、重试和恢复统一按`docs\archive\2026-07-16-authority-convergence\historical\docs\product\v1-1-assistant-ui-conversation-runtime-requirements.md`由assistant-ui实现。
+
+> 2026-07-13 版本决策：本文关于“右侧糖葫芦必须常驻”的口径只保留为 V1 历史需求。V1.5 由 RQ-037 和 `docs\roadmap\product\v1-5-artifact-workspace-requirements.md` 替代为“对话控制台 + 当前成果工作区 + 全部成果抽屉”；底层 Artifact 与质量状态继续保留。
+
+## 1. 已有基础
+
+- 聊天式三栏工作台已有基础：左侧项目、中间对话、右侧交付链。
+- 输入框已有 Enter 发送、Shift+Enter 换行、自适应高度基础。
+- 已有自动滚动、生成提示、快捷回复、消息 hover 操作、Logo、交付链和 Markdown 阅读基础。
+- 消息点赞/点踩已有按钮，但没有真实反馈保存。
+
+## 2. 第一档待完成项
+
+### 2.1 聊天式三栏工作台收口
+
+- 左侧项目、中间模型对话、右侧“糖葫芦”交付链必须同时可用。
+- 左右可压缩；窄屏改为抽屉或紧凑组件；右侧交付链不能消失。
+
+### 2.2 首次进入体验
+
+- ShanHaiEdu Logo、自然欢迎语、2-4 个高频备课任务。
+- 直接进入真实工作台，不增加营销首页。
+
+### 2.3 成熟输入框
+
+- Enter 发送、Shift+Enter 换行、自动增高、发送后清空、自动滚动。
+- 发送中防重复提交。
+
+### 2.4 材料上传
+
+- 支持 `.md`、`.txt`、`.pdf`、`.docx` 和图片。
+- 支持文件拖入与截图粘贴。
+- 显示待上传、上传中、待解析、解析失败、已解析等真实状态。
+- 当前实现只完整读取小型文本文件；PDF/DOCX/图片和粘贴截图仍未收口。
+
+### 2.5 模型与工具入口
+
+- 输入框提供模型模式、上传材料、截图等菜单。
+- 没有接通的能力隐藏或明确 disabled，不能伪装可用。
+
+### 2.6 AI 回复体验
+
+- 正在理解、整理材料、生成回复、保存成果等状态准确。
+- 最终接入真实流式回复；未接通前不能伪装 streaming。
+- V1.1由assistant-ui ExternalStoreRuntime消费项目自有MessagePart和AG-UI兼容事件；不得在`ChatTranscript`旁新增另一套长期自研流式状态。
+
+### 2.7 快捷下一步
+
+- 每次回复预测 2-3 个下一步操作。
+- 点击后填入输入框并聚焦，用户确认后再发送。
+
+### 2.8 普通聊天与业务任务分流
+
+- 普通问候只正常聊天。
+- 明确备课任务后才出现需求确认和产物生成流程。
+- 与自然语言确认/改道需求协同，不能强迫用户只点推荐按钮。
+- 助手承诺、quick reply、actionId 和后端可执行计划必须一致；不得承诺“回复一句即可”但实际只认按钮隐藏字段。
+- 用户对 quick reply 做任何编辑时，前端必须同时清除旧 actionId 和 selectedOfferId；语义是否等价由后端重新解析，前端不得自行恢复旧确认或旧分支选择。
+- 多分支下的“继续”必须触发具体消歧，不显示内部“有效确认”错误。
+- 详细要求见 `docs\roadmap\product\conversation-commitment-execution-consistency-requirements.md`。
+
+### 2.9 对话内成果组件
+
+- 产物以紧凑组件嵌入消息。
+- 支持展开 Markdown、打开右侧详情、复制、作为输入、确认和重做。
+
+### 2.10 消息操作和反馈
+
+- Hover/focus 显示复制、点赞、点踩、更多、展开。
+- 点赞/点踩与全局反馈入口统一进入真实反馈中心。
+- 反馈中心详细要求见 `docs\archive\2026-07-16-authority-convergence\historical\docs\product\beta-feedback-requirements.md`。
+
+### 2.11 左侧项目区
+
+- 搜索、折叠、新建和当前项目高亮必须可用。
+- 归档、删除、置顶等未接通功能隐藏，不保留假按钮。
+
+### 2.12 头像与品牌
+
+- 左下角头像菜单包含账号、设置、反馈、退出；未接通操作可 disabled。
+- Logo 用于欢迎态、助手头像和生成状态。
+
+### 2.13 响应式与性能
+
+- 右侧详情展开时中间区自适应缩小。
+- 边栏拖动跟手。
+- 窄屏改成抽屉或小组件，不遮挡输入和最新消息。
+
+## 3. 关联正式文档
+
+- `docs\archive\2026-07-16-authority-convergence\historical\docs\ui\frontend-workbench\local-real-mvp-m54a-frontend-workbench-deep-spec.md`
+- `docs\archive\2026-07-16-authority-convergence\historical\docs\ui\frontend-workbench\local-real-mvp-m54a-frontend-workbench-roadmap.md`
+- `docs\archive\2026-07-16-authority-convergence\historical\docs\ui\frontend-workbench\local-real-mvp-m54a-frontend-workbench-test-plan.md`
+
+## 4. 实施顺序
+
+1. 内测反馈中心。
+2. M68 普通聊天/业务任务分流、自然语言确认改道与对话承诺/执行一致性。
+3. 首次欢迎态、头像菜单与全局反馈入口。
+4. 附件拖放、图片粘贴、真实上传/解析状态。
+5. 模型/工具菜单与未接功能清理。
+6. 真实流式回复、响应式和最终浏览器验收。

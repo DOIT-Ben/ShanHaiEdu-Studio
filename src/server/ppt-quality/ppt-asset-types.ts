@@ -33,6 +33,16 @@ export type PptAssetProcessingOperation =
   | "alias"
   | "instance_copy";
 
+export type PptAssetFileEvidence = {
+  fileName: string;
+  storageRef: string;
+  sha256: string;
+  bytes: number;
+  width: number;
+  height: number;
+  mime: "image/png" | "image/jpeg" | "image/webp";
+};
+
 export type PptAssetManifestEntry = {
   assetId: string;
   assetKind: PptAssetKind;
@@ -54,6 +64,8 @@ export type PptAssetManifestEntry = {
   width: number;
   height: number;
   mime: "image/png" | "image/jpeg" | "image/webp";
+  rawAsset: PptAssetFileEvidence;
+  normalizedAsset: PptAssetFileEvidence;
   transparentBackground: boolean;
   placeholder: false;
   localSubjectDrawn: false;
@@ -136,7 +148,7 @@ export type PptKeySampleSet = {
 export type PptSampleApproval = {
   schemaVersion: "ppt-sample-approval.v1";
   decision: "approved";
-  decisionSource: "artifact_approve_action" | "explicit_teacher_message";
+  decisionSource: "artifact_approve_action" | "explicit_teacher_message" | "delivery_critic";
   decisionText: string;
   teacherMessageId: string | null;
   designPackageDigest: string;
@@ -177,6 +189,8 @@ export type PptGeneratedAsset = {
   providerRequestId: string | null;
   providerTaskId: string | null;
   sentReferenceAssetIds: string[];
+  rawAsset: PptAssetFileEvidence;
+  normalizedAsset: PptAssetFileEvidence;
   processingChain?: Array<{
     operation: PptAssetProcessingOperation;
     sourceSha256: string;

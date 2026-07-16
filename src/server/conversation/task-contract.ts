@@ -7,10 +7,6 @@ export const INTENT_GRANT_VERSION = "intent-grant.v1" as const;
 export const AGENT_EVENT_ENVELOPE_VERSION = "agent-event-envelope.v1" as const;
 export const PENDING_DECISION_VERSION = "pending-decision.v1" as const;
 
-export type MessagePart =
-  | { type: "text"; text: string }
-  | { type: "artifact_ref"; artifactId: string; version: number };
-
 export type TaskBrief = {
   schemaVersion: typeof TASK_BRIEF_VERSION;
   taskId: string;
@@ -88,17 +84,6 @@ export type PendingDecision = {
   maxCostCredits: number | null;
   maxExternalProviderCalls: number | null;
   expiresAt: string | null;
-};
-
-export type AgentEventEnvelope = {
-  schemaVersion: typeof AGENT_EVENT_ENVELOPE_VERSION;
-  eventId: string;
-  projectId: string;
-  taskId: string;
-  intentEpoch: number;
-  kind: "task_created" | "task_updated" | "tool_observed" | "decision_pending" | "task_failed";
-  occurredAt: string;
-  payload: Record<string, unknown>;
 };
 
 export function createTaskBrief(input: Omit<TaskBrief, "schemaVersion" | "digest">): TaskBrief {

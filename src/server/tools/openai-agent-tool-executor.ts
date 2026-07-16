@@ -4,6 +4,7 @@ import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 import { adaptPptDirectorOutputToDesignArtifact } from "@/server/ppt-quality/ppt-director-design-adapter";
+import { tryResolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
 import { prisma } from "@/server/db/client";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
@@ -242,12 +243,12 @@ function validateAgentToolOutput(
     adaptPptDirectorOutputToDesignArtifact({
       invocationId: envelope.invocationId,
       structuredOutput,
-      ...(envelope.approvedArtifactRefs.length > 0 ? {
-        approvedArtifactRefs: envelope.approvedArtifactRefs.map((ref) => ({
-          artifactId: ref.artifactId,
-          digest: ref.digest,
-        })),
-      } : {}),
+      approvedArtifactRefs: envelope.approvedArtifactRefs.map((ref) => ({
+        artifactId: ref.artifactId,
+        kind: ref.kind,
+        version: ref.version,
+        digest: ref.digest,
+      })),
     });
     return [];
   } catch (error) {
@@ -262,9 +263,10 @@ export function createAgentToolExecutorFromEnv(
 ): AgentToolExecutor<AgentToolInvocationEnvelope> | undefined {
   const channel = env.AGENT_TOOL_MODEL_CHANNEL?.trim().toLowerCase();
   if (channel === "deepseek") {
-    const credential = env.DEEPSEEK_API_KEY?.trim();
-    const baseURL = env.DEEPSEEK_BASE_URL?.trim();
-    const model = env.DEEPSEEK_MODEL?.trim();
+    const values = tryResolveProviderLedgerValueBag({ capability: "text_llm", ambientEnv: env });
+    const credential = values?.get("DEEPSEEK_API_KEY");
+    const baseURL = values?.get("DEEPSEEK_BASE_URL");
+    const model = values?.get("DEEPSEEK_MODEL");
     if (!credential || !baseURL || !model) return undefined;
     const client = new OpenAI({ apiKey: credential, baseURL, timeout: 180_000, maxRetries: 0 }) as unknown as OpenAIChatCompletionsClient;
     return createOpenAIChatCompletionsAgentToolExecutor({
@@ -323,7 +325,7 @@ function instructionsFor(definition: AgentToolDefinition, envelope: AgentToolInv
   ];
   if (definition.agentProfileId === "ppt_director") {
     common.push("你负责PPT叙事、视觉、逐页设计和页级返修规划；精确信息必须保留可编辑层。返回完整、连续、逐页的Director结果，每页必须包含可执行组合层和无障碍语义，不得用范围页、通用序号句、重复教学动作或占位场景压缩输出。 ");
-    common.push("evidence_bindings只能逐字使用approvedArtifacts中真实存在的id与digest；缺教材页码时可绑定已批准的教师材料并说明假设，不得编造教材证据。 ");
+    common.push("evidence_bindings只声明事实主张、引用位置和approvedArtifacts中存在的source_artifact_kind；不要输出Artifact id、version或digest，这些权威字段由服务端Invocation Envelope绑定。缺教材页码时可引用已批准的教师材料并说明假设，不得编造教材证据。 ");
     common.push("sample_plan必须选择3至4个真实page_id，至少覆盖两种layout_family，并且所选页面中至少一页的risk_level必须为high；required_risk_coverage必须同时包含narrative、layout、math、visual，每个样张页都要有对应rationale。 ");
     common.push("每个ai_scene、ai_assets、editable_text和editable_math条目都必须在同页composition.layers中有且只有一个source_id完全相同的放置层，layer_kind必须分别匹配AI_SCENE、AI_ASSET、EDITABLE_TEXT、EDITABLE_MATH；不得引用未声明source，不得漏放任何已声明source。 ");
     common.push("每一页的primary_visual_brief和ai_scene.brief都必须至少包含20个可见字符，具体写清对象、空间关系、注意焦点和为可编辑层预留的位置，不能用短标签代替。 ");

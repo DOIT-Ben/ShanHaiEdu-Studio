@@ -17,19 +17,19 @@ test("PromptComposer paperclip is wired to a real file input instead of a decora
 
 test("Workbench controller creates a project before sending the first prompt when none is selected", () => {
   const source = readFileSync(path.join(root, "src", "hooks", "useWorkbenchController.ts"), "utf8");
-  const sendPromptStart = source.indexOf("async function sendPrompt()");
-  const sendPromptEnd = source.indexOf("function showRecovery()", sendPromptStart);
-  const sendPromptSource = source.slice(sendPromptStart, sendPromptEnd);
+  const submitStart = source.indexOf("async function submitConversationMessage(");
+  const submitEnd = source.indexOf("async function sendPrompt()", submitStart);
+  const submitSource = source.slice(submitStart, submitEnd);
 
-  assert.doesNotMatch(sendPromptSource, /if \(!activeProjectId\) \{\s*flashComposerNotice\("请先选择或新建一个项目。"\);\s*return;\s*\}/);
-  assert.match(sendPromptSource, /let targetProjectId = activeProjectId;/);
-  assert.match(sendPromptSource, /dataSource\.createProject\(\)/);
-  assert.match(sendPromptSource, /const sendOptions: WorkbenchSendMessageOptions = \{/);
-  assert.match(sendPromptSource, /const messageSignature = buildClientMessageSignature\(targetProjectId, body, reference, confirmationActionId, xiaokuResponseStyle\)/);
-  assert.match(sendPromptSource, /idempotencyKey: getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
-  assert.match(sendPromptSource, /confirmedActionId: confirmationActionId/);
-  assert.match(sendPromptSource, /responseStyle: xiaokuResponseStyle/);
-  assert.match(sendPromptSource, /dataSource\.sendMessage\(targetProjectId, body, reference, sendOptions\)/);
+  assert.doesNotMatch(submitSource, /if \(!activeProjectId\) \{\s*flashComposerNotice\("请先选择或新建一个项目。"\);\s*return;\s*\}/);
+  assert.match(submitSource, /let targetProjectId = activeProjectId;/);
+  assert.match(submitSource, /dataSource\.createProject\(\)/);
+  assert.match(submitSource, /const sendOptions: WorkbenchSendMessageOptions = \{/);
+  assert.match(submitSource, /const messageSignature = buildClientMessageSignature\(targetProjectId, body, submittedReference, confirmationActionId, xiaokuResponseStyle, artifactRefs\)/);
+  assert.match(submitSource, /idempotencyKey: getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
+  assert.match(submitSource, /confirmedActionId: confirmationActionId/);
+  assert.match(submitSource, /responseStyle: xiaokuResponseStyle/);
+  assert.match(submitSource, /dataSource\.submitConversationMessage\(targetProjectId, \{/);
 });
 
 test("Workbench quick replies preserve pending HumanGate action ids until send", () => {

@@ -37,6 +37,7 @@ const groupByKind: Record<ArtifactKind, ArtifactCapabilityGroupId> = {
   storyboard_generate: "video",
   video_segment_plan: "video",
   video_segment_generate: "video",
+  video_narration_generate: "video",
   concat_only_assemble: "video",
   final_delivery: "delivery",
   final_delivery_checklist: "delivery",

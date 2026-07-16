@@ -8,6 +8,7 @@ export function projectMainAgentRequestContext(context: ConversationContext | un
     contextPackage,
     agentWorldState: context?.agentWorldState ?? null,
     capabilityAvailability: context?.capabilityAvailability ?? [],
+    semanticSnapshot: context?.semanticSnapshot ?? null,
     conversationControl: {
       pendingDeliveryPlan: context?.pendingDeliveryPlan ?? null,
     },

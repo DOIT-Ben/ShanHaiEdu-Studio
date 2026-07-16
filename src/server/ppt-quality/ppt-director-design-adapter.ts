@@ -2,14 +2,14 @@ import type { SaveArtifactDraft } from "@/server/capabilities/types";
 import { validateJsonSchemaValue } from "@/server/tools/json-schema-value-validator";
 import { createPptDirectorOutputSchema } from "@/server/tools/ppt-director-contract";
 import { validatePptDesignPackage } from "./ppt-design-validator";
-import type { PptDesignPackage, PptPageSpec } from "./ppt-quality-types";
+import type { EvidenceBinding, PptDesignPackage, PptPageSpec } from "./ppt-quality-types";
 
 export type PptDirectorPlanBinding = {
   invocationId: string;
   projectId: string;
   intentEpoch: number;
   structuredOutput: Record<string, unknown>;
-  approvedArtifactRefs: Array<{ artifactId: string; kind: string; digest: string }>;
+  approvedArtifactRefs: Array<{ artifactId: string; kind: string; version: number; digest: string }>;
 };
 
 type DirectorOutput = ReturnType<typeof asDirectorOutput>;
@@ -17,7 +17,7 @@ type DirectorOutput = ReturnType<typeof asDirectorOutput>;
 export function adaptPptDirectorOutputToDesignArtifact(input: {
   invocationId: string;
   structuredOutput: Record<string, unknown>;
-  approvedArtifactRefs?: Array<{ artifactId: string; digest: string }>;
+  approvedArtifactRefs: Array<{ artifactId: string; kind: string; version: number; digest: string }>;
 }): SaveArtifactDraft {
   const validation = validateJsonSchemaValue(input.structuredOutput, createPptDirectorOutputSchema());
   if (!validation.valid) {
@@ -27,7 +27,7 @@ export function adaptPptDirectorOutputToDesignArtifact(input: {
   if (output.decision !== "plan" && output.decision !== "repair") {
     throw new Error(`ppt_director_not_actionable:${output.decision}`);
   }
-  if (input.approvedArtifactRefs) assertEvidenceBindings(output, input.approvedArtifactRefs);
+  const boundEvidence = bindEvidenceAuthority(output, input.approvedArtifactRefs);
   if (
     !output.self_check.all_objectives_covered ||
     !output.self_check.page_numbers_continuous ||
@@ -38,7 +38,7 @@ export function adaptPptDirectorOutputToDesignArtifact(input: {
   }
 
   assertObjectiveCoverage(output);
-  const designPackage = toPptDesignPackage(output);
+  const designPackage = toPptDesignPackage(output, boundEvidence);
   const structural = validatePptDesignPackage(designPackage);
   if (!structural.valid) {
     throw new Error(structural.issues.map((issue) => issue.code).join(","));
@@ -60,18 +60,32 @@ export function adaptPptDirectorOutputToDesignArtifact(input: {
   };
 }
 
-function assertEvidenceBindings(
+function bindEvidenceAuthority(
   output: DirectorOutput,
-  approvedArtifactRefs: Array<{ artifactId: string; digest: string }>,
-): void {
-  const approvedById = new Map(approvedArtifactRefs.map((ref) => [ref.artifactId, ref.digest]));
-  if (approvedById.size === 0 || output.evidence_bindings.some((binding) =>
-    approvedById.get(binding.source_artifact_id) !== binding.digest)) {
-    throw new Error("ppt_director_evidence_binding_invalid");
-  }
+  approvedArtifactRefs: Array<{ artifactId: string; kind: string; version: number; digest: string }>,
+): EvidenceBinding[] {
+  return output.evidence_bindings.map((binding) => {
+    const matches = approvedArtifactRefs.filter((ref) => ref.kind === binding.source_artifact_kind);
+    if (matches.length !== 1) throw new Error("ppt_director_evidence_binding_invalid");
+    const authority = matches[0];
+    if (
+      !authority.artifactId.trim() ||
+      !Number.isInteger(authority.version) || authority.version < 1 ||
+      !/^[a-f0-9]{64}$/i.test(authority.digest)
+    ) throw new Error("ppt_director_evidence_binding_invalid");
+    return {
+      evidenceId: binding.evidence_id,
+      sourceArtifactId: authority.artifactId,
+      sourceArtifactVersion: authority.version,
+      sourceType: binding.source_type,
+      pageRefs: binding.page_refs,
+      claims: binding.claims,
+      digest: authority.digest.toLowerCase(),
+    };
+  });
 }
 
-function toPptDesignPackage(output: DirectorOutput): PptDesignPackage {
+function toPptDesignPackage(output: DirectorOutput, boundEvidence: EvidenceBinding[]): PptDesignPackage {
   const rationaleByPage = Object.fromEntries(
     output.sample_plan.rationales.map((entry) => [entry.page_id, entry.rationale]),
   );
@@ -88,14 +102,7 @@ function toPptDesignPackage(output: DirectorOutput): PptDesignPackage {
       objectiveIds: output.presentation_brief.objective_ids,
       evidenceRefs: output.presentation_brief.evidence_refs,
     },
-    evidenceBindings: output.evidence_bindings.map((entry) => ({
-      evidenceId: entry.evidence_id,
-      sourceArtifactId: entry.source_artifact_id,
-      sourceType: entry.source_type,
-      pageRefs: entry.page_refs,
-      claims: entry.claims,
-      digest: entry.digest,
-    })),
+    evidenceBindings: boundEvidence,
     objectives: output.learning_objectives.map((entry) => ({
       objectiveId: entry.objective_id,
       statement: entry.statement,
@@ -241,9 +248,9 @@ function asDirectorOutput(value: Record<string, unknown>) {
       target_slide_count: number; objective_ids: string[]; evidence_refs: string[];
     };
     evidence_bindings: Array<{
-      evidence_id: string; source_artifact_id: string;
+      evidence_id: string; source_artifact_kind: string;
       source_type: "textbook" | "curriculum_standard" | "teacher_material";
-      page_refs: string[]; claims: string[]; digest: string;
+      page_refs: string[]; claims: string[];
     }>;
     learning_objectives: Array<{ objective_id: string; statement: string; evidence_refs: string[] }>;
     deck_narrative: {
