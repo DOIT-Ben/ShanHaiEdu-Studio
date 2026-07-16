@@ -7,7 +7,7 @@ import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentTurn } fr
 import { buildAgentHarnessBudgetEvent, countSubmittedExternalProviderCalls, evaluateAgentHarnessBudget, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { buildConversationContextPackage, contextPackageToMainAgentConversationContext } from "@/server/conversation/conversation-context-builder";
-import { normalizeExecutionPolicy, resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
+import { isBoundActionConfirmation, normalizeExecutionPolicy, resolveConversationControl } from "@/server/conversation/conversation-control-resolver";
 import {
   appendAgentObservationMetadata,
   appendRunCheckpointMetadata,
@@ -71,6 +71,7 @@ import { buildSemanticContextSnapshot, type SemanticContextSnapshot } from "./co
 import { findRemainingRequestedOutputs } from "./task-completion-contract";
 import { collectPersistentTeacherActivityParts } from "@/lib/teacher-agent-events";
 import { answerDialogueCheckpoint, isDialogueCheckpoint, type DialogueCheckpoint } from "./dialogue-checkpoint";
+import { rebindMainAgentReActCheckpointAuthorization, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 type ControlPlaneStore = ReturnType<typeof createControlPlaneStore>;
@@ -392,6 +393,7 @@ async function executeTeacherMessageTurn(input: {
 }): Promise<MessageTurnResponse> {
   const teacherContent = input.teacherContent;
   const reference = input.reference;
+  const submittedActionId = input.confirmedActionId?.trim() || undefined;
 
   const storedProject = await input.service.getProject(input.projectId);
   let project = input.generationIntensityOverride
@@ -406,6 +408,15 @@ async function executeTeacherMessageTurn(input: {
       })
     : undefined;
   const activePlans = findActiveDeliveryPlans(messages);
+  const confirmedActionId = boundConfirmedActionId(teacherContent, submittedActionId, activePlans);
+  const controlConfirmedActionId = submittedActionId && !activePlans.some((plan) => plan.actionId === submittedActionId)
+    ? submittedActionId
+    : confirmedActionId;
+  const editedPendingAction = Boolean(
+    submittedActionId &&
+    !confirmedActionId &&
+    activePlans.some((plan) => plan.actionId === submittedActionId),
+  );
   let progressTaskBrief = queuedTaskBrief;
   const onProgress = createMainAgentProgressWriter({
     projectId: input.projectId,
@@ -416,6 +427,23 @@ async function executeTeacherMessageTurn(input: {
   });
   const previousIntentEpoch = project.intentEpoch ?? 0;
   const previousTaskBrief = findTaskBriefForIntent(messages, project.id, previousIntentEpoch);
+  if (editedPendingAction) {
+    return commitPreAgentControlTurn({
+      service: input.service,
+      project,
+      messages,
+      activePlans,
+      triggerMessage: input.triggerMessage,
+      control: {
+        kind: "redirect",
+        reasonCode: "teacher_requested_redirect",
+        advanceIntentEpoch: true,
+        userMessage: teacherContent,
+      },
+      previousTaskBrief,
+      controlPlaneStore: input.controlPlaneStore,
+    });
+  }
   const preAgentControl = queuedTaskBrief ? undefined : resolvePreAgentControl(teacherContent, {
     hasActiveTask: Boolean(previousTaskBrief),
     hasPendingPlan: activePlans.length > 0,
@@ -477,7 +505,7 @@ async function executeTeacherMessageTurn(input: {
       controlPlaneStore: input.controlPlaneStore,
     });
   }
-  const pendingTaskContext = resolveActiveDeliveryPlan(activePlans, input.confirmedActionId);
+  const pendingTaskContext = resolveActiveDeliveryPlan(activePlans, confirmedActionId);
   const taskBrief = taskIntake.taskBrief ?? pendingTaskContext?.taskBrief;
   progressTaskBrief = taskBrief;
   let intentGrant = taskBrief
@@ -486,6 +514,13 @@ async function executeTeacherMessageTurn(input: {
         taskBrief,
       )
     : undefined;
+  const confirmedPendingDecision = pendingTaskContext && pendingTaskContext.actionId === confirmedActionId &&
+    pendingTaskContext.pendingDecision?.status === "pending"
+    ? pendingTaskContext.pendingDecision
+    : undefined;
+  if (taskBrief && intentGrant && confirmedPendingDecision) {
+    intentGrant = applyConfirmedPendingDecision(intentGrant, taskBrief, confirmedPendingDecision);
+  }
   let taskAggregate: Awaited<ReturnType<ControlPlaneStore["getTaskAggregate"]>> = null;
   let taskEventSequence = 0;
   if (taskBrief) {
@@ -553,6 +588,9 @@ async function executeTeacherMessageTurn(input: {
     });
     const triggerMessageIndex = messages.findIndex((message) => message.id === input.triggerMessage.id);
     if (triggerMessageIndex >= 0) messages[triggerMessageIndex] = input.triggerMessage;
+    if (input.enableNativeToolControlPlane === true && confirmedPendingDecision && pendingTaskContext) {
+      await updatePendingPlanStatus(input.service, input.projectId, pendingTaskContext, "confirmed");
+    }
   }
   const workflowNodes = await input.service.getNodes(input.projectId);
   const artifacts = await input.service.getArtifacts(input.projectId);
@@ -562,7 +600,9 @@ async function executeTeacherMessageTurn(input: {
     .filter((artifact) => isArtifactTrustedForDownstream(artifact) && (!taskBrief || isArtifactBoundToTask(artifact, taskBrief)))
     .map((artifact) => artifact.kind);
 
-  const pendingPlan = resolveActiveDeliveryPlan(activePlans, input.confirmedActionId);
+  const pendingPlan = input.enableNativeToolControlPlane === true && confirmedPendingDecision
+    ? null
+    : resolveActiveDeliveryPlan(activePlans, confirmedActionId);
   const toolObservations = readActiveToolObservationsFromMessages(messages);
   const agentObservations = readAgentObservationsForCurrentIntent(messages, project.intentEpoch ?? 0);
   const agentToolReports = readAgentToolReportsFromMessages(messages);
@@ -614,7 +654,7 @@ async function executeTeacherMessageTurn(input: {
     providerAvailability: resolveRuntimeProviderAvailability(),
     taskBrief,
   });
-  if (activePlans.length > 1 && !input.confirmedActionId && isGenericContinuationRequest(teacherContent)) {
+  if (activePlans.length > 1 && !confirmedActionId && isGenericContinuationRequest(teacherContent)) {
     const labels = activePlans.slice(0, 3).map((plan) => getCapabilityDefinition(plan.toolPlan.capabilityId).userLabel);
     const content = `当前有多个待处理方向：${labels.join("、")}。你想继续哪一个？`;
     const assistantMessage = await input.service.addMessage(input.projectId, {
@@ -656,6 +696,17 @@ async function executeTeacherMessageTurn(input: {
   });
 
   const nativeToolControlPlaneOwnsTurn = input.enableNativeToolControlPlane === true;
+  const resumeCheckpoint = taskAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1" &&
+    (taskBrief?.sourceMessageId === input.triggerMessage.id || Boolean(answeredDialogueCheckpoint) || Boolean(confirmedPendingDecision))
+    ? confirmedPendingDecision && intentGrant
+      ? rebindMainAgentReActCheckpointAuthorization(taskAggregate.checkpoint as MainAgentReActCheckpoint, {
+          standardWorkAuthorized: intentGrant.standardWorkAuthorized,
+          budgetPolicyVersion: intentGrant.budgetPolicyVersion,
+          maxCostCredits: intentGrant.maxCostCredits,
+          maxExternalProviderCalls: intentGrant.maxExternalProviderCalls,
+        })
+      : taskAggregate.checkpoint
+    : undefined;
   const nativeToolLoop = nativeToolControlPlaneOwnsTurn && taskBrief ? createMainAgentToolLoopOptions({
     service: input.service,
     runtime: input.runtime,
@@ -669,10 +720,7 @@ async function executeTeacherMessageTurn(input: {
     taskBrief,
     externalProviderCallsUsed,
     planRevision: taskAggregate?.plan.revision,
-    resumeCheckpoint: taskAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1" &&
-      (taskBrief?.sourceMessageId === input.triggerMessage.id || Boolean(answeredDialogueCheckpoint))
-      ? taskAggregate.checkpoint
-      : undefined,
+    resumeCheckpoint,
     controlPlaneStore: input.controlPlaneStore,
     businessSkillRuntime: input.businessSkillRuntime,
     businessSkillRuntimeMode: input.businessSkillRuntimeMode,
@@ -702,7 +750,7 @@ async function executeTeacherMessageTurn(input: {
   const controlResolution = resolveConversationControl({
     userMessage: teacherContent,
     pendingPlan,
-    receivedConfirmedActionId: input.confirmedActionId,
+    receivedConfirmedActionId: controlConfirmedActionId,
     receivedActorUserId: resolveConversationActorUserId(input.service, input.projectId, input.executionIdentity),
     agentTurn: rawAgentTurn,
     capabilityAvailability,
@@ -778,7 +826,7 @@ async function executeTeacherMessageTurn(input: {
       }
     }
   }
-  const effectiveConfirmedActionId = input.confirmedActionId
+  const effectiveConfirmedActionId = confirmedActionId
     ?? (controlResolution.decision.usePendingActionId ? pendingPlan?.actionId : undefined);
   const confirmedBudgetDecision = pendingPlan?.actionId === effectiveConfirmedActionId &&
     (pendingPlan?.pendingDecision?.kind === "budget_disclosure" || pendingPlan?.pendingDecision?.kind === "budget_upgrade")
@@ -966,6 +1014,7 @@ async function executeTeacherMessageTurn(input: {
     await input.controlPlaneStore.listEvents(input.projectId),
     `turn:${input.triggerMessage.id}`,
   );
+  const persistedNativePendingPlan = parsePendingDeliveryPlanMetadata(input.triggerMessage.metadata.pendingDeliveryPlan);
   const assistantMetadata = mergeMessageMetadata(
       createPendingDeliveryPlanMetadata(
         agentTurn,
@@ -973,7 +1022,7 @@ async function executeTeacherMessageTurn(input: {
         taskBrief,
         intentGrant,
         externalProviderCallsUsed,
-      ),
+      ) ?? (persistedNativePendingPlan ? { pendingDeliveryPlan: persistedNativePendingPlan } : undefined),
     createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
     runtimeFailureMetadata,
     { conversationControlDecision: controlResolution.decision },
@@ -1355,24 +1404,22 @@ async function commitPreAgentControlTurn(input: {
   }
 
   if (input.control.kind === "redirect") {
-    if (!input.replacementProposal) {
-      throw new Error("A Main Agent redirect decision requires a replacement TaskBrief proposal.");
-    }
-    const projectConstraints = [input.project.grade, input.project.subject, input.project.lessonTopic]
-      .filter((value): value is string => Boolean(value?.trim()))
-      .map((value) => value.trim());
-    const nextTaskBrief = createTaskBriefFromProposal({
-      proposal: {
-        ...input.replacementProposal,
-        goal: input.control.userMessage.trim(),
-        constraints: [...new Set([...input.replacementProposal.constraints, ...projectConstraints])],
-      },
-      taskId: `task:${input.triggerMessage.id}`,
-      projectId: input.project.id,
-      intentEpoch: nextIntentEpoch,
-      generationIntensity: input.project.generationIntensity ?? "standard",
-      sourceMessageId: input.triggerMessage.id,
-    });
+    if (input.replacementProposal) {
+      const projectConstraints = [input.project.grade, input.project.subject, input.project.lessonTopic]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map((value) => value.trim());
+      const nextTaskBrief = createTaskBriefFromProposal({
+        proposal: {
+          ...input.replacementProposal,
+          goal: input.control.userMessage.trim(),
+          constraints: [...new Set([...input.replacementProposal.constraints, ...projectConstraints])],
+        },
+        taskId: `task:${input.triggerMessage.id}`,
+        projectId: input.project.id,
+        intentEpoch: nextIntentEpoch,
+        generationIntensity: input.project.generationIntensity ?? "standard",
+        sourceMessageId: input.triggerMessage.id,
+      });
       const nextIntentGrant = createStandardIntentGrant(nextTaskBrief);
       metadata = {
         ...triggerMessage.metadata,
@@ -1410,6 +1457,7 @@ async function commitPreAgentControlTurn(input: {
           taskBriefDigest: nextTaskBrief.digest,
         },
       });
+    }
   }
 
   const content = controlAcknowledgement(input.control.kind);
@@ -3364,6 +3412,35 @@ function findCurrentIntentBoundary(messages: ConversationMessageRecord[], intent
 
 function countExternalProviderCalls(events: ReturnType<typeof readAgentHarnessBudgetEventsFromMessages>) {
   return countSubmittedExternalProviderCalls(events);
+}
+
+function boundConfirmedActionId(
+  teacherContent: string,
+  confirmedActionId: string | undefined,
+  plans: PendingDeliveryPlanSnapshot[],
+) {
+  const actionId = confirmedActionId?.trim();
+  if (!actionId) return undefined;
+  const plan = plans.find((candidate) => candidate.actionId === actionId);
+  return plan && isBoundActionConfirmation(teacherContent, plan) ? actionId : undefined;
+}
+
+function applyConfirmedPendingDecision(grant: IntentGrant, taskBrief: TaskBrief, decision: PendingDecision): IntentGrant {
+  if (decision.kind === "authorization") {
+    return ensureStandardTaskBudgetDisclosure({ ...grant, standardWorkAuthorized: true }, taskBrief);
+  }
+  if (decision.kind === "budget_disclosure") {
+    return discloseStandardTaskBudget(grant, taskBrief);
+  }
+  if (decision.kind === "budget_upgrade") {
+    return {
+      ...grant,
+      budgetPolicyVersion: decision.budgetPolicyVersion,
+      maxCostCredits: decision.maxCostCredits,
+      maxExternalProviderCalls: decision.maxExternalProviderCalls,
+    };
+  }
+  return grant;
 }
 
 function isGenericContinuationRequest(text: string) {

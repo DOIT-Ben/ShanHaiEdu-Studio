@@ -1493,7 +1493,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const pausedPlanMessage = messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
 
     expect(paused.agentTurn).toMatchObject({ state: "chatting", shouldRunToolNow: false });
-    expect((await service.getProject(project.id)).intentEpoch).toBe(project.intentEpoch ?? 0);
+    expect((await service.getProject(project.id)).intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
     expect(pendingDeliveryPlanOf(pausedPlanMessage).status).toBe("paused");
     expect(readLatestRunCheckpointFromMessages(messages)).toMatchObject({ reason: "teacher_requested_pause", status: "paused" });
 

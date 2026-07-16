@@ -37,6 +37,15 @@
 
 ### 阶段A：控制与授权
 
+状态：**GO（局部）**。红证据为首次定向运行`58/65`、7项失败；实现中间态为`61/65`、4项失败。绿证据使用隔离库`.tmp/stage-a-precommit-3.db`、单worker，于2026-07-17执行：
+
+- 11个阶段A及直接依赖Vitest文件：`167/167`。
+- assistant-ui与composer Node合同：`11/11`。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过（仅Git行尾转换提示）。
+
+问题级证据：RMD-P1-01覆盖PendingDecision/actionId、blocked invocation、语义快照与授权checkpoint重绑定；RMD-P1-02覆盖pause/cancel/redirect事务抢先、epoch/revision推进及真实在途迟到结果零提升；RMD-P1-06覆盖原样确认、编辑、action不匹配、输入/附件/引用/项目变化；RMD-P2-05覆盖持久grant不一致时Tool router、executor和Provider路径不进入。
+
 - HumanGate checkpoint/PendingDecision/action恢复集成测试。
 - 消息入口在in-flight turn期间的抢先控制测试。
 - quick reply编辑合同测试。

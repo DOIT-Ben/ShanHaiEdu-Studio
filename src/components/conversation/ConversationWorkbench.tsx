@@ -118,6 +118,7 @@ export function ConversationWorkbench({
         onClearReference={onClearReference}
         onAttachFile={onAttachFile}
         onAttachFileError={onAttachFileError}
+        onComposerInputChange={onInputChange}
         onSelectAction={onQuickReplySelect ?? onInputChange}
         onRecoverCheckpoint={onRecoverCheckpoint}
         onOpenArtifact={onOpenArtifact}

@@ -21,6 +21,7 @@ export async function commitPreAgentControl<TAgentResult>(input: {
   const control = resolvePreAgentControl(input.userMessage, {
     hasActiveTask: input.hasActiveTask,
     hasPendingPlan: input.hasPendingPlan,
+    allowRedirect: true,
   });
   if (control) {
     await input.persist(control);
@@ -32,16 +33,19 @@ export async function commitPreAgentControl<TAgentResult>(input: {
 
 export function resolvePreAgentControl(
   userMessage: string,
-  state: { hasActiveTask: boolean; hasPendingPlan: boolean },
+  state: { hasActiveTask: boolean; hasPendingPlan: boolean; allowRedirect?: boolean },
 ): PreAgentControlDecision | undefined {
   const message = userMessage.trim();
   if (!message || (!state.hasActiveTask && !state.hasPendingPlan)) return undefined;
 
   if (isExplicitPause(message)) {
-    return decision("pause", "teacher_requested_pause", false, message);
+    return decision("pause", "teacher_requested_pause", true, message);
   }
   if (isExplicitCancel(message)) {
     return decision("cancel", "teacher_requested_cancel", true, message);
+  }
+  if (state.allowRedirect && isExplicitRedirect(message)) {
+    return decision("redirect", "teacher_requested_redirect", true, message);
   }
   return undefined;
 }
@@ -56,6 +60,12 @@ function isExplicitCancel(message: string): boolean {
   const normalized = compact(message);
   return /^(?:请)?(?:先)?(?:取消|终止|停止)(?:这次|当前|刚才|这个)?(?:任务|计划|操作|这一步)?(?:，?(?:先|暂时)?不(?:要)?(?:继续|做)(?:了)?)?$/.test(normalized)
     || /^(?:不做了|算了)$/.test(normalized);
+}
+
+function isExplicitRedirect(message: string): boolean {
+  const normalized = compact(message);
+  return /^(?:请)?(?:改道|改成|改为|转为|切换到)[，,:：]?(?:只|仅)?(?:做|生成|整理|制作)?.+/.test(normalized)
+    && !/^(?:如果|是否|要不要|能不能|可不可以|为什么)/.test(normalized);
 }
 
 function compact(message: string): string {

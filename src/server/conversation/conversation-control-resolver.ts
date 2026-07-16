@@ -35,6 +35,15 @@ export type ConversationControlPendingPlan = {
   pendingDecision?: PendingDecision;
 };
 
+export function isBoundActionConfirmation(text: string, plan: ConversationControlPendingPlan): boolean {
+  const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
+  if (isExplicitConfirmation(text, plan.toolPlan.capabilityId) || isContinuationSelection(text) || isTaskControlConfirmation(text)) {
+    return true;
+  }
+  if (/^确认开始[,，]?.*按.*计划.*推进$/.test(normalized)) return true;
+  return Boolean(plan.pendingDecision) && /^(?:确认|同意).*(?:授权|预算|升级|生成|执行)/.test(normalized);
+}
+
 export function resolveConversationControl(input: {
   userMessage: string;
   pendingPlan: ConversationControlPendingPlan | null;
@@ -181,7 +190,8 @@ export function resolveConversationControl(input: {
     };
   }
 
-  if (input.pendingPlan && input.receivedConfirmedActionId === input.pendingPlan.actionId) {
+  if (input.pendingPlan && input.receivedConfirmedActionId === input.pendingPlan.actionId &&
+      isBoundActionConfirmation(input.userMessage, input.pendingPlan)) {
     return {
       decision: {
         kind: "confirm_active_offer",
@@ -307,14 +317,17 @@ function isExecutionReadyState(state: MainAgentTurn["state"]) {
 
 function isExplicitConfirmation(text: string, capabilityId?: CapabilityId): boolean {
   const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
-  if (/^(确认开始|确认执行|就按这个做|按这个做|开始生成|确认生成|确认并开始)$/.test(normalized)) return true;
-  if (!capabilityId || !/确认|开始|生成|执行/.test(normalized)) return false;
+  if (/^(确认开始|确认执行|就按这个做|按这个做|开始生成|确认生成|确认并开始|开始|继续|继续同一步)$/.test(normalized)) return true;
+  if (!capabilityId || !/确认|开始|生成|执行|继续/.test(normalized)) return false;
   const capabilityTerms: Partial<Record<CapabilityId, RegExp>> = {
     requirement_spec: /需求/,
     lesson_plan: /教案|教学设计/,
     ppt_outline: /PPT|课件|大纲/i,
     ppt_design: /PPT|课件|设计稿/i,
     coze_ppt: /PPT|PPTX|课件/i,
+    image_asset: /图片|图像|视觉图|插图|素材/,
+    ppt_sample_assets: /PPT|课件|样张|图片|素材/i,
+    ppt_full_assets: /PPT|课件|图片|素材/i,
     video_script_generate: /视频脚本|导入脚本/,
     storyboard_generate: /分镜/,
     video_segment_generate: /视频|片段/,

@@ -4,6 +4,7 @@ import {
   buildMainAgentReActContinuationItems,
   createMainAgentReActCheckpoint,
   MAIN_AGENT_REACT_CHECKPOINT_VERSION,
+  rebindMainAgentReActCheckpointAuthorization,
   type MainAgentReActRoundRecord,
 } from "@/server/conversation/main-agent-react-checkpoint";
 
@@ -126,5 +127,50 @@ describe("Main Agent ReAct checkpoint", () => {
     expect(items[3]).toMatchObject({ type: "function_call_output", call_id: "call-1" });
     expect(String(items[3].output)).toContain(checkpoint.checkpointDigest);
     expect(String(items[3].output)).not.toContain("artifact-draft-content");
+  });
+
+  it("rebinds HumanGate authorization without changing task identity or completed rounds", () => {
+    const checkpoint = createMainAgentReActCheckpoint({
+      request,
+      seed: {
+        projectId: "project-1",
+        taskId: "task-1",
+        taskBriefDigest: "a".repeat(64),
+        intentEpoch: 2,
+        planRevision: 4,
+        generationIntensity: "standard",
+        authorization: {
+          standardWorkAuthorized: false,
+          budgetPolicyVersion: "budget-v1",
+          maxCostCredits: null,
+          maxExternalProviderCalls: 1,
+        },
+      },
+      records: [{
+        round: 1,
+        toolName: "create_requirement_spec",
+        callDigest: "digest-1",
+        observation: { observationId: "observation-1", status: "blocked", reasonCodes: ["missing_grant"] },
+      }],
+      currentToolNames: ["create_requirement_spec"],
+    });
+
+    const rebound = rebindMainAgentReActCheckpointAuthorization(checkpoint, {
+      standardWorkAuthorized: true,
+      budgetPolicyVersion: "budget-v1",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 1,
+    });
+
+    expect(rebound.task).toMatchObject({
+      projectId: checkpoint.task.projectId,
+      taskId: checkpoint.task.taskId,
+      taskBriefDigest: checkpoint.task.taskBriefDigest,
+      intentEpoch: checkpoint.task.intentEpoch,
+      planRevision: checkpoint.task.planRevision,
+      authorization: { standardWorkAuthorized: true },
+    });
+    expect(rebound.completedRounds).toEqual(checkpoint.completedRounds);
+    expect(rebound.checkpointDigest).not.toBe(checkpoint.checkpointDigest);
   });
 });

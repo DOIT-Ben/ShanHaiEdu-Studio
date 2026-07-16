@@ -158,6 +158,21 @@ export function restoreMainAgentReActCheckpoint(checkpoint: MainAgentReActCheckp
   return structuredClone(checkpoint);
 }
 
+export function rebindMainAgentReActCheckpointAuthorization(
+  checkpoint: MainAgentReActCheckpoint,
+  authorization: MainAgentReActCheckpointSeed["authorization"],
+): MainAgentReActCheckpoint {
+  const restored = restoreMainAgentReActCheckpoint(checkpoint);
+  const task = { ...restored.task, authorization: structuredClone(authorization) };
+  return withCheckpointDigest({
+    ...restored,
+    task,
+    baseContextDigest: restored.baseContextScope === "task_identity"
+      ? taskIdentityDigest(task)
+      : restored.baseContextDigest,
+  });
+}
+
 export function buildMainAgentReActResumeItems(input: {
   request: GptProtocolRequest;
   checkpoint: MainAgentReActCheckpoint;

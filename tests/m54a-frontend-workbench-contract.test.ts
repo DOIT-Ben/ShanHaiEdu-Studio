@@ -10,7 +10,11 @@ import {
   normalizeAttachmentStatus,
   normalizeQuickReplies,
 } from "@/components/conversation/composer/composer-contracts";
-import { buildClientMessageSignature, getRetrySafeMessageIdempotencyKey } from "@/hooks/useWorkbenchController";
+import {
+  buildClientMessageSignature,
+  getRetrySafeMessageIdempotencyKey,
+  resolveBoundConfirmationActionId,
+} from "@/hooks/useWorkbenchController";
 
 describe("M54-A frontend workbench contracts", () => {
   it("plans textarea height with a stable max threshold", () => {
@@ -134,5 +138,21 @@ describe("M54-A frontend workbench contracts", () => {
 
     expect(retryKey).toBe(firstKey);
     expect(changedKey).not.toBe(firstKey);
+  });
+
+  it("keeps a HumanGate action only for the unchanged bound quick reply", () => {
+    const bound = {
+      submittedActionId: "action-1",
+      pendingActionId: "action-1",
+      boundBody: "确认开始",
+    };
+
+    expect(resolveBoundConfirmationActionId({ ...bound, submittedBody: "确认开始" })).toBe("action-1");
+    expect(resolveBoundConfirmationActionId({ ...bound, submittedBody: "确认开始吧" })).toBeNull();
+    expect(resolveBoundConfirmationActionId({
+      ...bound,
+      submittedActionId: "action-stale",
+      submittedBody: "确认开始",
+    })).toBeNull();
   });
 });

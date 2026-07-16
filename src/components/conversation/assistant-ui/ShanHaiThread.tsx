@@ -44,6 +44,7 @@ export type ShanHaiThreadProps = {
   onClearReference: () => void;
   onAttachFile: (fileName: string, text: string) => void;
   onAttachFileError: (message: string) => void;
+  onComposerInputChange: (value: string) => void;
   onSelectAction: (prompt: string, actionId?: string) => void;
   onRecoverCheckpoint: (checkpointId: string) => void | Promise<void>;
   onOpenArtifact: (artifactId: string) => void;
@@ -233,7 +234,7 @@ function LegacyArtifactReference({ item, onOpenArtifact }: { item: ArtifactItem;
   );
 }
 
-function ShanHaiComposer({ reference, composerNotice, projectBusy, composerSubmitting, generationIntensityLabel, onClearReference, onAttachFile, onAttachFileError, onOpenSettings }: ShanHaiThreadProps) {
+function ShanHaiComposer({ reference, composerNotice, projectBusy, composerSubmitting, generationIntensityLabel, onClearReference, onAttachFile, onAttachFileError, onComposerInputChange, onOpenSettings }: ShanHaiThreadProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function attachFile(event: ChangeEvent<HTMLInputElement>) {
@@ -269,6 +270,7 @@ function ShanHaiComposer({ reference, composerNotice, projectBusy, composerSubmi
         <input ref={fileInputRef} type="file" accept=".txt,.md,.markdown,.csv,.json,.text,text/*" className="hidden" onChange={attachFile} aria-label="选择资料" disabled={composerSubmitting} />
         <ComposerPrimitive.Input
           name="lesson-workbench-prompt"
+          onChange={(event) => onComposerInputChange(event.currentTarget.value)}
           aria-label={projectBusy ? "正在生成中，也可以继续输入下一步要求" : "输入备课要求"}
           placeholder="输入备课要求，或和小酷聊聊这节课"
           disabled={composerSubmitting}

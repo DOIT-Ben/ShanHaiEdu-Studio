@@ -86,6 +86,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   const clearActiveProject = useCallback(() => {
     activeProjectIdRef.current = "";
     setActiveProjectId("");
+    setPendingConfirmationActionId(null);
     window.localStorage.removeItem(activeProjectStorageKey);
     setMessages([]);
     setArtifacts([]);
@@ -269,6 +270,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   }
 
   function selectProject(projectId: string) {
+    setPendingConfirmationActionId(null);
     activeProjectIdRef.current = projectId;
     setActiveProjectId(projectId);
     setSidePanelOpen(false);
@@ -277,6 +279,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   }
 
   async function createProject() {
+    setPendingConfirmationActionId(null);
     setLoadState("loading");
     try {
       const snapshot = await dataSource.createProject();
@@ -336,6 +339,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   }
 
   function clearComposerReference() {
+    setPendingConfirmationActionId(null);
     setReference(null);
     setComposerArtifactRefs([]);
   }
@@ -491,7 +495,12 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     }
     let targetProjectId = activeProjectId;
     let snapshotRequest = targetProjectId ? beginSnapshotRequest(targetProjectId) : null;
-    const confirmationActionId = submission.confirmedActionId?.trim() || null;
+    const confirmationActionId = resolveBoundConfirmationActionId({
+      submittedActionId: submission.confirmedActionId,
+      pendingActionId: pendingConfirmationActionId,
+      submittedBody: body,
+      boundBody: input,
+    });
     const displayBody = submittedReference ? `${body || "请参考这份资料继续。"}\n\n引用：${submittedReference}` : body;
     const optimisticMessage: ChatMessage = {
       id: `optimistic-teacher-${Date.now()}`,
@@ -686,6 +695,17 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
 
 export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null, responseStyle = "pragmatic", artifactRefs: string[] = []) {
   return JSON.stringify({ projectId, body, reference: reference ?? "", artifactRefs: [...artifactRefs].sort(), confirmationActionId: confirmationActionId ?? "", responseStyle });
+}
+
+export function resolveBoundConfirmationActionId(input: {
+  submittedActionId?: string;
+  pendingActionId: string | null;
+  submittedBody: string;
+  boundBody: string;
+}) {
+  const submittedActionId = input.submittedActionId?.trim() || null;
+  if (!submittedActionId || submittedActionId !== input.pendingActionId?.trim()) return null;
+  return input.submittedBody.trim() === input.boundBody.trim() ? submittedActionId : null;
 }
 
 export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: string; key: string } | null }, signature: string) {

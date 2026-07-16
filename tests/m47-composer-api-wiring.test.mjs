@@ -34,12 +34,39 @@ test("Workbench controller creates a project before sending the first prompt whe
 
 test("Workbench quick replies preserve pending HumanGate action ids until send", () => {
   const source = readFileSync(path.join(root, "src", "hooks", "useWorkbenchController.ts"), "utf8");
+  const threadSource = readFileSync(path.join(root, "src", "components", "conversation", "assistant-ui", "ShanHaiThread.tsx"), "utf8");
+  const workbenchSource = readFileSync(path.join(root, "src", "components", "conversation", "ConversationWorkbench.tsx"), "utf8");
   const suggestionsSource = readFileSync(path.join(root, "src", "components", "conversation", "messages", "QuickReplySuggestions.tsx"), "utf8");
+  const selectQuickReplyStart = source.indexOf("function selectQuickReply");
+  const selectQuickReplyEnd = source.indexOf("function showRecovery", selectQuickReplyStart);
+  const selectQuickReplySource = source.slice(selectQuickReplyStart, selectQuickReplyEnd);
 
   assert.match(source, /const \[pendingConfirmationActionId, setPendingConfirmationActionId\] = useState<string \| null>\(null\);/);
   assert.match(source, /function selectQuickReply\(value: string, actionId\?: string\)/);
-  assert.match(source, /setPendingConfirmationActionId\(actionId\?\.trim\(\) \|\| null\);/);
+  assert.match(selectQuickReplySource, /setPendingConfirmationActionId\(actionId\?\.trim\(\) \|\| null\);[\s\S]*setInput\(value\);/);
+  assert.doesNotMatch(selectQuickReplySource, /updateInput\(/);
+  assert.match(threadSource, /onChange=\{\(event\) => onComposerInputChange\(event\.currentTarget\.value\)\}/);
+  assert.match(workbenchSource, /onComposerInputChange=\{onInputChange\}/);
   assert.match(suggestionsSource, /onClick=\{\(\) => onSelect\?\.\(choice\.prompt, choice\.actionId\)\}/);
+});
+
+test("Workbench invalidates a pending HumanGate action when composer context changes", () => {
+  const source = readFileSync(path.join(root, "src", "hooks", "useWorkbenchController.ts"), "utf8");
+
+  for (const [startMarker, endMarker] of [
+    ["const clearActiveProject", "const applySnapshotState"],
+    ["function selectProject", "async function createProject"],
+    ["async function createProject", "function openSidePanel"],
+    ["function attachComposerFile", "function clearComposerReference"],
+    ["function clearComposerReference", "async function setMessageReaction"],
+  ]) {
+    const start = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker, start);
+    assert.notEqual(start, -1, `missing ${startMarker}`);
+    assert.match(source.slice(start, end), /setPendingConfirmationActionId\(null\)/, `${startMarker} must invalidate the pending action`);
+  }
+
+  assert.match(source, /function updateInput\(value: string\) \{[\s\S]*setPendingConfirmationActionId\(null\);[\s\S]*setInput\(value\);[\s\S]*\}/);
 });
 
 test("Workbench real asset buttons send server-issued HumanGate action ids", () => {

@@ -10,8 +10,9 @@ import {
   readAgentObservationsFromMetadata,
   type AgentObservation,
 } from "@/server/conversation/react-control";
-import { actionRiskForTool, evaluateActionPolicy } from "@/server/guards/action-policy";
-import { resolveStandardTaskBudget } from "@/server/guards/task-budget-policy";
+import { actionRiskForTool, createPendingDecisionForAction, evaluateActionPolicy } from "@/server/guards/action-policy";
+import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { resolveBudgetUpgrade, resolveStandardTaskBudget } from "@/server/guards/task-budget-policy";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
@@ -38,7 +39,7 @@ import type { MainConversationAgentInput } from "./main-conversation-agent";
 import { appendAgentHarnessBudgetEventMetadata } from "./agent-harness-budget";
 import type { MainAgentReActContextTelemetry, MainAgentReActDispatchResult } from "./main-agent-controlled-react-loop";
 import { createMainAgentRoundBudgetPause } from "./main-agent-run-pause";
-import { createExecutionEnvelope, type IntentGrant, type TaskBrief } from "./task-contract";
+import { createExecutionEnvelope, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
 import { createControlPlaneStore, type ToolInvocationClaim } from "./control-plane-store";
 import { buildSemanticContextSnapshot } from "./context-semantic-snapshot";
 import { restoreMainAgentReActCheckpoint, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
@@ -119,6 +120,7 @@ export function createMainAgentToolLoopOptions(
   let currentPlanRevision = input.planRevision ?? 0;
   let latestPptDirectorPlan: PptDirectorPlanBinding | undefined;
   let activeDialogueCheckpoint: DialogueCheckpoint | undefined;
+  let activeHumanGateDecision: PendingDecision | undefined;
   let toolExposureSequence = readMainAgentToolExposureTrace(currentMetadata).length;
   const taskBudget = input.taskBrief ? resolveStandardTaskBudget(input.taskBrief) : undefined;
   const resumeCheckpoint = input.resumeCheckpoint
@@ -151,7 +153,7 @@ export function createMainAgentToolLoopOptions(
     const semanticSnapshot = buildSemanticContextSnapshot({
       taskBrief: input.taskBrief!,
       plan: persistedPlan,
-      pendingDecision: activeDialogueCheckpoint ?? previousSnapshot?.snapshot.pendingDecision ?? null,
+      pendingDecision: activeDialogueCheckpoint ?? activeHumanGateDecision ?? previousSnapshot?.snapshot.pendingDecision ?? null,
       trustedArtifactRefs: input.artifacts
         .filter((artifact) => isArtifactTrustedForDownstream(artifact) && isArtifactBoundToTask(artifact, input.taskBrief!))
         .map((artifact) => ({
@@ -452,13 +454,23 @@ export function createMainAgentToolLoopOptions(
         };
       }
       await input.service.renewProjectExecutionLease({ ...input.fence!, leaseMs: 10 * 60 * 1000 });
+      const authoritativeAggregate = input.taskBrief
+        ? await controlPlaneStore.getTaskAggregate(input.taskBrief.projectId, input.taskBrief.intentEpoch)
+        : null;
+      if (input.taskBrief && (!authoritativeAggregate || authoritativeAggregate.taskBrief.digest !== input.taskBrief.digest)) {
+        return {
+          status: "inconclusive",
+          observation: compactContinuationObservation("inconclusive", ["task_aggregate_stale"], { nextAction: "replan" }),
+        };
+      }
+      const authoritativeIntentGrant = authoritativeAggregate?.intentGrant ?? input.intentGrant;
       const executionEnvelope = input.taskBrief
         ? createExecutionEnvelope({
             actorUserId: input.identity!.actorUserId,
             taskBrief: input.taskBrief,
             planRevision: currentPlanRevision,
             intensity: input.project.generationIntensity ?? "standard",
-            intentGrant: input.intentGrant ?? createUnauthorizedIntentGrant(
+            intentGrant: authoritativeIntentGrant ?? createUnauthorizedIntentGrant(
               input.taskBrief,
               input.project.generationIntensity ?? "standard",
             ),
@@ -601,7 +613,7 @@ export function createMainAgentToolLoopOptions(
         const actionRisk = actionRiskForTool(requestedDefinition);
         const policy = evaluateActionPolicy({
           risk: actionRisk,
-          intentGrant: input.intentGrant,
+          intentGrant: authoritativeIntentGrant,
           externalProviderCallsUsed,
           expectedScope: {
             projectId: input.project.id,
@@ -610,6 +622,74 @@ export function createMainAgentToolLoopOptions(
           },
         });
         if (policy.kind === "human_gate") {
+          if (!input.taskBrief || !authoritativeAggregate) {
+            return {
+              status: "blocked",
+              observation: compactContinuationObservation("blocked", [policy.reason], { nextAction: "ask_teacher" }),
+            };
+          }
+          const capabilityId = requestedDefinition.capabilityId;
+          if (!capabilityId) throw new Error("HumanGate business Tool requires a capabilityId.");
+          const actionId = createHumanGateActionId({
+            projectId: input.project.id,
+            capabilityId,
+            messageId: input.triggerMessage.id,
+          });
+          const standardBudget = resolveStandardTaskBudget(input.taskBrief);
+          const upgradedBudget = resolveBudgetUpgrade({
+            taskBrief: input.taskBrief,
+            currentMaxExternalProviderCalls: authoritativeIntentGrant?.maxExternalProviderCalls,
+          });
+          activeHumanGateDecision = createPendingDecisionForAction({
+            action: actionRisk,
+            decision: policy,
+            actionId,
+            actorUserId: input.identity!.actorUserId,
+            projectId: input.project.id,
+            taskId: input.taskBrief.taskId,
+            intentEpoch: input.taskBrief.intentEpoch,
+            planId: authoritativeAggregate.plan.planId,
+            intentGrant: authoritativeIntentGrant,
+            disclosedBudget: policy.reason === "budget_not_disclosed"
+              ? {
+                  budgetPolicyVersion: standardBudget.policyVersion,
+                  maxCostCredits: null,
+                  maxExternalProviderCalls: standardBudget.maxExternalProviderCalls,
+                }
+              : policy.reason === "budget_upgrade"
+                ? {
+                    budgetPolicyVersion: upgradedBudget.policyVersion,
+                    maxCostCredits: null,
+                    maxExternalProviderCalls: upgradedBudget.maxExternalProviderCalls,
+                  }
+                : undefined,
+          });
+          currentMetadata = {
+            ...currentMetadata,
+            pendingDeliveryPlan: {
+              status: "pending",
+              teacherRequest: input.taskBrief.goal,
+              toolPlan: {
+                planId: activeHumanGateDecision.planId,
+                capabilityId,
+                reasonForUser: requestedDefinition.teacherDescription ?? requestedDefinition.description,
+                internalReason: `native_human_gate:${policy.reason}`,
+                inputDraft: structuredClone(call.arguments),
+                missingInputs: [],
+                upstreamPlan: [],
+                nextSuggestedCapabilities: [],
+                requiresConfirmation: true,
+                expectedArtifactKind: requestedDefinition.producedArtifactKind ?? capabilityId,
+              },
+              taskBrief: structuredClone(input.taskBrief),
+              ...(authoritativeIntentGrant ? { intentGrant: structuredClone(authoritativeIntentGrant) } : {}),
+              externalProviderCallsUsed,
+              runtimeKind: "openai",
+              actionId,
+              pendingDecision: structuredClone(activeHumanGateDecision),
+            },
+          };
+          let policyObservation: AgentObservation | undefined;
           if (executionEnvelope) {
             let policyInvocationId: string = randomUUID();
             const claim = await controlPlaneStore.startToolInvocation({
@@ -620,7 +700,6 @@ export function createMainAgentToolLoopOptions(
             });
             if (claim.kind !== "claimed") return toolInvocationReplayResult(claim);
             policyInvocationId = claim.invocation.invocationId;
-            currentPlanRevision += 1;
             const observation = createAgentObservation({
               projectId: input.project.id,
               source: policy.reason === "budget_not_disclosed" || policy.reason === "budget_upgrade"
@@ -636,6 +715,7 @@ export function createMainAgentToolLoopOptions(
               minimalNextAction: "ask_teacher",
               teacherSafeSummary: "这一步需要先完成相应授权或预算决定，当前没有执行外部操作。",
             });
+            policyObservation = observation;
             await persistAgentToolObservation({
               controlPlaneStore,
               invocationId: policyInvocationId,
@@ -643,10 +723,34 @@ export function createMainAgentToolLoopOptions(
               triggerMessageId: input.triggerMessage.id,
               observation,
             });
+            currentPlanRevision += 1;
             currentMetadata = appendAgentObservationMetadata(currentMetadata, observation);
-            await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
           }
-          return { status: "blocked", observation: compactContinuationObservation("blocked", [policy.reason], { nextAction: "ask_teacher" }) };
+          await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
+          await controlPlaneStore.appendEvent({
+            eventId: randomUUID(),
+            projectId: input.project.id,
+            taskId: input.taskBrief.taskId,
+            runId: `turn:${input.triggerMessage.id}`,
+            intentEpoch: input.taskBrief.intentEpoch,
+            kind: "decision_pending",
+            visibility: "teacher",
+            occurredAt: new Date().toISOString(),
+            payload: {
+              decisionId: activeHumanGateDecision.decisionId,
+              actionId,
+              status: "waiting",
+              reasonCode: policy.reason,
+              question: activeHumanGateDecision.question,
+            },
+          });
+          return {
+            status: "blocked",
+            observation: compactContinuationObservation("blocked", [policy.reason], {
+              observationId: policyObservation?.observationId,
+              nextAction: "ask_teacher",
+            }),
+          };
         }
       }
       const reviewTargetRef = resolveReviewTarget(call.arguments, taskArtifacts());
@@ -1931,7 +2035,9 @@ async function persistAgentToolObservation(input: {
   if (!input.executionEnvelope) throw new Error("Agent Tool result requires an ExecutionEnvelope.");
   await input.controlPlaneStore.commitToolObservation({
     invocationId: input.invocationId,
-    invocationStatus: input.observation.status === "succeeded" ? "succeeded" : "failed",
+    invocationStatus: input.observation.status === "succeeded"
+      ? "succeeded"
+      : input.observation.status === "blocked" ? "blocked" : "failed",
     observation: {
       observationId: input.observation.observationId,
       status: input.observation.status,

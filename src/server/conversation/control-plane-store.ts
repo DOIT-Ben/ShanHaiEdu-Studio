@@ -4,6 +4,7 @@ import type { PrismaClient, ToolInvocationRecord } from "@/generated/prisma/clie
 import { prisma } from "@/server/db/client";
 import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
+import { canonicalizeRunInput } from "@/server/execution/run-input-snapshot";
 import { commitToolResultAtomically } from "@/server/execution/tool-result-commit";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import { getToolDefinition } from "@/server/tools/tool-registry";
@@ -393,13 +394,14 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
               intentEpoch: input.envelope.intentEpoch,
             },
           },
-          select: { taskId: true, planRevision: true, taskBriefJson: true },
+          select: { taskId: true, planRevision: true, taskBriefJson: true, intentGrantJson: true },
         });
         if (
           !aggregate ||
           aggregate.taskId !== input.envelope.taskId ||
           aggregate.planRevision !== input.envelope.planRevision ||
-          parseJson<TaskBrief>(aggregate.taskBriefJson).digest !== input.envelope.taskBriefDigest
+          parseJson<TaskBrief>(aggregate.taskBriefJson).digest !== input.envelope.taskBriefDigest ||
+          canonicalizeRunInput(parseJson<IntentGrant>(aggregate.intentGrantJson)) !== canonicalizeRunInput(input.envelope.intentGrant)
         ) {
           throw new Error("Tool invocation ExecutionEnvelope is stale.");
         }
@@ -444,6 +446,17 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
 
       return commitToolResultAtomically({
         transaction: (commit) => client.$transaction(async (tx) => {
+          const [project, aggregate] = await Promise.all([
+            tx.project.findUnique({ where: { id: invocation.projectId }, select: { intentEpoch: true } }),
+            tx.taskAggregate.findUnique({
+              where: { projectId_intentEpoch: { projectId: invocation.projectId, intentEpoch: invocation.intentEpoch } },
+              select: { taskId: true, planRevision: true, status: true },
+            }),
+          ]);
+          if (!project || project.intentEpoch !== invocation.intentEpoch || !aggregate ||
+              aggregate.taskId !== invocation.taskId || aggregate.planRevision !== invocation.planRevision || aggregate.status !== "active") {
+            throw new Error("Tool invocation is stale and cannot promote a result.");
+          }
           let committedArtifactId: string | undefined;
           let committedObservationId: string | undefined;
           return commit({
@@ -543,7 +556,7 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       invocationId: string;
       observation: ToolResultObservationInput;
       event: AgentEventInput;
-      invocationStatus: "succeeded" | "failed";
+      invocationStatus: "succeeded" | "failed" | "blocked";
     }) {
       return commitObservationOnly(client, input, input.invocationStatus);
     },
@@ -641,7 +654,7 @@ async function commitObservationOnly(
     validationReport?: ValidationReport;
     advancePlanRevision?: boolean;
   },
-  invocationStatus: "succeeded" | "failed",
+  invocationStatus: "succeeded" | "failed" | "blocked",
 ) {
   const invocation = await client.toolInvocationRecord.findUnique({ where: { invocationId: input.invocationId } });
   if (!invocation || invocation.status !== "running") {

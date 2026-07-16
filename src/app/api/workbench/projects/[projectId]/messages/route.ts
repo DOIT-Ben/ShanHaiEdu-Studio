@@ -10,6 +10,7 @@ import { normalizeXiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 import { createAgentToolExecutorFromEnv } from "@/server/tools/openai-agent-tool-executor";
 import { recoverConversationTurnFromCheckpoint } from "@/server/conversation/conversation-turn-checkpoint-recovery";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { resolvePreAgentControl } from "@/server/conversation/turn-intake-control";
 
 const runtime = createAgentRuntimeFromEnv();
 const mainAgent = createMainConversationAgentFromEnv();
@@ -60,6 +61,7 @@ export async function POST(request: Request, context: RouteContext) {
       const confirmedActionId = optionalString(body.confirmedActionId ?? body.actionId);
       const responseStyle = body.responseStyle === undefined ? undefined : normalizeXiaoKuResponseStyle(body.responseStyle);
       const idempotencyKey = optionalString(body.idempotencyKey) ?? optionalString(request.headers.get("idempotency-key"));
+      const preemptiveControl = resolvePreAgentControl(content, { hasActiveTask: true, hasPendingPlan: true, allowRedirect: true });
       const { message, job } = await service.enqueueMessageAndConversationTurn(projectId, {
         role: "teacher",
         content,
@@ -69,9 +71,10 @@ export async function POST(request: Request, context: RouteContext) {
           ...(responseStyle ? { responseStyle } : {}),
         },
         idempotencyKey,
+        ...(preemptiveControl ? { preemptiveControl: { ...preemptiveControl, advanceIntentEpoch: true as const } } : {}),
       });
 
-      if (shouldAutoDrainConversationQueue()) {
+      if (job.status === "queued" && shouldAutoDrainConversationQueue()) {
         scheduleProjectQueueDrain(projectId, service);
       }
 

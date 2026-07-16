@@ -353,6 +353,81 @@ describe("control-plane persistence", () => {
     });
   });
 
+  it("rejects an envelope whose embedded grant no longer matches the persisted IntentGrant", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "持久授权复核" });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "整理需求" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-grant-authority", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const staleEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: { goal: brief.goal } },
+    });
+    const revokedGrant = { ...grant, standardWorkAuthorized: false, maxExternalProviderCalls: 0 };
+    await store.commitIntentGrantWithMessage({
+      taskBrief: brief,
+      intentGrant: revokedGrant,
+      messageId: message.id,
+      messageMetadata: { taskBrief: brief, intentGrant: revokedGrant },
+    });
+
+    await expect(store.startToolInvocation({
+      invocationId: `${project.id}-stale-grant`,
+      envelope: staleEnvelope,
+      toolName: "create_requirement_spec",
+      request: { goal: brief.goal },
+    })).rejects.toThrow("ExecutionEnvelope is stale");
+  });
+
+  it("refuses to promote a Tool result after the project IntentEpoch advances", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "迟到结果提升阻断" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-late-result", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: { goal: brief.goal } },
+    });
+    const invocationId = `${project.id}-late-result`;
+    await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request: { goal: brief.goal } });
+    await service.advanceProjectIntentEpoch(project.id, 0);
+
+    await expect(store.commitToolResult({
+      invocationId,
+      artifact: artifactInput("不应提升的迟到成果"),
+      observation: {
+        observationId: `${project.id}-late-observation`,
+        status: "succeeded",
+        reasonCodes: ["tool_succeeded"],
+        payload: { summary: "迟到结果" },
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-late-event`, "artifact_committed"),
+    })).rejects.toThrow("Tool invocation is stale");
+    expect((await service.getArtifacts(project.id)).some((artifact) => artifact.title === "不应提升的迟到成果")).toBe(false);
+  });
+
   it("atomically persists a run failure Observation while pausing the latest TaskAggregate", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "运行失败 Observation" });

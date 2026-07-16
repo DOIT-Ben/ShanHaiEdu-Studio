@@ -6,7 +6,7 @@ import { drainProjectConversationQueue } from "@/server/conversation/conversatio
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
-import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { createWorkbenchService } from "../service";
 
@@ -445,6 +445,232 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       { teacherMessageId: exhaustedMessage.id, status: "failed" },
       { teacherMessageId: nextMessage.id, status: "succeeded" },
     ]);
+  });
+
+  it("atomically preempts an in-flight task before queuing an explicit control turn", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "控制抢先提交" });
+    const source = await service.addMessage(project.id, { role: "teacher", content: "生成PPT" });
+    const brief = createTaskBrief({
+      taskId: `task:${source.id}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: source.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: source.id,
+    });
+    const grant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: brief.taskId,
+      projectId: project.id,
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard",
+      budgetPolicyVersion: "v1-standard-task-scope.v1",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 2,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: `plan:${brief.taskId}`, revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const pendingActionId = "action-preemptive-pause";
+    await service.addMessage(project.id, {
+      role: "assistant",
+      content: "等待确认",
+      metadata: {
+        pendingDeliveryPlan: {
+          status: "pending",
+          teacherRequest: source.content,
+          toolPlan: {
+            planId: `plan:${brief.taskId}`,
+            capabilityId: "ppt_outline",
+            reasonForUser: "生成PPT大纲",
+            internalReason: "test",
+            inputDraft: {},
+            missingInputs: [],
+            upstreamPlan: [],
+            nextSuggestedCapabilities: [],
+            requiresConfirmation: true,
+            expectedArtifactKind: "ppt_draft",
+          },
+          runtimeKind: "openai",
+          actionId: pendingActionId,
+        },
+      },
+    });
+
+    const result = await service.enqueueMessageAndConversationTurn(project.id, {
+      role: "teacher",
+      content: "暂停",
+      metadata: {},
+      preemptiveControl: {
+        kind: "pause",
+        reasonCode: "teacher_requested_pause",
+        advanceIntentEpoch: true,
+        userMessage: "暂停",
+      },
+    } as Parameters<typeof service.enqueueMessageAndConversationTurn>[1]);
+
+    expect(result.job).toMatchObject({ status: "succeeded", assistantMessageId: expect.any(String) });
+    const snapshot = await service.getProjectSnapshot(project.id);
+    expect(snapshot.project.intentEpoch).toBe(1);
+    expect(snapshot.messages.find((message) => pendingDeliveryPlanOf(message).actionId === pendingActionId))
+      .toMatchObject({ metadata: { pendingDeliveryPlan: { status: "paused", actionId: pendingActionId } } });
+    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
+  });
+
+  it("atomically cancels an in-flight invocation before its result can be promoted", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "取消抢先阻断迟到结果" });
+    const source = await service.addMessage(project.id, { role: "teacher", content: "生成PPT" });
+    const brief = createTaskBrief({
+      taskId: `task:${source.id}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: source.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: source.id,
+    });
+    const grant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: brief.taskId,
+      projectId: project.id,
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard",
+      budgetPolicyVersion: "v1-standard-task-scope.v1",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 2,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: `plan:${brief.taskId}`, revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const envelope = createExecutionEnvelope({
+      actorUserId: "local-test-user",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: {} },
+    });
+    const invocationId = `invocation:${source.id}`;
+    await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request: {} });
+
+    const result = await service.enqueueMessageAndConversationTurn(project.id, {
+      role: "teacher",
+      content: "取消",
+      metadata: {},
+      preemptiveControl: {
+        kind: "cancel",
+        reasonCode: "teacher_requested_cancel",
+        advanceIntentEpoch: true,
+        userMessage: "取消",
+      },
+    });
+
+    expect(result.job).toMatchObject({ status: "succeeded", assistantMessageId: expect.any(String) });
+    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
+    await expect(store.commitToolResult({
+      invocationId,
+      artifact: {
+        nodeKey: "requirement_spec",
+        kind: "requirement_spec",
+        title: "不应提升的迟到结果",
+        status: "needs_review",
+        summary: "迟到结果",
+        markdownContent: "# 迟到结果",
+        structuredContent: { goal: brief.goal },
+      },
+      observation: {
+        observationId: `observation:${source.id}`,
+        status: "succeeded",
+        reasonCodes: ["tool_succeeded"],
+        payload: {},
+      },
+      event: {
+        eventId: `event:${source.id}`,
+        projectId: project.id,
+        taskId: brief.taskId,
+        runId: `turn:${source.id}`,
+        intentEpoch: 0,
+        kind: "artifact_committed",
+        visibility: "internal",
+        occurredAt: new Date().toISOString(),
+        payload: {},
+      },
+    })).rejects.toThrow("Tool invocation is stale");
+    expect((await service.getArtifacts(project.id)).some((artifact) => artifact.title === "不应提升的迟到结果")).toBe(false);
+  });
+
+  it("atomically invalidates the old epoch before queuing an explicit redirect", async () => {
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "改道抢先失效" });
+    const source = await service.addMessage(project.id, { role: "teacher", content: "生成PPT" });
+    const brief = createTaskBrief({
+      taskId: `task:${source.id}`,
+      projectId: project.id,
+      intentEpoch: 0,
+      goal: source.content,
+      requestedOutputs: ["ppt"],
+      constraints: [],
+      excludedOutputs: [],
+      generationIntensity: "standard",
+      sourceMessageId: source.id,
+    });
+    const grant: IntentGrant = {
+      schemaVersion: "intent-grant.v1",
+      taskId: brief.taskId,
+      projectId: project.id,
+      intentEpoch: 0,
+      standardWorkAuthorized: true,
+      intensity: "standard",
+      budgetPolicyVersion: "v1-standard-task-scope.v1",
+      maxCostCredits: null,
+      maxExternalProviderCalls: 2,
+      requiredCheckpoints: [],
+      expiresAt: null,
+    };
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: `plan:${brief.taskId}`, revision: 0, status: "active" },
+      checkpoint: null,
+    });
+
+    const result = await service.enqueueMessageAndConversationTurn(project.id, {
+      role: "teacher",
+      content: "改成只做需求规格",
+      metadata: {},
+      preemptiveControl: {
+        kind: "redirect",
+        reasonCode: "teacher_requested_redirect",
+        advanceIntentEpoch: true,
+        userMessage: "改成只做需求规格",
+      },
+    });
+
+    expect(result.job).toMatchObject({ status: "queued", assistantMessageId: null });
+    expect((await service.getProjectSnapshot(project.id)).project.intentEpoch).toBe(1);
+    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
   });
 
   it("default drain executor runs the existing conversation turn service", async () => {

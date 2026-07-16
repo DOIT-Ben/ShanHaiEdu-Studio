@@ -358,6 +358,12 @@ export type EnqueueMessageAndConversationTurnInput = AddMessageInput & {
   idempotencyKey?: string;
   maxAttempts?: number;
   executionIdentity?: ExecutionIdentitySnapshot;
+  preemptiveControl?: {
+    kind: "pause" | "cancel" | "redirect";
+    reasonCode: "teacher_requested_pause" | "teacher_requested_cancel" | "teacher_requested_redirect";
+    advanceIntentEpoch: true;
+    userMessage: string;
+  };
 };
 
 export type FinishConversationTurnInput = {

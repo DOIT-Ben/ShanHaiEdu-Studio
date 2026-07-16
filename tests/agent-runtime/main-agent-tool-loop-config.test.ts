@@ -185,17 +185,17 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     }
   });
 
-  it("persists a HumanGate terminal checkpoint without creating an Artifact", async () => {
+  it("persists a native HumanGate decision and recovery checkpoint without creating an Artifact", async () => {
     const actor = createWorkbenchActor({ userId: `teacher-${crypto.randomUUID()}`, displayName: "Teacher", authMode: "local" });
     const service = createWorkbenchService(undefined, actor);
     const project = await service.createProject({ title: `V1-human-gate-checkpoint-${crypto.randomUUID()}` });
-    const message = await service.addMessage(project.id, { role: "teacher", content: "继续生成PPT样张。" });
+    const message = await service.addMessage(project.id, { role: "teacher", content: "先整理当前需求。" });
     const taskBrief = createTaskBrief({
       taskId: `task-${crypto.randomUUID()}`,
       projectId: project.id,
       intentEpoch: project.intentEpoch ?? 0,
       goal: message.content,
-      requestedOutputs: ["ppt"],
+      requestedOutputs: ["requirement_spec"],
       constraints: [],
       excludedOutputs: [],
       generationIntensity: "standard",
@@ -219,15 +219,24 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         taskBrief,
         controlPlaneStore,
       });
+      const blocked = await config!.dispatch({
+        callId: "call-human-gate",
+        toolName: "create_requirement_spec",
+        arguments: {},
+      });
+      expect(blocked).toMatchObject({
+        status: "blocked",
+        observation: { observationId: expect.any(String), nextAction: "ask_teacher" },
+      });
       const checkpoint = createMainAgentReActCheckpoint({
         request: { instructions: "test", input: taskBrief.goal },
         seed: config!.getCheckpointSeed?.(),
         records: [{
           round: 1,
-          toolName: "generate_ppt_sample_assets",
+          toolName: "create_requirement_spec",
           callDigest: "a".repeat(64),
           observation: {
-            observationId: "observation-human-gate",
+            observationId: blocked.observation.observationId,
             status: "blocked",
             reasonCodes: ["missing_grant"],
             nextAction: "ask_teacher",
@@ -239,7 +248,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       await config!.onRecoveryCheckpoint?.({
         reason: "human_gate_required",
         toolRoundsUsed: 1,
-        observationIds: ["observation-human-gate"],
+        observationIds: [blocked.observation.observationId!],
         checkpoint,
       });
 
@@ -250,9 +259,32 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       expect(readLatestRunCheckpointFromMessages(await service.getMessages(project.id))).toMatchObject({
         checkpointId: checkpoint.checkpointDigest,
         reason: "human_gate_required",
-        observationRefs: ["observation-human-gate"],
+        observationRefs: [blocked.observation.observationId],
       });
       expect(await service.getArtifacts(project.id)).toHaveLength(0);
+      const persistedTeacherMessage = (await service.getMessages(project.id)).find((entry) => entry.id === message.id);
+      expect(persistedTeacherMessage?.metadata.pendingDeliveryPlan).toMatchObject({
+        status: "pending",
+        actionId: expect.any(String),
+        taskBrief: { taskId: taskBrief.taskId, digest: taskBrief.digest },
+        pendingDecision: {
+          status: "pending",
+          kind: "authorization",
+          actionId: expect.any(String),
+          actorUserId: actor.userId,
+          taskId: taskBrief.taskId,
+        },
+      });
+      expect((await controlPlaneStore.getLatestSemanticSnapshot({
+        projectId: project.id,
+        taskId: taskBrief.taskId,
+        intentEpoch: taskBrief.intentEpoch,
+        maxPlanRevision: 1,
+      }))?.snapshot.pendingDecision).toMatchObject({
+        status: "pending",
+        kind: "authorization",
+        actionId: expect.any(String),
+      });
       expect(await controlPlaneStore.listEvents(project.id)).toEqual(expect.arrayContaining([
         expect.objectContaining({
           kind: "task_updated",
@@ -606,7 +638,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       await expect(controlPlaneStore.getToolInvocation(observation.invocationId)).resolves.toMatchObject({
         projectId: project.id,
         taskId: taskBrief.taskId,
-        status: "failed",
+        status: "blocked",
       });
     } finally {
       await service.releaseProjectExecutionLease(fence);
@@ -1518,6 +1550,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       await expect(config!.dispatch({ callId: "scope-mismatch", toolName: "assemble_ppt_key_samples", arguments: {} }))
         .resolves.toMatchObject({ status: "blocked", observation: { reasonCodes: ["grant_scope_mismatch"], nextAction: "ask_teacher" } });
       expect(businessToolRouter).not.toHaveBeenCalled();
+      expect((await service.getMessages(project.id)).find((entry) => entry.id === message.id)?.metadata.pendingDeliveryPlan).toBeUndefined();
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }

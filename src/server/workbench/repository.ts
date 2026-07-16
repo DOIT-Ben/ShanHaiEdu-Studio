@@ -662,7 +662,27 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       try {
         return await client.$transaction(async (tx) => {
           await assertActiveProjectForWrite(tx, projectId);
-          const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { generationIntensity: true, intensityVersion: true } });
+          const project = await tx.project.findUniqueOrThrow({
+            where: { id: projectId },
+            select: { generationIntensity: true, intensityVersion: true, intentEpoch: true },
+          });
+          const activeAggregate = input.preemptiveControl
+            ? await tx.taskAggregate.findUnique({
+                where: { projectId_intentEpoch: { projectId, intentEpoch: project.intentEpoch } },
+              })
+            : null;
+          const preempted = Boolean(input.preemptiveControl && activeAggregate);
+          const nextIntentEpoch = preempted ? project.intentEpoch + 1 : project.intentEpoch;
+          const messageMetadata = preempted
+            ? {
+                ...(input.metadata ?? {}),
+                preemptiveControl: {
+                  ...input.preemptiveControl,
+                  previousIntentEpoch: project.intentEpoch,
+                  nextIntentEpoch,
+                },
+              }
+            : input.metadata ?? {};
           const message = await tx.conversationMessage.create({
             data: {
               projectId,
@@ -670,15 +690,79 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               content: input.content,
               partsJson: JSON.stringify(input.parts ?? []),
               artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
-              metadataJson: JSON.stringify(input.metadata ?? {}),
+              metadataJson: JSON.stringify(messageMetadata),
             },
           });
+
+          if (preempted) {
+            await tx.project.update({ where: { id: projectId }, data: { intentEpoch: nextIntentEpoch } });
+            await tx.taskAggregate.update({
+              where: { taskId: activeAggregate!.taskId },
+              data: { status: "paused_recovery", planRevision: { increment: 1 } },
+            });
+            const pendingPlanStatus = input.preemptiveControl!.kind === "pause"
+              ? "paused"
+              : input.preemptiveControl!.kind === "cancel" ? "canceled" : "superseded";
+            const pendingDecisionStatus = input.preemptiveControl!.kind === "pause"
+              ? "pending"
+              : input.preemptiveControl!.kind === "cancel" ? "canceled" : "superseded";
+            const assistantMessages = await tx.conversationMessage.findMany({
+              where: { projectId, role: "assistant" },
+              select: { id: true, metadataJson: true },
+            });
+            for (const assistant of assistantMessages) {
+              const metadata = parseRecoveryRecord(assistant.metadataJson);
+              const pendingPlan = parseRecoveryRecord(metadata.pendingDeliveryPlan);
+              if (pendingPlan.status !== "pending" && pendingPlan.status !== "paused") continue;
+              const pendingDecision = parseRecoveryRecord(pendingPlan.pendingDecision);
+              await tx.conversationMessage.update({
+                where: { id: assistant.id },
+                data: {
+                  metadataJson: JSON.stringify({
+                    ...metadata,
+                    pendingDeliveryPlan: {
+                      ...pendingPlan,
+                      status: pendingPlanStatus,
+                      ...(Object.keys(pendingDecision).length > 0
+                        ? { pendingDecision: { ...pendingDecision, status: pendingDecisionStatus } }
+                        : {}),
+                    },
+                  }),
+                },
+              });
+            }
+          }
+
+          const completesImmediately = preempted && input.preemptiveControl!.kind !== "redirect";
+          const assistantMessage = completesImmediately
+            ? await tx.conversationMessage.create({
+                data: {
+                  projectId,
+                  role: "assistant",
+                  content: input.preemptiveControl!.kind === "pause"
+                    ? "已暂停当前任务，正在执行的旧步骤不会再提升为当前成果。"
+                    : "已取消当前任务，正在执行的旧步骤不会再提升为当前成果。",
+                  partsJson: "[]",
+                  artifactRefsJson: "[]",
+                  metadataJson: JSON.stringify({
+                    conversationControlDecision: {
+                      kind: input.preemptiveControl!.kind,
+                      reasonCode: input.preemptiveControl!.reasonCode,
+                      previousIntentEpoch: project.intentEpoch,
+                      nextIntentEpoch,
+                    },
+                  }),
+                },
+              })
+            : null;
+          const now = new Date();
 
           const job = await tx.conversationTurnJob.create({
             data: {
               projectId,
               teacherMessageId: message.id,
-              status: "queued",
+              assistantMessageId: assistantMessage?.id,
+              status: completesImmediately ? "succeeded" : "queued",
               attempts: 0,
               maxAttempts: input.maxAttempts ?? 2,
               idempotencyKey: input.idempotencyKey,
@@ -687,6 +771,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               authSessionId: input.executionIdentity?.authSessionId,
               generationIntensity: project.generationIntensity,
               intensityVersion: project.intensityVersion,
+              ...(completesImmediately ? { startedAt: now, finishedAt: now } : {}),
             },
           });
 
