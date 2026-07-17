@@ -20,7 +20,7 @@
     "test": "node scripts/run-tests.mjs",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "prisma generate && tsc --noEmit",
     "gate:development": "node scripts/development-gates/run-development-gates.mjs",
     "gate:manifest:verify": "node scripts/development-gates/verification-manifest.mjs verify",
     "gate:provider:impact": "node scripts/development-gates/provider-continuity.mjs impact",

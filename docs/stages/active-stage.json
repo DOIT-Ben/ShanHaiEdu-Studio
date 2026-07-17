@@ -76,6 +76,10 @@
     "addedAllowedPath": ".gitattributes",
     "reason": "The first clean GitHub Windows checkout proved bound contract hashes were sensitive to core.autocrlf. The exact contract paths now declare LF checkout bytes; SHA checks and budgets are unchanged."
   },
+  "ciCleanCheckoutRevision": {
+    "changedScript": "typecheck",
+    "reason": "The second clean GitHub checkout proved local generated Prisma types had masked a missing verification prerequisite. The authoritative typecheck command now generates the client before tsc; the workflow still calls only verify:ci."
+  },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",
     "reason": "The existing Provider ledger cannot prove per-call HTTP status, timeout, correlation, or run/task/turn binding. This exact bootstrap permits only sanitized capture implementation and behavior tests while continuity remains failed.",

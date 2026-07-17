@@ -30,6 +30,7 @@
 | DG-15 | 真实SDK transport envelope映射为逐调用事实 | 保留HTTP状态、哈希request ID、timeout、usage和业务身份，不保存敏感正文 |
 | DG-16 | 没有活动turn context或未显式启用capture | 不写孤儿证据，不改变Provider结果 |
 | DG-17 | 全新Windows checkout启用`core.autocrlf` | 三个绑定合同仍以LF落盘，声明SHA与实际字节一致；缺少`eol=lf`时政策门失败 |
+| DG-18 | clean checkout没有本地Prisma生成目录 | 权威`typecheck`先生成Prisma client再运行TypeScript；workflow不增加私有旁路 |
 
 ## 实际命令
 

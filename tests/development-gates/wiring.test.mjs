@@ -6,7 +6,7 @@ import YAML from "yaml";
 
 test("package exposes one development, CI, manifest, Provider, and release gate family", () => {
   const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
-  assert.equal(pkg.scripts?.typecheck, "tsc --noEmit");
+  assert.equal(pkg.scripts?.typecheck, "prisma generate && tsc --noEmit");
   assert.equal(pkg.scripts?.["gate:development"], "node scripts/development-gates/run-development-gates.mjs");
   assert.equal(pkg.scripts?.["gate:manifest:verify"], "node scripts/development-gates/verification-manifest.mjs verify");
   assert.equal(pkg.scripts?.["gate:provider:impact"], "node scripts/development-gates/provider-continuity.mjs impact");
