@@ -8,6 +8,7 @@ import { createTaskBrief, type IntentGrant, type TaskRequestedOutput } from "@/s
 import { evaluateActionPolicy, STANDARD_BUDGET_POLICY_VERSION } from "@/server/guards/action-policy";
 import { appendAgentObservationMetadata, createAgentObservation, readAgentObservationsFromMessages, readLatestRunCheckpointFromMessages } from "@/server/conversation/react-control";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
+import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
 import type { CapabilityId } from "@/server/capabilities/types";
 import { createToolObservation, readActiveToolObservationsFromMessages } from "@/server/capabilities/tool-observation";
 import { routeToolCall } from "@/server/tools/tool-router";
@@ -74,6 +75,44 @@ const fullDeliveryCapabilityIds = [
 ];
 
 describe("M54-B3 ConversationTurnService route contract", () => {
+  it("returns one teacher-safe recoverable failure when native Main Agent configuration is unavailable", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: `provider-unavailable-${crypto.randomUUID()}` });
+    const turnService = createConversationTurnService({
+      service,
+      runtime: new DeterministicRuntime(),
+      agent: createMainConversationAgentFromEnv({
+        NODE_ENV: "development",
+        SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
+      }),
+      enableNativeToolControlPlane: true,
+      enableTaskGrantAutonomy: true,
+    });
+
+    const result = await turnService.createTurn(project.id, {
+      role: "teacher",
+      content: "五年级数学百分数，帮我做一份PPT大纲",
+    });
+
+    expect(result.agentTurn).toMatchObject({
+      state: "failed_retryable",
+      shouldRunToolNow: false,
+      quickReplies: [],
+      failure: {
+        reasonCode: "main_agent_provider_unavailable",
+        retryability: "after_provider_health_change",
+      },
+    });
+    expect(result.assistantMessage?.content).toContain("智能生成服务暂时不可用");
+    expect(result.assistantMessage?.content).not.toMatch(/schema|provider|debug|local path|token/i);
+    expect(result.assistantMessage?.parts?.filter((part) => part.type === "error-recovery")).toEqual([
+      expect.objectContaining({
+        reasonCode: "main_agent_provider_unavailable",
+        recovery: expect.objectContaining({ kind: "retry" }),
+      }),
+    ]);
+  });
+
   it("forwards one validated task ExecutionEnvelope through the compatibility ToolRouter boundary", async () => {
     const actor = createWorkbenchActor({
       userId: `teacher-${crypto.randomUUID()}`,
@@ -3018,8 +3057,9 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     ]));
     expect(body.assistantMessage?.metadata.recovery).toMatchObject({
       reasonCode: "main_agent_provider_policy_blocked",
-      kind: "resume",
+      kind: "retry",
     });
+    expect(body.assistantMessage?.parts?.filter((part) => part.type === "error-recovery")).toHaveLength(1);
     const taskBrief = messages.find((message) => message.role === "teacher")?.metadata.taskBrief as { taskId: string; digest: string };
     const events = await createControlPlaneStore().listEvents(project.id);
     expect(events).toEqual(expect.arrayContaining([

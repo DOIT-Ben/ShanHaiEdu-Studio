@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -24,13 +25,23 @@ describe("V1-10A health route", () => {
     const ready = await GET();
     expect(ready.status).toBe(200);
     expect(ready.headers.get("cache-control")).toBe("no-store");
-    expect(await ready.json()).toEqual({ status: "ok", checks: { database: "ok", artifactStorage: "ok" } });
+    expect(await ready.json()).toEqual({
+      status: "ok",
+      checks: { database: "ok", artifactStorage: "ok" },
+      reasons: [],
+    });
 
-    process.env.DATABASE_URL = `file:${path.join(fixture.root, "missing.db")}`;
+    const database = new Database(fixture.databasePath);
+    database.exec('ALTER TABLE "GenerationJob" DROP COLUMN "providerResultJson"');
+    database.close();
     const degraded = await GET();
     const body = await degraded.json();
     expect(degraded.status).toBe(503);
-    expect(body).toMatchObject({ status: "degraded", checks: { database: "unavailable" } });
+    expect(body).toEqual({
+      status: "degraded",
+      checks: { database: "unavailable", artifactStorage: "ok" },
+      reasons: [{ code: "database_schema_missing_column", table: "GenerationJob", column: "providerResultJson" }],
+    });
     expect(JSON.stringify(body)).not.toContain(fixture.root);
   });
 });
@@ -41,9 +52,16 @@ function makeFixture() {
   const databasePath = path.join(root, "production.db");
   const artifactRoot = path.join(root, "artifacts");
   mkdirSync(artifactRoot);
-  const db = new Database(databasePath);
-  db.exec("CREATE TABLE Project (id TEXT PRIMARY KEY); CREATE TABLE LocalUser (id TEXT PRIMARY KEY); CREATE TABLE Artifact (id TEXT PRIMARY KEY)");
-  db.close();
+  const initialized = spawnSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      DATABASE_URL: `file:${databasePath}`,
+      SHANHAI_DB_INIT_SKIP_DOTENV: "1",
+    },
+    encoding: "utf8",
+  });
+  if (initialized.status !== 0) throw new Error("isolated schema initialization failed");
   return { root, databasePath, artifactRoot };
 }
 

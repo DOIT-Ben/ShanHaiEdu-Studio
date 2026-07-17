@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 test("production preflight fails safely when required env is missing", async () => {
@@ -189,6 +190,29 @@ test("production preflight requires a real active password administrator in SQLi
   assert.equal(passing.checks.find((check) => check.id === "admin-readiness")?.ok, true);
 });
 
+test("production preflight directly rejects an incompatible control-plane schema", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const databasePath = makeAuthDatabase({ admin: true });
+  const database = new Database(databasePath);
+  database.exec('ALTER TABLE "ConversationTurnJob" DROP COLUMN "failureEvidenceDigest"');
+  database.close();
+
+  const result = await runProductionPreflight({
+    cwd,
+    env: completeEnv(makeExternalStorageRoot(), { databasePath }),
+  });
+  const schemaCheck = result.checks.find((check) => check.id === "database-schema-readiness");
+  assert.equal(result.ok, false);
+  assert.equal(schemaCheck?.ok, false);
+  assert.deepEqual(schemaCheck?.reasons, [{
+    code: "database_schema_missing_column",
+    table: "ConversationTurnJob",
+    column: "failureEvidenceDigest",
+  }]);
+  assert.equal(JSON.stringify(schemaCheck).includes(path.dirname(databasePath)), false);
+});
+
 test("production preflight rejects artifact storage inside release directories and symlink targets", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
@@ -300,20 +324,20 @@ function makeAuthDatabase({ admin, authMode = "password", passwordHash = "test-p
 }
 
 function writeAuthDatabase(databasePath, { admin, authMode = "password", passwordHash = "test-password-hash" }) {
+  const initialized = spawnSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      DATABASE_URL: `file:${databasePath}`,
+      SHANHAI_DB_INIT_SKIP_DOTENV: "1",
+    },
+    encoding: "utf8",
+  });
+  if (initialized.status !== 0) throw new Error("isolated schema initialization failed");
   const db = new Database(databasePath);
-  db.exec(`
-    CREATE TABLE "LocalUser" (
-      "id" TEXT PRIMARY KEY,
-      "displayName" TEXT NOT NULL,
-      "role" TEXT NOT NULL,
-      "authMode" TEXT NOT NULL,
-      "email" TEXT UNIQUE,
-      "passwordHash" TEXT
-    );
-  `);
   if (admin) {
     db.prepare(
-      'INSERT INTO "LocalUser" ("id", "displayName", "role", "authMode", "email", "passwordHash") VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO "LocalUser" ("id", "displayName", "role", "authMode", "email", "passwordHash", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
     ).run("admin-fixture", "管理员", "admin", authMode, "admin@example.test", passwordHash);
   }
   db.close();

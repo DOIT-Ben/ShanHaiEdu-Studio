@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
+import { checkSqliteSchemaReadiness } from "../src/server/health/sqlite-schema-readiness.mjs";
 import {
   resolveProviderLedgerManifestRoot,
   resolveProviderLedgerValueSource,
@@ -19,6 +20,7 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
     checkSingleInstanceTopology(env),
     checkPublicRegistration(env),
     checkDatabaseUrl(cwd, env),
+    checkDatabaseSchemaReadiness(cwd, env),
     checkAdminReadiness(cwd, env),
     checkArtifactStorageRoot(cwd, env),
     checkOpenAiProvider(cwd, env),
@@ -153,6 +155,21 @@ function checkAdminReadiness(cwd, env) {
     message: ok ? "An active password administrator exists in SQLite." : "Initialize and verify a password administrator in the configured SQLite database.",
     missing: databasePath ? [] : ["DATABASE_URL"],
     source: ok ? "sqlite_password_admin" : "missing_or_invalid_admin",
+  });
+}
+
+function checkDatabaseSchemaReadiness(cwd, env) {
+  const databasePath = tryResolveDatabasePath(env.DATABASE_URL?.trim(), cwd);
+  const readiness = databasePath
+    ? checkSqliteSchemaReadiness(databasePath)
+    : { ready: false, reasons: [{ code: "database_configuration_invalid" }] };
+  return buildCheck("database-schema-readiness", readiness.ready, {
+    message: readiness.ready
+      ? "SQLite schema contains the required control-plane tables and columns."
+      : "Initialize or upgrade SQLite before starting the application.",
+    missing: readiness.reasons.map(formatSchemaReason),
+    reasons: readiness.reasons,
+    source: readiness.ready ? "sqlite_schema_contract" : "missing_or_incompatible_schema",
   });
 }
 
@@ -314,7 +331,14 @@ function buildCheck(id, ok, detail) {
     source: detail.source,
     absolute: detail.absolute,
     writable: detail.writable,
+    reasons: detail.reasons,
   };
+}
+
+function formatSchemaReason(reason) {
+  if (reason.code === "database_schema_missing_table") return `table:${reason.table}`;
+  if (reason.code === "database_schema_missing_column") return `column:${reason.table}.${reason.column}`;
+  return reason.code;
 }
 
 function missingEnv(env, keys) {

@@ -45,12 +45,14 @@
 - RMD-P2-03：Dispatcher blocked返回、事件、Invocation和存储复用同一Observation ID。
 - RMD-P2-04：失败ValidationReport先校验并重签为invocation-bound报告，与Observation/Event原子持久化后才返回模型引用。
 
-### 尚未满足设计
+### 阶段D已关闭
 
-| ID | 级别 | 已确认问题 | 根因/责任层 |
-|---|---|---|---|
-| RMD-P2-06 | P2 | Provider未配置时native intake抛内部错误，绕过教师安全回复 | 入口错误恢复 |
-| RMD-P2-07 | P2 | `/api/health`不检查新增列和控制面表 | schema readiness |
+- RMD-P2-06：Provider未配置时，native intake和普通respond均返回教师安全的结构化`failed_retryable`，不再回退deterministic或泄露内部错误；消息只投影一个真实`retry`恢复入口。
+- RMD-P2-07：health与production preflight共用显式SQLite schema合同，检查控制面表、消息parts、Artifact任务绑定、TurnJob失败恢复字段和GenerationJob提交/结果字段；缺表或缺列返回机器可读原因且不泄露路径。
+
+### 尚未完成
+
+- 阶段E全量回归、生产构建、当前HEAD启动和桌面核心流程尚未执行；在这些门全部通过前，总整改保持Red。
 
 ### 已废弃方案
 
@@ -113,6 +115,8 @@
 
 ### 阶段D：健康与恢复
 
+阶段状态：**LOCAL GO**（总整改门仍为RED）。
+
 涉及：RMD-P2-06、P2-07。
 
 修改范围：native intake错误边界、provider readiness映射、health schema检查。
@@ -121,6 +125,8 @@
 
 - Provider未配置时返回教师安全、可恢复的结构化失败，不泄露内部错误。
 - health检查当前代码依赖的关键表、列和控制面表；缺任一项返回非ready及机器可读原因。
+
+本阶段实际完成：未配置Main Agent Provider的intake与respond共用结构化失败合同，保持`failed_retryable`与`after_provider_health_change`语义，不回退deterministic、不生成业务Tool或quick reply；无真实checkpoint时使用唯一`retry`消息部件，不伪造resume。health和production preflight共用只读SQLite schema readiness，显式覆盖控制面事实表、ConversationMessage parts/metadata、Artifact任务绑定、ConversationTurnJob失败恢复字段及GenerationJob Provider提交/结果字段；缺表、缺列、不可读和不可用均fail closed并输出稳定reason code。
 
 ### 阶段E：扩大回归与真实桌面
 

@@ -11,7 +11,10 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import Database from "better-sqlite3";
+import {
+  checkSqliteSchemaReadiness,
+  type SqliteSchemaReadinessReason,
+} from "./sqlite-schema-readiness.mjs";
 
 type HealthEnv = {
   DATABASE_URL?: string;
@@ -24,33 +27,40 @@ export type HealthReadinessResult = {
     database: "ok" | "unavailable";
     artifactStorage: "ok" | "unavailable";
   };
+  reasons: HealthReadinessReason[];
 };
+
+export type HealthReadinessReason =
+  | SqliteSchemaReadinessReason
+  | Readonly<{ code: "database_configuration_invalid" | "artifact_storage_unavailable" }>;
 
 export function checkHealthReadiness(
   options: { env?: HealthEnv; cwd?: string } = {},
 ): HealthReadinessResult {
   const env = options.env ?? process.env;
-  const database = databaseReady(env.DATABASE_URL, options.cwd ?? process.cwd()) ? "ok" : "unavailable";
-  const artifactStorage = artifactStorageReady(env.ARTIFACT_STORAGE_ROOT) ? "ok" : "unavailable";
+  const databaseResult = databaseReadiness(env.DATABASE_URL, options.cwd ?? process.cwd());
+  const database = databaseResult.ready ? "ok" : "unavailable";
+  const storageReady = artifactStorageReady(env.ARTIFACT_STORAGE_ROOT);
+  const artifactStorage = storageReady ? "ok" : "unavailable";
   return {
     status: database === "ok" && artifactStorage === "ok" ? "ok" : "degraded",
     checks: { database, artifactStorage },
+    reasons: [
+      ...databaseResult.reasons,
+      ...(storageReady ? [] : [{ code: "artifact_storage_unavailable" as const }]),
+    ],
   };
 }
 
-function databaseReady(databaseUrl: string | undefined, cwd: string) {
-  let database: Database.Database | undefined;
+function databaseReadiness(databaseUrl: string | undefined, cwd: string): Readonly<{
+  ready: boolean;
+  reasons: readonly HealthReadinessReason[];
+}> {
   try {
     const databasePath = resolveSqlitePath(databaseUrl, cwd);
-    database = new Database(databasePath, { readonly: true, fileMustExist: true });
-    const row = database.prepare(
-      "SELECT COUNT(*) AS tableCount FROM sqlite_master WHERE type = 'table' AND name IN ('Project', 'LocalUser', 'Artifact')",
-    ).get() as { tableCount?: number } | undefined;
-    return row?.tableCount === 3;
+    return checkSqliteSchemaReadiness(databasePath);
   } catch {
-    return false;
-  } finally {
-    database?.close();
+    return { ready: false, reasons: [{ code: "database_configuration_invalid" }] };
   }
 }
 

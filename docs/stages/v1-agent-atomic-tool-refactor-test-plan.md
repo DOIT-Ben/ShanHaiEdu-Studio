@@ -86,6 +86,13 @@
 
 ### 阶段D：健康与恢复
 
+状态：**GO（局部）**。Provider失败入口红证据为定向运行`104/105`，唯一失败是缺少持久`error-recovery`；修正无checkpoint场景的恢复种类后，阶段D合并绿证据使用隔离库`.tmp/stage-d-integrated-20260717-1025.db`、单worker，于2026-07-17执行：
+
+- Provider intake/respond、conversation service、health readiness和health route Vitest：`110/110`。
+- production preflight Node合同：`13/13`。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过（仅Git行尾转换提示）。
+
 - Provider未配置的route/service集成测试。
 - 使用完整schema和缺表/缺列schema的health readiness测试。
 - 直接依赖：startup recovery与生产preflight。

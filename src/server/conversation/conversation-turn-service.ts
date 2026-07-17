@@ -804,7 +804,7 @@ async function executeTeacherMessageTurn(input: {
         errorId: failureObservation.observationId,
         reasonCode: agentTurn.failure.reasonCode,
         summary: agentTurn.failure.summary,
-        kind: "resume",
+        kind: "retry",
         label: "服务恢复后继续当前任务",
       },
     }, failureObservation);

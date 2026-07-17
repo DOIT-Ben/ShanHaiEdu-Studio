@@ -966,6 +966,22 @@ describe("M55-C model-first main conversation agent", () => {
     });
     expect(turn.assistantMessage.body).toContain("智能生成服务暂时不可用");
     expect(turn.assistantMessage.body).not.toMatch(/硬编码|主模型|模型通道|schema|provider|debug|local path/i);
+    await expect(agent.intakeTask!({
+      userMessage: "三年级数学，帮我做一份课件大纲",
+      generationIntensity: "standard",
+      projectContext: {},
+      recentMessages: [],
+    })).resolves.toMatchObject({
+      kind: "failed",
+      turn: {
+        state: "failed_retryable",
+        quickReplies: [],
+        failure: {
+          reasonCode: "main_agent_provider_unavailable",
+          retryability: "after_provider_health_change",
+        },
+      },
+    });
   });
 
   it("allows an explicit deterministic Main Agent fixture only outside production", async () => {

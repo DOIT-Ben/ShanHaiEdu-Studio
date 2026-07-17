@@ -424,6 +424,10 @@ export function resolveMainAgentTimeoutMs(env: OpenAICompatibleEnv = process.env
 }
 
 class ModelUnavailableMainConversationAgent implements MainConversationAgent {
+  async intakeTask(_input: MainAgentTaskIntakeInput): Promise<MainAgentTaskIntakeDecision> {
+    return { kind: "failed", turn: modelUnavailableTurn() };
+  }
+
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
     const pendingPlan = input.conversationContext?.pendingDeliveryPlan;
     if (pendingPlan && isModelFallbackConfirmation(input.userMessage)) {
@@ -441,17 +445,27 @@ class ModelUnavailableMainConversationAgent implements MainConversationAgent {
       };
     }
 
-    return {
-      assistantMessage: {
-        body: "智能生成服务暂时不可用，暂时不能可靠理解并推进这次需求。请稍后重试，或联系管理员检查配置。",
-      },
-      state: "failed_retryable",
-      quickReplies: [{ label: "重试", prompt: input.userMessage, recommended: true }],
-      recommendedOptions: [],
-      shouldRunToolNow: false,
-      runtimeKind: "openai",
-    };
+    return modelUnavailableTurn();
   }
+}
+
+function modelUnavailableTurn(): MainAgentTurn {
+  const summary = "智能生成服务暂时不可用，暂时不能可靠理解并推进这次需求。请稍后重试，或联系管理员检查配置。";
+  return {
+    assistantMessage: { body: summary },
+    state: "failed_retryable",
+    quickReplies: [],
+    recommendedOptions: [],
+    shouldRunToolNow: false,
+    runtimeKind: "openai",
+    failure: {
+      phase: "direct_response",
+      reasonCode: "main_agent_provider_unavailable",
+      category: "provider_unavailable",
+      retryability: "after_provider_health_change",
+      summary,
+    },
+  };
 }
 
 function isModelFallbackConfirmation(text: string): boolean {
