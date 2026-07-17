@@ -52,6 +52,10 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第四次clean checkout通过全部Node测试后，Vitest暴露本机外部Provider台账和测试开关污染。Vitest现固定使用仓内无密钥Provider manifest，并在启动前删除manifest声明的继承Provider值；用例只能显式提供假值，clean CI和本机因此使用同一合同。精确增加两个fixture/测试路径，文件预算由48修订为50，生产范围不变。
 
+第五次clean checkout通过Node测试并执行到Vitest后，暴露两个CI环境合同缺口：仓内`tts_minimax`无密钥fixture没有声明生产代码读取的voice ID，且GitHub Windows runner没有打包链路测试需要的真实FFmpeg与LibreOffice。fixture现声明`MINIMAX_TTS_VOICE_ID`，workflow使用Chocolatey安装真实`ffmpeg`、`ffprobe`和LibreOffice并把解析后的二进制路径写入job环境；接线测试同时约束这些前置步骤和唯一验证入口。该修复不调用Provider、不使用假媒体或fallback，也不把环境安装变成第二套验证逻辑。
+
+仓库转为公开后，推送前审计发现当前权威文档和媒体二进制解析仍包含用户目录、工作区或本机工具绝对路径。公开仓库卫生修订把文档位置替换为仓库相对或环境中立说明，把媒体解析改为显式环境变量优先、标准PATH命令兜底，并按项目准则保存AGENTS原文备份；精确Git变更文件预算由50修订为55，本地忽略的备份不计入Git预算，不调用Provider或进入release范围。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

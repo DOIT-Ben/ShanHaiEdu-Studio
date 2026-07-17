@@ -33,6 +33,8 @@
 | DG-18 | clean checkout没有本地Prisma生成目录 | 权威`typecheck`先生成Prisma client再运行TypeScript；workflow不增加私有旁路 |
 | DG-19 | GitHub runner临时根存在上游reparse，文本fixture由LF checkout | 测试夹具写入`realpath`物理临时根且继续拒绝根内链接；manifest绑定LF Git blob字节 |
 | DG-20 | 本机存在外部Provider台账和真实Provider环境值，clean CI不存在 | Vitest固定使用无密钥仓内manifest并删除继承Provider值；能力测试只接受显式假值 |
+| DG-21 | clean GitHub Windows runner没有媒体工具，TTS fixture漏声明voice ID | CI安装并显式解析真实FFmpeg、FFprobe与LibreOffice；fixture声明全部被测TTS环境键；workflow仍只有`npm run verify:ci`一个验证入口 |
+| DG-22 | 仓库由私有转公开后，当前权威文档和媒体解析包含本机绝对路径 | 当前开发入口只保留仓库相对或环境中立位置；媒体工具以显式环境变量或PATH解析；AGENTS修改前双份备份；历史敏感信息审计不回显候选值 |
 
 ## 实际命令
 

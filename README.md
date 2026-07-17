@@ -4,10 +4,10 @@
 
 ## 当前入口
 
-当前唯一工程 checkout：
+在仓库根目录开始工作：
 
 ```powershell
-E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
+Set-Location <ShanHaiEdu-Studio仓库根目录>
 ```
 
 开始工作前按顺序读取：
@@ -19,8 +19,7 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 5. `docs\mainlines\current-mainline-status.md`
 6. `docs\architecture\README.md`
 7. `docs\architecture\V1.0 重构设计.md`
-8. `docs\stages\README.md`
-9. `docs\stages\README.md`；只有存在活动阶段时再读取对应plan/test-plan
+8. `docs\stages\README.md`；只有存在活动阶段时再读取对应plan/test-plan
 
 当前状态：**REMEDIATION VERIFIED / CONTRACT GO / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；8项P1、7项P2及五阶段本地整改门已通过，完成计划已归档。R5整体仍未关闭，连续多轮Provider稳定性、V1-9、教师签收和发布均未完成；本轮未运行390px，未调用图片、视频、PPTX、ZIP或整包Provider，也未把离线fixture上推为真实产品链路。
 
@@ -40,11 +39,10 @@ docs/archive/       历史原文与迁移证据，默认不参与执行
 ## 本地验证
 
 ```powershell
-npm install
+npm ci
 npm run dev
-npx tsc --noEmit
-npm test
-npm run build
+npm run gate:development
+npm run verify:local
 ```
 
 测试必须按当前阶段文档限制worker和外部调用。没有明确阶段授权时，不调用真实媒体或整包Provider。

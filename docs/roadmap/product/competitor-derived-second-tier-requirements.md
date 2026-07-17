@@ -6,12 +6,12 @@
 
 ## 1. 来源
 
-研究材料位于集合工作区：
+研究材料位于集合根的`docs\competitive-research\`：
 
-- `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\docs\competitive-research\2026-07-09-two-closest-competitors-research-plan.md`
-- `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\docs\competitive-research\2026-07-09-magicschool-deep-analysis.md`
-- `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\docs\competitive-research\2026-07-09-canva-for-education-deep-analysis.md`
-- `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\docs\competitive-research\2026-07-09-magicschool-vs-canva-summary.md`
+- `2026-07-09-two-closest-competitors-research-plan.md`
+- `2026-07-09-magicschool-deep-analysis.md`
+- `2026-07-09-canva-for-education-deep-analysis.md`
+- `2026-07-09-magicschool-vs-canva-summary.md`
 
 研究已完成，当前只保留为产品方向证据。相关能力不得进入本轮上线范围。
 

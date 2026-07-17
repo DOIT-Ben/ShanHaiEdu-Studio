@@ -9,17 +9,21 @@
     ".gitattributes",
     ".github/workflows/quality-gates.yml",
     "AGENTS.md",
+    "README.md",
     "config/development-gates.json",
     "docs/architecture/README.md",
     "docs/architecture/decisions/2026-07-17-adr-project-development-gates.md",
     "docs/architecture/decisions/README.md",
     "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
+    "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak",
     "docs/contracts/development-quality-gate.md",
+    "docs/private-api-ledger.md",
     "fixtures/ppt-sample-manifest.json",
     "docs/README.md",
     "docs/mainlines/current-mainline-status.md",
     "docs/product/requirements-backlog.md",
     "docs/roadmap/product/README.md",
+    "docs/roadmap/product/competitor-derived-second-tier-requirements.md",
     "docs/roadmap/product/p0-05a-provider-continuity-readiness-spec.md",
     "docs/roadmap/product/p0-05a-provider-continuity-readiness-plan.md",
     "docs/roadmap/product/p0-05a-provider-continuity-readiness-test-plan.md",
@@ -36,19 +40,22 @@
     "src/server/gpt-protocol/openai-responses-adapter.ts",
     "src/server/gpt-protocol/types.ts",
     "src/server/provider-ledger/provider-call-trace.ts",
+    "src/server/video-quality/video-timeline-assembler.ts",
     "tests/conversation-turn-service.test.ts",
     "tests/capability-availability.test.ts",
     "tests/development-gates/**",
     "tests/fixtures/provider-ledger/manifest.json",
     "tests/gpt-protocol-adapter.test.ts",
     "tests/model-main-conversation-agent.test.ts",
+    "tests/package-tool-adapter.test.ts",
     "tests/provider-call-trace.test.ts"
   ],
   "protectedPathExceptions": [
-    "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak"
+    "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
+    "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak"
   ],
   "budgets": {
-    "maxChangedFiles": 50,
+    "maxChangedFiles": 55,
     "maxAddedLines": 7800,
     "maxDeletedLines": 500,
     "maxBinaryFiles": 0
@@ -99,6 +106,19 @@
       "tests/fixtures/provider-ledger/manifest.json"
     ],
     "reason": "The fourth clean GitHub checkout proved Vitest had inherited an external local Provider ledger. The repository fixture now declares the tested capabilities, inherited Provider values are removed, and tests supply only explicit fake values. No production or real Provider scope was added."
+  },
+  "publicRepositoryHygieneRevision": {
+    "previousMaxChangedFiles": 50,
+    "revisedMaxChangedFiles": 55,
+    "addedAllowedPaths": [
+      "README.md",
+      "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak",
+      "docs/private-api-ledger.md",
+      "docs/roadmap/product/competitor-derived-second-tier-requirements.md",
+      "src/server/video-quality/video-timeline-assembler.ts",
+      "tests/package-tool-adapter.test.ts"
+    ],
+    "reason": "The repository owner changed visibility to public. Current authoritative documents now use repository-relative or environment-neutral locations, the required pre-edit AGENTS backup is preserved exactly, and the media resolver/test helpers no longer expose or depend on one workstation's FFmpeg path. Explicit binary environment variables remain authoritative and PATH is the portable fallback. No Provider call or release scope was added."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

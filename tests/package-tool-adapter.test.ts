@@ -60,7 +60,7 @@ function mp4Buffer(label: string) {
 function realMp4Buffer(color: string, withAudio: boolean, durationSeconds = 0.6) {
   const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-real-mp4-"));
   const output = path.join(root, "fixture.mp4");
-  const ffmpeg = process.env.FFMPEG_PATH || "D:\\Soft\\ffmpeg-7.1.1-essentials_build\\bin\\ffmpeg.exe";
+  const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
   const args = ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=c=${color}:s=320x180:r=24:d=${durationSeconds}`];
   if (withAudio) args.push("-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${durationSeconds}`, "-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac");
   args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-shortest", "-y", output);
@@ -107,7 +107,7 @@ function fullIntroStoryboardArtifact() {
 function realMp3Buffer(durationSeconds = 0.8) {
   const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-real-mp3-"));
   const output = path.join(root, "narration.mp3");
-  const ffmpeg = process.env.FFMPEG_PATH || "D:\\Soft\\ffmpeg-7.1.1-essentials_build\\bin\\ffmpeg.exe";
+  const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
   const result = spawnSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `sine=frequency=660:sample_rate=48000:duration=${durationSeconds}`, "-ac", "2", "-b:a", "128k", "-y", output], { encoding: "utf8", windowsHide: true });
   if (result.status !== 0) throw new Error(`test_ffmpeg_audio_fixture_failed:${result.stderr}`);
   try { return readFileSync(output); } finally { rmSync(root, { recursive: true, force: true }); }

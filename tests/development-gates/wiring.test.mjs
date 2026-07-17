@@ -28,9 +28,23 @@ test("quality-gates workflow calls the repository CI entry without a success byp
   const job = workflow.jobs?.["quality-gates"];
   assert.equal(job?.["runs-on"], "windows-latest");
   assert.equal(job?.["continue-on-error"], undefined);
-  const commands = (job?.steps ?? []).map((step) => step.run).filter(Boolean);
-  assert.deepEqual(commands, ["npm ci", "npm run verify:ci"]);
-  const upload = (job?.steps ?? []).find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+  const steps = job?.steps ?? [];
+  const installMedia = steps.find((step) => step.name === "Install real media dependencies");
+  assert.equal(installMedia?.run, "choco install ffmpeg libreoffice-fresh --yes --no-progress");
+  const exposeMedia = steps.find((step) => step.name === "Expose real media binaries");
+  assert.match(exposeMedia?.run ?? "", /FFMPEG_PATH=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /FFPROBE_PATH=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /LIBREOFFICE_BIN=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /GITHUB_PATH/);
+  const npmCommands = steps
+    .map((step) => step.run)
+    .filter((command) => typeof command === "string" && /^npm(?:\s|$)/.test(command));
+  assert.deepEqual(npmCommands, ["npm ci", "npm run verify:ci"]);
+  const verification = steps.find((step) => step.name === "Run SHA-bound verification");
+  assert.equal(verification?.run, "npm run verify:ci");
+  assert.equal(verification?.if, undefined);
+  assert.equal(verification?.["continue-on-error"], undefined);
+  const upload = steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
   assert.equal(upload?.if, "always()");
   assert.equal(upload?.with?.path, ".tmp/verification/development-verification.json");
 });

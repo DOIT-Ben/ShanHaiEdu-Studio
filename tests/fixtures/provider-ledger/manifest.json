@@ -112,7 +112,8 @@
         "TTS_PROVIDER_MODE",
         "MINIMAX_API_KEY",
         "MINIMAX_BASE_URL",
-        "MINIMAX_TTS_MODEL"
+        "MINIMAX_TTS_MODEL",
+        "MINIMAX_TTS_VOICE_ID"
       ],
       "runtime_contract": {
         "schema_version": "provider-runtime-contract.v1",

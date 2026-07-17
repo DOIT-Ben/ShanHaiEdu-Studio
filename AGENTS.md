@@ -102,7 +102,7 @@ contract / executor / model orchestration / product E2E / release
 
 - 声称完成前执行与风险相称的定向测试、TypeScript、构建、链接、哈希或实际环境验证；只有实际执行成功的命令才能报告为通过。
 - 文档迁移必须先保存原文快照和逐文件 SHA-256 manifest；历史原文迁移后字节保持不变。
-- 更新本文件前，必须在项目 archive 和 `C:\Users\HB\.codex\AGETNS-bak\` 各保存一份时间戳备份，并在更新后立即重新读取。
+- 更新本文件前，必须在项目 archive 和当前用户 Codex 配置根下的`.codex\AGETNS-bak\`各保存一份时间戳备份，并在更新后立即重新读取。
 - 不触碰 `.env`、密钥、私有API台账、SQLite/WAL/SHM、用户上传、Artifact、真实媒体、旧run状态或Git标签，除非用户明确授权具体操作。
 - 不在回复、日志、提交、文档或截图中明文展示密钥、token、账号和个人敏感信息。
 

@@ -382,6 +382,7 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
   writeCaptureBootstrapStage(root);
   const changedPaths = [
     ".gitattributes",
+    "README.md",
     "config/development-gates.json",
     "fixtures/ppt-sample-manifest.json",
     "scripts/run-tests.mjs",
@@ -389,6 +390,8 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
     "tests/capability-availability.test.ts",
     "tests/development-gates/provider-continuity.test.mjs",
     "tests/fixtures/provider-ledger/manifest.json",
+    "tests/package-tool-adapter.test.ts",
+    "src/server/video-quality/video-timeline-assembler.ts",
     "docs/stages/active-stage.json",
     ...CAPTURE_PRODUCTION_PATHS,
   ];

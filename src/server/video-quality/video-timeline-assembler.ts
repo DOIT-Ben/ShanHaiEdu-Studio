@@ -247,8 +247,7 @@ function assertNormalizedProbe(probe: MediaProbeEvidence, width: number, height:
 function resolveMediaBinary(name: "ffmpeg" | "ffprobe", env: NodeJS.ProcessEnv) {
   const configured = env[name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"]?.trim();
   const sibling = name === "ffprobe" && env.FFMPEG_PATH?.trim() ? path.join(path.dirname(env.FFMPEG_PATH), "ffprobe.exe") : null;
-  const known = `D:\\Soft\\ffmpeg-7.1.1-essentials_build\\bin\\${name}.exe`;
-  for (const candidate of [configured, sibling, known]) if (candidate && existsSync(candidate)) return candidate;
+  for (const candidate of [configured, sibling]) if (candidate && existsSync(candidate)) return candidate;
   const probe = spawnSync(name, ["-version"], { encoding: "utf8", windowsHide: true });
   if (probe.status === 0) return name;
   throw new Error(`video_timeline_${name}_missing`);

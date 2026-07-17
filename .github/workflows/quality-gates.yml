@@ -23,6 +23,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install real media dependencies
+        run: choco install ffmpeg libreoffice-fresh --yes --no-progress
+      - name: Expose real media binaries
+        shell: pwsh
+        run: |
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
+          $libreOfficeDir = Join-Path $env:ProgramFiles "LibreOffice\program"
+          $soffice = Join-Path $libreOfficeDir "soffice.exe"
+          if (-not (Test-Path -LiteralPath $soffice -PathType Leaf)) {
+            throw "LibreOffice installation did not provide soffice.exe"
+          }
+          "FFMPEG_PATH=$ffmpeg" >> $env:GITHUB_ENV
+          "FFPROBE_PATH=$ffprobe" >> $env:GITHUB_ENV
+          "LIBREOFFICE_BIN=$soffice" >> $env:GITHUB_ENV
+          $libreOfficeDir >> $env:GITHUB_PATH
       - name: Install locked dependencies
         run: npm ci
       - name: Run SHA-bound verification

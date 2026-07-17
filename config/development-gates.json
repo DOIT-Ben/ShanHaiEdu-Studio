@@ -4,7 +4,7 @@
   "boundContracts": [
     {
       "path": "AGENTS.md",
-      "sha256": "ca9614ad95b828c7c0e4c566e37034191090af1344e437677fac88dc86e06f61"
+      "sha256": "7be2162147cde2c542fcd8f55a2109acf0f3176bbb7dea619d6b8febcd417857"
     },
     {
       "path": "docs/contracts/development-quality-gate.md",

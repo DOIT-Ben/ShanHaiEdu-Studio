@@ -1,9 +1,9 @@
 # 私有 API 台账使用说明
 
-本项目本地可用一份私有 API 台账：
+项目维护者可在仓库根目录自行放置一份私有 API 台账：
 
 ```text
-E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main\ShanHaiEdu-API-Ledger-Standalone-PRIVATE.zip
+.\ShanHaiEdu-API-Ledger-Standalone-PRIVATE.zip
 ```
 
 它用于查询 ShanHaiEdu 各环节可用的 API、模型能力、参数、可靠性证据和本地私有配置。压缩包内包含能力目录、接口资料、PPT 生成、图片、视频、TTS、LLM/Agent、可靠性策略、密钥安装脚本和环境配置示例。

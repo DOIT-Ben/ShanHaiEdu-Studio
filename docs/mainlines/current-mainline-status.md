@@ -7,8 +7,9 @@
 - 最近完成主线：V1.0 Main Agent唯一编排与原子Tool控制面整改。
 - 当前状态：**REMEDIATION VERIFIED / CONTRACT GO / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
 - 阶段A至E和8项P1、7项P2均通过本地整改门；完成计划已归档。
-- 当前唯一活动阶段：项目开发门禁制度化。P0-05A入场审计已证明既有Provider ledger不是逐调用权威事实源；一次性capture bootstrap及脱敏逐调用事实源已完成相关回归，尚未形成clean提交或激活P0-05A。
-- 当前阶段实现已通过本地dirty工作树验证；仍需在提交后由required CI生成clean候选manifest，且真实Provider receipt仍未取得。
+- 当前唯一活动阶段：项目开发门禁制度化。P0-05A入场审计已证明既有Provider ledger不是逐调用权威事实源；一次性capture bootstrap及脱敏逐调用事实源已提交到`main`，但P0-05A尚未激活。
+- 当前阶段已形成clean提交并推送；GitHub Windows CI已通过Node门并在Vitest暴露无密钥TTS fixture和真实媒体二进制两个环境缺口。修复正在候选验证，尚未取得成功的clean manifest，真实Provider receipt仍未取得。
+- 仓库已由所有者切换为公开；当前权威文档中的本机绝对路径正在改为仓库相对或环境中立说明，推送前同时执行不回显候选值的历史敏感信息审计。
 - 已接受的唯一下一阶段候选是P0-05A“真实Provider连续性与V1-9就绪”；当前只完成roadmap规划，尚未取得活动阶段执行权。
 - 整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`，分支`main`；只本地提交，未push。
 - 目标架构仍是`..\architecture\V1.0 重构设计.md`；当前代码已通过本轮审查问题对应的本地合同与执行验证，但不能据此宣称完整产品E2E或release完成。
@@ -64,6 +65,8 @@
 项目开发门禁阶段新鲜证据：门禁专属Node测试59项中58项通过、1项因当前Windows不允许创建测试符号链接而跳过；生产门仍拒绝符号链接。`verify:local`中的开发门、TypeScript、Lint、全量测试和生产构建5项均返回0，并生成绑定当前HEAD、Git tree、dirty工作树摘要、政策SHA与阶段SHA的manifest。Lint保持150条既存warning，构建保持13条动态追踪warning。Provider开发门只返回`passed=false / deferred_bootstrap`；release模式因缺少真实receipt返回`PROVIDER_RECEIPT_MISSING`，未执行真实Provider连续性或release。
 
 Provider capture入场新鲜证据：门禁/策略定向Node测试31项通过、1项Windows符号链接用例跳过；Provider trace、GPT协议、Main Agent和conversation turn相关Vitest `125/125`；标准全量`npm test`为Node `387/387`、Vitest `1562/1562`（197个文件）；TypeScript和生产构建通过，构建仍保留13条既存动态追踪warning。第一次全量入口暴露并修复旧源码字符串合同兼容表达；第二次因新增独立Prisma夹具导致共享SQLite锁冲突，删除重复夹具并把断言并入既有queued recovery用例后全量测试通过。以上均未调用真实Provider，不能上推为连续性receipt或model orchestration Go。
+
+clean CI新鲜证据：`d03fdc1`对应的`quality-gates #29581139816`已通过开发门、TypeScript、Lint和Node `387/387`，Vitest为`1555/1562`。7项失败全部发生在环境前置：3项因`tts_minimax` fixture漏声明`MINIMAX_TTS_VOICE_ID`，4项因runner不存在真实`ffmpeg`/`ffprobe`/`soffice`。当前修复补齐fixture声明并安装、解析真实工具；在下一次clean CI成功前，本阶段继续保持open。
 
 ## 6. 唯一下一动作
 
