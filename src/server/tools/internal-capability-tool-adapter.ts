@@ -11,7 +11,8 @@ import {
   type AgentHarnessBudgetEventStatus,
 } from "@/server/conversation/agent-harness-budget";
 import type { ToolDefinition, ToolExecutionResult } from "./tool-types";
-import type { ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { isTaskBrief, type ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { toolRequiresTaskBriefInput } from "./tool-registry";
 import {
   adaptPptDirectorOutputToDesignArtifact,
   type PptDirectorPlanBinding,
@@ -53,6 +54,15 @@ export async function executeInternalCapabilityTool(
     });
   }
 
+  if (toolRequiresTaskBriefInput(input.tool)) {
+    const taskBrief = input.taskInput?.taskBrief;
+    if (!isTaskBrief(taskBrief) || taskBrief.projectId !== input.projectId ||
+        (input.intentEpoch !== undefined && taskBrief.intentEpoch !== input.intentEpoch) ||
+        (input.executionEnvelope && taskBrief.digest !== input.executionEnvelope.taskBriefDigest)) {
+      return buildNeedsInputResult(input, capabilityId, ["task_brief"], "当前任务说明不完整，我会先按本轮目标重新建立执行边界。");
+    }
+  }
+
   const runCapability = dependencies.runCapability ?? runCapabilityWithAgentRuntime;
 
   if (capabilityId === "ppt_design" && hasCurrentPptDirectorPlan(input)) {
@@ -85,19 +95,7 @@ export async function executeInternalCapabilityTool(
     }
 
     if (result.status === "needs_input") {
-      return {
-        status: "needs_input",
-        toolId: input.tool.id,
-        capabilityId,
-        missingInputs: [...result.missingInputs],
-        assistantPrompt: result.assistantPrompt,
-        observation: createNeedsInputObservation(input, capabilityId, {
-          teacherSafeSummary: result.assistantPrompt,
-          internalReasonSanitized: `Missing required inputs: ${result.missingInputs.join(", ")}`,
-        }),
-        artifactCreated: false,
-        budgetEvent: buildBudgetEvent(input, capabilityId, "failed", "quality_gate_failed"),
-      };
+      return buildNeedsInputResult(input, capabilityId, [...result.missingInputs], result.assistantPrompt);
     }
 
     return buildFailureResult(input, {
@@ -119,6 +117,27 @@ export async function executeInternalCapabilityTool(
       errorCategory: "unknown",
     });
   }
+}
+
+function buildNeedsInputResult(
+  input: InternalCapabilityToolInput,
+  capabilityId: string,
+  missingInputs: string[],
+  assistantPrompt: string,
+): ToolExecutionResult {
+  return {
+    status: "needs_input",
+    toolId: input.tool.id,
+    capabilityId,
+    missingInputs,
+    assistantPrompt,
+    observation: createNeedsInputObservation(input, capabilityId, {
+      teacherSafeSummary: assistantPrompt,
+      internalReasonSanitized: `Missing required inputs: ${missingInputs.join(", ")}`,
+    }),
+    artifactCreated: false,
+    budgetEvent: buildBudgetEvent(input, capabilityId, "failed", "quality_gate_failed"),
+  };
 }
 
 function executePptDirectorDesign(input: InternalCapabilityToolInput): ToolExecutionResult {

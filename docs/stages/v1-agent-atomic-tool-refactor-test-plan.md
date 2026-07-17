@@ -18,7 +18,7 @@
 | ID | 必须通过的负向与正向断言 |
 |---|---|
 | RMD-P1-01 | native HumanGate先持久化PendingDecision/actionId/checkpoint；教师确认绑定同一action并恢复同一task；无action时不得伪恢复 |
-| RMD-P1-02 | 在长Tool运行期间提交暂停/取消/改道，控制事实与epoch/revision先落库；旧Envelope结果只能审计、不能提升 |
+| RMD-P1-02 | 在长Tool运行期间提交暂停/取消/改道，控制事实先落库；暂停保持task/digest/epoch并保存恢复点，取消/实质改道提升epoch/revision；旧Envelope结果只能审计、不能提升 |
 | RMD-P1-03 | 教案、PPT大纲、视频锚点/脚本可在TaskBrief已充分时直接成为首个Tool；Registry不要求固定`requirement_spec`前置 |
 | RMD-P1-04 | PPT大纲、逐页设计、视频分镜、资产说明等局部requested output各自可完成；不得自动要求PPTX、成片、图片或整包 |
 | RMD-P1-05 | N次Provider子调用消耗N次预算并各有submission/invocation/result事实；中途失败保留已提交事实且恢复不重复调用 |
@@ -53,6 +53,14 @@
 - 直接依赖：控制面持久化、turn queue、双用户隔离、迟到结果。
 
 ### 阶段B：任务语义与Tool边界
+
+状态：**GO（局部）**。红证据为conversation定向运行`61/64`，失败3项；修复确认语义和暂停恢复状态合同后，conversation + ToolRouter为`86/86`。阶段B合并绿证据使用隔离库`.tmp/stage-b-precommit-20260717.db`、单worker，于2026-07-17执行：
+
+- 14个阶段B及直接依赖Vitest文件：`284/284`。
+- TaskBrief/语义快照/conversation/Tool暴露补充回归：`107/107`。
+- 自然语言确认与纯图片范围补充回归：`99/99`。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过（仅Git行尾转换提示）。
 
 - Tool Registry无固定DAG资格测试。
 - TaskBrief局部output schema和完成合同表驱动测试。

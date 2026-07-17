@@ -128,7 +128,7 @@ async function createPackageArtifact(
     projectId: project.id,
     intentEpoch: project.intentEpoch ?? 0,
     goal: "Build one version-bound final package.",
-    requestedOutputs: ["final_delivery"],
+    requestedOutputs: ["package"],
     constraints: ["persisted_package_only"],
     excludedOutputs: ["live_reassembly"],
     generationIntensity: project.generationIntensity ?? "standard",

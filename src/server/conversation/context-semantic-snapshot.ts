@@ -100,9 +100,9 @@ function normalizeTaskBrief(taskBrief: TaskBrief): TaskBrief {
     projectId,
     goal,
     sourceMessageId,
-    requestedOutputs: normalizeTextArray(taskBrief.requestedOutputs, "taskBrief.requestedOutputs"),
+    requestedOutputs: normalizeTextArray(taskBrief.requestedOutputs, "taskBrief.requestedOutputs") as TaskBrief["requestedOutputs"],
     constraints: normalizeTextArray(taskBrief.constraints, "taskBrief.constraints"),
-    excludedOutputs: normalizeTextArray(taskBrief.excludedOutputs, "taskBrief.excludedOutputs"),
+    excludedOutputs: normalizeTextArray(taskBrief.excludedOutputs, "taskBrief.excludedOutputs") as TaskBrief["excludedOutputs"],
     digest: taskBrief.digest.toLowerCase(),
   };
 }

@@ -4,12 +4,14 @@ import { createToolObservation, type ToolObservationKind, type ToolObservationRe
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
 import { createValidationReport, validateToolExecutionResult, validateToolPreconditions } from "@/server/contracts/contract-validator";
 import type { ValidationReport } from "@/server/quality/quality-types";
-import { hasValidExecutionEnvelope, type ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { hasValidExecutionEnvelope, isTaskBrief, type ExecutionEnvelope } from "@/server/conversation/task-contract";
+import { isCapabilityInTaskScope } from "@/server/conversation/task-output-scope";
 import { withArtifactQualityState } from "@/server/quality/artifact-quality-state";
 import type { ProjectRecord } from "@/server/workbench/types";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import type { VideoGenerationTaskLifecycle } from "@/server/video-generation/video-generation-run";
 import type { PptDirectorPlanBinding } from "@/server/ppt-quality/ppt-director-design-adapter";
+import type { PptAssetBatchLifecycle } from "@/server/ppt-quality/ppt-asset-batch-run";
 import { executeInternalCapabilityTool, type InternalCapabilityToolInput } from "./internal-capability-tool-adapter";
 import { executePackageTool, type PackageToolAdapterInput } from "./package-tool-adapter";
 import { executeProviderTool, type ProviderArtifactRef, type ProviderToolAdapterInput } from "./provider-tool-adapter";
@@ -30,6 +32,7 @@ export type ToolRouterInput = {
   approvedArtifacts?: ApprovedArtifactInput[];
   sourceMessageId?: string;
   generationTaskLifecycle?: VideoGenerationTaskLifecycle;
+  pptAssetBatchLifecycle?: PptAssetBatchLifecycle;
   executionInputHash?: string;
   executionIntentEpoch?: number;
   pptDirectorPlan?: PptDirectorPlanBinding;
@@ -118,6 +121,40 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       nextAction: "skip_or_replan",
     }));
   }
+  const taskBrief = input.toolInput?.taskBrief;
+  if (!isTaskBrief(taskBrief) || taskBrief.projectId !== input.projectId ||
+      taskBrief.intentEpoch !== input.executionIntentEpoch || taskBrief.digest !== input.executionEnvelope.taskBriefDigest) {
+    return withKnownToolFailureValidation(input, tool, buildBlockedResult({
+      input,
+      toolId: tool.id,
+      capabilityId,
+      expectedArtifactKind: tool.producedArtifactKind,
+      teacherSafeSummary: "这一步缺少完整的当前任务范围，我会先按本轮目标重新建立执行边界。",
+      internalReason: "Complete TaskBrief is required for Tool scope validation.",
+      resultStatus: "failed",
+      budgetStatus: "failed",
+      budgetKind: "tool_failed",
+      errorCategory: "invalid_execution_envelope",
+      observationKind: "tool_failed",
+      nextAction: "skip_or_replan",
+    }));
+  }
+  if (!isCapabilityInTaskScope(capabilityId, taskBrief)) {
+    return withKnownToolFailureValidation(input, tool, buildBlockedResult({
+      input,
+      toolId: tool.id,
+      capabilityId,
+      expectedArtifactKind: tool.producedArtifactKind,
+      teacherSafeSummary: "这一步不在本轮已明确的交付范围内，我不会自动扩张任务。",
+      internalReason: `Capability is outside TaskBrief scope: ${capabilityId}.`,
+      resultStatus: "failed",
+      budgetStatus: "failed",
+      budgetKind: "tool_failed",
+      errorCategory: "blocked_tool",
+      observationKind: "tool_failed",
+      nextAction: "skip_or_replan",
+    }));
+  }
   const preValidationReport = validateToolPreconditions({
     tool,
     projectId: input.projectId,
@@ -126,6 +163,8 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
     resolvedArtifacts: input.resolvedArtifacts,
     inputHash: input.executionInputHash,
     intentEpoch: input.executionIntentEpoch,
+    taskBrief: input.toolInput?.taskBrief,
+    executionEnvelope: input.executionEnvelope,
   });
   const missingArtifactKinds = preValidationReport.gates
     .filter((gate) => gate.status === "failed" && gate.gateId.startsWith("required_input:"))
@@ -183,6 +222,7 @@ export async function routeToolCall(input: ToolRouterInput, dependencies: ToolRo
       resolvedArtifacts: input.resolvedArtifacts ?? [],
       sourceMessageId: input.sourceMessageId,
       generationTaskLifecycle: input.generationTaskLifecycle,
+      pptAssetBatchLifecycle: input.pptAssetBatchLifecycle,
       businessSkillContext: input.businessSkillContext,
     });
     const validationReport = validateToolExecutionResult({

@@ -3,6 +3,7 @@ import type { ArtifactRecord } from "../workbench/types";
 import { isArtifactTrustedForDownstream } from "../quality/artifact-quality-state";
 import { isArtifactBoundToTask } from "../quality/artifact-truth-boundary";
 import type { TaskBrief } from "../conversation/task-contract";
+import { isCapabilityInTaskScope } from "../conversation/task-output-scope";
 import { tryResolveProviderLedgerValueBag, type ProviderLedgerEnv } from "../provider-ledger/provider-ledger-adapter";
 
 export type CapabilityAvailabilityStatus =
@@ -44,6 +45,15 @@ export function buildCapabilityAvailability(input: BuildCapabilityAvailabilityIn
   const definitionsById = new Map(input.capabilityDefinitions.map((definition) => [definition.id, definition]));
 
   return input.capabilityDefinitions.map((definition) => {
+    if (input.taskBrief && !isCapabilityInTaskScope(definition.id, input.taskBrief)) {
+      return buildEntry({
+        definition,
+        status: "blocked",
+        missingApprovedInputs: [],
+        reasonForModel: `status=blocked; capability=${definition.id}; reason=task_scope_mismatch`,
+        reasonForUser: "这一步不在本轮已明确的交付范围内，我不会自动扩张任务。",
+      });
+    }
     const missingApprovedInputs = definition.upstreamCapabilities.filter((upstreamCapabilityId) => {
       const upstreamDefinition = definitionsById.get(upstreamCapabilityId);
       return !upstreamDefinition || !hasApprovedArtifactForCapability(input.artifacts, upstreamDefinition, input.taskBrief);

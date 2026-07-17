@@ -171,6 +171,42 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       return mapTaskAggregate(row);
     },
 
+    async resumeTaskAggregate(input: {
+      taskBrief: TaskBrief;
+      intentGrant: IntentGrant;
+      plan: SemanticContextPlan;
+    }): Promise<PersistedTaskAggregate> {
+      assertTaskScope(input.taskBrief, input.intentGrant);
+      assertPlan(input.plan);
+      const row = await client.$transaction(async (tx) => {
+        const existing = await tx.taskAggregate.findUnique({
+          where: {
+            projectId_intentEpoch: {
+              projectId: input.taskBrief.projectId,
+              intentEpoch: input.taskBrief.intentEpoch,
+            },
+          },
+        });
+        if (!existing || existing.taskId !== input.taskBrief.taskId ||
+            parseJson<TaskBrief>(existing.taskBriefJson).digest !== input.taskBrief.digest ||
+            existing.status !== "paused_recovery" || input.plan.revision < existing.planRevision) {
+          throw new Error("Task aggregate is not a resumable task checkpoint.");
+        }
+        return tx.taskAggregate.update({
+          where: { taskId: existing.taskId },
+          data: {
+            taskBriefJson: JSON.stringify(input.taskBrief),
+            intentGrantJson: JSON.stringify(input.intentGrant),
+            planId: input.plan.planId,
+            planRevision: input.plan.revision,
+            status: "active",
+            checkpointJson: "null",
+          },
+        });
+      });
+      return mapTaskAggregate(row);
+    },
+
     async getTaskAggregate(projectId: string, intentEpoch: number): Promise<PersistedTaskAggregate | null> {
       const row = await client.taskAggregate.findUnique({
         where: { projectId_intentEpoch: { projectId, intentEpoch } },

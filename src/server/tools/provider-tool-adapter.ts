@@ -4,7 +4,7 @@ import { generateCozePptFromArtifact, type CozePptGenerationResult } from "@/ser
 import { createToolObservation, type ToolObservationKind, type ToolObservationRetryAction } from "@/server/capabilities/tool-observation";
 import { buildAgentHarnessBudgetEvent, type AgentHarnessBudgetEventKind, type AgentHarnessBudgetEventStatus } from "@/server/conversation/agent-harness-budget";
 import { generateImageFromArtifact, generatePptAssetImage, type ImageGenerationResult } from "@/server/image-generation/image-generation-run";
-import { runPptAssetBatch, type PptAssetBatchRunResult } from "@/server/ppt-quality/ppt-asset-batch-run";
+import { PptAssetBatchExecutionError, runPptAssetBatch, type PptAssetBatchLifecycle, type PptAssetBatchRunResult } from "@/server/ppt-quality/ppt-asset-batch-run";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { validatePptDesignPackageForProviderProduction } from "@/server/ppt-quality/ppt-design-validator";
 import { validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-validator";
@@ -46,7 +46,7 @@ type ProviderBusinessSkillInput = {
 
 export type RunCozePptProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord } & ProviderBusinessSkillInput) => Promise<CozePptGenerationResult>;
 export type RunImageProvider = (input: { project: ProjectRecord; artifact: ArtifactRecord } & ProviderBusinessSkillInput) => Promise<ImageGenerationResult>;
-export type RunPptAssetBatchProvider = (input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" } & ProviderBusinessSkillInput) => Promise<PptAssetBatchRunResult>;
+export type RunPptAssetBatchProvider = (input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production"; lifecycle?: PptAssetBatchLifecycle } & ProviderBusinessSkillInput) => Promise<PptAssetBatchRunResult>;
 export type RunVideoProvider = (input: {
   project: ProjectRecord;
   artifact: ArtifactRecord;
@@ -72,6 +72,7 @@ export type ProviderToolAdapterInput = {
   resolvedArtifacts?: ArtifactRecord[];
   sourceMessageId?: string;
   generationTaskLifecycle?: VideoGenerationTaskLifecycle;
+  pptAssetBatchLifecycle?: PptAssetBatchLifecycle;
   businessSkillContext?: BusinessSkillContext;
   runCozePpt?: RunCozePptProvider;
   runImage?: RunImageProvider;
@@ -168,31 +169,33 @@ async function executePptAssetTool(input: ProviderToolAdapterInput, capabilityId
   const approvalArtifact = isFullProduction ? findResolvedArtifact(input, "image_prompts") : undefined;
   if (isFullProduction && !approvalArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["image_prompts"]);
 
-  let providerSubmitted = false;
+  let providerSubmissionCount = 0;
   try {
     if (isFullProduction) {
       assertCurrentPptSampleApproval(sourceArtifact, approvalArtifact!);
       assertPptProductionEvidenceResolved(sourceArtifact, input.resolvedArtifacts ?? []);
     }
     const scope = isFullProduction ? "full_production" as const : "key_samples" as const;
-    providerSubmitted = true;
     const result = await (input.runPptAssetBatch ?? runDefaultPptAssetBatch)({
       artifact: sourceArtifact,
       scope,
+      lifecycle: input.pptAssetBatchLifecycle,
       ...providerBusinessSkillInput(input),
     });
-    return buildPptAssetSuccessResult(input, capabilityId, sourceArtifact.id, result, approvalArtifact);
+    providerSubmissionCount = result.providerSubmissionCount ?? result.requestBatch.requests.length;
+    return buildPptAssetSuccessResult(input, capabilityId, sourceArtifact.id, result, approvalArtifact, providerSubmissionCount);
   } catch (error) {
-    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"), providerSubmitted);
+    providerSubmissionCount = error instanceof PptAssetBatchExecutionError ? error.providerSubmissionCount : providerSubmissionCount;
+    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"), providerSubmissionCount);
   }
 }
 
-async function runDefaultPptAssetBatch(input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production" } & ProviderBusinessSkillInput): Promise<PptAssetBatchRunResult> {
+async function runDefaultPptAssetBatch(input: { artifact: ArtifactRecord; scope: "key_samples" | "full_production"; lifecycle?: PptAssetBatchLifecycle } & ProviderBusinessSkillInput): Promise<PptAssetBatchRunResult> {
   const packageValue = input.artifact.structuredContent.pptDesignPackage;
   if (!packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) throw new Error("ppt_design_package_missing");
   const validation = validatePptDesignPackageForProviderProduction(packageValue as PptDesignPackage);
   if (!validation.valid) throw new Error(`ppt_design_package_invalid:${validation.issues.map((issue) => issue.code).join(",")}`);
-  return runPptAssetBatch({ designPackage: packageValue as PptDesignPackage, generateAsset: generatePptAssetImage, scope: input.scope });
+  return runPptAssetBatch({ designPackage: packageValue as PptDesignPackage, generateAsset: generatePptAssetImage, scope: input.scope, lifecycle: input.lifecycle });
 }
 
 function assertCurrentPptSampleApproval(designArtifact: ArtifactRecord, approvalArtifact: ArtifactRecord): void {
@@ -499,6 +502,7 @@ function buildPptAssetSuccessResult(
   sourceArtifactId: string,
   result: PptAssetBatchRunResult,
   approvalArtifact?: ArtifactRecord,
+  providerSubmissionCount = result.providerSubmissionCount ?? result.requestBatch.requests.length,
 ): ToolExecutionResult {
   const isFullProduction = result.requestBatch.scope === "full_production";
   const providerIdentity = resolvePptAssetProviderIdentity(result);
@@ -551,7 +555,7 @@ function buildPptAssetSuccessResult(
     },
     providerPayload: { provider: providerIdentity, sourceArtifactId, ...result, ...(businessSkillProvenance ? { businessSkillProvenance } : {}), artifactTruth, qualityGate },
     assistantSummary: isFullProduction ? `PPT 全量正式资产已生成 ${result.manifest.entries.length} 项，下一步可以组装完整 PPT 并逐页审查。` : `PPT 关键样张资产已生成 ${result.manifest.entries.length} 项，下一步需要检查三份总览和正式组装样张。`,
-    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", true),
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", providerSubmissionCount),
   };
 }
 
@@ -836,7 +840,7 @@ function buildFailureResult(
     reasonCode?: string;
     retryAction?: ToolObservationRetryAction;
   },
-  providerSubmitted = false,
+  providerSubmission: boolean | number = false,
 ): ToolExecutionResult {
   return {
     status: failure.status,
@@ -861,7 +865,7 @@ function buildFailureResult(
     }),
     artifactCreated: false,
     errorCategory: failure.errorCategory,
-    budgetEvent: buildBudgetEvent(input, failure.capabilityId, resolveBudgetStatus(failure.kind, failure.status), resolveBudgetKind(failure.kind), providerSubmitted),
+    budgetEvent: buildBudgetEvent(input, failure.capabilityId, resolveBudgetStatus(failure.kind, failure.status), resolveBudgetKind(failure.kind), providerSubmission),
   };
 }
 
@@ -1068,14 +1072,20 @@ function buildBudgetEvent(
   capabilityId: string,
   status: AgentHarnessBudgetEventStatus,
   kind: AgentHarnessBudgetEventKind,
-  providerSubmitted = false,
+  providerSubmission: boolean | number = false,
 ) {
+  const providerSubmissionCount = typeof providerSubmission === "number"
+    ? providerSubmission
+    : providerSubmission
+      ? 1
+      : 0;
   return buildAgentHarnessBudgetEvent({
     capabilityId,
     actionKey: `${input.tool.id}:${input.tool.producedArtifactKind ?? ""}`,
     expectedArtifactKind: input.tool.producedArtifactKind,
     status,
     kind,
-    providerSubmitted,
+    providerSubmitted: providerSubmissionCount > 0,
+    providerSubmissionCount,
   });
 }

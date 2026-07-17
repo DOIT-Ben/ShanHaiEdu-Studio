@@ -8,10 +8,11 @@ import type { MainAgentReActBudgetExhausted, MainAgentReActCompletionContract, M
 import type { MainAgentReActCheckpoint, MainAgentReActCheckpointSeed } from "@/server/conversation/main-agent-react-checkpoint";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import type { IntentGrant, TaskBrief } from "./task-contract";
-import { proposeDeterministicTaskBriefFixture, type TaskBriefProposal } from "./task-intake";
+import { proposeDeterministicTaskBriefFixture, type TaskBriefProposalInput } from "./task-intake";
 import type { SemanticContextSnapshot } from "./context-semantic-snapshot";
 import type { MainAgentProgressSink } from "./main-agent-stream-projection";
 import type { PreAgentControlDecision } from "./turn-intake-control";
+import { isBoundActionConfirmation } from "./conversation-control-resolver";
 
 export type MainConversationAgentInput = {
   userMessage: string;
@@ -97,8 +98,8 @@ export type MainAgentTaskIntakeInput = {
 };
 
 export type MainAgentTaskIntakeDecision =
-  | { kind: "task"; proposal: TaskBriefProposal }
-  | { kind: "control"; control: PreAgentControlDecision; replacementProposal?: TaskBriefProposal }
+  | { kind: "task"; proposal: TaskBriefProposalInput }
+  | { kind: "control"; control: PreAgentControlDecision; replacementProposal?: TaskBriefProposalInput }
   | { kind: "conversation"; turn?: MainAgentTurn }
   | { kind: "failed"; turn: MainAgentTurn };
 
@@ -116,7 +117,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
       const text = input.userMessage.trim();
       const pendingPlan = input.conversationContext?.pendingDeliveryPlan;
 
-      if (pendingPlan && isShortConfirmation(text)) {
+      if (pendingPlan && (isBoundActionConfirmation(text, pendingPlan) || isShortConfirmation(text))) {
         return {
           assistantMessage: {
             body: pendingPlan.toolPlan.reasonForUser,
@@ -217,7 +218,7 @@ export function createDeterministicMainConversationAgent(): MainConversationAgen
           title: "我理解你的任务",
           body: deliveryPlan
             ? "你想做一套完整公开课材料。我会先整理需求，再按计划推进教案、PPT、图片、导入视频和最终交付包。"
-            : "你想做一套公开课相关材料。我建议先把需求规格整理清楚，再继续生成 PPT 大纲和可下载文件。",
+            : "你想做一套公开课相关材料。我会按本轮目标直接生成第一个必要成果，不扩张到未请求的交付物。",
         },
         state: shouldRunToolNow ? "running_tool" : "awaiting_confirmation",
         quickReplies: shouldRunToolNow ? [] : deliveryPlan ? deliveryPlanConfirmationReplies() : singleStepConfirmationReplies(),

@@ -19,6 +19,10 @@ import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-qualit
 import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
 import { adaptPptAgentCriticReview } from "@/server/ppt-quality/ppt-agent-critic-review-adapter";
 import { buildPptFullDeckReviewArtifact, buildPptSampleReviewArtifact } from "@/server/ppt-quality/ppt-review-artifact";
+import { buildPptAssetRequestBatch } from "@/server/ppt-quality/ppt-asset-request-builder";
+import type { PptAssetBatchLifecycle } from "@/server/ppt-quality/ppt-asset-batch-run";
+import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
+import type { PptAssetRequest, PptGeneratedAsset } from "@/server/ppt-quality/ppt-asset-types";
 import { adaptVideoAgentCriticReview } from "@/server/video-quality/video-agent-critic-review-adapter";
 import { appendAgentToolReportMetadata, createPersistedAgentToolReport } from "@/server/tools/agent-tool-report";
 import type { AgentToolArtifactRef, AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
@@ -39,7 +43,8 @@ import type { MainConversationAgentInput } from "./main-conversation-agent";
 import { appendAgentHarnessBudgetEventMetadata } from "./agent-harness-budget";
 import type { MainAgentReActContextTelemetry, MainAgentReActDispatchResult } from "./main-agent-controlled-react-loop";
 import { createMainAgentRoundBudgetPause } from "./main-agent-run-pause";
-import { createExecutionEnvelope, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
+import { createExecutionEnvelope, type IntentGrant, type PendingDecision, type TaskBrief, type TaskRequestedOutput } from "./task-contract";
+import { isCapabilityInTaskScope } from "./task-output-scope";
 import { createControlPlaneStore, type ToolInvocationClaim } from "./control-plane-store";
 import { buildSemanticContextSnapshot } from "./context-semantic-snapshot";
 import { restoreMainAgentReActCheckpoint, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
@@ -477,6 +482,15 @@ export function createMainAgentToolLoopOptions(
             action: { toolName: requestedDefinition.internalToolId ?? requestedDefinition.id, arguments: call.arguments },
           })
         : undefined;
+      const pptAssetBatchExecution = executionEnvelope && input.taskBrief
+        ? await preparePptAssetBatchExecution({
+            service: input.service,
+            projectId: input.project.id,
+            definition: requestedDefinition,
+            artifacts: taskArtifacts(),
+            taskBrief: input.taskBrief,
+          })
+        : null;
       if (isMainAgentControlToolDefinition(requestedDefinition)) {
         if (!executionEnvelope || !input.taskBrief) {
           return {
@@ -610,11 +624,16 @@ export function createMainAgentToolLoopOptions(
         };
       }
       if (typeof requestedDefinition.internalToolId === "string") {
-        const actionRisk = actionRiskForTool(requestedDefinition);
+        const actionRisk = pptAssetBatchExecution?.pendingUnitCount === 0
+          ? "internal"
+          : actionRiskForTool(requestedDefinition);
         const policy = evaluateActionPolicy({
           risk: actionRisk,
           intentGrant: authoritativeIntentGrant,
-          externalProviderCallsUsed,
+          externalProviderCallsUsed: Math.max(
+            externalProviderCallsUsed,
+            pptAssetBatchExecution?.authoritativeProviderCallsUsed ?? 0,
+          ) + Math.max(0, (pptAssetBatchExecution?.pendingUnitCount ?? 1) - 1),
           expectedScope: {
             projectId: input.project.id,
             intentEpoch: input.project.intentEpoch ?? 0,
@@ -852,6 +871,7 @@ export function createMainAgentToolLoopOptions(
             idempotencyKey: executionEnvelope.idempotencyKey,
             taskBriefDigest: executionEnvelope.taskBriefDigest,
             intentEpoch: executionEnvelope.intentEpoch,
+            pptAssetBatchLifecycle: pptAssetBatchExecution?.lifecycle,
           })
         : null;
       if (invocationClaim?.kind === "in_progress" && !providerGeneration?.lifecycle.providerTaskId) {
@@ -949,12 +969,13 @@ export function createMainAgentToolLoopOptions(
         pptDirectorPlan: internalToolId === "create_ppt_design_draft" ? latestPptDirectorPlan : undefined,
         businessSkillContext,
         ...(providerGeneration ? { generationTaskLifecycle: providerGeneration.lifecycle } : {}),
+        ...(providerGeneration?.pptAssetBatchLifecycle ? { pptAssetBatchLifecycle: providerGeneration.pptAssetBatchLifecycle } : {}),
       }) });
       const providerBudgetEvent = dispatch.kind === "business_tool" && dispatch.result.budgetEvent.providerSubmitted
         ? dispatch.result.budgetEvent
         : undefined;
       if (providerBudgetEvent) {
-        externalProviderCallsUsed += 1;
+        externalProviderCallsUsed += providerBudgetEvent.providerSubmissionCount ?? 1;
         currentMetadata = appendAgentHarnessBudgetEventMetadata(currentMetadata, providerBudgetEvent);
         await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
       }
@@ -1436,7 +1457,7 @@ function isCurrentlyQualifiedMainAgentTool(
 ) {
   if (isMainAgentControlToolDefinition(tool)) return Boolean(taskBrief);
   if (typeof tool.internalToolId === "string") {
-    if (!isBusinessToolInTaskScope(tool.id, taskBrief)) return false;
+    if (!isCapabilityInTaskScope(tool.capabilityId ?? "", taskBrief)) return false;
     if (tool.internalToolId === "create_requirement_spec") {
       return Boolean(taskBrief?.requestedOutputs.length) && !trustedKinds.has("requirement_spec");
     }
@@ -1448,9 +1469,11 @@ function isCurrentlyQualifiedMainAgentTool(
     return tool.requiredArtifactKinds.every((kind) => trustedKinds.has(kind as ArtifactRecord["kind"]));
   }
   if (tool.id === "ppt_director.plan_or_repair") {
+    if (!taskBriefAllowsAny(taskBrief, pptDesignAndDeliveryOutputs)) return false;
     return trustedKinds.has("ppt_draft") || trustedKinds.has("ppt_design_draft") || trustedKinds.has("pptx_artifact");
   }
   if (tool.id === "video_director.plan_or_repair") {
+    if (!taskBriefAllowsAny(taskBrief, videoProductionOutputs)) return false;
     return [
       "creative_theme_generate",
       "video_script_generate",
@@ -1461,6 +1484,7 @@ function isCurrentlyQualifiedMainAgentTool(
     ].some((kind) => trustedKinds.has(kind as ArtifactRecord["kind"]));
   }
   if (tool.id === "delivery_critic.review") {
+    if (!taskBriefAllowsAny(taskBrief, reviewableOutputs)) return false;
     return [
       "ppt_design_draft",
       "image_prompts",
@@ -1476,23 +1500,19 @@ function isCurrentlyQualifiedMainAgentTool(
   return false;
 }
 
-function isBusinessToolInTaskScope(toolId: string, taskBrief?: TaskBrief) {
-  if (!taskBrief) return true;
-  const outputs = new Set(taskBrief.requestedOutputs);
-  if (toolId === "create_requirement_spec") return true;
-  if (toolId === "create_lesson_plan") return outputs.has("lesson_plan") || outputs.has("package");
-  if (toolId === "create_ppt_outline" || toolId === "generate_classroom_image" || toolId.startsWith("create_ppt_") ||
-      toolId.startsWith("generate_ppt_") || toolId.startsWith("assemble_ppt_") || toolId.startsWith("repair_ppt_")) {
-    return outputs.has("ppt") || outputs.has("package");
-  }
-  if (["create_video_course_anchor", "generate_intro_creative_themes", "generate_intro_video_script"].includes(toolId)) {
-    return outputs.has("video_script") || outputs.has("video") || outputs.has("package");
-  }
-  if (["generate_video_storyboard", "generate_video_asset_brief", "plan_video_segments", "generate_video_assets", "generate_video_narration", "generate_video_shot", "assemble_video"].includes(toolId)) {
-    return outputs.has("video") || outputs.has("package");
-  }
-  if (toolId === "create_final_package") return outputs.has("package");
-  return true;
+const pptDesignAndDeliveryOutputs: readonly TaskRequestedOutput[] = [
+  "ppt_design", "ppt_sample_assets", "ppt_key_samples", "ppt_full_assets", "ppt", "package",
+];
+const videoProductionOutputs: readonly TaskRequestedOutput[] = [
+  "storyboard", "asset_brief", "video_assets", "video_segment_plan", "video_narration", "video_shot", "video", "package",
+];
+const reviewableOutputs: readonly TaskRequestedOutput[] = [
+  ...pptDesignAndDeliveryOutputs, ...videoProductionOutputs, "image",
+];
+
+function taskBriefAllowsAny(taskBrief: TaskBrief | undefined, outputs: readonly TaskRequestedOutput[]): boolean {
+  if (!taskBrief) return false;
+  return outputs.some((output) => taskBrief.requestedOutputs.includes(output) && !taskBrief.excludedOutputs.includes(output));
 }
 
 function toRuntimeProjectContext(project: ProjectRecord, taskBrief?: TaskBrief) {
@@ -1785,6 +1805,7 @@ async function prepareNativeProviderGeneration(input: {
   idempotencyKey: string;
   taskBriefDigest: string;
   intentEpoch: number;
+  pptAssetBatchLifecycle?: PptAssetBatchLifecycle;
 }) {
   if (input.definition.adapterKind !== "provider" || typeof input.definition.internalToolId !== "string") return null;
   const definition = input.definition;
@@ -1814,10 +1835,12 @@ async function prepareNativeProviderGeneration(input: {
         version: artifact.version,
       })),
     },
+    ...(input.pptAssetBatchLifecycle ? { countsAsProviderSubmission: false } : {}),
   });
   const active = await input.service.startGenerationJobForExecution(input.projectId, queued.id);
   return {
     active,
+    pptAssetBatchLifecycle: input.pptAssetBatchLifecycle,
     lifecycle: {
       providerTaskId: active.providerTaskId,
       onTaskAccepted: async (providerTaskId: string) => {
@@ -1828,6 +1851,160 @@ async function prepareNativeProviderGeneration(input: {
       },
     },
   };
+}
+
+type PptAssetBatchExecutionPlan = {
+  pendingUnitCount: number;
+  authoritativeProviderCallsUsed: number;
+  lifecycle: PptAssetBatchLifecycle;
+};
+
+async function preparePptAssetBatchExecution(input: {
+  service: WorkbenchService;
+  projectId: string;
+  definition: MainAgentToolDefinition;
+  artifacts: ArtifactRecord[];
+  taskBrief: TaskBrief;
+}): Promise<PptAssetBatchExecutionPlan | null> {
+  if (input.definition.internalToolId !== "generate_ppt_sample_assets" &&
+      input.definition.internalToolId !== "generate_ppt_full_assets") return null;
+  const sourceArtifact = input.artifacts
+    .filter((artifact) => artifact.kind === "ppt_design_draft" && isArtifactTrustedForDownstream(artifact))
+    .at(-1);
+  const packageValue = sourceArtifact?.structuredContent.pptDesignPackage;
+  if (!sourceArtifact || !packageValue || typeof packageValue !== "object" || Array.isArray(packageValue)) return null;
+  let requestBatch: ReturnType<typeof buildPptAssetRequestBatch>;
+  try {
+    requestBatch = buildPptAssetRequestBatch(
+      packageValue as PptDesignPackage,
+      input.definition.internalToolId === "generate_ppt_full_assets" ? "full_production" : "key_samples",
+    );
+  } catch {
+    return null;
+  }
+  const jobs = await input.service.getGenerationJobs(input.projectId);
+  const jobsByUnit = new Map<string, GenerationJobRecord>();
+  for (const job of jobs) {
+    if (job.kind !== "image" || job.sourceArtifactId !== sourceArtifact.id || job.intentEpoch !== input.taskBrief.intentEpoch || !job.unitId) continue;
+    jobsByUnit.set(job.unitId, job);
+  }
+  const completed = new Map<string, PptGeneratedAsset>();
+  for (const request of requestBatch.requests) {
+    const result = readVerifiedPptAssetUnitResult(jobsByUnit.get(request.assetId), request, requestBatch.batchDigest);
+    if (result) completed.set(request.assetId, result);
+  }
+  const activeJobIds = new Map<string, string>();
+  const capabilityId = input.definition.capabilityId ?? "ppt_sample_assets";
+  const lifecycle: PptAssetBatchLifecycle = {
+    loadSucceededUnit: async (request) => completed.get(request.assetId) ?? null,
+    onSubmissionStarted: async (request) => {
+      const idempotencyKey = hashRunInput({
+        taskId: input.taskBrief.taskId,
+        capabilityId,
+        batchDigest: requestBatch.batchDigest,
+        assetId: request.assetId,
+      });
+      const queued = await input.service.createGenerationJob(input.projectId, {
+        kind: "image",
+        sourceArtifactId: sourceArtifact.id,
+        unitId: request.assetId,
+        capabilityId,
+        idempotencyKey,
+        sourceArtifactIds: [sourceArtifact.id],
+        createStagedArtifactCommit: false,
+        inputSnapshot: {
+          taskId: input.taskBrief.taskId,
+          taskBriefDigest: input.taskBrief.digest,
+          intentEpoch: input.taskBrief.intentEpoch,
+          batchDigest: requestBatch.batchDigest,
+          request: structuredClone(request),
+        },
+      });
+      if (queued.status === "succeeded") throw new Error("ppt_asset_unit_result_unverifiable");
+      const active = await input.service.startGenerationJobForExecution(input.projectId, queued.id);
+      if (active.job.status === "submission_unknown") throw new Error("submission_unknown");
+      if (active.job.status !== "running") throw new Error(`ppt_asset_unit_not_runnable:${active.job.status}`);
+      activeJobIds.set(request.assetId, active.job.id);
+    },
+    onSubmissionSucceeded: async (request, result) => {
+      const jobId = activeJobIds.get(request.assetId);
+      if (!jobId) throw new Error("ppt_asset_unit_job_missing");
+      await input.service.completeGenerationUnit(input.projectId, jobId, {
+        providerResultJson: JSON.stringify({
+          schemaVersion: "ppt-asset-unit-result.v1",
+          taskId: input.taskBrief.taskId,
+          batchDigest: requestBatch.batchDigest,
+          assetId: request.assetId,
+          requestInputHash: request.inputHash,
+          result: structuredClone(result),
+        }),
+      });
+    },
+    onSubmissionFailed: async (request, error) => {
+      const jobId = activeJobIds.get(request.assetId);
+      if (!jobId) return;
+      await input.service.failGenerationJob(input.projectId, jobId, {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    },
+  };
+  return {
+    pendingUnitCount: requestBatch.requests.length - completed.size,
+    authoritativeProviderCallsUsed: jobs
+      .filter((job) => job.intentEpoch === input.taskBrief.intentEpoch && job.countsAsProviderSubmission !== false)
+      .reduce((count, job) => count + job.attempts, 0),
+    lifecycle,
+  };
+}
+
+function readVerifiedPptAssetUnitResult(
+  job: GenerationJobRecord | undefined,
+  request: PptAssetRequest,
+  batchDigest: string,
+): PptGeneratedAsset | null {
+  if (!job || job.status !== "succeeded" || !job.providerResultJson) return null;
+  try {
+    const value = JSON.parse(job.providerResultJson) as Record<string, unknown>;
+    if (value.schemaVersion !== "ppt-asset-unit-result.v1" ||
+        value.batchDigest !== batchDigest ||
+        value.assetId !== request.assetId ||
+        value.requestInputHash !== request.inputHash ||
+        !isPptGeneratedAsset(value.result, request)) return null;
+    return structuredClone(value.result);
+  } catch {
+    return null;
+  }
+}
+
+function isPptGeneratedAsset(value: unknown, request: PptAssetRequest): value is PptGeneratedAsset {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  return typeof result.provider === "string" && result.provider.length > 0 &&
+    typeof result.model === "string" && result.model.length > 0 &&
+    typeof result.clientRequestId === "string" && result.clientRequestId.length > 0 &&
+    typeof result.fileName === "string" && result.fileName.length > 0 &&
+    typeof result.storageRef === "string" && result.storageRef.length > 0 &&
+    typeof result.sha256 === "string" && /^[a-f0-9]{64}$/i.test(result.sha256) &&
+    typeof result.bytes === "number" && result.bytes > 0 &&
+    typeof result.width === "number" && result.width > 0 &&
+    typeof result.height === "number" && result.height > 0 &&
+    typeof result.mime === "string" && result.mime.startsWith("image/") &&
+    result.transparentBackgroundVerified === request.transparentBackground &&
+    Array.isArray(result.sentReferenceAssetIds) &&
+    isPptAssetFileEvidence(result.rawAsset) &&
+    isPptAssetFileEvidence(result.normalizedAsset);
+}
+
+function isPptAssetFileEvidence(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const file = value as Record<string, unknown>;
+  return typeof file.fileName === "string" && file.fileName.length > 0 &&
+    typeof file.storageRef === "string" && file.storageRef.length > 0 &&
+    typeof file.sha256 === "string" && /^[a-f0-9]{64}$/i.test(file.sha256) &&
+    typeof file.bytes === "number" && file.bytes > 0 &&
+    typeof file.width === "number" && file.width > 0 &&
+    typeof file.height === "number" && file.height > 0 &&
+    typeof file.mime === "string" && file.mime.startsWith("image/");
 }
 
 function generationJobKindFor(definition: ToolDefinition): GenerationJobRecord["kind"] {

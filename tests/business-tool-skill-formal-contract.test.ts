@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { listBusinessToolSkillPolicies } from "@/server/skills/business-tool-skill-bindings";
+import { listBusinessToolSkillPolicies, resolveBusinessToolSkillPolicy } from "@/server/skills/business-tool-skill-bindings";
 import {
   BusinessToolSkillOutputContractError,
   hasFormalBusinessToolOutputAdapter,
@@ -26,6 +26,18 @@ const contracts = {
 };
 
 describe("A23 formal business Tool output adapters", () => {
+  it.each([
+    "create_lesson_plan",
+    "create_ppt_outline",
+    "create_video_course_anchor",
+    "generate_intro_creative_themes",
+  ])("uses TaskBrief rather than a fabricated requirement_spec consume contract for %s", (toolName) => {
+    const policy = resolveBusinessToolSkillPolicy(toolName);
+    expect(policy).toBeDefined();
+    if (!policy || policy.mode === "exempt") throw new Error(`Missing semantic Tool contract for ${toolName}`);
+    expect(policy.contracts.tool.consumes).toEqual([]);
+  });
+
   it("registers every produce adapter declared by the six formal_contract Tool policies", () => {
     const policies = listBusinessToolSkillPolicies().filter((policy) => policy.mode === "skill");
     const formalToolNames = policies.map((policy) => policy.toolName).sort();

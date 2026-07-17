@@ -24,7 +24,7 @@
 
 ## 3. 任务、授权与执行合同
 
-- 明确交付任务必须形成完整、版本绑定的 `TaskBrief`，保留目标、教材、约束、排除项、请求产物、强度和结构化输入。
+- 明确交付任务必须形成完整、版本绑定的 `TaskBrief`，冻结目标、课程上下文、约束、排除项、canonical请求产物、初始可信输入引用、强度和质量目标。动态可信Artifact/Observation由SemanticSnapshot绑定，预算授权由IntentGrant绑定，plan revision由TaskAggregate/ExecutionEnvelope绑定，不在TaskBrief内复制可变事实。
 - `IntentGrant`绑定已披露的预算版本、授权范围和副作用边界；`IntentEpoch`与计划revision必须单调，改道后迟到旧结果不能提升。
 - 所有可执行Tool必须通过有效 `ExecutionEnvelope`，核验actor、project、task、TaskBrief digest、IntentEpoch、plan revision、强度、授权、action digest和幂等键。
 - 标准任务范围内的可逆内部工作零例行确认。Main Agent 仍可在多个合理理解会实质改变结果、且现有上下文无法消除边界时，自主发起一次 `DialogueCheckpoint` 请求教师判断；是否发起由 Main Agent 基于语义决定，不按固定节点、正则或产物状态触发。
@@ -38,7 +38,7 @@
 - 无正文可流式输出且尚无已持久化活动事实时，只显示中性等待文案和真实耗时。只有对应事件已经持久化后，才可显示请求已开始、Tool已开始或Observation已收到；不得预告“正在理解”“正在选择下一步”等尚未发生的动作，也不得显示模拟百分比、虚构阶段、思维链、函数参数或后台调试信息。
 - 同一失败只在具体失败步骤呈现一次，并只保留一个恢复入口；不得把一次失败重复为顶部状态、泛化失败节点、Tool状态和多张恢复卡。
 - 前端只投影服务端线程、计划、Tool状态、Artifact引用、HumanGate和错误恢复，不从正文关键词猜测业务状态。
-- 控制消息必须先持久化暂停、取消或改道，再允许任何Tool继续；有无pending plan都遵守同一顺序。
+- 控制消息必须先持久化暂停、取消或改道，再允许任何Tool继续；暂停保持同一task/digest/IntentEpoch并保存恢复点，取消或实质改道才提升epoch/revision；有无pending plan都遵守同一顺序。
 - 教师界面不得出现schema、provider、node_id、storage、debug、local path、token或内部推理。
 - 成果数量、页码、镜头、版本、费用和质量状态必须来自真实持久事实；未达标必须显示原因和恢复动作。
 

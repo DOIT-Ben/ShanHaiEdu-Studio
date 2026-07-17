@@ -446,6 +446,11 @@ export function createWorkbenchService(
       return mapConversationTurnJob(job);
     },
 
+    async completeGenerationUnit(projectId: string, jobId: string, input: { providerResultJson: string }): Promise<GenerationJobRecord> {
+      await ensureProjectAccess(projectId, "generate");
+      return mapGenerationJob(await repository.completeGenerationUnit(projectId, jobId, input));
+    },
+
     async requeueConversationTurnJobForRecovery(
       projectId: string,
       jobId: string,
@@ -673,6 +678,8 @@ function mapGenerationJob(job: GenerationJob): GenerationJobRecord {
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
     resultArtifactId: job.resultArtifactId,
+    providerResultJson: job.providerResultJson,
+    countsAsProviderSubmission: job.countsAsProviderSubmission,
     errorMessage: job.errorMessage,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),

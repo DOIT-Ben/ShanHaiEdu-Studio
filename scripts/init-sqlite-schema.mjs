@@ -213,6 +213,8 @@ CREATE TABLE IF NOT EXISTS "GenerationJob" (
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "maxAttempts" INTEGER NOT NULL DEFAULT 2,
   "resultArtifactId" TEXT,
+  "providerResultJson" TEXT,
+  "countsAsProviderSubmission" BOOLEAN NOT NULL DEFAULT true,
   "errorMessage" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
@@ -539,6 +541,8 @@ ensureColumn(db, "GenerationJob", "providerTaskId", 'ALTER TABLE "GenerationJob"
 ensureColumn(db, "GenerationJob", "pollState", 'ALTER TABLE "GenerationJob" ADD COLUMN "pollState" TEXT NOT NULL DEFAULT \'not_started\'');
 ensureColumn(db, "GenerationJob", "providerAcceptedAt", 'ALTER TABLE "GenerationJob" ADD COLUMN "providerAcceptedAt" DATETIME');
 ensureColumn(db, "GenerationJob", "lastPolledAt", 'ALTER TABLE "GenerationJob" ADD COLUMN "lastPolledAt" DATETIME');
+ensureColumn(db, "GenerationJob", "providerResultJson", 'ALTER TABLE "GenerationJob" ADD COLUMN "providerResultJson" TEXT');
+ensureColumn(db, "GenerationJob", "countsAsProviderSubmission", 'ALTER TABLE "GenerationJob" ADD COLUMN "countsAsProviderSubmission" BOOLEAN NOT NULL DEFAULT true');
 ensureColumn(db, "StagedArtifactCommit", "actorUserId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorUserId" TEXT');
 ensureColumn(db, "StagedArtifactCommit", "actorAuthMode", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorAuthMode" TEXT');
 ensureColumn(db, "StagedArtifactCommit", "authSessionId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "authSessionId" TEXT');

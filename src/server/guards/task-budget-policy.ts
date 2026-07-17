@@ -1,4 +1,4 @@
-import type { TaskBrief } from "@/server/conversation/task-contract";
+import type { TaskBrief, TaskRequestedOutput } from "@/server/conversation/task-contract";
 
 export const STANDARD_TASK_BUDGET_POLICY_VERSION = "v1-standard-task-scope.v1";
 
@@ -34,7 +34,7 @@ export function resolveStandardTaskBudget(taskBrief: Pick<TaskBrief, "requestedO
   let maxExternalProviderCalls = 0;
   let maxToolRounds = baseTaskToolRounds;
   for (const [output, budget] of Object.entries(outputBudgets)) {
-    if (!outputs.has(output) || excluded.has(output)) continue;
+    if (!outputs.has(output as TaskRequestedOutput) || excluded.has(output as TaskRequestedOutput)) continue;
     maxExternalProviderCalls += budget.externalProviderCalls;
     maxToolRounds += budget.toolRounds;
   }

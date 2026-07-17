@@ -37,7 +37,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
-    const { taskBrief } = await seedArtifactRouteTask(project, ["pptx_artifact"]);
+    const { taskBrief } = await seedArtifactRouteTask(project, ["ppt"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_design_draft",
       kind: "ppt_design_draft",
@@ -174,7 +174,7 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
   ])("does not save a PPTX artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "PPTX provider truth gate" });
-    await seedArtifactRouteTask(project, ["pptx_artifact"]);
+    await seedArtifactRouteTask(project, ["ppt"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_design_draft",
       kind: "ppt_design_draft",

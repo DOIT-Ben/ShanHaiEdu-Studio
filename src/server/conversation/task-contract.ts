@@ -7,15 +7,58 @@ export const INTENT_GRANT_VERSION = "intent-grant.v1" as const;
 export const AGENT_EVENT_ENVELOPE_VERSION = "agent-event-envelope.v1" as const;
 export const PENDING_DECISION_VERSION = "pending-decision.v1" as const;
 
+export const TASK_REQUESTED_OUTPUTS = [
+  "requirement_spec",
+  "textbook_evidence",
+  "lesson_plan",
+  "interactive_courseware_spec",
+  "ppt_outline",
+  "ppt_design",
+  "ppt_sample_assets",
+  "ppt_key_samples",
+  "ppt_full_assets",
+  "ppt",
+  "knowledge_anchor",
+  "creative_theme",
+  "video_script",
+  "storyboard",
+  "asset_brief",
+  "video_assets",
+  "video_segment_plan",
+  "video_narration",
+  "video_shot",
+  "image",
+  "video",
+  "package",
+] as const;
+
+export type TaskRequestedOutput = typeof TASK_REQUESTED_OUTPUTS[number];
+
+export type TaskContext = {
+  grade: string | null;
+  subject: string | null;
+  textbookVersion: string | null;
+  lessonTopic: string | null;
+};
+
+export type TaskInputArtifactRef = {
+  artifactId: string;
+  version: number;
+  digest: string;
+};
+
 export type TaskBrief = {
   schemaVersion: typeof TASK_BRIEF_VERSION;
   taskId: string;
   projectId: string;
   intentEpoch: number;
   goal: string;
-  requestedOutputs: string[];
+  requestedOutputs: TaskRequestedOutput[];
   constraints: string[];
-  excludedOutputs: string[];
+  excludedOutputs: TaskRequestedOutput[];
+  context?: TaskContext;
+  inputArtifactRefs?: TaskInputArtifactRef[];
+  qualityTargets?: string[];
   generationIntensity: GenerationIntensity;
   sourceMessageId: string;
   digest: string;
@@ -86,24 +129,121 @@ export type PendingDecision = {
   expiresAt: string | null;
 };
 
-export function createTaskBrief(input: Omit<TaskBrief, "schemaVersion" | "digest">): TaskBrief {
+export function createTaskBrief(input: Omit<TaskBrief, "schemaVersion" | "digest" | "requestedOutputs" | "excludedOutputs"> & {
+  requestedOutputs: readonly string[];
+  excludedOutputs: readonly string[];
+}): TaskBrief {
   const normalized = {
-    ...input,
+    taskId: requireText(input.taskId, "taskId"),
+    projectId: requireText(input.projectId, "projectId"),
+    intentEpoch: input.intentEpoch,
     goal: requireText(input.goal, "goal"),
-    requestedOutputs: uniqueText(input.requestedOutputs),
+    requestedOutputs: normalizeTaskRequestedOutputs(input.requestedOutputs, "requestedOutputs"),
     constraints: uniqueText(input.constraints),
-    excludedOutputs: uniqueText(input.excludedOutputs),
+    excludedOutputs: normalizeTaskRequestedOutputs(input.excludedOutputs, "excludedOutputs"),
+    generationIntensity: input.generationIntensity,
+    sourceMessageId: requireText(input.sourceMessageId, "sourceMessageId"),
+    context: normalizeTaskContext(input.context),
+    inputArtifactRefs: normalizeTaskInputArtifactRefs(input.inputArtifactRefs),
+    qualityTargets: uniqueText(input.qualityTargets ?? []),
   };
+  if (!Number.isInteger(normalized.intentEpoch) || normalized.intentEpoch < 0) throw new Error("TaskBrief intentEpoch is invalid.");
   if (!normalized.requestedOutputs.length) throw new Error("TaskBrief requires requestedOutputs.");
   return { ...normalized, schemaVersion: TASK_BRIEF_VERSION, digest: digest(normalized) };
 }
 
+export function isTaskRequestedOutput(value: unknown): value is TaskRequestedOutput {
+  return typeof value === "string" && (TASK_REQUESTED_OUTPUTS as readonly string[]).includes(value);
+}
+
+export function isTaskBrief(value: unknown): value is TaskBrief {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<TaskBrief>;
+  return candidate.schemaVersion === TASK_BRIEF_VERSION && typeof candidate.taskId === "string" &&
+    typeof candidate.projectId === "string" && typeof candidate.intentEpoch === "number" &&
+    typeof candidate.goal === "string" && Array.isArray(candidate.requestedOutputs) &&
+    Array.isArray(candidate.constraints) && Array.isArray(candidate.excludedOutputs) &&
+    typeof candidate.sourceMessageId === "string" && typeof candidate.digest === "string" &&
+    hasValidTaskBrief(candidate as TaskBrief);
+}
+
 export function hasValidTaskBrief(brief: TaskBrief): boolean {
-  return brief.schemaVersion === TASK_BRIEF_VERSION && brief.digest === digest({
-    taskId: brief.taskId, projectId: brief.projectId, intentEpoch: brief.intentEpoch, goal: brief.goal,
-    requestedOutputs: uniqueText(brief.requestedOutputs), constraints: uniqueText(brief.constraints),
-    excludedOutputs: uniqueText(brief.excludedOutputs), generationIntensity: brief.generationIntensity, sourceMessageId: brief.sourceMessageId,
+  try {
+    if (!brief || typeof brief !== "object" || brief.schemaVersion !== TASK_BRIEF_VERSION ||
+        !brief.taskId?.trim() || !brief.projectId?.trim() || !brief.goal?.trim() || !brief.sourceMessageId?.trim() ||
+        !Number.isInteger(brief.intentEpoch) || brief.intentEpoch < 0 ||
+        !Array.isArray(brief.requestedOutputs) || !Array.isArray(brief.constraints) || !Array.isArray(brief.excludedOutputs) ||
+        !brief.requestedOutputs.every(isTaskRequestedOutput) || !brief.excludedOutputs.every(isTaskRequestedOutput)) return false;
+    const legacyProjection = {
+      taskId: brief.taskId, projectId: brief.projectId, intentEpoch: brief.intentEpoch, goal: brief.goal,
+      requestedOutputs: uniqueText(brief.requestedOutputs), constraints: uniqueText(brief.constraints),
+      excludedOutputs: uniqueText(brief.excludedOutputs), generationIntensity: brief.generationIntensity, sourceMessageId: brief.sourceMessageId,
+    };
+    const contextFields = [brief.context, brief.inputArtifactRefs, brief.qualityTargets];
+    if (contextFields.every((value) => value === undefined)) return brief.digest === digest(legacyProjection);
+    if (contextFields.some((value) => value === undefined)) return false;
+    return brief.digest === digest({
+      ...legacyProjection,
+      context: normalizeTaskContext(brief.context),
+      inputArtifactRefs: normalizeTaskInputArtifactRefs(brief.inputArtifactRefs),
+      qualityTargets: uniqueText(brief.qualityTargets ?? []),
+    });
+  } catch {
+    return false;
+  }
+}
+
+const legacyTaskRequestedOutputAliases: Readonly<Record<string, TaskRequestedOutput>> = {
+  "需求规格": "requirement_spec",
+  "教材证据": "textbook_evidence",
+  "教案": "lesson_plan",
+  "互动课件规格": "interactive_courseware_spec",
+  "PPT": "ppt",
+  "课堂PPT": "ppt",
+  "PPT 大纲": "ppt_outline",
+  "PPT大纲": "ppt_outline",
+  "PPT 设计候选": "ppt_design",
+  "PPT设计候选": "ppt_design",
+  "PPT 设计包": "ppt_design",
+  "导入视频方案": "video",
+  "视频": "video",
+  "视频成片": "video",
+  "完整材料包": "package",
+  "最终交付清单": "package",
+};
+
+function normalizeTaskRequestedOutputs(values: readonly string[], field: string): TaskRequestedOutput[] {
+  const normalized = uniqueText(values).map((value) => legacyTaskRequestedOutputAliases[value] ?? value);
+  const invalid = normalized.filter((value) => !isTaskRequestedOutput(value));
+  if (invalid.length > 0) throw new Error(`TaskBrief ${field} contains unsupported outputs: ${invalid.join(", ")}`);
+  return [...new Set(normalized)] as TaskRequestedOutput[];
+}
+
+function normalizeTaskContext(value?: TaskContext): TaskContext {
+  return {
+    grade: optionalText(value?.grade),
+    subject: optionalText(value?.subject),
+    textbookVersion: optionalText(value?.textbookVersion),
+    lessonTopic: optionalText(value?.lessonTopic),
+  };
+}
+
+function normalizeTaskInputArtifactRefs(values: readonly TaskInputArtifactRef[] = []): TaskInputArtifactRef[] {
+  if (!Array.isArray(values)) throw new Error("TaskBrief inputArtifactRefs must be an array.");
+  const normalized = values.map((value) => {
+    if (!value || typeof value !== "object") throw new Error("TaskBrief inputArtifactRef is invalid.");
+    const artifactId = requireText(value.artifactId, "inputArtifactRefs.artifactId");
+    if (!Number.isInteger(value.version) || value.version < 1) throw new Error("TaskBrief inputArtifactRef version is invalid.");
+    if (!/^[a-f0-9]{64}$/i.test(value.digest)) throw new Error("TaskBrief inputArtifactRef digest is invalid.");
+    return { artifactId, version: value.version, digest: value.digest.toLowerCase() };
   });
+  const unique = new Map(normalized.map((value) => [`${value.artifactId}:${value.version}:${value.digest}`, value]));
+  return [...unique.values()].sort((left, right) =>
+    left.artifactId.localeCompare(right.artifactId) || left.version - right.version || left.digest.localeCompare(right.digest));
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export function createExecutionEnvelope(input: {
@@ -192,7 +332,7 @@ function isPendingDecisionStatus(value: unknown): value is PendingDecisionStatus
     || value === "superseded" || value === "expired";
 }
 
-function uniqueText(values: string[]) {
+function uniqueText(values: readonly string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
 }
 

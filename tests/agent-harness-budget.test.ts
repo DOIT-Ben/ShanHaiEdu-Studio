@@ -24,6 +24,18 @@ describe("AgentHarnessBudget", () => {
     expect(countSubmittedExternalProviderCalls([blocked, submitted])).toBe(1);
   });
 
+  it("counts every Provider submission represented by one batch event", () => {
+    const batch = buildAgentHarnessBudgetEvent({
+      capabilityId: "ppt_sample_assets",
+      status: "succeeded",
+      kind: "tool_succeeded",
+      providerSubmissionCount: 6,
+    });
+
+    expect(batch).toMatchObject({ providerSubmitted: true, providerSubmissionCount: 6 });
+    expect(countSubmittedExternalProviderCalls([batch])).toBe(6);
+  });
+
   it("allows requests without historical budget events", () => {
     const decision = evaluateAgentHarnessBudget({
       capabilityId: "lesson_plan",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCapabilityAvailability, resolveRuntimeProviderAvailability } from "@/server/capabilities/capability-availability";
 import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import type { CapabilityId } from "@/server/capabilities/types";
+import { createTaskBrief } from "@/server/conversation/task-contract";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
 const definitions = getCapabilityDefinitions();
@@ -60,8 +61,8 @@ function entryFor(capabilityId: CapabilityId, artifacts: ArtifactRecord[] = [], 
 }
 
 describe("CapabilityAvailability", () => {
-  it("marks an internal capability available when approved upstream artifacts exist", () => {
-    const entry = entryFor("lesson_plan", [approvedArtifactFor("requirement_spec")]);
+  it("marks a TaskBrief-sufficient internal capability available without a fabricated prerequisite", () => {
+    const entry = entryFor("lesson_plan");
 
     expect(entry).toMatchObject({
       capabilityId: "lesson_plan",
@@ -72,7 +73,7 @@ describe("CapabilityAvailability", () => {
   });
 
   it("accepts an internally validated artifact for downstream work without teacher approval", () => {
-    const entry = entryFor("lesson_plan", [internallyValidatedArtifactFor("requirement_spec")]);
+    const entry = entryFor("ppt_design", [internallyValidatedArtifactFor("ppt_outline")]);
 
     expect(entry).toMatchObject({
       status: "available",
@@ -81,11 +82,11 @@ describe("CapabilityAvailability", () => {
   });
 
   it("marks an internal capability as needing approved upstream inputs when they are missing", () => {
-    const entry = entryFor("lesson_plan");
+    const entry = entryFor("ppt_design");
 
     expect(entry.status).toBe("needs_approved_inputs");
-    expect(entry.missingApprovedInputs).toEqual(["requirement_spec"]);
-    expect(entry.reasonForUser).toContain("备课需求");
+    expect(entry.missingApprovedInputs).toEqual(["ppt_outline"]);
+    expect(entry.reasonForUser).toContain("PPT 大纲");
     expect(entry.reasonForUser).not.toBe("请先确认前置成果后再继续。");
   });
 
@@ -153,6 +154,21 @@ describe("CapabilityAvailability", () => {
     });
     expect(availability.asset_image_generate).toBeUndefined();
     expect(availability.concat_only_assemble).toBeUndefined();
+  });
+
+  it("blocks capabilities outside the requested and excluded TaskBrief scope", () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task-ppt-only", projectId: "project-a", intentEpoch: 0,
+      goal: "只做PPT，不做教案", requestedOutputs: ["ppt"], constraints: [], excludedOutputs: ["lesson_plan"],
+      generationIntensity: "standard", sourceMessageId: "message-ppt-only",
+    });
+    const entries = buildCapabilityAvailability({ capabilityDefinitions: definitions, artifacts: [], taskBrief });
+
+    expect(entries.find((entry) => entry.capabilityId === "ppt_outline")).toMatchObject({ status: "available" });
+    expect(entries.find((entry) => entry.capabilityId === "lesson_plan")).toMatchObject({
+      status: "blocked",
+      reasonForModel: expect.stringContaining("task_scope_mismatch"),
+    });
   });
 
   it("recognizes the API-ledger MiniMax image contract without another image provider", () => {

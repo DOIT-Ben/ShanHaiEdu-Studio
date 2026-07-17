@@ -544,22 +544,25 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               status: "queued",
               attempts: 0,
               maxAttempts: input.maxAttempts ?? 2,
+              countsAsProviderSubmission: input.countsAsProviderSubmission ?? true,
             },
           });
-          await tx.stagedArtifactCommit.create({
-            data: {
-              projectId,
-              generationJobId: job.id,
-              state: "awaiting_result",
-              intentEpoch: prepared.intentEpoch,
-              inputHash: prepared.inputHash,
-              holderId: guard?.holderId,
-              fencingToken: guard?.fencingToken,
-              actorUserId: guard?.identity.actorUserId,
-              actorAuthMode: guard?.identity.actorAuthMode,
-              authSessionId: guard?.identity.authSessionId,
-            },
-          });
+          if (input.createStagedArtifactCommit !== false) {
+            await tx.stagedArtifactCommit.create({
+              data: {
+                projectId,
+                generationJobId: job.id,
+                state: "awaiting_result",
+                intentEpoch: prepared.intentEpoch,
+                inputHash: prepared.inputHash,
+                holderId: guard?.holderId,
+                fencingToken: guard?.fencingToken,
+                actorUserId: guard?.identity.actorUserId,
+                actorAuthMode: guard?.identity.actorAuthMode,
+                authSessionId: guard?.identity.authSessionId,
+              },
+            });
+          }
           return job;
         });
       } catch (error) {
@@ -1223,6 +1226,40 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
+    async completeGenerationUnit(projectId: string, jobId: string, input: { providerResultJson: string }) {
+      const providerResultJson = input.providerResultJson.trim();
+      if (!providerResultJson) throw new Error("GenerationJob providerResultJson is required.");
+      return client.$transaction(async (tx) => {
+        await assertActiveProjectForWrite(tx, projectId);
+        const existing = await tx.generationJob.findFirst({
+          where: { id: jobId, projectId },
+          include: { runInputSnapshot: true },
+        });
+        if (!existing) throw new Error(`GenerationJob not found: ${jobId}`);
+        assertPptAssetUnitProviderResult(providerResultJson, existing.runInputSnapshot?.payloadJson);
+        if (existing.status === "succeeded") {
+          if (existing.providerResultJson !== providerResultJson) {
+            throw new Error(`GenerationJob provider result conflict: ${jobId}`);
+          }
+          return existing;
+        }
+        if (existing.status !== "running") {
+          throw new Error(`GenerationJob cannot complete from status: ${existing.status}`);
+        }
+        return tx.generationJob.update({
+          where: { id: jobId },
+          data: {
+            status: "succeeded",
+            pollState: "completed",
+            providerAcceptedAt: existing.providerAcceptedAt ?? new Date(),
+            providerResultJson,
+            errorMessage: null,
+            finishedAt: new Date(),
+          },
+        });
+      });
+    },
+
     async recordGenerationPoll(projectId: string, jobId: string) {
       const updated = await client.generationJob.updateMany({
         where: { id: jobId, projectId, status: "running", providerTaskId: { not: null } },
@@ -1622,6 +1659,55 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
   };
+}
+
+function assertPptAssetUnitProviderResult(providerResultJson: string, snapshotPayloadJson: string | undefined) {
+  const value = JSON.parse(providerResultJson) as unknown;
+  const snapshot = snapshotPayloadJson ? JSON.parse(snapshotPayloadJson) as unknown : null;
+  if (!isRecordValue(value) || value.schemaVersion !== "ppt-asset-unit-result.v1" || !isRecordValue(value.result)) {
+    throw new Error("GenerationJob providerResultJson is not a PPT asset unit result.");
+  }
+  if (!isRecordValue(snapshot) || !isRecordValue(snapshot.input) || !isRecordValue(snapshot.input.request)) {
+    throw new Error("GenerationJob input snapshot cannot verify the PPT asset unit result.");
+  }
+  const request = snapshot.input.request;
+  if (value.batchDigest !== snapshot.input.batchDigest ||
+      value.assetId !== request.assetId ||
+      value.requestInputHash !== request.inputHash) {
+    throw new Error("GenerationJob provider result does not match its input snapshot.");
+  }
+  const result = value.result;
+  if (typeof result.provider !== "string" || !result.provider ||
+      typeof result.model !== "string" || !result.model ||
+      typeof result.clientRequestId !== "string" || !result.clientRequestId ||
+      typeof result.fileName !== "string" || !result.fileName ||
+      typeof result.storageRef !== "string" || !result.storageRef ||
+      typeof result.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(result.sha256) ||
+      typeof result.bytes !== "number" || result.bytes <= 0 ||
+      typeof result.width !== "number" || result.width <= 0 ||
+      typeof result.height !== "number" || result.height <= 0 ||
+      typeof result.mime !== "string" || !result.mime.startsWith("image/") ||
+      result.transparentBackgroundVerified !== request.transparentBackground ||
+      !Array.isArray(result.sentReferenceAssetIds) ||
+      !isProviderAssetEvidence(result.rawAsset) ||
+      !isProviderAssetEvidence(result.normalizedAsset)) {
+    throw new Error("GenerationJob providerResultJson does not contain verifiable PPT asset evidence.");
+  }
+}
+
+function isProviderAssetEvidence(value: unknown) {
+  if (!isRecordValue(value)) return false;
+  return typeof value.fileName === "string" && value.fileName.length > 0 &&
+    typeof value.storageRef === "string" && value.storageRef.length > 0 &&
+    typeof value.sha256 === "string" && /^[a-f0-9]{64}$/i.test(value.sha256) &&
+    typeof value.bytes === "number" && value.bytes > 0 &&
+    typeof value.width === "number" && value.width > 0 &&
+    typeof value.height === "number" && value.height > 0 &&
+    typeof value.mime === "string" && value.mime.startsWith("image/");
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type TransactionClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];

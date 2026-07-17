@@ -125,7 +125,7 @@ describe("A17 artifact route ExecutionEnvelope", () => {
       projectId: project.id,
       intentEpoch: project.intentEpoch ?? 0,
       goal: "为现有大纲生成一张课堂视觉图",
-      requestedOutputs: ["image_prompts"],
+      requestedOutputs: ["image"],
       constraints: ["offline_fixture_only"],
       excludedOutputs: ["real_provider"],
       generationIntensity: project.generationIntensity ?? "standard",

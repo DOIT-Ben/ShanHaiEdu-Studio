@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runPptAssetBatch } from "@/server/ppt-quality/ppt-asset-batch-run";
+import { PptAssetBatchExecutionError, runPptAssetBatch } from "@/server/ppt-quality/ppt-asset-batch-run";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 
 describe("V1 Stage 3B PPT asset batch runner", () => {
@@ -63,6 +63,75 @@ describe("V1 Stage 3B PPT asset batch runner", () => {
         transparentBackgroundVerified: false,
       }),
     })).rejects.toThrow(/asset_transparency_mismatch/);
+  });
+
+  it("stops after the first failed Provider unit and preserves the submitted count", async () => {
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+    let callIndex = 0;
+    const generateAsset = vi.fn(async (request: { assetId: string; transparentBackground: boolean }) => {
+      const index = callIndex++;
+      if (index === 2) throw new Error("provider rejected unit 3");
+      return generatedAsset(request, index);
+    });
+
+    const error = await runPptAssetBatch({
+      designPackage: validPptDesignPackage(),
+      generateAsset,
+      lifecycle: {
+        loadSucceededUnit: async () => null,
+        onSubmissionStarted: async () => undefined,
+        onSubmissionSucceeded: async (request) => { succeeded.push(request.assetId); },
+        onSubmissionFailed: async (request) => { failed.push(request.assetId); },
+      },
+    }).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(PptAssetBatchExecutionError);
+    expect(error).toMatchObject({ providerSubmissionCount: 3 });
+    expect(generateAsset).toHaveBeenCalledTimes(3);
+    expect(succeeded).toHaveLength(2);
+    expect(failed).toHaveLength(1);
+  });
+
+  it("recovers verified terminal units without submitting or charging them again", async () => {
+    const packageValue = validPptDesignPackage();
+    const firstRunRequests = (await runPptAssetBatch({
+      designPackage: packageValue,
+      generateAsset: async (request) => generatedAsset(request),
+    })).requestBatch.requests;
+    const recovered = new Map(firstRunRequests.slice(0, 2).map((request) => [request.assetId, generatedAsset(request)]));
+    const generateAsset = vi.fn(async (request: { assetId: string; transparentBackground: boolean }, index = 0) => generatedAsset(request, index));
+
+    const result = await runPptAssetBatch({
+      designPackage: packageValue,
+      generateAsset,
+      lifecycle: {
+        loadSucceededUnit: async (request) => recovered.get(request.assetId) ?? null,
+        onSubmissionStarted: async () => undefined,
+        onSubmissionSucceeded: async () => undefined,
+        onSubmissionFailed: async () => undefined,
+      },
+    });
+
+    expect(result.providerSubmissionCount).toBe(4);
+    expect(generateAsset).toHaveBeenCalledTimes(4);
+    expect(result.manifest.entries).toHaveLength(6);
+  });
+
+  it("does not submit a unit when its persisted submission state is unknown", async () => {
+    const generateAsset = vi.fn(async (request: { assetId: string; transparentBackground: boolean }) => generatedAsset(request));
+
+    await expect(runPptAssetBatch({
+      designPackage: validPptDesignPackage(),
+      generateAsset,
+      lifecycle: {
+        loadSucceededUnit: async () => null,
+        onSubmissionStarted: async () => { throw new Error("submission_unknown"); },
+        onSubmissionSucceeded: async () => undefined,
+        onSubmissionFailed: async () => undefined,
+      },
+    })).rejects.toMatchObject({ providerSubmissionCount: 0 });
+    expect(generateAsset).not.toHaveBeenCalled();
   });
 });
 

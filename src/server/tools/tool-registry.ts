@@ -225,17 +225,17 @@ const toolDefinitions: ToolDefinition[] = [
   internalTool({
     id: "create_lesson_plan",
     label: "生成公开课教案",
-    description: "基于已确认需求和教材依据生成公开课教案。",
+    description: "基于当前TaskBrief、教材依据和可信来源生成公开课教案。",
     capabilityId: "lesson_plan",
-    requiredArtifactKinds: ["requirement_spec"],
+    requiredArtifactKinds: [],
     producedArtifactKind: "lesson_plan",
   }),
   internalTool({
     id: "create_ppt_outline",
     label: "生成 PPT 大纲",
-    description: "基于已确认需求生成逐页课件大纲和课堂呈现建议。",
+    description: "基于当前TaskBrief和可信来源生成逐页课件大纲和课堂呈现建议。",
     capabilityId: "ppt_outline",
-    requiredArtifactKinds: ["requirement_spec"],
+    requiredArtifactKinds: [],
     producedArtifactKind: "ppt_draft",
   }),
   internalTool({
@@ -251,7 +251,7 @@ const toolDefinitions: ToolDefinition[] = [
     label: "生成视频最小课程锚点",
     description: "从任务语义生成独立创意短片与课程任务之间唯一、最小的回接，不规定角色、场景或创作主题。",
     capabilityId: "knowledge_anchor_extract",
-    requiredArtifactKinds: ["requirement_spec"],
+    requiredArtifactKinds: [],
     producedArtifactKind: "knowledge_anchor_extract",
   }),
   internalTool({
@@ -259,7 +259,7 @@ const toolDefinitions: ToolDefinition[] = [
     label: "生成导入创意主题",
     description: "先生成脱离教材仍成立的独立创意短片主题，再为候选标注唯一最小课程回接。",
     capabilityId: "creative_theme_generate",
-    requiredArtifactKinds: ["requirement_spec"],
+    requiredArtifactKinds: [],
     producedArtifactKind: "creative_theme_generate",
   }),
   internalTool({
@@ -467,6 +467,17 @@ export function listToolDefinitions(): ToolDefinition[] {
 }
 
 export const getToolDefinitions = listToolDefinitions;
+
+const taskBriefInputToolIds = new Set([
+  "create_lesson_plan",
+  "create_ppt_outline",
+  "extract_knowledge_anchors",
+  "generate_intro_creative_themes",
+]);
+
+export function toolRequiresTaskBriefInput(tool: Pick<ToolDefinition, "id">): boolean {
+  return taskBriefInputToolIds.has(tool.id);
+}
 
 export function getToolDefinition(id: string): ToolDefinition {
   const definition = toolDefinitions.find((tool) => tool.id === id);

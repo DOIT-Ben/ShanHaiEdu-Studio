@@ -331,6 +331,8 @@ model GenerationJob {
   attempts             Int                     @default(0)
   maxAttempts          Int                     @default(2)
   resultArtifactId     String?
+  providerResultJson   String?
+  countsAsProviderSubmission Boolean                 @default(true)
   errorMessage         String?
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt

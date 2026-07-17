@@ -24,7 +24,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
-    const { taskBrief } = await seedArtifactRouteTask(project, ["image_prompts"]);
+    const { taskBrief } = await seedArtifactRouteTask(project, ["image"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -148,7 +148,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
   ])("does not save an image artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "Image provider truth gate" });
-    await seedArtifactRouteTask(project, ["image_prompts"]);
+    await seedArtifactRouteTask(project, ["image"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -212,7 +212,7 @@ describe("Local Real MVP M19 image artifact adapter", () => {
   it("does not save an image artifact and fails the job when ToolRouter fails", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M64-R image ToolRouter failure" });
-    await seedArtifactRouteTask(project, ["image_prompts"]);
+    await seedArtifactRouteTask(project, ["image"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",

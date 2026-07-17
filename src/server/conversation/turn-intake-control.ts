@@ -33,18 +33,18 @@ export async function commitPreAgentControl<TAgentResult>(input: {
 
 export function resolvePreAgentControl(
   userMessage: string,
-  state: { hasActiveTask: boolean; hasPendingPlan: boolean; allowRedirect?: boolean },
+  state: { hasActiveTask: boolean; hasPendingPlan: boolean; allowRedirect?: boolean | "imperative" },
 ): PreAgentControlDecision | undefined {
   const message = userMessage.trim();
   if (!message || (!state.hasActiveTask && !state.hasPendingPlan)) return undefined;
 
   if (isExplicitPause(message)) {
-    return decision("pause", "teacher_requested_pause", true, message);
+    return decision("pause", "teacher_requested_pause", false, message);
   }
   if (isExplicitCancel(message)) {
     return decision("cancel", "teacher_requested_cancel", true, message);
   }
-  if (state.allowRedirect && isExplicitRedirect(message)) {
+  if (state.allowRedirect && isExplicitRedirect(message, state.allowRedirect === "imperative")) {
     return decision("redirect", "teacher_requested_redirect", true, message);
   }
   return undefined;
@@ -62,8 +62,9 @@ function isExplicitCancel(message: string): boolean {
     || /^(?:不做了|算了)$/.test(normalized);
 }
 
-function isExplicitRedirect(message: string): boolean {
+function isExplicitRedirect(message: string, imperativeOnly = false): boolean {
   const normalized = compact(message);
+  if (imperativeOnly && !/^(?:请)?改道/.test(normalized)) return false;
   return /^(?:请)?(?:改道|改成|改为|转为|切换到)[，,:：]?(?:只|仅)?(?:做|生成|整理|制作)?.+/.test(normalized)
     && !/^(?:如果|是否|要不要|能不能|可不可以|为什么)/.test(normalized);
 }

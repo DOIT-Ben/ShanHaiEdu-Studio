@@ -289,7 +289,7 @@ function taskBrief() {
     projectId: "project-runtime-ab-contract",
     intentEpoch: 3,
     goal: "形成一句话PPT结构候选",
-    requestedOutputs: ["requirement_spec", "lesson_plan", "ppt_draft"],
+    requestedOutputs: ["requirement_spec", "lesson_plan", "ppt_outline"],
     constraints: ["offline fixture only"],
     excludedOutputs: ["pptx", "image", "video", "zip"],
     generationIntensity: "standard",

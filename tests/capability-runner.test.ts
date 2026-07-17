@@ -403,7 +403,7 @@ function capabilityAuthority() {
     projectId: "project-ppt-quality",
     intentEpoch: 1,
     goal: "五年级数学百分数公开课PPT设计候选",
-    requestedOutputs: ["ppt_design_draft"],
+    requestedOutputs: ["ppt_design"],
     constraints: ["2页候选"],
     excludedOutputs: ["pptx", "image", "video", "zip"],
     generationIntensity: "standard",

@@ -255,6 +255,10 @@ describe("M64-C ProviderToolAdapter", () => {
         },
       },
       qualityGate: { passed: true, gates: expect.arrayContaining(["ppt_asset_manifest_valid"]) },
+      budgetEvent: {
+        providerSubmitted: true,
+        providerSubmissionCount: fixtures.requestBatch.requests.length,
+      },
     });
   });
 

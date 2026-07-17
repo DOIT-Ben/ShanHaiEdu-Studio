@@ -15,10 +15,14 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 1. `AGENTS.md`
 2. `docs\README.md`
 3. `docs\product\current-requirements-baseline.md`
-4. `docs\mainlines\current-mainline-status.md`
-5. `docs\stages\README.md`
+4. `docs\product\requirements-backlog.md`
+5. `docs\mainlines\current-mainline-status.md`
+6. `docs\architecture\README.md`
+7. `docs\architecture\V1.0 重构设计.md`
+8. `docs\stages\README.md`
+9. `docs\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan
 
-当前状态：**REMEDIATION IN PROGRESS / CONTRACT RED / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；当前按审查问题执行唯一五阶段修复主线。R5整体尚未关闭，V1-9尚未启动；V1发布前不新增390px真实黑盒，不调用本轮范围外的媒体或整包Provider，也不以离线fixture冒充真实产品链路。
+当前状态：**REMEDIATION IN PROGRESS / CONTRACT RED / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；阶段A控制授权与阶段B任务语义已达到本地局部Go，阶段C Observation/消息投影是唯一下一动作。R5整体尚未关闭，V1-9尚未启动；V1发布前不新增390px真实黑盒，不调用本轮范围外的媒体或整包Provider，也不以离线fixture冒充真实产品链路。
 
 ## 文档分区
 

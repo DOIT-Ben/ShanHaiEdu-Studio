@@ -22,6 +22,7 @@ export type AgentHarnessBudgetEvent = {
   status: AgentHarnessBudgetEventStatus;
   kind: AgentHarnessBudgetEventKind;
   providerSubmitted?: boolean;
+  providerSubmissionCount?: number;
   createdAt: string;
 };
 
@@ -55,6 +56,7 @@ export type BuildAgentHarnessBudgetEventInput = {
   status: AgentHarnessBudgetEventStatus;
   kind: AgentHarnessBudgetEventKind;
   providerSubmitted?: boolean;
+  providerSubmissionCount?: number;
   createdAt?: string;
 };
 
@@ -93,18 +95,23 @@ export function evaluateAgentHarnessBudget(input: EvaluateAgentHarnessBudgetInpu
 }
 
 export function buildAgentHarnessBudgetEvent(input: BuildAgentHarnessBudgetEventInput): AgentHarnessBudgetEvent {
+  const providerSubmissionCount = normalizeProviderSubmissionCount(input.providerSubmissionCount);
   return {
     capabilityId: input.capabilityId,
     actionKey: input.actionKey ?? `${input.capabilityId}:${input.expectedArtifactKind ?? ""}`,
     status: input.status,
     kind: input.kind,
-    providerSubmitted: input.providerSubmitted === true,
+    providerSubmitted: providerSubmissionCount > 0 || input.providerSubmitted === true,
+    ...(providerSubmissionCount > 0 ? { providerSubmissionCount } : {}),
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
 }
 
 export function countSubmittedExternalProviderCalls(events: AgentHarnessBudgetEvent[]): number {
-  return events.filter((event) => isAgentHarnessBudgetEvent(event) && event.providerSubmitted).length;
+  return events.reduce((count, event) => {
+    if (!isAgentHarnessBudgetEvent(event) || !event.providerSubmitted) return count;
+    return count + (event.providerSubmissionCount ?? 1);
+  }, 0);
 }
 
 export function appendAgentHarnessBudgetEventMetadata(
@@ -124,7 +131,7 @@ export function appendAgentHarnessBudgetEventMetadata(
 }
 
 function budgetEventKey(event: AgentHarnessBudgetEvent) {
-  return `${event.capabilityId}:${event.actionKey}:${event.status}:${event.kind}:${event.providerSubmitted}:${event.createdAt}`;
+  return `${event.capabilityId}:${event.actionKey}:${event.status}:${event.kind}:${event.providerSubmitted}:${event.providerSubmissionCount ?? 0}:${event.createdAt}`;
 }
 
 export function readAgentHarnessBudgetEventsFromMessages(messages: Array<{ metadata?: unknown }>): AgentHarnessBudgetEvent[] {
@@ -221,9 +228,14 @@ function isAgentHarnessBudgetEvent(value: unknown): value is AgentHarnessBudgetE
     isAgentHarnessBudgetEventStatus(value.status) &&
     isAgentHarnessBudgetEventKind(value.kind) &&
     (value.providerSubmitted === undefined || typeof value.providerSubmitted === "boolean") &&
+    (value.providerSubmissionCount === undefined || (typeof value.providerSubmissionCount === "number" && Number.isInteger(value.providerSubmissionCount) && value.providerSubmissionCount >= 0)) &&
     typeof value.createdAt === "string" &&
     Number.isFinite(Date.parse(value.createdAt))
   );
+}
+
+function normalizeProviderSubmissionCount(value: number | undefined) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
 }
 
 function isAgentHarnessBudgetEventStatus(value: unknown): value is AgentHarnessBudgetEventStatus {

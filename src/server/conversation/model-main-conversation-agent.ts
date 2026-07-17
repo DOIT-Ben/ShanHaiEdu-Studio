@@ -19,6 +19,7 @@ import { resolveGenerationIntensityStrategy } from "@/server/generation-intensit
 import type { OpenAIReasoningEffort } from "@/server/openai-compatible-config";
 import { classifyMainAgentFailure, type MainAgentFailurePhase } from "./main-agent-failure";
 import { validateTaskBriefProposal } from "./task-intake";
+import { TASK_REQUESTED_OUTPUTS } from "./task-contract";
 import {
   createNaturalLanguageMainAgentStreamProjection,
   createStructuredMainAgentStreamProjection,
@@ -276,8 +277,8 @@ function buildTaskIntakeRequest(input: MainAgentTaskIntakeInput, reasoningEffort
       "只有教师明确要求停止当前方向并采用新的交付范围时调用 revise_active_task；边界模糊、只是比较方案或否定你的误解时，直接用自然中文追问，不调用函数。",
       "教师明确要求暂停或取消当前任务时调用 submit_conversation_control；它不是业务能力门禁，也不能用于例行确认。",
       "kind=task 仅用于教师明确要求形成可交付备课成果；问候、闲聊、探索、信息不足或仅提问时使用 kind=conversation。",
-      "任务输出只能使用 requirement_spec、lesson_plan、ppt、video_script、image、video、package。只列教师真实要求的最终范围，不自动扩张为完整材料包。",
-      "只做视频脚本不得加入教案、PPT、图片、成片或package；完整材料包按教师明确语义列出需要的成果，并保留所有排除项。",
+      "任务输出只能使用以下 canonical output：requirement_spec、textbook_evidence、lesson_plan、interactive_courseware_spec、ppt_outline、ppt_design、ppt_sample_assets、ppt_key_samples、ppt_full_assets、ppt、knowledge_anchor、creative_theme、video_script、storyboard、asset_brief、video_assets、video_segment_plan、video_narration、video_shot、image、video、package。",
+      "只列教师真实要求的终点，不把 ppt_outline 扩张为 ppt_design、图片或最终PPT，不把 video_script、storyboard、asset_brief 扩张为图片、成片或package。完整材料包只在教师明确要求时列出，并保留所有排除项。",
       "constraints 必须保留年级、学科、课题、教材、页数、时长、创意、课程锚点和其他会影响执行的要求。",
       "没有 activeTask 时，明确交付任务只调用 submit_task_brief；存在 activeTask 时，实质修订只调用 revise_active_task。调用函数时不要同时输出解释文本。",
       "不得把任务提案 JSON、函数参数、provider、schema、API、密钥、本地路径或其他工程词写进教师回复。",
@@ -372,12 +373,12 @@ const submitTaskBriefTool = {
       goal: { type: "string", description: "用一句话概括教师的真实交付目标。" },
       requestedOutputs: {
         type: "array",
-        items: { type: "string", enum: ["requirement_spec", "lesson_plan", "ppt", "video_script", "image", "video", "package"] },
+        items: { type: "string", enum: [...TASK_REQUESTED_OUTPUTS] },
       },
       constraints: { type: "array", items: { type: "string" } },
       excludedOutputs: {
         type: "array",
-        items: { type: "string", enum: ["requirement_spec", "lesson_plan", "ppt", "video_script", "image", "video", "package"] },
+        items: { type: "string", enum: [...TASK_REQUESTED_OUTPUTS] },
       },
     },
   },

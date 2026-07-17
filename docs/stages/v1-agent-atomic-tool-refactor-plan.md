@@ -30,13 +30,17 @@
 - RMD-P1-06：quick reply action已成为正文与上下文绑定的一次性token。
 - RMD-P2-05：Tool启动前已复核持久IntentGrant，旧授权不能进入执行路径。
 
+### 阶段B已关闭
+
+- RMD-P1-03：Registry固定`requirement_spec`依赖已移除，Tool资格只由完整TaskBrief、可信输入和共享范围策略决定。
+- RMD-P1-04：requestedOutputs使用canonical细粒度枚举；TaskBrief冻结课程上下文、初始可信输入引用和质量目标；局部PPT、视频及纯图片范围不再被扩张。
+- RMD-P1-05：PPT批次逐Provider submission计预算并持久化，部分失败停止且恢复不重复扣费。
+- 暂停状态合同补充收敛：教师可见plan为`paused`，TaskAggregate为`paused_recovery`；恢复保持task/digest/epoch并原子清除普通恢复点，ReAct checkpoint保留到模型续轮读取。
+
 ### 尚未满足设计
 
 | ID | 级别 | 已确认问题 | 根因/责任层 |
 |---|---|---|---|
-| RMD-P1-03 | P1 | Tool Registry仍强制`requirement_spec`旧依赖链 | Tool资格模型 |
-| RMD-P1-04 | P1 | TaskBrief输出粒度把局部PPT/视频/图片扩张为完整交付 | 任务语义与完成合同 |
-| RMD-P1-05 | P1 | PPT批量资产N次Provider请求只计一次预算且无逐调用事实 | Provider调用原子性 |
 | RMD-P1-07 | P1 | 同turn文本与Tool事件被重排为活动在前、合并文本在后 | 消息投影排序 |
 | RMD-P1-08 | P1 | 任意旧Tool失败可遮蔽不同原因的最终`run_failed` | 失败身份与去重 |
 | RMD-P2-01 | P2 | 客户端仍含固定“正在理解/正在组织...”伪等待文案 | 等待态投影 |
@@ -70,9 +74,11 @@
 - 编辑后的quick reply不携带旧action确认。
 - invocation开始前复核数据库中的当前IntentGrant；旧授权调用为0。
 
-本阶段实际完成：native HumanGate现在持久化同一task绑定的PendingDecision、actionId、blocked invocation、教师事件和恢复checkpoint；暂停、取消与明确改道在消息入队事务中先提升IntentEpoch和plan revision并失效旧计划，迟到结果不得提升；quick reply action成为一次性正文绑定token；Tool启动前以持久IntentGrant为权威复核。阶段B至E问题均未在本阶段宣称关闭。
+本阶段实际完成：native HumanGate现在持久化同一task绑定的PendingDecision、actionId、blocked invocation、教师事件和恢复checkpoint；暂停原子保存恢复点并保持task/digest/IntentEpoch，取消与明确改道才提升IntentEpoch和plan revision并失效旧计划，迟到结果不得提升；quick reply action成为一次性正文绑定token；Tool启动前以持久IntentGrant为权威复核。阶段B至E问题均未在本阶段宣称关闭。
 
 ### 阶段B：任务语义与Tool边界
+
+阶段状态：**LOCAL GO**（总整改门仍为RED）。
 
 涉及：RMD-P1-03、P1-04、P1-05。
 
@@ -83,6 +89,8 @@
 - 合法局部任务可直接选择对应原子Tool，不强制需求规格前置。
 - PPT大纲、分镜、资产说明等局部输出能成为终态，不扩张为PPTX/成片/真实图片。
 - 每个真实Provider子调用独立计预算、持久化submission和结果；部分失败可恢复且不重复扣费。
+
+本阶段实际完成：建立canonical `TaskRequestedOutput`、课程上下文/输入/质量绑定和局部完成合同；CapabilityAvailability、Main Agent Tool暴露和ToolRouter共用requested/excluded scope；移除教案、PPT大纲和课程锚点固定需求规格前置；outer Tool补齐完整TaskBrief/IntentGrant并绑定Artifact任务身份；PPT批次逐submission计费、失败停止和幂等恢复；自然语言确认复用统一控制解析，replacement不再误伤当前唯一pending plan；暂停/恢复状态身份完成补充修复。纯图片任务不再扩张为PPT，当前图片Provider仍要求可信图片语义源，不伪造前置Artifact。
 
 ### 阶段C：Observation与消息投影
 

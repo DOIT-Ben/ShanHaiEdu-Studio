@@ -13,6 +13,8 @@ import type {
 import type { ProviderArtifactRef } from "@/server/tools/provider-tool-adapter";
 import type { ToolArtifactTruth, ToolDefinition, ToolQualityGateResult } from "@/server/tools/tool-types";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { isTaskBrief, type ExecutionEnvelope, type TaskBrief } from "@/server/conversation/task-contract";
+import { toolRequiresTaskBriefInput } from "@/server/tools/tool-registry";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { validatePptDesignPackage } from "@/server/ppt-quality/ppt-design-validator";
 import { validatePptAssetManifest } from "@/server/ppt-quality/ppt-asset-validator";
@@ -70,9 +72,26 @@ export function validateToolPreconditions(input: {
   resolvedArtifacts?: ArtifactRecord[];
   inputHash?: string;
   intentEpoch?: number;
+  taskBrief?: unknown;
+  executionEnvelope?: ExecutionEnvelope;
 }): ValidationReport {
   const contract = resolveRuntimeContract(input.tool);
-  const gates = contract.requiredArtifactKinds.map((kind): ValidationGateResult => {
+  const gates: ValidationGateResult[] = [];
+  if (toolRequiresTaskBriefInput(input.tool)) {
+    const taskBrief = isTaskBrief(input.taskBrief) ? input.taskBrief : undefined;
+    const passed = Boolean(taskBrief) && taskBrief!.projectId === input.projectId &&
+      taskBrief!.intentEpoch === input.intentEpoch &&
+      (!input.executionEnvelope || taskBrief!.digest === input.executionEnvelope.taskBriefDigest);
+    gates.push(gate({
+      gateId: "required_input:task_brief",
+      status: passed ? "passed" : "failed",
+      evidenceRefs: passed ? [`task_brief:${(taskBrief as TaskBrief).digest}`] : [],
+      locators: [{ kind: "input", artifactKind: "task_brief" }],
+      stage: contract.capabilityId,
+      reasonCode: passed ? undefined : "valid_task_brief_input_missing",
+    }));
+  }
+  gates.push(...contract.requiredArtifactKinds.map((kind): ValidationGateResult => {
     const evidenceRef = approvedInputEvidence(kind, input);
     const passed = Boolean(evidenceRef);
     return gate({
@@ -83,7 +102,7 @@ export function validateToolPreconditions(input: {
       stage: contract.capabilityId,
       reasonCode: passed ? undefined : "required_approved_input_missing",
     });
-  });
+  }));
 
   return createValidationReport({
     reportId: randomUUID(),

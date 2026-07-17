@@ -396,7 +396,7 @@ function currentAuthority() {
     projectId: "project-r5-ppt",
     intentEpoch: 3,
     goal: "五年级数学百分数公开课约3页PPT",
-    requestedOutputs: ["ppt_design_draft"],
+    requestedOutputs: ["ppt_design"],
     constraints: ["约3页"],
     excludedOutputs: ["pptx", "image", "video", "zip"],
     generationIntensity: "standard",

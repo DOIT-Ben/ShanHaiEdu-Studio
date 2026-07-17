@@ -179,6 +179,45 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     });
   });
 
+  it("persists a terminal Provider unit result without creating an Artifact commit", async () => {
+    const fixture = await createProjectArtifact(clientA, "provider-unit-result");
+    const repository = createPrismaWorkbenchRepository(clientA);
+    const queued = await repository.createGenerationJob(fixture.project.id, {
+      kind: "image",
+      sourceArtifactId: fixture.artifact.id,
+      unitId: "asset-1",
+      idempotencyKey: "ppt-asset:unit-1",
+      inputSnapshot: {
+        batchDigest: "batch-1",
+        request: { assetId: "asset-1", inputHash: "request-1", transparentBackground: true },
+      },
+      createStagedArtifactCommit: false,
+    });
+    await repository.startGenerationJob(fixture.project.id, queued.id);
+    const fileEvidence = {
+      fileName: "asset-1.png", storageRef: "image-artifacts/asset-1.png", sha256: "a".repeat(64),
+      bytes: 1024, width: 1024, height: 1024, mime: "image/png",
+    };
+    const result = JSON.stringify({
+      schemaVersion: "ppt-asset-unit-result.v1", batchDigest: "batch-1", assetId: "asset-1", requestInputHash: "request-1",
+      result: {
+        ...fileEvidence, provider: "minimax", model: "test-model", clientRequestId: "client-1",
+        providerRequestId: null, providerTaskId: null, sentReferenceAssetIds: [], transparentBackgroundVerified: true,
+        rawAsset: fileEvidence, normalizedAsset: fileEvidence,
+      },
+    });
+
+    const completed = await repository.completeGenerationUnit(fixture.project.id, queued.id, { providerResultJson: result });
+
+    expect(completed).toMatchObject({
+      status: "succeeded",
+      pollState: "completed",
+      providerResultJson: result,
+      resultArtifactId: null,
+    });
+    expect(await clientA.stagedArtifactCommit.count({ where: { generationJobId: queued.id } })).toBe(0);
+  });
+
   it("quarantines completion after the project intent epoch advances", async () => {
     const fixture = await createProjectArtifact(clientA, "stale-epoch");
     const repository = createPrismaWorkbenchRepository(clientA);

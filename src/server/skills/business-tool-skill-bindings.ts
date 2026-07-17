@@ -105,10 +105,10 @@ const skillContractsByName: Record<string, SkillBoundBusinessToolPolicy["contrac
 };
 
 const toolContractsByName: Record<string, SkillBoundBusinessToolPolicy["contracts"]["tool"]> = {
-  create_lesson_plan: toolContract(["requirement_spec"], ["lesson_plan"]),
-  create_ppt_outline: toolContract(["requirement_spec"], ["ppt_draft"]),
-  create_video_course_anchor: toolContract(["requirement_spec"], ["knowledge_anchor_extract"]),
-  generate_intro_creative_themes: toolContract(["requirement_spec"], ["creative_theme_generate"]),
+  create_lesson_plan: toolContract([], ["lesson_plan"]),
+  create_ppt_outline: toolContract([], ["ppt_draft"]),
+  create_video_course_anchor: toolContract([], ["knowledge_anchor_extract"]),
+  generate_intro_creative_themes: toolContract([], ["creative_theme_generate"]),
   generate_intro_video_script: toolContract(["creative_theme_generate"], ["video_script_generate"]),
   generate_video_storyboard: toolContract(["video_script_generate"], ["storyboard_generate"]),
   generate_video_asset_brief: toolContract(["storyboard_generate"], ["asset_brief_generate"]),

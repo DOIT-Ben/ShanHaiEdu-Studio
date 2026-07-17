@@ -9,12 +9,35 @@ import type { ArtifactKind, ArtifactRecord } from "@/server/workbench/types";
 
 const semanticOutputKinds: Record<string, ReadonlySet<ArtifactKind>> = {
   requirement_spec: new Set(["requirement_spec"]),
+  textbook_evidence: new Set(["textbook_evidence"]),
   lesson_plan: new Set(["lesson_plan"]),
+  interactive_courseware_spec: new Set(["interactive_courseware_spec"]),
+  ppt_outline: new Set(["ppt_draft"]),
+  ppt_design: new Set(["ppt_design_draft"]),
   video_script: new Set(["video_script_generate"]),
+  knowledge_anchor: new Set(["knowledge_anchor_extract"]),
+  creative_theme: new Set(["creative_theme_generate"]),
+  storyboard: new Set(["storyboard_generate"]),
+  asset_brief: new Set(["asset_brief_generate"]),
+  video_segment_plan: new Set(["video_segment_plan"]),
   ppt_design_draft: new Set(["ppt_design_draft"]),
 };
 
 export function artifactSatisfiesRequestedOutput(artifact: ArtifactRecord, requestedOutput: string): boolean {
+  if (requestedOutput === "ppt_sample_assets") {
+    return artifact.kind === "image_prompts" && hasRecord(artifact.structuredContent.pptAssetRequestBatch) &&
+      hasRecord(artifact.structuredContent.pptAssetManifest);
+  }
+  if (requestedOutput === "ppt_key_samples") {
+    return artifact.kind === "image_prompts" && (
+      hasRecord(artifact.structuredContent.pptKeySampleCandidate) || hasRecord(artifact.structuredContent.pptKeySampleSet)
+    );
+  }
+  if (requestedOutput === "ppt_full_assets") {
+    const requestBatch = record(artifact.structuredContent.pptAssetRequestBatch);
+    return artifact.kind === "image_prompts" && requestBatch?.scope === "full_production" &&
+      hasRecord(artifact.structuredContent.pptAssetManifest);
+  }
   const semanticKinds = semanticOutputKinds[requestedOutput];
   if (semanticKinds) return semanticKinds.has(artifact.kind) && hasSemanticContent(artifact);
   if (artifact.origin !== "tool_result") return false;
@@ -34,6 +57,10 @@ export function artifactSatisfiesRequestedOutput(artifact: ArtifactRecord, reque
     default:
       return false;
   }
+}
+
+function hasRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function hasSemanticContent(artifact: ArtifactRecord): boolean {

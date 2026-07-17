@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
-import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { createExecutionEnvelope, createTaskBrief, type IntentGrant, type TaskRequestedOutput } from "@/server/conversation/task-contract";
 import { routeToolCall as routeToolCallWithoutEnvelope } from "@/server/tools/tool-router";
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { ToolDefinition, ToolExecutionResult } from "@/server/tools/tool-types";
@@ -17,12 +17,20 @@ const projectContext = {
 
 const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies) => {
   const intentEpoch = input.executionIntentEpoch ?? 0;
+  let capabilityId = input.capabilityId;
+  if (!capabilityId && input.toolName) {
+    try {
+      capabilityId = getToolDefinition(input.toolName).capabilityId;
+    } catch {
+      capabilityId = undefined;
+    }
+  }
   const taskBrief = createTaskBrief({
     taskId: `task:${input.projectId}`,
     projectId: input.projectId,
     intentEpoch,
     goal: input.userInstruction ?? "ToolRouter contract fixture",
-    requestedOutputs: [input.capabilityId ?? input.toolName ?? "unknown"],
+    requestedOutputs: [requestedOutputForCapability(capabilityId)],
     constraints: ["offline_fixture_only"],
     excludedOutputs: [],
     generationIntensity: "standard",
@@ -43,6 +51,7 @@ const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies)
   };
   return routeToolCallWithoutEnvelope({
     ...input,
+    toolInput: { ...input.toolInput, taskBrief },
     executionIntentEpoch: intentEpoch,
     executionEnvelope: input.executionEnvelope ?? createExecutionEnvelope({
       actorUserId: "teacher-fixture",
@@ -54,6 +63,20 @@ const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies)
     }),
   }, dependencies);
 };
+
+function requestedOutputForCapability(capabilityId?: string): TaskRequestedOutput {
+  const outputs: Record<string, TaskRequestedOutput> = {
+    requirement_spec: "requirement_spec", lesson_plan: "lesson_plan", ppt_outline: "ppt_outline",
+    ppt_design: "ppt_design", coze_ppt: "ppt", ppt_sample_assets: "ppt_sample_assets",
+    ppt_key_samples: "ppt_key_samples", ppt_full_assets: "ppt_full_assets", ppt_full_deck: "ppt",
+    ppt_page_repair: "ppt", image_asset: "image", knowledge_anchor_extract: "knowledge_anchor",
+    creative_theme_generate: "creative_theme", video_script_generate: "video_script", storyboard_generate: "storyboard",
+    asset_brief_generate: "asset_brief", asset_image_generate: "video_assets", video_segment_plan: "video_segment_plan",
+    video_narration_generate: "video_narration", video_segment_generate: "video_shot", concat_only_assemble: "video",
+    final_package: "package",
+  };
+  return outputs[capabilityId ?? ""] ?? "requirement_spec";
+}
 
 function fakeRuntime(): AgentRuntime {
   return {
@@ -147,6 +170,99 @@ function mcpToolDefinition(): ToolDefinition {
 }
 
 describe("M64-D ToolRouter Core", () => {
+  it("accepts a valid TaskBrief as the formal input for a direct lesson-plan Tool without a fabricated requirement artifact", async () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task:direct-lesson-plan", projectId: "project-a", intentEpoch: 0,
+      goal: "只生成五年级数学百分数教案", requestedOutputs: ["lesson_plan"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: "message-direct-lesson-plan",
+    });
+    const intentGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1", taskId: taskBrief.taskId, projectId: taskBrief.projectId, intentEpoch: 0,
+      standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "offline-fixture.v1",
+      maxCostCredits: 0, maxExternalProviderCalls: 0, requiredCheckpoints: [], expiresAt: null,
+    };
+    const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
+
+    const result = await routeToolCallWithoutEnvelope({
+      toolName: "create_lesson_plan",
+      projectId: "project-a",
+      userInstruction: taskBrief.goal,
+      toolInput: { taskBrief },
+      runtime: fakeRuntime(),
+      projectContext: { ...projectContext, requestedOutputs: ["lesson_plan"] },
+      approvedArtifacts: [],
+      sourceMessageId: taskBrief.sourceMessageId,
+      executionIntentEpoch: 0,
+      executionEnvelope: createExecutionEnvelope({
+        actorUserId: "teacher-fixture", taskBrief, planRevision: 0, intensity: "standard", intentGrant,
+        action: { toolName: "create_lesson_plan", arguments: {} },
+      }),
+    }, { internalExecutor });
+
+    expect(result).toMatchObject({ status: "succeeded", toolId: "create_lesson_plan" });
+    expect(internalExecutor).toHaveBeenCalledOnce();
+  });
+
+  it("blocks an out-of-scope capability before Executor execution", async () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task:ppt-only", projectId: "project-a", intentEpoch: 0,
+      goal: "只生成五年级数学百分数 PPT", requestedOutputs: ["ppt"], constraints: [], excludedOutputs: ["lesson_plan"],
+      generationIntensity: "standard", sourceMessageId: "message-ppt-only",
+    });
+    const intentGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1", taskId: taskBrief.taskId, projectId: taskBrief.projectId, intentEpoch: 0,
+      standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "offline-fixture.v1",
+      maxCostCredits: 0, maxExternalProviderCalls: 0, requiredCheckpoints: [], expiresAt: null,
+    };
+    const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
+
+    const result = await routeToolCallWithoutEnvelope({
+      toolName: "create_lesson_plan", projectId: "project-a", userInstruction: taskBrief.goal,
+      toolInput: { taskBrief }, runtime: fakeRuntime(), projectContext, approvedArtifacts: [],
+      sourceMessageId: taskBrief.sourceMessageId, executionIntentEpoch: 0,
+      executionEnvelope: createExecutionEnvelope({
+        actorUserId: "teacher-fixture", taskBrief, planRevision: 0, intensity: "standard", intentGrant,
+        action: { toolName: "create_lesson_plan", arguments: {} },
+      }),
+    }, { internalExecutor });
+
+    expect(result).toMatchObject({ status: "failed", errorCategory: "blocked_tool" });
+    expect(internalExecutor).not.toHaveBeenCalled();
+  });
+
+  it("blocks a direct semantic Tool before Executor when its TaskBrief input is missing", async () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task:missing-direct-brief", projectId: "project-a", intentEpoch: 0,
+      goal: "只生成PPT大纲", requestedOutputs: ["ppt_outline"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: "message-missing-direct-brief",
+    });
+    const intentGrant: IntentGrant = {
+      schemaVersion: "intent-grant.v1", taskId: taskBrief.taskId, projectId: taskBrief.projectId, intentEpoch: 0,
+      standardWorkAuthorized: true, intensity: "standard", budgetPolicyVersion: "offline-fixture.v1",
+      maxCostCredits: 0, maxExternalProviderCalls: 0, requiredCheckpoints: [], expiresAt: null,
+    };
+    const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
+
+    const result = await routeToolCallWithoutEnvelope({
+      toolName: "create_ppt_outline",
+      projectId: "project-a",
+      userInstruction: taskBrief.goal,
+      toolInput: {},
+      runtime: fakeRuntime(),
+      projectContext,
+      approvedArtifacts: [],
+      sourceMessageId: taskBrief.sourceMessageId,
+      executionIntentEpoch: 0,
+      executionEnvelope: createExecutionEnvelope({
+        actorUserId: "teacher-fixture", taskBrief, planRevision: 0, intensity: "standard", intentGrant,
+        action: { toolName: "create_ppt_outline", arguments: {} },
+      }),
+    }, { internalExecutor });
+
+    expect(result).toMatchObject({ status: "failed", errorCategory: "invalid_execution_envelope" });
+    expect(internalExecutor).not.toHaveBeenCalled();
+  });
+
   it("routes an internal capability tool to the injected internal executor with its tool definition", async () => {
     const internalExecutor = vi.fn(async ({ tool }) => successResult(tool));
     const providerExecutor = vi.fn(async ({ tool }) => successResult(tool));
@@ -644,7 +760,7 @@ describe("M64-D ToolRouter Core", () => {
     }, { packageExecutor });
 
     expect(packageExecutor).toHaveBeenCalledWith(expect.objectContaining({
-      toolInput: { pageIds: ["page_06", "page_02"] },
+      toolInput: expect.objectContaining({ pageIds: ["page_06", "page_02"] }),
     }));
   });
 

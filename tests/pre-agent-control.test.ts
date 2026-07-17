@@ -37,4 +37,13 @@ describe("pre-agent control", () => {
       userMessage: "改道，只做视频脚本",
     });
   });
+
+  it("keeps the current task identity when pausing", () => {
+    expect(resolvePreAgentControl("暂停", { hasActiveTask: true, hasPendingPlan: true })).toEqual({
+      kind: "pause",
+      reasonCode: "teacher_requested_pause",
+      advanceIntentEpoch: false,
+      userMessage: "暂停",
+    });
+  });
 });

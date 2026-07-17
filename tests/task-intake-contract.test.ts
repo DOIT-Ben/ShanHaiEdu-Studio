@@ -13,7 +13,7 @@ describe("task intake contract", () => {
         goal: "把已有百分数材料整理成一套明天可以直接使用的完整备课成果",
         requestedOutputs: ["requirement_spec", "lesson_plan", "ppt_outline"],
         constraints: ["五年级数学", "约10页", "保留投篮命中率情境"],
-        excludedOutputs: ["video", "final_package"],
+        excludedOutputs: ["video", "package"],
       },
       projectId: "project-1",
       taskId: "task-1",
@@ -24,7 +24,7 @@ describe("task intake contract", () => {
 
     expect(brief.requestedOutputs).toEqual(["lesson_plan", "ppt_outline", "requirement_spec"]);
     expect(brief.constraints).toContain("约10页");
-    expect(brief.excludedOutputs).toEqual(["final_package", "video"]);
+    expect(brief.excludedOutputs).toEqual(["package", "video"]);
   });
 
   it("uses the Main Agent structured intake proposal as the production TaskBrief scope authority", async () => {

@@ -164,6 +164,8 @@ export type GenerationJobRecord = {
   attempts: number;
   maxAttempts: number;
   resultArtifactId: string | null;
+  providerResultJson?: string | null;
+  countsAsProviderSubmission?: boolean;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -328,6 +330,8 @@ export type CreateGenerationJobInput = {
   idempotencyKey?: string;
   inputSnapshot?: Record<string, unknown>;
   sourceArtifactIds?: string[];
+  createStagedArtifactCommit?: boolean;
+  countsAsProviderSubmission?: boolean;
 };
 
 export type StageGenerationResultInput = Omit<SaveArtifactInput, "validationReport"> & {
@@ -341,6 +345,10 @@ export type GenerationResultCommitRecord = {
 
 export type FailGenerationJobInput = {
   errorMessage: string;
+};
+
+export type CompleteGenerationUnitInput = {
+  providerResultJson: string;
 };
 
 export type RecordGenerationProviderTaskInput = {

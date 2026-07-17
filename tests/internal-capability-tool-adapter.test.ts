@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { executeInternalCapabilityTool } from "@/server/tools/internal-capability-tool-adapter";
 import { getToolDefinition } from "@/server/tools/tool-registry";
+import { createTaskBrief } from "@/server/conversation/task-contract";
 import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
 
 const projectContext = {
@@ -261,7 +262,8 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
     });
   });
 
-  it("can surface needs_input results through dependency injection without changing the production runner", async () => {
+  it("fails closed before the capability runner when a direct semantic Tool has no valid TaskBrief input", async () => {
+    let runCapabilityCalls = 0;
     const result = await executeInternalCapabilityTool(
       {
         tool: getToolDefinition("create_lesson_plan"),
@@ -271,11 +273,10 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
         projectContext,
       },
       {
-        runCapability: async () => ({
-          status: "needs_input",
-          missingInputs: ["requirement_spec"],
-          assistantPrompt: "请先确认备课需求。",
-        }),
+        runCapability: async () => {
+          runCapabilityCalls += 1;
+          throw new Error("runner must not receive a direct Tool without TaskBrief");
+        },
       },
     );
 
@@ -283,8 +284,7 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       status: "needs_input",
       toolId: "create_lesson_plan",
       capabilityId: "lesson_plan",
-      missingInputs: ["requirement_spec"],
-      assistantPrompt: "请先确认备课需求。",
+      missingInputs: ["task_brief"],
       artifactCreated: false,
       observation: {
         kind: "quality_gate_failed",
@@ -299,15 +299,22 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
         kind: "quality_gate_failed",
       },
     });
+    expect(runCapabilityCalls).toBe(0);
   });
 
   it("maps permission failures to a non-retryable policy block observation", async () => {
+    const taskBrief = createTaskBrief({
+      taskId: "task-permission", projectId: "project-a", intentEpoch: 0,
+      goal: "生成教案", requestedOutputs: ["lesson_plan"], constraints: [], excludedOutputs: [],
+      generationIntensity: "standard", sourceMessageId: "message-permission",
+    });
     const result = await executeInternalCapabilityTool(
       {
         tool: getToolDefinition("create_lesson_plan"),
         runtime: fakeRuntime(),
         projectId: "project-a",
         userMessage: "生成教案",
+        taskInput: { taskBrief },
         projectContext,
       },
       {

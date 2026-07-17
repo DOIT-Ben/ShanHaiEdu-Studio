@@ -254,7 +254,7 @@ async function activateRouteTask(
     projectId: project.id,
     intentEpoch: project.intentEpoch ?? 0,
     goal: "根据已确认大纲生成课堂视觉图",
-    requestedOutputs: ["image_prompts"],
+    requestedOutputs: ["image"],
     constraints: ["offline_fixture_only"],
     excludedOutputs: ["real_provider"],
     generationIntensity: project.generationIntensity ?? "standard",

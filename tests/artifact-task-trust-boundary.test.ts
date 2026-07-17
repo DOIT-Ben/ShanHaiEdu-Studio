@@ -74,6 +74,46 @@ describe("Artifact task and truth boundary", () => {
   });
 
   it.each([
+    ["ppt_outline", "ppt_draft"],
+    ["ppt_design", "ppt_design_draft"],
+    ["video_script", "video_script_generate"],
+    ["storyboard", "storyboard_generate"],
+    ["asset_brief", "asset_brief_generate"],
+  ] as const)("lets a trusted task-bound %s artifact complete that local endpoint", (requestedOutput, kind) => {
+    const taskBrief = task({ taskId: `task-local-${requestedOutput}`, requestedOutputs: [requestedOutput] });
+    const artifact = trustedToolArtifact({
+      kind,
+      intentEpoch: taskBrief.intentEpoch,
+      taskId: taskBrief.taskId,
+      taskBriefDigest: taskBrief.digest,
+    });
+
+    expect(evaluateTaskCompletionContract(taskBrief, [artifact])).toEqual({
+      status: "satisfied",
+      remainingRequestedOutputs: [],
+    });
+  });
+
+  it.each([
+    ["ppt_sample_assets", { pptAssetRequestBatch: { scope: "key_samples" }, pptAssetManifest: { entries: [{}] } }],
+    ["ppt_key_samples", { pptKeySampleCandidate: { pages: [{}] } }],
+  ] as const)("does not expand the trusted task-bound %s endpoint to final PPTX", (requestedOutput, structuredContent) => {
+    const taskBrief = task({ taskId: `task-local-${requestedOutput}`, requestedOutputs: [requestedOutput] });
+    const artifact = trustedToolArtifact({
+      kind: "image_prompts",
+      intentEpoch: taskBrief.intentEpoch,
+      taskId: taskBrief.taskId,
+      taskBriefDigest: taskBrief.digest,
+      structuredContent,
+    });
+
+    expect(evaluateTaskCompletionContract(taskBrief, [artifact])).toEqual({
+      status: "satisfied",
+      remainingRequestedOutputs: [],
+    });
+  });
+
+  it.each([
     ["ppt", "pptx_artifact"],
     ["image", "image_prompts"],
     ["video", "concat_only_assemble"],

@@ -414,6 +414,54 @@ describe("M55-C model-first main conversation agent", () => {
     });
   });
 
+  it("lets structured intake preserve a local PPT outline as the requested endpoint", async () => {
+    const payloads: Record<string, any>[] = [];
+    const client = {
+      responses: {
+        async create(payload: Record<string, any>) {
+          payloads.push(payload);
+          return {
+            output_text: "",
+            output: [{
+              id: "item-submit-local-ppt-outline",
+              type: "function_call",
+              call_id: "call-submit-local-ppt-outline",
+              name: "submit_task_brief",
+              arguments: JSON.stringify({
+                goal: "只做PPT结构候选",
+                requestedOutputs: ["ppt_outline"],
+                constraints: ["约10页"],
+                excludedOutputs: ["ppt_design", "ppt_sample_assets", "ppt_key_samples", "ppt", "image", "video", "package"],
+              }),
+            }],
+          };
+        },
+      },
+    } as OpenAIResponsesClient;
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
+
+    const decision = await agent.intakeTask!({
+      userMessage: "只做PPT结构候选，不要设计、图片或PPTX。",
+      generationIntensity: "standard",
+      projectContext: { grade: "五年级", subject: "数学", topic: "百分数" },
+      recentMessages: [],
+    });
+
+    const submitTool = payloads[0].tools.find((tool: { name?: string }) => tool.name === "submit_task_brief");
+    expect(submitTool.parameters.properties.requestedOutputs.items.enum).toEqual(expect.arrayContaining([
+      "ppt_outline", "ppt_design", "ppt_sample_assets", "ppt_key_samples", "ppt",
+      "video_script", "storyboard", "asset_brief",
+    ]));
+    expect(payloads[0].instructions).toContain("ppt_outline");
+    expect(decision).toMatchObject({
+      kind: "task",
+      proposal: {
+        requestedOutputs: ["ppt_outline"],
+        excludedOutputs: ["image", "package", "ppt", "ppt_design", "ppt_key_samples", "ppt_sample_assets", "video"],
+      },
+    });
+  });
+
   it("keeps an ambiguous direction discussion as conversation so the Main Agent can ask", async () => {
     const client = {
       responses: {

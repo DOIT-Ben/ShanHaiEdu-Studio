@@ -232,7 +232,7 @@ function taskBrief(goal: string) {
     projectId: "project-runtime-ab",
     intentEpoch: 3,
     goal,
-    requestedOutputs: ["requirement_spec", "lesson_plan", "ppt_draft"],
+    requestedOutputs: ["requirement_spec", "lesson_plan", "ppt_outline"],
     constraints: ["offline fixture only"],
     excludedOutputs: ["pptx", "image", "video", "zip"],
     generationIntensity: "standard",

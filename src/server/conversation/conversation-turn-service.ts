@@ -170,6 +170,12 @@ async function resolveActiveTaskBrief(input: {
     intentEpoch: project.intentEpoch ?? 0,
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: message.id,
+    context: {
+      grade: project.grade,
+      subject: project.subject,
+      textbookVersion: project.textbookVersion,
+      lessonTopic: project.lessonTopic,
+    },
   });
   return { taskBrief };
 }
@@ -447,9 +453,10 @@ async function executeTeacherMessageTurn(input: {
   const preAgentControl = queuedTaskBrief ? undefined : resolvePreAgentControl(teacherContent, {
     hasActiveTask: Boolean(previousTaskBrief),
     hasPendingPlan: activePlans.length > 0,
+    allowRedirect: "imperative",
   });
   if (preAgentControl) {
-    return commitPreAgentControlTurn({
+    const controlResult = await commitPreAgentControlTurn({
       service: input.service,
       project,
       messages,
@@ -459,6 +466,13 @@ async function executeTeacherMessageTurn(input: {
       previousTaskBrief,
       controlPlaneStore: input.controlPlaneStore,
     });
+    if (preAgentControl.kind === "redirect") {
+      return executeTeacherMessageTurn({
+        ...input,
+        triggerMessage: controlResult.message,
+      });
+    }
+    return controlResult;
   }
   let answeredDialogueCheckpoint: DialogueCheckpoint | undefined;
   if (previousTaskBrief) {
@@ -528,20 +542,25 @@ async function executeTeacherMessageTurn(input: {
     const resumesSameTask = existingAggregate?.status === "paused_recovery" &&
       existingAggregate.taskBrief.taskId === taskBrief.taskId &&
       existingAggregate.taskBrief.digest === taskBrief.digest;
-    taskAggregate = await input.controlPlaneStore.upsertTaskAggregate({
-      taskBrief,
-      intentGrant: intentGrant!,
-      plan: existingAggregate ? {
-        ...existingAggregate.plan,
-        status: resumesSameTask ? "active" : existingAggregate.plan.status,
-      } : {
-        planId: activePlans[0]?.toolPlan.planId ?? `plan:${taskBrief.taskId}`,
-        revision: 0,
-        status: "active",
-      },
-      status: resumesSameTask ? "active" : existingAggregate?.status ?? "active",
-      checkpoint: existingAggregate?.checkpoint ?? null,
-    });
+    const resumesReActCheckpoint = resumesSameTask &&
+      existingAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1";
+    const nextPlan = existingAggregate ? {
+      ...existingAggregate.plan,
+      status: resumesSameTask ? "active" : existingAggregate.plan.status,
+    } : {
+      planId: activePlans[0]?.toolPlan.planId ?? `plan:${taskBrief.taskId}`,
+      revision: 0,
+      status: "active",
+    };
+    taskAggregate = resumesSameTask && !resumesReActCheckpoint
+      ? await input.controlPlaneStore.resumeTaskAggregate({ taskBrief, intentGrant: intentGrant!, plan: nextPlan })
+      : await input.controlPlaneStore.upsertTaskAggregate({
+          taskBrief,
+          intentGrant: intentGrant!,
+          plan: nextPlan,
+          status: resumesSameTask ? "active" : existingAggregate?.status ?? "active",
+          checkpoint: existingAggregate?.checkpoint ?? null,
+        });
     const taskEvent = await input.controlPlaneStore.appendEvent({
       eventId: crypto.randomUUID(),
       projectId: taskBrief.projectId,
@@ -974,21 +993,22 @@ async function executeTeacherMessageTurn(input: {
   }
 
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
+    const executionPendingPlan = controlResolution.decision.supersedePendingAction ? null : effectivePendingPlan;
     return runPlannedArtifact({
       service: input.service,
       runtime: input.runtime,
       toolRouter: input.toolRouter,
       project,
       artifacts,
-      pendingPlan: effectivePendingPlan,
+      pendingPlan: executionPendingPlan,
       plannedTurn: {
         ...agentTurn,
         toolPlan: enrichToolPlanWithTaskContext(
-          agentTurn.toolPlan ?? effectivePendingPlan?.toolPlan,
-           taskBrief ?? effectivePendingPlan?.taskBrief,
-           intentGrant ?? effectivePendingPlan?.intentGrant,
+          agentTurn.toolPlan ?? executionPendingPlan?.toolPlan,
+           taskBrief ?? executionPendingPlan?.taskBrief,
+           intentGrant ?? executionPendingPlan?.intentGrant,
         ),
-         deliveryPlan: agentTurn.deliveryPlan ?? effectivePendingPlan?.deliveryPlan,
+         deliveryPlan: agentTurn.deliveryPlan ?? executionPendingPlan?.deliveryPlan,
       },
       capabilityAvailability,
       budgetEvents,
@@ -997,7 +1017,7 @@ async function executeTeacherMessageTurn(input: {
       reference,
       confirmedActionId: effectiveConfirmedActionId,
       triggerMessage: input.triggerMessage,
-      generationUserMessage: pendingPlan?.teacherRequest ?? teacherContent,
+      generationUserMessage: executionPendingPlan?.teacherRequest ?? teacherContent,
       agent: input.agent,
       agentToolExecutor: input.agentToolExecutor,
       executionIdentity: input.executionIdentity,
@@ -1290,6 +1310,7 @@ async function commitPreAgentControlTurn(input: {
   const pendingStatus = input.control.kind === "pause"
     ? "paused"
     : input.control.kind === "cancel" ? "canceled" : "superseded";
+  const aggregateStatus = input.control.kind === "pause" ? "paused_recovery" : pendingStatus;
   for (const plan of input.activePlans) {
     await updatePendingPlanStatus(input.service, input.project.id, plan, pendingStatus);
   }
@@ -1382,12 +1403,12 @@ async function commitPreAgentControlTurn(input: {
     await input.controlPlaneStore.upsertTaskAggregate({
       taskBrief: input.previousTaskBrief,
       intentGrant: previousIntentGrant,
-      plan: previousAggregate ? { ...previousAggregate.plan, status: pendingStatus } : {
+      plan: previousAggregate ? { ...previousAggregate.plan, status: aggregateStatus } : {
         planId: input.activePlans[0]?.toolPlan.planId ?? `plan:${input.previousTaskBrief.taskId}`,
         revision: 0,
-        status: pendingStatus,
+        status: aggregateStatus,
       },
-      status: pendingStatus,
+      status: aggregateStatus,
       checkpoint,
     });
     await input.controlPlaneStore.appendEvent({
@@ -1419,6 +1440,12 @@ async function commitPreAgentControlTurn(input: {
         intentEpoch: nextIntentEpoch,
         generationIntensity: input.project.generationIntensity ?? "standard",
         sourceMessageId: input.triggerMessage.id,
+        context: {
+          grade: input.project.grade,
+          subject: input.project.subject,
+          textbookVersion: input.project.textbookVersion,
+          lessonTopic: input.project.lessonTopic,
+        },
       });
       const nextIntentGrant = createStandardIntentGrant(nextTaskBrief);
       metadata = {
@@ -1503,19 +1530,8 @@ function enrichToolPlanWithTaskContext(
     ...toolPlan,
     inputDraft: {
       ...toolPlan.inputDraft,
-      taskBrief: {
-        taskId: taskBrief.taskId,
-        digest: taskBrief.digest,
-        goal: taskBrief.goal,
-        intentEpoch: taskBrief.intentEpoch,
-        generationIntensity: taskBrief.generationIntensity,
-      },
-      intentGrant: {
-        taskId: intentGrant.taskId,
-        intentEpoch: intentGrant.intentEpoch,
-        standardWorkAuthorized: intentGrant.standardWorkAuthorized,
-        intensity: intentGrant.intensity,
-      },
+      taskBrief: structuredClone(taskBrief),
+      intentGrant: structuredClone(intentGrant),
     },
   };
 }
@@ -2166,6 +2182,9 @@ async function runToolRouterCapability(input: Parameters<typeof runPlannedArtifa
     structuredContent: result.artifactDraft.structuredContent,
     origin: "tool_result" as const,
     validationReport: result.validationReport,
+    taskId: executionBoundary.current.taskId,
+    taskBriefDigest: executionBoundary.current.taskBriefDigest,
+    intentEpoch: executionBoundary.current.intentEpoch,
   };
   const artifact = jobId
     ? (await input.service.commitGenerationResult(input.project.id, jobId, artifactInput)).artifact

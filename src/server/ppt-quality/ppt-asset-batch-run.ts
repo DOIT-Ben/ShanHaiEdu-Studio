@@ -6,19 +6,64 @@ import { createPptAssetManifestDigest, validatePptAssetManifest } from "./ppt-as
 export type PptAssetBatchRunResult = {
   requestBatch: ReturnType<typeof buildPptAssetRequestBatch>;
   manifest: PptAssetManifest;
+  providerSubmissionCount?: number;
 };
+
+export type PptAssetBatchLifecycle = {
+  loadSucceededUnit: (request: PptAssetRequest) => Promise<PptGeneratedAsset | null>;
+  onSubmissionStarted: (request: PptAssetRequest) => Promise<void>;
+  onSubmissionSucceeded: (request: PptAssetRequest, result: PptGeneratedAsset) => Promise<void>;
+  onSubmissionFailed: (request: PptAssetRequest, error: unknown) => Promise<void>;
+};
+
+export class PptAssetBatchExecutionError extends Error {
+  readonly providerSubmissionCount: number;
+  readonly originalError: unknown;
+
+  constructor(error: unknown, providerSubmissionCount: number) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = "PptAssetBatchExecutionError";
+    this.providerSubmissionCount = providerSubmissionCount;
+    this.originalError = error;
+  }
+}
 
 export async function runPptAssetBatch(input: {
   designPackage: PptDesignPackage;
   generateAsset: (request: PptAssetRequest) => Promise<PptGeneratedAsset>;
   scope?: PptAssetManifest["scope"];
+  lifecycle?: PptAssetBatchLifecycle;
 }): Promise<PptAssetBatchRunResult> {
   const scope = input.scope ?? "key_samples";
   const requestBatch = buildPptAssetRequestBatch(input.designPackage, scope);
   const entries: PptAssetManifestEntry[] = [];
+  let providerSubmissionCount = 0;
 
   for (const request of requestBatch.requests) {
-    const generated = await input.generateAsset(request);
+    let generated = await input.lifecycle?.loadSucceededUnit(request) ?? null;
+    if (!generated) {
+      try {
+        await input.lifecycle?.onSubmissionStarted(request);
+      } catch (error) {
+        throw new PptAssetBatchExecutionError(error, providerSubmissionCount);
+      }
+      providerSubmissionCount += 1;
+      try {
+        generated = await input.generateAsset(request);
+      } catch (error) {
+        try {
+          await input.lifecycle?.onSubmissionFailed(request, error);
+        } catch {
+          // The original Provider failure remains the batch failure authority.
+        }
+        throw new PptAssetBatchExecutionError(error, providerSubmissionCount);
+      }
+      try {
+        await input.lifecycle?.onSubmissionSucceeded(request, generated);
+      } catch (error) {
+        throw new PptAssetBatchExecutionError(error, providerSubmissionCount);
+      }
+    }
     entries.push({
       assetId: request.assetId,
       assetKind: request.assetKind,
@@ -64,5 +109,5 @@ export async function runPptAssetBatch(input: {
   if (!validation.valid) {
     throw new Error(`ppt_asset_manifest_invalid:${validation.issues.map((item) => item.code).join(",")}`);
   }
-  return { requestBatch, manifest };
+  return { requestBatch, manifest, providerSubmissionCount };
 }
