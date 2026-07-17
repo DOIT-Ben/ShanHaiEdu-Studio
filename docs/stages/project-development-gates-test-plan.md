@@ -32,6 +32,7 @@
 | DG-17 | 全新Windows checkout启用`core.autocrlf` | 三个绑定合同仍以LF落盘，声明SHA与实际字节一致；缺少`eol=lf`时政策门失败 |
 | DG-18 | clean checkout没有本地Prisma生成目录 | 权威`typecheck`先生成Prisma client再运行TypeScript；workflow不增加私有旁路 |
 | DG-19 | GitHub runner临时根存在上游reparse，文本fixture由LF checkout | 测试夹具写入`realpath`物理临时根且继续拒绝根内链接；manifest绑定LF Git blob字节 |
+| DG-20 | 本机存在外部Provider台账和真实Provider环境值，clean CI不存在 | Vitest固定使用无密钥仓内manifest并删除继承Provider值；能力测试只接受显式假值 |
 
 ## 实际命令
 

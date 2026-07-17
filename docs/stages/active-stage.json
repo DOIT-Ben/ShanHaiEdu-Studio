@@ -37,7 +37,9 @@
     "src/server/gpt-protocol/types.ts",
     "src/server/provider-ledger/provider-call-trace.ts",
     "tests/conversation-turn-service.test.ts",
+    "tests/capability-availability.test.ts",
     "tests/development-gates/**",
+    "tests/fixtures/provider-ledger/manifest.json",
     "tests/gpt-protocol-adapter.test.ts",
     "tests/model-main-conversation-agent.test.ts",
     "tests/provider-call-trace.test.ts"
@@ -46,7 +48,7 @@
     "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak"
   ],
   "budgets": {
-    "maxChangedFiles": 48,
+    "maxChangedFiles": 50,
     "maxAddedLines": 7800,
     "maxDeletedLines": 500,
     "maxBinaryFiles": 0
@@ -88,6 +90,15 @@
       "scripts/run-tests.mjs"
     ],
     "reason": "The third clean GitHub checkout proved runner-managed reparse ancestors and a CRLF-derived fixture manifest made otherwise strict tests host-dependent. Tests now use the real physical temp root, while fixture hashes bind canonical LF Git bytes. Security assertions and test counts are unchanged."
+  },
+  "ciHermeticProviderRevision": {
+    "previousMaxChangedFiles": 48,
+    "revisedMaxChangedFiles": 50,
+    "addedAllowedPaths": [
+      "tests/capability-availability.test.ts",
+      "tests/fixtures/provider-ledger/manifest.json"
+    ],
+    "reason": "The fourth clean GitHub checkout proved Vitest had inherited an external local Provider ledger. The repository fixture now declares the tested capabilities, inherited Provider values are removed, and tests supply only explicit fake values. No production or real Provider scope was added."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

@@ -7,9 +7,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nodeTestDatabasePath = path.join(root, ".tmp", "node-test-workbench.db");
 const vitestDatabasePath = path.join(root, ".tmp", "vitest-test-workbench.db");
+const providerLedgerFixtureRoot = path.join(root, "tests", "fixtures", "provider-ledger");
+const providerLedgerFixtureEnvKeys = readProviderLedgerFixtureEnvKeys(providerLedgerFixtureRoot);
 const baseEnv = createTestBaseEnv();
-const nodeTestEnv = suiteEnv("node-test-workbench.db");
-const vitestEnv = suiteEnv("vitest-test-workbench.db");
+const nodeTestEnv = createSuiteEnv("node-test-workbench.db", { base: baseEnv });
+const vitestEnv = createSuiteEnv("vitest-test-workbench.db", {
+  base: baseEnv,
+  providerLedgerRoot: providerLedgerFixtureRoot,
+  providerEnvKeys: providerLedgerFixtureEnvKeys,
+});
 
 export function runAllTests() {
   run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
@@ -44,11 +50,25 @@ function initializeTestDatabase(databasePath, env) {
   run(process.execPath, ["scripts/init-sqlite-schema.mjs"], { env });
 }
 
-function suiteEnv(databaseFileName) {
+export function createSuiteEnv(databaseFileName, { base = baseEnv, providerLedgerRoot, providerEnvKeys = [] } = {}) {
+  const sanitizedBase = { ...base };
+  for (const key of providerEnvKeys) delete sanitizedBase[key];
+  const providerEnv = providerLedgerRoot ? {
+    SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+    SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerRoot,
+  } : {};
   return {
-    ...baseEnv,
+    ...sanitizedBase,
     DATABASE_URL: `file:./.tmp/${databaseFileName}`,
+    ...providerEnv,
   };
+}
+
+function readProviderLedgerFixtureEnvKeys(ledgerRoot) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ledgerRoot, "manifest.json"), "utf8"));
+  if (!Array.isArray(manifest.providers)) throw new Error("Provider ledger test fixture is invalid.");
+  return [...new Set(manifest.providers.flatMap((provider) =>
+    Array.isArray(provider.env_vars) ? provider.env_vars : []))];
 }
 
 function run(command, args, options = {}) {

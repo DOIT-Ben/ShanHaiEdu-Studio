@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCapabilityAvailability, resolveRuntimeProviderAvailability } from "@/server/capabilities/capability-availability";
 import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
@@ -6,6 +7,7 @@ import { createTaskBrief } from "@/server/conversation/task-contract";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
 const definitions = getCapabilityDefinitions();
+const providerLedgerFixtureRoot = path.resolve("tests", "fixtures", "provider-ledger");
 
 function approvedArtifactFor(capabilityId: CapabilityId): ArtifactRecord {
   const capability = definitions.find((definition) => definition.id === capabilityId);
@@ -138,6 +140,7 @@ describe("CapabilityAvailability", () => {
     const availability = resolveRuntimeProviderAvailability({
       COZE_PPT_USE_CLI: "1",
       NODE_ENV: "test",
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
       SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
       IMAGE_PROVIDER_CHANNEL: "minimax",
       MINIMAX_API_KEY: "test-key",
@@ -174,6 +177,7 @@ describe("CapabilityAvailability", () => {
   it("recognizes the API-ledger MiniMax image contract without another image provider", () => {
     const availability = resolveRuntimeProviderAvailability({
       NODE_ENV: "test",
+      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
       SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
       IMAGE_PROVIDER_CHANNEL: "minimax",
       MINIMAX_API_KEY: "minimax-test-key",

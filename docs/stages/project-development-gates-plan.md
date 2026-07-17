@@ -50,6 +50,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第三次clean checkout通过TypeScript与Lint后，Node测试暴露GitHub runner临时目录的上游reparse和一项CRLF派生fixture manifest。测试入口现在把`TEMP`、`TMP`和`TMPDIR`统一到`realpath`后的物理目录，安全测试仍拒绝该根内部的链接；PPT文字fixture的manifest改绑定仓库LF blob字节，不通过跳过或放宽路径检查制造通过。
 
+第四次clean checkout通过全部Node测试后，Vitest暴露本机外部Provider台账和测试开关污染。Vitest现固定使用仓内无密钥Provider manifest，并在启动前删除manifest声明的继承Provider值；用例只能显式提供假值，clean CI和本机因此使用同一合同。精确增加两个fixture/测试路径，文件预算由48修订为50，生产范围不变。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

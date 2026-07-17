@@ -5,6 +5,7 @@ import { test } from "node:test";
 import YAML from "yaml";
 
 import {
+  createSuiteEnv,
   createTestBaseEnv,
   resolveCanonicalTestTempRoot,
 } from "../../scripts/run-tests.mjs";
@@ -50,4 +51,18 @@ test("the test runner resolves a physical temp root before security-sensitive fi
     TMPDIR: tempRoot,
     VITEST_MAX_WORKERS: "1",
   });
+  expectSuiteEnv(createSuiteEnv("vitest.db", {
+    base: { EXISTING: "yes", MINIMAX_API_KEY: "must-not-leak" },
+    providerLedgerRoot: "C:\\repo\\tests\\fixtures\\provider-ledger",
+    providerEnvKeys: ["MINIMAX_API_KEY"],
+  }));
 });
+
+function expectSuiteEnv(env) {
+  assert.deepEqual(env, {
+    EXISTING: "yes",
+    DATABASE_URL: "file:./.tmp/vitest.db",
+    SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+    SHANHAI_PROVIDER_LEDGER_ROOT: "C:\\repo\\tests\\fixtures\\provider-ledger",
+  });
+}

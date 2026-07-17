@@ -52,6 +52,15 @@
       "id": "image_generation",
       "env_vars": [
         "IMAGE_PROVIDER_CHANNEL",
+        "IMAGE_PROVIDER_MODE",
+        "IMAGEGEN_MYSELF_PRIMARY_API_KEY",
+        "IMAGEGEN_MYSELF_PRIMARY_BASE_URL",
+        "IMAGEGEN_FREE_API_KEY",
+        "IMAGEGEN_FREE_BASE_URL",
+        "IMAGEGEN_FREE_PRIMARY_API_KEY",
+        "IMAGEGEN_FREE_PRIMARY_BASE_URL",
+        "IMAGEGEN_MYSELF_FALLBACK_API_KEY",
+        "IMAGEGEN_MYSELF_FALLBACK_BASE_URL",
         "MINIMAX_API_KEY",
         "MINIMAX_BASE_URL",
         "MINIMAX_IMAGE_MODEL"
@@ -65,6 +74,37 @@
         "base_url_env": "MINIMAX_BASE_URL",
         "model_env": "MINIMAX_IMAGE_MODEL"
       }
+    },
+    {
+      "id": "coze_ppt",
+      "env_vars": [
+        "COZE_API_TOKEN",
+        "COZE_PPT_RUN_URL",
+        "COZE_PPT_BOT_ID"
+      ]
+    },
+    {
+      "id": "video_generation",
+      "env_vars": [
+        "VIDEO_PROVIDER_MODE",
+        "EVOLINK_API_KEY",
+        "EVOLINK_BASE_URL",
+        "EVOLINK_VIDEO_BASE_URL",
+        "EVOLINK_FILES_BASE_URL",
+        "EVOLINK_VIDEO_MODEL",
+        "EVOLINK_VIDEO_DURATION",
+        "EVOLINK_VIDEO_QUALITY",
+        "EVOLINK_VIDEO_MODE",
+        "EVOLINK_VIDEO_ASPECT_RATIO",
+        "OCTO_API_KEY",
+        "OCTO_BASE_URL",
+        "OCTO_VIDEO_PROVIDER",
+        "VIDEO_MODEL",
+        "OMNI_DEFAULT_MODEL",
+        "NEWAPI_DEFAULT_MODEL",
+        "OMNI_DEFAULT_SIZE",
+        "NEWAPI_DEFAULT_SIZE"
+      ]
     },
     {
       "id": "tts_minimax",

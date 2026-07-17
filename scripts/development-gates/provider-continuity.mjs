@@ -24,6 +24,8 @@ const BOOTSTRAP_ALLOWED_PATHS = [
   "scripts/run-tests.mjs",
   "scripts/development-gates/**",
   "tests/development-gates/**",
+  "tests/capability-availability.test.ts",
+  "tests/fixtures/provider-ledger/manifest.json",
   "docs/**",
   "package.json",
   ".github/**",
