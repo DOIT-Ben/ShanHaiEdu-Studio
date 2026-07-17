@@ -58,6 +58,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第六次clean checkout确认真实FFmpeg与LibreOffice安装、解析成功，随后暴露三项更深的runner合同：PPT转图还依赖Poppler；TTS用例的显式ambient env没有携带仓内ledger root，本机真实台账曾掩盖该缺口；隔离health schema初始化在hosted runner上超过Vitest默认5秒。workflow现安装并显式解析真实Poppler，TTS用例固定仓内无密钥fixture，health真实集成用例单独使用15秒上限；精确文件预算由55修订为57，不减少任何行为断言。
 
+第七次clean checkout确认Chocolatey Poppler安装成功，但该包不创建`pdfinfo.exe`/`pdftoppm.exe` shim。workflow现从受控的`ChocolateyInstall\lib\poppler\tools`解析实际二进制，要求两者同时存在，并把实际bin目录与显式路径传给后续验证；不绑定具体包版本或runner盘符。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

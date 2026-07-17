@@ -36,6 +36,8 @@ test("quality-gates workflow calls the repository CI entry without a success byp
   assert.match(exposeMedia?.run ?? "", /FFPROBE_PATH=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /PDFINFO_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /PDFTOPPM_BIN=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /ChocolateyInstall.*lib\\poppler\\tools/s);
+  assert.match(exposeMedia?.run ?? "", /Poppler installation did not provide pdfinfo\.exe and pdftoppm\.exe/s);
   assert.match(exposeMedia?.run ?? "", /LIBREOFFICE_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /GITHUB_PATH/);
   const npmCommands = steps
