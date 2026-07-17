@@ -17,4 +17,6 @@
 
 2026-07-17原子Tool整改完成入口：`2026-07-17-agent-atomic-tool-remediation\README.md`。该目录保存五阶段完成计划、测试门和SHA-256 manifest；只作完成证据，不自动启动V1-9。
 
+2026-07-17项目开发门禁制度化完成入口：`2026-07-17-project-development-gates\README.md`。该目录保存退出活动权威时的阶段合同、计划、测试计划、CI关闭证据和逐文件SHA-256迁移清单。
+
 既有archive内容和规则备份在本轮保持原位不变。

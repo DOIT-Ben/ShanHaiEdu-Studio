@@ -1,161 +1,112 @@
 {
   "schemaVersion": "shanhai-active-stage.v1",
-  "stageId": "project-development-gates",
+  "stageId": "p0-05a-provider-continuity-readiness",
   "status": "active",
-  "baselineSha": "63b9bd3866195b8062756f2b7016faf44e22208f",
-  "plan": "docs/stages/project-development-gates-plan.md",
-  "testPlan": "docs/stages/project-development-gates-test-plan.md",
+  "baselineSha": "88dae43c3cd2d71b792388ad15b93a74d4ac7bac",
+  "plan": "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
+  "testPlan": "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
   "allowedPaths": [
     ".gitattributes",
-    ".github/workflows/quality-gates.yml",
-    "AGENTS.md",
     "README.md",
     "config/development-gates.json",
-    "docs/architecture/README.md",
-    "docs/architecture/decisions/2026-07-17-adr-project-development-gates.md",
-    "docs/architecture/decisions/README.md",
-    "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
-    "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak",
-    "docs/contracts/development-quality-gate.md",
-    "docs/private-api-ledger.md",
-    "fixtures/ppt-sample-manifest.json",
     "docs/README.md",
+    "docs/archive/README.md",
+    "docs/archive/2026-07-17-project-development-gates/README.md",
+    "docs/archive/2026-07-17-project-development-gates/active-stage.json",
+    "docs/archive/2026-07-17-project-development-gates/archive-manifest.json",
+    "docs/archive/2026-07-17-project-development-gates/project-development-gates-plan.md",
+    "docs/archive/2026-07-17-project-development-gates/project-development-gates-test-plan.md",
     "docs/mainlines/current-mainline-status.md",
+    "docs/product/p0-05a-provider-continuity-readiness-spec.md",
     "docs/product/requirements-backlog.md",
+    "docs/roadmap/README.md",
     "docs/roadmap/product/README.md",
-    "docs/roadmap/product/competitor-derived-second-tier-requirements.md",
-    "docs/roadmap/product/p0-05a-provider-continuity-readiness-spec.md",
     "docs/roadmap/product/p0-05a-provider-continuity-readiness-plan.md",
+    "docs/roadmap/product/p0-05a-provider-continuity-readiness-spec.md",
     "docs/roadmap/product/p0-05a-provider-continuity-readiness-test-plan.md",
+    "docs/runbooks/provider-continuity-live.md",
     "docs/stages/README.md",
     "docs/stages/active-stage.json",
+    "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
+    "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
+    "docs/stages/p0-05a-v1-9-readiness-matrix.md",
     "docs/stages/project-development-gates-plan.md",
     "docs/stages/project-development-gates-test-plan.md",
     "package.json",
-    "scripts/development-gates/**",
-    "scripts/run-tests.mjs",
-    "src/server/conversation/conversation-turn-service.ts",
-    "src/server/conversation/main-conversation-agent.ts",
-    "src/server/conversation/model-main-conversation-agent.ts",
+    "scripts/development-gates/provider-continuity.mjs",
+    "scripts/development-gates/provider-continuity/**",
+    "scripts/development-gates/run-development-gates.mjs",
+    "scripts/lib/v1-9-e2e-contract.mjs",
+    "scripts/prepare-v1-9-run.ts",
+    "scripts/run-v1-9-e2e.mjs",
+    "scripts/v1-9-product-preflight.ts",
+    "src/server/provider-ledger/provider-call-trace.ts",
     "src/server/gpt-protocol/openai-responses-adapter.ts",
     "src/server/gpt-protocol/types.ts",
-    "src/server/provider-ledger/provider-call-trace.ts",
-    "src/server/ppt-quality/ppt-key-sample-renderer.ts",
-    "src/server/video-quality/video-timeline-assembler.ts",
+    "src/server/conversation/conversation-turn-service.ts",
     "tests/conversation-turn-service.test.ts",
-    "tests/capability-availability.test.ts",
-    "tests/development-gates/**",
-    "tests/fixtures/provider-ledger/manifest.json",
+    "tests/development-gates/development-gate-runner.test.mjs",
+    "tests/development-gates/policy-ratchet.test.mjs",
+    "tests/development-gates/provider-continuity-live.test.mjs",
+    "tests/development-gates/provider-continuity.test.mjs",
+    "tests/development-gates/stage-paths.test.mjs",
+    "tests/development-gates/wiring.test.mjs",
+    "tests/e2e/provider-continuity-real.spec.ts",
+    "tests/e2e/v1-9-unique-real-product.spec.ts",
     "tests/gpt-protocol-adapter.test.ts",
-    "tests/health-route.test.ts",
-    "tests/health-readiness.test.ts",
     "tests/model-main-conversation-agent.test.ts",
-    "tests/package-tool-adapter.test.ts",
     "tests/provider-call-trace.test.ts",
-    "tests/ppt-key-sample-renderer.test.ts",
-    "tests/video-narration-provider.test.ts"
+    "tests/v1-9-e2e-runner.test.mjs",
+    "tests/v1-9-unique-real-product-observer-contract.test.mjs"
   ],
   "protectedPathExceptions": [
-    "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
-    "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak"
+    "docs/archive/README.md",
+    "docs/archive/2026-07-17-project-development-gates/README.md",
+    "docs/archive/2026-07-17-project-development-gates/active-stage.json",
+    "docs/archive/2026-07-17-project-development-gates/archive-manifest.json",
+    "docs/archive/2026-07-17-project-development-gates/project-development-gates-plan.md",
+    "docs/archive/2026-07-17-project-development-gates/project-development-gates-test-plan.md"
   ],
   "budgets": {
-    "maxChangedFiles": 60,
-    "maxAddedLines": 7800,
-    "maxDeletedLines": 500,
+    "maxChangedFiles": 45,
+    "maxAddedLines": 5000,
+    "maxDeletedLines": 1200,
     "maxBinaryFiles": 0
   },
-  "budgetRevision": {
-    "previousMaxAddedLines": 4200,
-    "revisedMaxAddedLines": 5400,
-    "reason": "The first exact reports added 57 reviewed debt records and fail-closed evidence tamper tests; production scope and allowed paths did not expand."
-  },
-  "handoffPlanningRevision": {
-    "previousMaxChangedFiles": 32,
-    "revisedMaxChangedFiles": 38,
-    "previousMaxAddedLines": 5400,
-    "revisedMaxAddedLines": 6500,
-    "reason": "The user authorized planning the single next stage. Only three roadmap documents, their index, backlog alignment, and current status are added; no production or Provider execution scope is added."
-  },
-  "handoffPlanning": {
-    "candidateStageId": "p0-05a-provider-continuity-readiness",
-    "status": "roadmap-only-until-clean-ci"
-  },
-  "providerCaptureBootstrapRevision": {
-    "previousMaxChangedFiles": 38,
-    "revisedMaxChangedFiles": 48,
-    "previousMaxAddedLines": 6500,
-    "revisedMaxAddedLines": 7800,
-    "reason": "P0-05A entry audit proved the existing ledger is health-probe evidence, not per-call runtime evidence. The exact, expiring bootstrap only admits six named production files and four behavior-test files needed to add sanitized call tracing; it cannot produce a passing continuity receipt."
-  },
-  "ciPortabilityRevision": {
-    "addedAllowedPath": ".gitattributes",
-    "reason": "The first clean GitHub Windows checkout proved bound contract hashes were sensitive to core.autocrlf. The exact contract paths now declare LF checkout bytes; SHA checks and budgets are unchanged."
-  },
-  "ciCleanCheckoutRevision": {
-    "changedScript": "typecheck",
-    "reason": "The second clean GitHub checkout proved local generated Prisma types had masked a missing verification prerequisite. The authoritative typecheck command now generates the client before tsc; the workflow still calls only verify:ci."
-  },
-  "ciPhysicalFixtureRevision": {
-    "addedAllowedPaths": [
-      "fixtures/ppt-sample-manifest.json",
-      "scripts/run-tests.mjs"
-    ],
-    "reason": "The third clean GitHub checkout proved runner-managed reparse ancestors and a CRLF-derived fixture manifest made otherwise strict tests host-dependent. Tests now use the real physical temp root, while fixture hashes bind canonical LF Git bytes. Security assertions and test counts are unchanged."
-  },
-  "ciHermeticProviderRevision": {
-    "previousMaxChangedFiles": 48,
-    "revisedMaxChangedFiles": 50,
-    "addedAllowedPaths": [
-      "tests/capability-availability.test.ts",
-      "tests/fixtures/provider-ledger/manifest.json"
-    ],
-    "reason": "The fourth clean GitHub checkout proved Vitest had inherited an external local Provider ledger. The repository fixture now declares the tested capabilities, inherited Provider values are removed, and tests supply only explicit fake values. No production or real Provider scope was added."
-  },
-  "publicRepositoryHygieneRevision": {
-    "previousMaxChangedFiles": 50,
-    "revisedMaxChangedFiles": 55,
-    "addedAllowedPaths": [
-      "README.md",
-      "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak",
-      "docs/private-api-ledger.md",
-      "docs/roadmap/product/competitor-derived-second-tier-requirements.md",
-      "src/server/video-quality/video-timeline-assembler.ts",
-      "tests/package-tool-adapter.test.ts"
-    ],
-    "reason": "The repository owner changed visibility to public. Current authoritative documents now use repository-relative or environment-neutral locations, the required pre-edit AGENTS backup is preserved exactly, and the media resolver/test helpers no longer expose or depend on one workstation's FFmpeg path. Explicit binary environment variables remain authoritative and PATH is the portable fallback. No Provider call or release scope was added."
-  },
-  "ciNativeDependencyRevision": {
-    "previousMaxChangedFiles": 55,
-    "revisedMaxChangedFiles": 57,
-    "addedAllowedPaths": [
-      "tests/health-route.test.ts",
-      "tests/video-narration-provider.test.ts"
-    ],
-    "reason": "The sixth clean GitHub checkout proved the TTS test had relied on a workstation ledger root, PPT rendering also requires real Poppler binaries, and isolated schema initialization can exceed Vitest's five-second default on a hosted runner. The fixture root is now explicit, real Poppler is installed, and only the real health integration test receives a 15-second timeout. Assertions and Provider boundaries are unchanged."
-  },
-  "ciHostedIntegrationRevision": {
-    "previousMaxChangedFiles": 57,
-    "revisedMaxChangedFiles": 60,
-    "addedAllowedPaths": [
-      "src/server/ppt-quality/ppt-key-sample-renderer.ts",
-      "tests/health-readiness.test.ts",
-      "tests/ppt-key-sample-renderer.test.ts"
-    ],
-    "reason": "The ninth clean GitHub checkout proved one TTS missing-config branch still lacked the explicit fixture root, a second health integration suite retained the five-second local-speed assumption, and the real PPT sample converter exposed only a redacted command failure. The converter now uses an isolated LibreOffice profile and stable phase errors, with a behavior test; both health integration suites use exact 15-second per-test limits. No assertion, Provider call, or artifact standard was removed."
-  },
   "providerContinuity": {
-    "requirement": "provider-evidence-capture-bootstrap",
-    "reason": "The existing Provider ledger cannot prove per-call HTTP status, timeout, correlation, or run/task/turn binding. This exact bootstrap permits only sanitized capture implementation and behavior tests while continuity remains failed.",
-    "expiresOn": "2026-07-18",
+    "requirement": "provider-continuity-readiness-implementation",
     "mode": "development-only",
-    "allowedProductionPaths": [
-      "src/server/conversation/conversation-turn-service.ts",
-      "src/server/conversation/main-conversation-agent.ts",
-      "src/server/conversation/model-main-conversation-agent.ts",
+    "expiresOn": "2026-07-24",
+    "liveCallsAuthorized": false,
+    "liveCampaign": "blocked-awaiting-explicit-authorization",
+    "allowedImplementationPaths": [
+      "config/development-gates.json",
+      "package.json",
+      "scripts/development-gates/provider-continuity.mjs",
+      "scripts/development-gates/provider-continuity/**",
+      "scripts/development-gates/run-development-gates.mjs",
+      "src/server/provider-ledger/provider-call-trace.ts",
       "src/server/gpt-protocol/openai-responses-adapter.ts",
       "src/server/gpt-protocol/types.ts",
-      "src/server/provider-ledger/provider-call-trace.ts"
+      "src/server/conversation/conversation-turn-service.ts",
+      "tests/conversation-turn-service.test.ts",
+      "tests/development-gates/development-gate-runner.test.mjs",
+      "tests/development-gates/policy-ratchet.test.mjs",
+      "tests/development-gates/provider-continuity-live.test.mjs",
+      "tests/development-gates/provider-continuity.test.mjs",
+      "tests/development-gates/wiring.test.mjs",
+      "tests/gpt-protocol-adapter.test.ts",
+      "tests/model-main-conversation-agent.test.ts",
+      "tests/provider-call-trace.test.ts"
+    ],
+    "forbiddenUntilAuthorized": [
+      "network-provider-call",
+      "passed-receipt",
+      "v1-9-run-id",
+      "image-provider",
+      "video-provider",
+      "pptx-provider",
+      "zip-provider"
     ]
   }
 }

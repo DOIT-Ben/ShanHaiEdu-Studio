@@ -37,13 +37,13 @@
 | 总账 | `product\requirements-backlog.md` | 未完成、延期和未来需求 |
 | 主线 | `mainlines\current-mainline-status.md` | 当前事实、五层状态、阻塞和下一动作 |
 | 架构 | `architecture\README.md`、`architecture\V1.0 重构设计.md` | 当前智能体原子 Tool 架构与已接受ADR |
-| 阶段 | `stages\README.md` | 当前唯一活动阶段是项目开发门禁制度化；P0-05A仍为roadmap候选 |
+| 阶段 | `stages\README.md` | 当前唯一活动阶段是P0-05A Provider连续性与V1-9就绪；目前只执行离线readiness |
 | Provider合同 | `contracts\provider-ledger-runtime-contract.md` | API台账到运行时的非敏感绑定边界 |
 | 前端 | `ui\README.md` | assistant-ui工作台与视觉证据入口 |
 
 ## 4. 未来工作
 
-已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。唯一下一阶段候选是P0-05A真实Provider连续性与V1-9就绪；只有当前门禁阶段取得clean CI manifest并关闭后才可激活。P0-05A Go后才允许规划P0-05B、生成新的V1-9 plan、manifest和runId；整改前旧材料不得恢复。Roadmap不自动取得执行权。
+已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。P0-05A已激活，但真实Provider campaign仍等待单独的通道、模型、费用和调用次数授权；当前只实现并验证离线readiness。P0-05A Go后才允许规划P0-05B、生成新的V1-9 plan、manifest和runId；整改前旧材料不得恢复。Roadmap不自动取得执行权。
 
 ## 5. 历史与证据
 

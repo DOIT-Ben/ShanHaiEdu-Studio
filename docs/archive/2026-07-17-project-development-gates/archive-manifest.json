@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "shanhai-stage-archive-manifest.v1",
+  "stageId": "project-development-gates",
+  "sourceHead": "88dae43c3cd2d71b792388ad15b93a74d4ac7bac",
+  "archiveRoot": "docs/archive/2026-07-17-project-development-gates",
+  "closedAt": "2026-07-17T23:43:08+08:00",
+  "entries": [
+    {
+      "mode": "snapshot",
+      "sourcePath": "docs/stages/active-stage.json",
+      "archivePath": "docs/archive/2026-07-17-project-development-gates/active-stage.json",
+      "bytes": 8920,
+      "sourceSha256": "2b20aca14f795832a57fae8317d923869e4482c513c86c8a3f76766c5051d637",
+      "archiveSha256": "2b20aca14f795832a57fae8317d923869e4482c513c86c8a3f76766c5051d637"
+    },
+    {
+      "mode": "move",
+      "sourcePath": "docs/stages/project-development-gates-plan.md",
+      "archivePath": "docs/archive/2026-07-17-project-development-gates/project-development-gates-plan.md",
+      "bytes": 10497,
+      "sourceSha256": "1b1ee1e259144f2158173e6ea74f55a401160bbbebd3d5f28a775b526df5f742",
+      "archiveSha256": "1b1ee1e259144f2158173e6ea74f55a401160bbbebd3d5f28a775b526df5f742"
+    },
+    {
+      "mode": "move",
+      "sourcePath": "docs/stages/project-development-gates-test-plan.md",
+      "archivePath": "docs/archive/2026-07-17-project-development-gates/project-development-gates-test-plan.md",
+      "bytes": 5077,
+      "sourceSha256": "2cd8c0e80c30b21bcfd3f23b43e22a6776349a0c9e6b34c91fd09e34c07de35b",
+      "archiveSha256": "2cd8c0e80c30b21bcfd3f23b43e22a6776349a0c9e6b34c91fd09e34c07de35b"
+    }
+  ]
+}

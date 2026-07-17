@@ -8,7 +8,7 @@
 
 | ID | 未完成项 | 完成条件 | 当前边界 |
 |---|---|---|---|
-| P0-05A | 真实Provider连续性与V1-9就绪 | 当前门禁阶段形成clean CI基线后，在最终候选SHA上完成四场景、连续3组真实Provider验证并通过receipt校验；同时完成现存V1-9入口的当前合同适配审计 | 只验证Main Agent文本、需求规格和PPT结构候选；不调用图片、视频、PPTX、ZIP，不创建V1-9 runId |
+| P0-05A | 真实Provider连续性与V1-9就绪（活动） | 先完成离线harness、来源绑定、隔离与V1-9入口审计；另获真实调用授权后，在最终候选SHA上完成四场景连续3组并通过receipt校验 | 当前`liveCallsAuthorized=false`；不调用真实Provider、图片、视频、PPTX、ZIP，不创建V1-9 runId |
 | P0-05B | 唯一V1-9真实产品链路 | P0-05A Go后重新冻结plan、manifest和runId，通过桌面真实全链路、文件验真与外部产物验收 | 不恢复整改前旧run、旧manifest或旧固定流程；不进入教师签收和release |
 | P0-06 | V1签收与发布门 | V1-9通过后完成教师签收、候选环境、恢复、原子切流和发布后验证 | 部署与生产写入另取当次授权 |
 
@@ -22,7 +22,7 @@ V1.0智能体原子Tool控制面整改已完成并从本总账移除，证据见
 - 不调用真实图片、视频、PPTX、ZIP或V1-9整包Provider。
 - 不创建manifest/runId，不启动390px真实黑盒，不进入教师签收、部署、生产写入或公网切流。
 - 不使用mock、placeholder、deterministic fallback或degraded结果冒充成功。
-- 不做无关重构或批量格式化；本轮每阶段只创建本地整改提交，不push、不部署、不移动标签。
+- 不做无关重构或批量格式化；commit与push只按用户当次授权执行，不部署、不移动标签。
 
 ## 3. 已接受未来需求
 

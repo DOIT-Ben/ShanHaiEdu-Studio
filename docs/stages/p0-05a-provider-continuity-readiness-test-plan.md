@@ -1,7 +1,7 @@
 # P0-05A真实Provider连续性与V1-9就绪测试计划
 
 日期：2026-07-17
-状态：proposed / no-live-run-authorized
+状态：active / offline-readiness / no-live-run-authorized
 
 ## 1. 证据层目标
 
@@ -32,6 +32,11 @@
 | PC-A13 | UI/runner自报状态与Provider边界事实不一致 | 失败，权威轨迹优先 |
 | PC-A14 | 三组之间production server重启 | 整个campaign失败并从0重跑 |
 | PC-A15 | 场景D使用新的teacherMessageId或turnJobId | 失败，不能冒充post-tool续轮 |
+| PC-A16 | 新harness/verifier路径未进入Provider敏感bundle | 失败，所有连续性实现必须触发影响门并绑定subject |
+| PC-A17 | subject缺verification manifest、policy/stage SHA、channel/model、费用授权或server实例 | 失败 |
+| PC-A18 | run序号不从1开始、跨server拼接、存在失败attempt或run数不等于政策值 | 失败，不得挑选成功组重封装 |
+| PC-A19 | status、timeout、mode、outcome和errorCategory不能逐调用对齐 | 失败，改用单条`providerCalls[]`事实 |
+| PC-A20 | capture root穿过junction/reparse/symlink或配置无效 | preflight在启动前失败，Provider调用为0 |
 
 ## 3. 四场景真实合同
 

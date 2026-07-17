@@ -1,7 +1,7 @@
 # P0-05A真实Provider连续性与V1-9就绪规格
 
 日期：2026-07-17
-状态：accepted-candidate / activation-blocked
+状态：active / offline-readiness / live-campaign-blocked
 
 ## 1. 决策
 
@@ -22,7 +22,7 @@
 - Provider只从显式ledger root和显式channel解析，禁止ambient env静默切换。
 - 首先确认现有持久事实能否权威提供每次上游Provider调用的原始HTTP状态、timeout和关联ID。若不能，当前门禁关闭前必须批准一个精确、一次性、到期的`provider-evidence-capture-bootstrap`机制；它只允许增加脱敏调用轨迹和测试，返回`passed=false`，不能冒充连续性receipt。
 
-任一前置条件缺失时，P0-05A保持roadmap候选，不取得执行权。
+前四项基线条件已满足，P0-05A因此取得离线 readiness 执行权。真实调用授权仍缺失：Provider channel、model fingerprint、总费用、最大调用次数和授权摘要保持空值；在这些值由用户另行批准前，live campaign不得启动，也不得生成passed receipt。
 
 ## 3. 目标
 

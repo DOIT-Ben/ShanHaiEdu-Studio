@@ -14,8 +14,7 @@
 | `v1-agent-guided-response-presentation-requirements.md` | 引导式回复呈现 |
 | `v2-0前生产化与容量要求.md` | 生产数据库、队列、对象存储与容量 |
 | `v2-plus-continuous-review-requirements.md` | 持续审查与高强度复核 |
-| `p0-05a-provider-continuity-readiness-spec.md` | P0-05A真实Provider连续性与V1-9就绪规格 |
-| `p0-05a-provider-continuity-readiness-plan.md` | P0-05A顺序实施与任务拆分 |
-| `p0-05a-provider-continuity-readiness-test-plan.md` | P0-05A证据、连续运行与Go/No-Go验收 |
 
 进入主线前先在 `..\..\product\requirements-backlog.md` 建立当期条目，再生成新的阶段plan和test-plan。
+
+P0-05A已于2026-07-17进入活动阶段，其规格位于`..\..\product\p0-05a-provider-continuity-readiness-spec.md`，plan和test-plan位于`..\..\stages\`，不再属于Roadmap。

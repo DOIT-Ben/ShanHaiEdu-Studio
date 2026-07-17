@@ -1,7 +1,9 @@
 # P0-05A真实Provider连续性与V1-9就绪实施计划
 
 日期：2026-07-17
-状态：proposed / depends-on-clean-gate-baseline
+状态：active / offline-readiness-only / live-campaign-not-authorized
+
+本阶段已于 clean 基线 `88dae43c3cd2d71b792388ad15b93a74d4ac7bac` 激活。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
 
 ## 1. 唯一路线
 
@@ -20,7 +22,7 @@
 
 各步骤严格串行。不得在连续性未关闭时并行启动完整V1-9，也不得在真实运行开始后继续修改候选代码并沿用旧证据。
 
-## 2. 阶段0：关闭当前门禁阶段
+## 2. 阶段0：关闭当前门禁阶段（已完成）
 
 目标：形成可作为P0-05A基线的clean候选。
 
@@ -32,7 +34,7 @@
 - 用clean HEAD建立新的P0-05A `active-stage.json`，只允许本计划明确文件。
 - 已确认现有Provider adapter evidence不足；当前门禁阶段已建立精确capture bootstrap和脱敏逐调用事实源，包含HTTP状态、timeout、request-id摘要、channel/model、usage及project/task/turn绑定，且仍保持`passed=false`。剩余动作是完成全量验证、clean提交和CI manifest。
 
-验收：HEAD、tree、policy SHA、stage SHA和CI manifest一致；任何不一致均不进入阶段1。
+验收结果：GitHub Actions run `29592707672` 的 artifact 与本机重算的 HEAD、tree、working tree digest、policy SHA、stage SHA 一致，五项检查退出码均为0；`quality-gates` 已成为 `main` required check。旧阶段原件已按逐文件 SHA-256 归档。
 
 ## 3. 阶段1：证据合同和红测试
 
