@@ -37,13 +37,13 @@
 | 总账 | `product\requirements-backlog.md` | 未完成、延期和未来需求 |
 | 主线 | `mainlines\current-mainline-status.md` | 当前事实、五层状态、阻塞和下一动作 |
 | 架构 | `architecture\README.md`、`architecture\V1.0 重构设计.md` | 当前智能体原子 Tool 架构与已接受ADR |
-| 阶段 | `stages\README.md` | V1.0智能体原子Tool整改的唯一活动阶段、问题矩阵及Go/No-Go |
+| 阶段 | `stages\README.md` | 当前活动阶段入口；现无活动阶段，已完成整改从archive追溯 |
 | Provider合同 | `contracts\provider-ledger-runtime-contract.md` | API台账到运行时的非敏感绑定边界 |
 | 前端 | `ui\README.md` | assistant-ui工作台与视觉证据入口 |
 
 ## 4. 未来工作
 
-已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。V1-9真实全链路在本次整改Go/No-Go通过后才可重新规划；整改前的旧V1-9 plan/test-plan已归档，不得恢复执行。Roadmap不自动取得执行权；进入主线前必须重新对照需求基线和当前状态。
+已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。V1-9真实全链路现在具备重新规划的前置条件，但仍需用户明确启动并生成新的plan、manifest和runId；整改前的旧V1-9 plan/test-plan已归档，不得恢复执行。Roadmap不自动取得执行权；进入主线前必须重新对照需求基线和当前状态。
 
 ## 5. 历史与证据
 

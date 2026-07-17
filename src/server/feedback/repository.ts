@@ -1,5 +1,5 @@
 import type { WorkbenchActor } from "@/server/auth/actor";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { FeedbackAttachment, FeedbackRecord, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
 import type { FeedbackCategory, FeedbackOrigin, FeedbackSeverity } from "./contract";
 import type { FeedbackAttachmentKind } from "@/lib/feedback-contracts";
@@ -356,7 +356,7 @@ export function whitelistFeedbackAuditMetadata(metadata: Record<string, unknown>
   );
 }
 
-function toEntity(record: Record<string, any>): FeedbackRecordEntity {
+function toEntity(record: FeedbackRecord & { attachments: FeedbackAttachment[] }): FeedbackRecordEntity {
   return {
     ...record,
     category: record.category as FeedbackCategory,
@@ -364,9 +364,9 @@ function toEntity(record: Record<string, any>): FeedbackRecordEntity {
     severity: record.severity as FeedbackSeverity | null,
     status: record.status as FeedbackStatus,
     attachments: (record.attachments ?? []).map(toAttachmentEntity),
-  } as FeedbackRecordEntity;
+  };
 }
 
-function toAttachmentEntity(attachment: Record<string, any>): FeedbackAttachmentEntity {
-  return { ...attachment, kind: attachment.kind === "expected" ? "expected" : "issue" } as FeedbackAttachmentEntity;
+function toAttachmentEntity(attachment: FeedbackAttachment): FeedbackAttachmentEntity {
+  return { ...attachment, kind: attachment.kind === "expected" ? "expected" : "issue" };
 }

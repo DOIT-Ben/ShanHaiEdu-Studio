@@ -130,7 +130,7 @@ async function createPackageArtifact(
     goal: "Build one version-bound final package.",
     requestedOutputs: ["package"],
     constraints: ["persisted_package_only"],
-    excludedOutputs: ["live_reassembly"],
+    excludedOutputs: [],
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: `message:${project.id}`,
   });

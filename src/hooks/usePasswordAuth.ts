@@ -14,7 +14,7 @@ export function usePasswordAuth() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function applyAuthState(result: { enabled?: boolean; authMode?: string; authenticated: boolean; user: PasswordAuthUser | null; registrationEnabled?: boolean }) {
+  const applyAuthState = useCallback((result: { enabled?: boolean; authMode?: string; authenticated: boolean; user: PasswordAuthUser | null; registrationEnabled?: boolean }) => {
     const nextEnabled = result.enabled ?? (result.authMode === "password");
     setRegistrationEnabled(result.registrationEnabled === true);
     setEnabled(nextEnabled);
@@ -27,7 +27,7 @@ export function usePasswordAuth() {
     setUser(result.user);
     setMode(result.authenticated ? "authenticated" : "anonymous");
     setErrorMessage(null);
-  }
+  }, []);
 
   const refresh = useCallback(async () => {
     setMode("checking");
@@ -40,11 +40,23 @@ export function usePasswordAuth() {
       setMode("anonymous");
       setErrorMessage(null);
     }
-  }, [client]);
+  }, [applyAuthState, client]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let active = true;
+    void client.me().then((result) => {
+      if (active) applyAuthState(result);
+    }).catch(() => {
+      if (!active) return;
+      setEnabled(true);
+      setUser(null);
+      setMode("anonymous");
+      setErrorMessage(null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [applyAuthState, client]);
 
   async function register(input: { email: string; displayName?: string; password: string }) {
     setSubmitting(true);

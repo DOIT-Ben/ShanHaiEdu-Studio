@@ -398,7 +398,7 @@ function currentAuthority() {
     goal: "五年级数学百分数公开课约3页PPT",
     requestedOutputs: ["ppt_design"],
     constraints: ["约3页"],
-    excludedOutputs: ["pptx", "image", "video", "zip"],
+    excludedOutputs: ["image", "video", "package"],
     generationIntensity: "standard",
     sourceMessageId: "message-r5-ppt",
   });

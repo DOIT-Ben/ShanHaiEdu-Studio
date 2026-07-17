@@ -127,7 +127,7 @@ describe("A17 artifact route ExecutionEnvelope", () => {
       goal: "为现有大纲生成一张课堂视觉图",
       requestedOutputs: ["image"],
       constraints: ["offline_fixture_only"],
-      excludedOutputs: ["real_provider"],
+      excludedOutputs: [],
       generationIntensity: project.generationIntensity ?? "standard",
       sourceMessageId: `message:${project.id}`,
     });

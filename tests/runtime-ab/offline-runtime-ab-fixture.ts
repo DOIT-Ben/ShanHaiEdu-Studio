@@ -17,15 +17,18 @@ export function createOfflineRuntimeAbFixture(
   taskBrief: TaskBrief,
   options?: { failTool?: RuntimeAbToolName; failFirstTool?: RuntimeAbToolName },
 ) {
-  let externalProviderCalls = 0;
+  const externalProviderCalls = 0;
   let modelRequests = 0;
   const executionRecords: Array<{ toolName: RuntimeAbToolName; idempotencyKey: string }> = [];
   const executionCounts = new Map<RuntimeAbToolName, number>();
   const toolContracts = new Map(projectRuntimeAbToolDefinitions().map((tool) => {
     const production = resolveMainAgentToolDefinition(tool.name);
+    const producedOutput = taskOutputForArtifactKind(production.producedArtifactKind);
+    if (!producedOutput) throw new Error(`Offline fixture has no canonical output for ${tool.name}.`);
     return [tool.name, {
       requiredArtifactKinds: production.requiredArtifactKinds,
       producedArtifactKind: production.producedArtifactKind,
+      producedOutput,
     }] as const;
   }));
 
@@ -90,11 +93,11 @@ export function createOfflineRuntimeAbFixture(
           summary: `${input.toolName} failed in the explicit offline fixture`,
         };
       }
-      const producedArtifactKind = toolContracts.get(input.toolName)?.producedArtifactKind;
-      if (!producedArtifactKind) throw new Error(`Offline fixture has no production Tool contract for ${input.toolName}.`);
+      const producedOutput = toolContracts.get(input.toolName)?.producedOutput;
+      if (!producedOutput) throw new Error(`Offline fixture has no production Tool contract for ${input.toolName}.`);
       return {
         status: "succeeded" as const,
-        producedOutputs: [producedArtifactKind],
+        producedOutputs: [producedOutput],
         summary: `${input.toolName} completed by the explicit offline fixture`,
       };
     },
@@ -104,12 +107,19 @@ export function createOfflineRuntimeAbFixture(
 function chooseNext(
   taskBrief: TaskBrief,
   observations: RuntimeAbObservation[],
-  toolContracts: Map<RuntimeAbToolName, { requiredArtifactKinds: string[]; producedArtifactKind?: string }>,
+  toolContracts: Map<RuntimeAbToolName, {
+    requiredArtifactKinds: string[];
+    producedArtifactKind?: string;
+    producedOutput: string;
+  }>,
 ): OfflineRuntimeAbDecision {
   const completed = new Set(observations.flatMap((observation) => observation.producedOutputs));
   const missing = [...toolContracts.entries()]
-    .filter(([, contract]) => contract.producedArtifactKind && !completed.has(contract.producedArtifactKind))
-    .filter(([, contract]) => contract.requiredArtifactKinds.every((kind) => completed.has(kind)))
+    .filter(([, contract]) => !completed.has(contract.producedOutput))
+    .filter(([, contract]) => contract.requiredArtifactKinds.every((kind) => {
+      const requiredOutput = taskOutputForArtifactKind(kind);
+      return Boolean(requiredOutput && completed.has(requiredOutput));
+    }))
     .map(([toolName]) => toolName);
   if (missing.length === 0) {
     return { kind: "complete", summary: "All requested offline text candidates are available." };
@@ -122,6 +132,12 @@ function chooseNext(
     toolName,
     arguments: buildArguments(taskBrief, toolContracts.get(toolName)?.requiredArtifactKinds ?? []),
   };
+}
+
+function taskOutputForArtifactKind(kind?: string) {
+  if (kind === "requirement_spec" || kind === "lesson_plan") return kind;
+  if (kind === "ppt_draft") return "ppt_outline";
+  return undefined;
 }
 
 function buildArguments(taskBrief: TaskBrief, requiredArtifactKinds: string[]) {

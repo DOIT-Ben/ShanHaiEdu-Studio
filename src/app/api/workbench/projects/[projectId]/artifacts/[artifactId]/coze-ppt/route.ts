@@ -93,7 +93,7 @@ export async function POST(request: Request, context: RouteContext) {
               toolName: "generate_pptx_from_design",
               projectId,
               project,
-              toolInput: actionArguments,
+              toolInput: { ...actionArguments, taskBrief: executionClaim.aggregate.taskBrief },
               artifactRefs: [{
                 kind: sourceArtifact.kind,
                 artifactId: sourceArtifact.id,

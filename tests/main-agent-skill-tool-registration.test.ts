@@ -63,7 +63,7 @@ describe("Main Agent business Tool Skill bindings", () => {
           "references/教案结构化字段规范.md",
           "references/教案质量门禁.md",
         ],
-        contracts: { tool: { consumes: ["requirement_spec"], produces: ["lesson_plan"] } },
+        contracts: { tool: { consumes: [], produces: ["lesson_plan"] } },
       }),
       expect.objectContaining({
         toolName: "create_ppt_outline",
@@ -71,7 +71,7 @@ describe("Main Agent business Tool Skill bindings", () => {
         skillName: "shanhai-ppt",
         compatibleVersions: ["1.0"],
         referencePaths: ["references/page-design.md"],
-        contracts: { tool: { consumes: ["requirement_spec"], produces: ["ppt_draft"] } },
+        contracts: { tool: { consumes: [], produces: ["ppt_draft"] } },
       }),
       expect.objectContaining({
         toolName: "create_ppt_design_draft",

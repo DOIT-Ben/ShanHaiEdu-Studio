@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { BookOpen, Grid2X2, Image, PackageCheck, Presentation, Video } from "lucide-react";
 import type { ArtifactItem } from "@/lib/types";
 import {
@@ -47,11 +47,11 @@ export function ArtifactRail({
   onOpen,
   onOpenGroup,
 }: ArtifactRailProps) {
-  const [filter, setFilter] = useState<DrawerFilter>(initialGroup);
+  const [filterSelection, setFilterSelection] = useState(() => ({ initialGroup, filter: initialGroup }));
+  const filter = filterSelection.initialGroup === initialGroup ? filterSelection.filter : initialGroup;
+  const setFilter = (nextFilter: DrawerFilter) => setFilterSelection({ initialGroup, filter: nextFilter });
   const groups = useMemo(() => groupArtifacts(items), [items]);
   const attentionCount = items.filter((item) => needsArtifactAttention(item.status)).length;
-
-  useEffect(() => setFilter(initialGroup), [initialGroup]);
 
   const visibleItems = filter === "all"
     ? items

@@ -518,7 +518,7 @@ function parseStructuredContent(value: string): Record<string, unknown> | null {
 }
 
 function asArtifactVersionRef(value: unknown): Omit<AgentToolArtifactRef, "kind"> | null {
-  if (!isRecord(value) || !hasText(value.artifactId) || !Number.isInteger(value.version) || !isDigest(value.digest)) {
+  if (!isRecord(value) || !hasText(value.artifactId) || typeof value.version !== "number" || !Number.isInteger(value.version) || !isDigest(value.digest)) {
     return null;
   }
   return {
@@ -755,7 +755,7 @@ function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

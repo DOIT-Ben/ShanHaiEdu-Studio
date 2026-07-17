@@ -2,14 +2,13 @@
 
 更新时间：2026-07-17
 
-`docs\stages\`当前唯一活动阶段是V1.0 Main Agent唯一编排与原子Tool控制面整改。阶段A、B、C、D已达到本地局部Go，阶段E全量回归与真实桌面核验是唯一下一动作；总门状态仍为 **REMEDIATION IN PROGRESS / CONTRACT RED**。
+`docs\stages\`当前没有活动阶段。V1.0 Main Agent唯一编排与原子Tool控制面整改已于2026-07-17达到 **REMEDIATION VERIFIED / CONTRACT GO**，完成计划、测试计划和证据已归档。
 
 ## 活动文件
 
-- `v1-agent-atomic-tool-refactor-plan.md`：唯一问题矩阵、修复顺序和阶段验收标准。
-- `v1-agent-atomic-tool-refactor-test-plan.md`：8项P1、7项P2及最终Go/No-Go。
+- 无。新阶段必须先由未完成需求总账进入并建立唯一plan/test-plan。
 
-过期的`v1-agent-atomic-tool-refactor-closeout.md`已按原文移入`..\archive\2026-07-17-remediation-baseline\`，不再作为活动依据。旧Streaming阶段和整改前V1-9 plan/test-plan同样只作归档证据。
+已完成整改入口：`..\archive\2026-07-17-agent-atomic-tool-remediation\README.md`。过期closeout仍位于`..\archive\2026-07-17-remediation-baseline\`，不得恢复为活动依据。旧Streaming阶段和整改前V1-9 plan/test-plan同样只作归档证据。
 
 ## 固定边界
 
@@ -21,4 +20,4 @@
 - fixture只证明contract或executor，不能上推为model orchestration、product E2E或release。
 - 本轮只创建本地整改提交，不push、不部署、不移动标签。
 
-未来阶段统一从`..\roadmap\README.md`进入；历史阶段统一从`..\archive\README.md`追溯。二者都不能覆盖当前plan和test-plan。
+未来阶段统一从`..\roadmap\README.md`进入；历史阶段统一从`..\archive\README.md`追溯。二者都不能自动创建活动阶段或覆盖当前产品基线。

@@ -4,24 +4,37 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const testDatabasePath = path.join(root, ".tmp", "test-workbench.db");
-const env = {
+const nodeTestDatabasePath = path.join(root, ".tmp", "node-test-workbench.db");
+const vitestDatabasePath = path.join(root, ".tmp", "vitest-test-workbench.db");
+const baseEnv = {
   ...process.env,
-  DATABASE_URL: "file:./.tmp/test-workbench.db",
   VITEST_MAX_WORKERS: process.env.VITEST_MAX_WORKERS ?? "1",
 };
+const nodeTestEnv = suiteEnv("node-test-workbench.db");
+const vitestEnv = suiteEnv("vitest-test-workbench.db");
 
-fs.rmSync(testDatabasePath, { force: true });
+run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
+initializeTestDatabase(nodeTestDatabasePath, nodeTestEnv);
+run(process.execPath, ["--test", "tests/*.test.mjs"], { env: nodeTestEnv });
+initializeTestDatabase(vitestDatabasePath, vitestEnv);
+run(npxCommand(), ["vitest", "run", "--maxWorkers=1"], { shell: process.platform === "win32", env: vitestEnv });
 
-run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32" });
-run(process.execPath, ["scripts/init-sqlite-schema.mjs"]);
-run(process.execPath, ["--test", "tests/*.test.mjs"]);
-run(npxCommand(), ["vitest", "run", "--maxWorkers=1"], { shell: process.platform === "win32" });
+function initializeTestDatabase(databasePath, env) {
+  fs.rmSync(databasePath, { force: true });
+  run(process.execPath, ["scripts/init-sqlite-schema.mjs"], { env });
+}
+
+function suiteEnv(databaseFileName) {
+  return {
+    ...baseEnv,
+    DATABASE_URL: `file:./.tmp/${databaseFileName}`,
+  };
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
-    env,
+    env: options.env ?? baseEnv,
     stdio: "inherit",
     shell: options.shell ?? false,
   });

@@ -402,7 +402,7 @@ async function executeTeacherMessageTurn(input: {
   const submittedActionId = input.confirmedActionId?.trim() || undefined;
 
   const storedProject = await input.service.getProject(input.projectId);
-  let project = input.generationIntensityOverride
+  const project = input.generationIntensityOverride
     ? { ...storedProject, generationIntensity: input.generationIntensityOverride }
     : storedProject;
   const messages = await input.service.getMessages(input.projectId);

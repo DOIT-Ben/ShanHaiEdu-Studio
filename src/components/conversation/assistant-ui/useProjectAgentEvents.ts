@@ -28,7 +28,6 @@ export function useProjectAgentEvents(
   const [state, setState] = useState<ProjectEventState>({ projectId: "", events: [] });
 
   useEffect(() => {
-    setState({ projectId, events: [] });
     if (!projectId || typeof EventSource === "undefined") return;
 
     let acceptedEvents: TeacherAgentEvent[] = [];

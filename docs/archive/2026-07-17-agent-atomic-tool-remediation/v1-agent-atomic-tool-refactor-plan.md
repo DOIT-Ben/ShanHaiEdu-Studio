@@ -2,7 +2,7 @@
 
 日期：2026-07-17
 
-状态：REMEDIATION IN PROGRESS / CONTRACT RED
+状态：REMEDIATION VERIFIED / CONTRACT GO
 
 整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`
 
@@ -50,9 +50,9 @@
 - RMD-P2-06：Provider未配置时，native intake和普通respond均返回教师安全的结构化`failed_retryable`，不再回退deterministic或泄露内部错误；消息只投影一个真实`retry`恢复入口。
 - RMD-P2-07：health与production preflight共用显式SQLite schema合同，检查控制面表、消息parts、Artifact任务绑定、TurnJob失败恢复字段和GenerationJob提交/结果字段；缺表或缺列返回机器可读原因且不泄露路径。
 
-### 尚未完成
+### 整改外尚未完成
 
-- 阶段E全量回归、生产构建、当前HEAD启动和桌面核心流程尚未执行；在这些门全部通过前，总整改保持Red。
+- R5连续多轮Provider稳定性、V1-9、教师签收和release不属于本整改关闭范围，仍按当前主线和backlog管理。
 
 ### 已废弃方案
 
@@ -130,6 +130,8 @@
 
 ### 阶段E：扩大回归与真实桌面
 
+阶段状态：**LOCAL GO**。
+
 涉及：全部RMD问题。
 
 修改范围：仅测试、验证记录和当前权威文档，不新增业务范围。
@@ -141,6 +143,8 @@
 - 至少覆盖普通对话、局部单Tool、HumanGate恢复、在途控制、失败恢复和刷新后顺序；不调用本轮禁止的媒体/整包Provider。
 - 活动README、架构、需求、主线、计划、测试和代码口径一致。
 
+本阶段实际完成：修复Node/Vitest共库污染并为两套测试分别初始化隔离SQLite；清理固定`requirement_spec`与非canonical TaskBrief旧fixture；补齐image、video、coze-ppt Artifact route向ToolRouter透传当前TaskBrief的真实缺口；建立Next 16 ESLint 9门并修复生产Lint错误。最终Node `387/387`、Vitest `1557/1557`、TypeScript、Lint（0 error）、生产构建、desktop smoke、health和`git diff --check`通过。1440x900真实浏览器验证登录、新建项目、模糊讨论无Tool/Artifact/epoch提升、单`create_requirement_spec`仅生成需求规格、刷新后终态稳定和控制台无错误；未运行390px或真实媒体/整包Provider。
+
 ## 4. 实施纪律
 
 - 每阶段只解决列出的RMD问题；发现新问题先记入当前plan/test-plan再决定是否阻塞。
@@ -151,6 +155,6 @@
 
 ## 5. 完成定义
 
-只有`v1-agent-atomic-tool-refactor-test-plan.md`全部Go门通过，且阶段E真实验证完成，才可把状态改为`REMEDIATION VERIFIED`并形成新的closeout。当前过期closeout不得恢复。
+`v1-agent-atomic-tool-refactor-test-plan.md`全部Go门和阶段E真实验证已于2026-07-17完成，本整改状态为`REMEDIATION VERIFIED`。本计划与测试计划归档后只作完成证据，不成为后续活动权威；当前过期closeout不得恢复。
 
 完成本整改仍不自动等于R5、V1-9或release通过；Provider连续多轮稳定性和后续真实产品链路必须分别取证。

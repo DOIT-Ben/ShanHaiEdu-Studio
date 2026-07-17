@@ -13,7 +13,7 @@ export async function seedArtifactRouteTask(
     goal: `离线验证 ${requestedOutputs.join("、")} 产物路由`,
     requestedOutputs,
     constraints: ["offline_fixture_only"],
-    excludedOutputs: ["unrequested_outputs"],
+    excludedOutputs: [],
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: `message:artifact-route:${project.id}`,
   });

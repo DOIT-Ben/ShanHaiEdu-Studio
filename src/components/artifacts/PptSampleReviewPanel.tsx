@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { Download, Send } from "lucide-react";
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { ArtifactItem, PptSampleReviewSubmission } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
@@ -15,28 +15,26 @@ export function PptSampleReviewPanel({ projectId, item, onSubmit }: {
   onSubmit: (item: ArtifactItem, review: PptSampleReviewSubmission) => Promise<void>;
 }) {
   const sample = item.pptSampleReview;
-  const [reviews, setReviews] = useState<Record<string, PageReview>>({});
+  if (!sample || !item.artifactId) return null;
+  return <PptSampleReviewForm key={`${item.artifactId}:${sample.candidateDigest}`} projectId={projectId} artifactId={item.artifactId} item={item} onSubmit={onSubmit} />;
+}
+
+function PptSampleReviewForm({ projectId, artifactId, item, onSubmit }: {
+  projectId: string;
+  artifactId: string;
+  item: ArtifactItem;
+  onSubmit: (item: ArtifactItem, review: PptSampleReviewSubmission) => Promise<void>;
+}) {
+  const sample = item.pptSampleReview!;
+  const [reviews, setReviews] = useState<Record<string, PageReview>>(() => buildReviews(sample));
   const [submitting, setSubmitting] = useState(false);
   const readOnly = item.status === "approved";
-  useEffect(() => {
-    if (sample) setReviews(Object.fromEntries(sample.pageIds.map((pageId) => {
-      const previous = sample.qa?.find((entry) => entry.pageId === pageId);
-      return [pageId, previous ? {
-        design: previous.design === "passed",
-        visual: previous.visual === "passed",
-        provenance: previous.provenance === "passed",
-        findings: previous.findings.join("；"),
-      } : emptyReview()];
-    })));
-  }, [sample]);
   const canSubmit = useMemo(() => Boolean(!readOnly && sample?.pageIds.length && sample.pageIds.every((pageId) => {
     const review = reviews[pageId];
     if (!review) return false;
     return review.design && review.visual && review.provenance ? !review.findings.trim() : Boolean(review.findings.trim());
   })), [readOnly, reviews, sample]);
-  if (!sample || !item.artifactId) return null;
-
-  const evidenceBase = `/api/workbench/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(item.artifactId)}/ppt-sample-evidence`;
+  const evidenceBase = `/api/workbench/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/ppt-sample-evidence`;
   async function submit() {
     if (!sample || !canSubmit) return;
     setSubmitting(true);
@@ -131,6 +129,18 @@ function overviewLabel(kind: OverviewKind) {
 
 function emptyReview(): PageReview {
   return { design: false, visual: false, provenance: false, findings: "" };
+}
+
+function buildReviews(sample: NonNullable<ArtifactItem["pptSampleReview"]>): Record<string, PageReview> {
+  return Object.fromEntries(sample.pageIds.map((pageId) => {
+    const previous = sample.qa?.find((entry) => entry.pageId === pageId);
+    return [pageId, previous ? {
+      design: previous.design === "passed",
+      visual: previous.visual === "passed",
+      provenance: previous.provenance === "passed",
+      findings: previous.findings.join("；"),
+    } : emptyReview()];
+  }));
 }
 
 function updatePage(setReviews: Dispatch<SetStateAction<Record<string, PageReview>>>, pageId: string, field: keyof PageReview, value: boolean | string) {

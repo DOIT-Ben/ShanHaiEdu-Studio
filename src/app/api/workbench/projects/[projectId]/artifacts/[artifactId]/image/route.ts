@@ -112,7 +112,7 @@ export async function POST(request: Request, context: RouteContext) {
               toolName: "generate_classroom_image",
               projectId,
               project,
-              toolInput: actionArguments,
+              toolInput: { ...actionArguments, taskBrief: executionClaim.aggregate.taskBrief },
               artifactRefs: [{
                 kind: sourceArtifact.kind,
                 artifactId: sourceArtifact.id,

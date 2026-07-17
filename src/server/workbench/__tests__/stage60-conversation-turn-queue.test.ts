@@ -29,7 +29,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const persistedTeacherMessage = snapshot.messages.find((message) => message.id === teacherMessage.id)!;
 
     expect(result).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
-    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", kind: "requirement_spec", status: "needs_review" })]);
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "ppt_draft", kind: "ppt_draft", status: "needs_review" })]);
     expect(persistedTeacherMessage.metadata).toMatchObject({
       taskBrief: { goal: expect.stringContaining("投篮命中率"), intentEpoch: 0 },
       intentGrant: { standardWorkAuthorized: true, taskId: expect.any(String), intensity: "standard" },
@@ -157,7 +157,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const assistantPlanMessage = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).teacherRequest === "帮我做五年级数学百分数 PPT");
 
     expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
-    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", status: "needs_review" })]);
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "ppt_draft", status: "needs_review" })]);
     expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
     expect(pendingDeliveryPlanOf(assistantPlanMessage)).toMatchObject({ status: "confirmed", actionId });
   });
@@ -209,7 +209,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     const snapshot = await service.getProjectSnapshot(project.id);
 
     expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
-    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "requirement_spec", status: "needs_review" })]);
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "ppt_draft", status: "needs_review" })]);
     expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
   });
 

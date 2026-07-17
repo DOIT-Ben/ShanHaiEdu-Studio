@@ -66,9 +66,9 @@ describe("M54-B CapabilityPlanner", () => {
     });
 
     expect(plan).toMatchObject({
-      capabilityId: "requirement_spec",
+      capabilityId: "ppt_outline",
       requiresConfirmation: false,
-      expectedArtifactKind: "requirement_spec",
+      expectedArtifactKind: "ppt_draft",
     });
     expect(plan?.nextSuggestedCapabilities).toContain("ppt_design");
     expect(plan?.missingInputs).toEqual([]);
@@ -140,7 +140,7 @@ describe("M54-B CapabilityPlanner", () => {
     const plan = planCapabilityForRequest({ userMessage: "帮我做一个课件", availableArtifactKinds: [] });
 
     expect(plan).toMatchObject({
-      capabilityId: "requirement_spec",
+      capabilityId: "ppt_outline",
       requiresConfirmation: false,
     });
     expect(plan?.missingInputs).toEqual(["grade", "subject", "topic"]);
@@ -155,7 +155,7 @@ describe("M54-B CapabilityPlanner", () => {
     });
 
     expect(plan).toMatchObject({
-      capabilityId: "requirement_spec",
+      capabilityId: "ppt_outline",
       missingInputs: [],
       requiresConfirmation: false,
       inputDraft: { teacherGoal: expect.stringContaining("约 10 页") },
@@ -170,7 +170,7 @@ describe("M54-B CapabilityPlanner", () => {
     });
 
     expect(plan).toMatchObject({
-      capabilityId: "requirement_spec",
+      capabilityId: "ppt_outline",
       requiresConfirmation: false,
     });
     expect(plan?.missingInputs).not.toContain("grade");

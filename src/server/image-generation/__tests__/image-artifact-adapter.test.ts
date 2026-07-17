@@ -101,6 +101,10 @@ describe("Local Real MVP M19 image artifact adapter", () => {
         taskId: taskBrief.taskId,
         taskBriefDigest: taskBrief.digest,
       }),
+      toolInput: expect.objectContaining({
+        sourceArtifactId: sourceArtifact.id,
+        taskBrief: expect.objectContaining({ taskId: taskBrief.taskId, digest: taskBrief.digest }),
+      }),
       artifactRefs: [{
         kind: "ppt_draft",
         artifactId: approvedSourceArtifact.id,

@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { ArrowUp, Bot, ChevronDown, FilePlus2, ListChecks, LoaderCircle, Paperclip, Plus, Sparkles, Target, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuItem } from "@/components/ui/menu-item";
@@ -10,7 +9,9 @@ import { AttachmentStatusCard } from "@/components/conversation/composer/Attachm
 import {
   buildComposerAttachmentCard,
   getComposerAttachmentKind,
+  hasCompletedComposerAttachmentSubmission,
   type ComposerAttachmentCard,
+  type ComposerAttachmentSubmissionSnapshot,
 } from "@/components/conversation/composer/composer-contracts";
 import { useAutoResizeTextarea } from "@/components/conversation/composer/useAutoResizeTextarea";
 
@@ -49,30 +50,28 @@ export function PromptComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentRequestIdRef = useRef(0);
-  const previousComposerSubmittingRef = useRef(false);
   const [attachment, setAttachment] = useState<ComposerAttachmentCard | null>(null);
+  const [attachmentSubmission, setAttachmentSubmission] = useState<ComposerAttachmentSubmissionSnapshot | null>(null);
   const [draggingFile, setDraggingFile] = useState(false);
   useAutoResizeTextarea(textareaRef, value, { minRows: 2, maxRows: 8 });
+
+  const attachmentReferenceMatches = Boolean(
+    attachment?.canUseAsReference && reference?.startsWith(`资料《${attachment.fileName}》`),
+  );
+  const attachmentWasSubmitted = hasCompletedComposerAttachmentSubmission({
+    snapshot: attachmentSubmission,
+    value,
+    reference,
+    composerSubmitting,
+  });
+  const visibleAttachment = attachmentWasSubmitted
+    || (attachment?.canUseAsReference && !composerSubmitting && !attachmentReferenceMatches)
+    ? null
+    : attachment;
 
   function cancelPendingAttachmentRead() {
     attachmentRequestIdRef.current += 1;
   }
-
-  useEffect(() => {
-    if (!attachment?.canUseAsReference) return;
-    if (composerSubmitting) return;
-    if (!reference || !reference.startsWith(`资料《${attachment.fileName}》`)) {
-      cancelPendingAttachmentRead();
-      setAttachment(null);
-    }
-  }, [attachment, composerSubmitting, reference]);
-
-  useEffect(() => {
-    if (previousComposerSubmittingRef.current && !composerSubmitting && !reference && !value.trim()) {
-      setAttachment(null);
-    }
-    previousComposerSubmittingRef.current = composerSubmitting;
-  }, [composerSubmitting, reference, value]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -82,17 +81,19 @@ export function PromptComposer({
   }
 
   function handleSubmit() {
-    if (attachment?.status === "pending_parse") {
+    if (visibleAttachment?.status === "pending_parse") {
       onAttachFileError("这份资料还在读取，请稍候再发送。");
       return;
     }
+    if (visibleAttachment && (value.trim() || reference)) setAttachmentSubmission({ value, reference });
     onSend();
   }
 
   function clearAttachment() {
     cancelPendingAttachmentRead();
-    if (attachment?.canUseAsReference) onClearReference();
+    if (visibleAttachment?.canUseAsReference) onClearReference();
     setAttachment(null);
+    setAttachmentSubmission(null);
   }
 
   async function attachLocalFile(file: File) {
@@ -103,7 +104,8 @@ export function PromptComposer({
     }
     const requestId = attachmentRequestIdRef.current + 1;
     attachmentRequestIdRef.current = requestId;
-    if (attachment?.canUseAsReference) onClearReference();
+    setAttachmentSubmission(null);
+    if (visibleAttachment?.canUseAsReference) onClearReference();
 
     const fileName = file.name || "粘贴截图.png";
     const kind = getComposerAttachmentKind(file);
@@ -206,8 +208,8 @@ export function PromptComposer({
   return (
     <div className="bg-card px-4 pb-4 pt-3 sm:px-8">
       <div className="mx-auto w-full max-w-[980px]">
-        {attachment && <AttachmentStatusCard attachment={attachment} onRemove={composerSubmitting ? undefined : clearAttachment} />}
-        {reference && !attachment?.canUseAsReference && (
+        {visibleAttachment && <AttachmentStatusCard attachment={visibleAttachment} onRemove={composerSubmitting ? undefined : clearAttachment} />}
+        {reference && !visibleAttachment?.canUseAsReference && (
           <div className="mb-2 inline-flex max-w-full items-start justify-between gap-3 rounded-lg bg-muted px-3 py-2">
             <div className="min-w-0 text-xs leading-5 text-foreground">
               <span className="font-medium text-muted-foreground">引用：</span>

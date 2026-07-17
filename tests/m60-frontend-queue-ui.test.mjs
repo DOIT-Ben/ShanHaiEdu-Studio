@@ -60,7 +60,7 @@ test("M60 refreshes queued turns through versioned snapshots and disables pollin
   assert.match(controllerSource, /useEffect\(\(\) => \{[\s\S]*!projectBusy[\s\S]*composerSubmitting[\s\S]*return/s);
   assert.match(controllerSource, /options\.eventDrivenMessages \|\| !activeProjectId \|\| !projectBusy/);
   assert.match(controllerSource, /window\.setTimeout\(async \(\) => \{[\s\S]*beginSnapshotRequest\(activeProjectId\)[\s\S]*dataSource\.getProjectSnapshot\(activeProjectId\)[\s\S]*applySnapshot\(snapshot, snapshotRequest\)[\s\S]*scheduleNextSnapshotRefresh\(\)/s);
-  assert.match(controllerSource, /eventSnapshotCoordinator\.request\(\{ projectId: event\.projectId, requiredSequence: event\.sequence \}\)/);
+  assert.match(controllerSource, /eventSnapshotCoordinatorRef\.current\?\.request\(\{ projectId: event\.projectId, requiredSequence: event\.sequence \}\)/);
   assert.match(controllerSource, /window\.clearTimeout\(snapshotPollingTimer\)/);
 });
 

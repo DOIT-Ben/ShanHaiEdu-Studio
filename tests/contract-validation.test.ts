@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
-import { getToolDefinitions } from "@/server/tools/tool-registry";
+import { createExecutionEnvelope, createTaskBrief, type IntentGrant, type TaskRequestedOutput } from "@/server/conversation/task-contract";
+import { getToolDefinition, getToolDefinitions } from "@/server/tools/tool-registry";
 import { routeToolCall as routeToolCallWithoutEnvelope } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
@@ -18,12 +18,20 @@ import type { ArtifactRecord } from "@/server/workbench/types";
 
 const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies) => {
   const intentEpoch = input.executionIntentEpoch ?? 0;
+  let capabilityId = input.capabilityId;
+  if (!capabilityId && input.toolName) {
+    try {
+      capabilityId = getToolDefinition(input.toolName).capabilityId;
+    } catch {
+      capabilityId = undefined;
+    }
+  }
   const brief = createTaskBrief({
     taskId: `task:${input.projectId}`,
     projectId: input.projectId,
     intentEpoch,
     goal: input.userInstruction ?? "Contract validation fixture",
-    requestedOutputs: [input.capabilityId ?? input.toolName ?? "contract_validation"],
+    requestedOutputs: [requestedOutputForCapability(capabilityId)],
     constraints: ["offline_fixture_only"],
     excludedOutputs: [],
     generationIntensity: "standard",
@@ -44,6 +52,7 @@ const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies)
   };
   return routeToolCallWithoutEnvelope({
     ...input,
+    toolInput: { ...input.toolInput, taskBrief: brief },
     executionIntentEpoch: intentEpoch,
     executionEnvelope: input.executionEnvelope ?? createExecutionEnvelope({
       actorUserId: "teacher-fixture",
@@ -55,6 +64,20 @@ const routeToolCall: typeof routeToolCallWithoutEnvelope = (input, dependencies)
     }),
   }, dependencies);
 };
+
+function requestedOutputForCapability(capabilityId?: string): TaskRequestedOutput {
+  const outputs: Record<string, TaskRequestedOutput> = {
+    requirement_spec: "requirement_spec", lesson_plan: "lesson_plan", ppt_outline: "ppt_outline",
+    ppt_design: "ppt_design", coze_ppt: "ppt", ppt_sample_assets: "ppt_sample_assets",
+    ppt_key_samples: "ppt_key_samples", ppt_full_assets: "ppt_full_assets", ppt_full_deck: "ppt",
+    ppt_page_repair: "ppt", image_asset: "image", knowledge_anchor_extract: "knowledge_anchor",
+    creative_theme_generate: "creative_theme", video_script_generate: "video_script", storyboard_generate: "storyboard",
+    asset_brief_generate: "asset_brief", asset_image_generate: "video_assets", video_segment_plan: "video_segment_plan",
+    video_narration_generate: "video_narration", video_segment_generate: "video_shot", concat_only_assemble: "video",
+    final_package: "package",
+  };
+  return outputs[capabilityId ?? ""] ?? "requirement_spec";
+}
 
 describe("V1 Stage 2A runtime contracts", () => {
   it("projects every registered executable tool into a contract without forcing a next node", () => {

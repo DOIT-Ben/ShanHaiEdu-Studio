@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
 import { resolveArtifactActionKey } from "@/lib/workbench-actions";
 import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
@@ -23,7 +23,17 @@ export type SubmitConversationMessageInput = {
 
 const activeProjectStorageKey = "shanhai.activeProjectId";
 const xiaokuResponseStyleStorageKey = "shanhai.xiaoku.responseStyle";
+const xiaokuResponseStyleChangeEvent = "shanhai:xiaoku-response-style-change";
 const snapshotPollingIntervalMs = 1200;
+
+type SnapshotCommitWatermark = {
+  begin: (projectId: string) => ProjectSnapshotCommitToken;
+  commit: (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => boolean;
+};
+
+type EventSnapshotCoordinator = {
+  request: (input: { projectId: string; requiredSequence: number }) => Promise<number | null>;
+};
 
 function hasPendingTurnStatus(status?: ChatMessage["turnStatus"] | ConversationTurnJob["status"]) {
   return status === "queued" || status === "running";
@@ -59,7 +69,11 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [activeArtifactKey, setActiveArtifactKey] = useState("");
   const [realAssetGenerationKey, setRealAssetGenerationKey] = useState<string | null>(null);
-  const [xiaokuResponseStyle, setXiaoKuResponseStyleState] = useState<XiaoKuResponseStyle>("pragmatic");
+  const xiaokuResponseStyle = useSyncExternalStore(
+    subscribeXiaoKuResponseStyle,
+    readXiaoKuResponseStyle,
+    getServerXiaoKuResponseStyle,
+  );
 
   const activeArtifact = useMemo(
     () => artifacts.find((item) => item.key === activeArtifactKey) ?? artifacts[0] ?? null,
@@ -78,6 +92,8 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   const composerNoticeTimer = useRef<number | null>(null);
   const intensityVersionRef = useRef(new Map<string, number>());
   const activeProjectIdRef = useRef("");
+  const snapshotCommitWatermarkRef = useRef<SnapshotCommitWatermark | null>(null);
+  const eventSnapshotCoordinatorRef = useRef<EventSnapshotCoordinator | null>(null);
 
   useEffect(() => {
     if (activeProject) intensityVersionRef.current.set(activeProject.id, activeProject.intensityVersion ?? 0);
@@ -121,28 +137,42 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     setLoadState("ready");
   }, []);
 
-  const snapshotCommitWatermark = useMemo(() => createProjectSnapshotCommitWatermark({
-    applySnapshot: applySnapshotState,
-  }), [applySnapshotState]);
   const beginSnapshotRequest = useCallback(
-    (projectId: string) => snapshotCommitWatermark.begin(projectId),
-    [snapshotCommitWatermark],
+    (projectId: string) => {
+      const watermark = snapshotCommitWatermarkRef.current;
+      if (!watermark) throw new Error("Project snapshot commit watermark is not ready.");
+      return watermark.begin(projectId);
+    },
+    [],
   );
   const applySnapshot = useCallback(
-    (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => snapshotCommitWatermark.commit(snapshot, token),
-    [snapshotCommitWatermark],
+    (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => {
+      const watermark = snapshotCommitWatermarkRef.current;
+      if (!watermark) throw new Error("Project snapshot commit watermark is not ready.");
+      return watermark.commit(snapshot, token);
+    },
+    [],
   );
 
-  const eventSnapshotCoordinator = useMemo(() => createProjectSnapshotRefreshCoordinator({
-    loadSnapshot: dataSource.getProjectSnapshot,
-    beginSnapshotRequest,
-    applySnapshot: (snapshot, token) => {
-      if (!token) throw new Error("Project event snapshot commit token is missing.");
-      applySnapshot(snapshot, token);
-    },
-    isCurrentProject: (projectId: string) => activeProjectIdRef.current === projectId,
-    onError: () => setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。"),
-  }), [applySnapshot, beginSnapshotRequest, dataSource]);
+  useEffect(() => {
+    const watermark = createProjectSnapshotCommitWatermark({ applySnapshot: applySnapshotState });
+    const coordinator = createProjectSnapshotRefreshCoordinator({
+      loadSnapshot: dataSource.getProjectSnapshot,
+      beginSnapshotRequest: watermark.begin,
+      applySnapshot: (snapshot, token) => {
+        if (!token) throw new Error("Project event snapshot commit token is missing.");
+        watermark.commit(snapshot, token);
+      },
+      isCurrentProject: (projectId: string) => activeProjectIdRef.current === projectId,
+      onError: () => setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。"),
+    });
+    snapshotCommitWatermarkRef.current = watermark;
+    eventSnapshotCoordinatorRef.current = coordinator;
+    return () => {
+      snapshotCommitWatermarkRef.current = null;
+      eventSnapshotCoordinatorRef.current = null;
+    };
+  }, [applySnapshotState, dataSource]);
 
   const loadProject = useCallback(
     async (projectId: string) => {
@@ -209,14 +239,14 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
 
   const refreshProjectFromAgentEvent = useCallback(async (event: TeacherAgentEvent) => {
     if (!options.eventDrivenMessages || event.projectId !== activeProjectIdRef.current || !shouldRefreshSnapshotForAgentEvent(event)) return null;
-    return eventSnapshotCoordinator.request({ projectId: event.projectId, requiredSequence: event.sequence });
-  }, [eventSnapshotCoordinator, options.eventDrivenMessages]);
+    return eventSnapshotCoordinatorRef.current?.request({ projectId: event.projectId, requiredSequence: event.sequence }) ?? null;
+  }, [options.eventDrivenMessages]);
 
   const correctProjectFromAgentStreamError = useCallback(async () => {
     const projectId = activeProjectIdRef.current;
     if (!options.eventDrivenMessages || !projectId) return;
-    await eventSnapshotCoordinator.request({ projectId, requiredSequence: 0 });
-  }, [eventSnapshotCoordinator, options.eventDrivenMessages]);
+    await eventSnapshotCoordinatorRef.current?.request({ projectId, requiredSequence: 0 });
+  }, [options.eventDrivenMessages]);
 
   useEffect(() => {
     let active = true;
@@ -246,14 +276,10 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     };
   }, [dataSource]);
 
-  useEffect(() => {
-    setXiaoKuResponseStyleState(normalizeXiaoKuResponseStyle(window.localStorage.getItem(xiaokuResponseStyleStorageKey)));
-  }, []);
-
   function setXiaoKuResponseStyle(value: XiaoKuResponseStyle) {
     const normalized = normalizeXiaoKuResponseStyle(value);
-    setXiaoKuResponseStyleState(normalized);
     window.localStorage.setItem(xiaokuResponseStyleStorageKey, normalized);
+    window.dispatchEvent(new Event(xiaokuResponseStyleChangeEvent));
   }
 
   function flashComposerNotice(message: string) {
@@ -709,6 +735,23 @@ export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: s
   const key = buildClientMessageIdempotencyKey(signature);
   ref.current = { signature, key };
   return key;
+}
+
+function subscribeXiaoKuResponseStyle(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(xiaokuResponseStyleChangeEvent, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(xiaokuResponseStyleChangeEvent, onStoreChange);
+  };
+}
+
+function readXiaoKuResponseStyle(): XiaoKuResponseStyle {
+  return normalizeXiaoKuResponseStyle(window.localStorage.getItem(xiaokuResponseStyleStorageKey));
+}
+
+function getServerXiaoKuResponseStyle(): XiaoKuResponseStyle {
+  return "pragmatic";
 }
 
 function buildClientMessageIdempotencyKey(signature: string) {

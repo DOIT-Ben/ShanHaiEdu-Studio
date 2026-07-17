@@ -5,18 +5,22 @@ import type { ArtifactItem } from "@/lib/types";
 import { buildArtifactMarkdownDownload } from "@/lib/artifact-markdown-download";
 
 type DownloadState = "idle" | "done" | "failed";
+type ScopedDownloadState = {
+  scopeKey: string;
+  state: DownloadState;
+};
 
 export function useArtifactMarkdownDownload(item: ArtifactItem) {
-  const [downloadState, setDownloadState] = useState<DownloadState>("idle");
+  const scopeKey = item.key;
+  const [downloadFeedback, setDownloadFeedback] = useState<ScopedDownloadState>({ scopeKey, state: "idle" });
   const timerRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    setDownloadState("idle");
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    return () => {
+  useEffect(
+    () => () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
-    };
-  }, [item.key]);
+    },
+    [],
+  );
 
   function downloadMarkdown() {
     if (timerRef.current) window.clearTimeout(timerRef.current);
@@ -32,14 +36,15 @@ export function useArtifactMarkdownDownload(item: ArtifactItem) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setDownloadState("done");
+      setDownloadFeedback({ scopeKey, state: "done" });
     } catch {
-      setDownloadState("failed");
+      setDownloadFeedback({ scopeKey, state: "failed" });
     }
 
-    timerRef.current = window.setTimeout(() => setDownloadState("idle"), 1400);
+    timerRef.current = window.setTimeout(() => setDownloadFeedback({ scopeKey, state: "idle" }), 1400);
   }
 
+  const downloadState = downloadFeedback.scopeKey === scopeKey ? downloadFeedback.state : "idle";
   const downloadLabel = downloadState === "done" ? "已下载" : downloadState === "failed" ? "下载失败" : "下载 Markdown";
 
   return { downloadMarkdown, downloadLabel };

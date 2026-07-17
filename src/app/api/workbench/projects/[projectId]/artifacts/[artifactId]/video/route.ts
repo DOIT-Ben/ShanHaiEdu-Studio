@@ -129,7 +129,7 @@ export async function POST(request: Request, context: RouteContext) {
               toolName: "generate_video_segment",
               projectId,
               project,
-              toolInput: actionArguments,
+              toolInput: { ...actionArguments, taskBrief: executionClaim.aggregate.taskBrief },
               artifactRefs: [sourceArtifact, ...upstreamArtifacts].map((artifact) => ({
                 kind: artifact.kind,
                 artifactId: artifact.id,

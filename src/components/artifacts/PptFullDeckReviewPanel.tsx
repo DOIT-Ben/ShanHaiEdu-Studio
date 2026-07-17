@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { Download, Send } from "lucide-react";
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { ArtifactItem, PptFullDeckReviewSubmission } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
@@ -14,26 +14,24 @@ export function PptFullDeckReviewPanel({ projectId, item, onSubmit }: {
   onSubmit: (item: ArtifactItem, review: PptFullDeckReviewSubmission) => Promise<void>;
 }) {
   const deck = item.pptFullDeckReview;
-  const [reviews, setReviews] = useState<Record<string, PageReview>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const readOnly = item.status === "approved" || deck?.reviewStatus === "passed";
-  useEffect(() => {
-    if (deck) setReviews(Object.fromEntries(deck.pageIds.map((pageId) => {
-      const previous = deck.qa?.find((entry) => entry.pageId === pageId);
-      return [pageId, previous ? {
-        design: previous.design === "passed",
-        visual: previous.visual === "passed",
-        provenance: previous.provenance === "passed",
-        readability: previous.readability === "passed",
-        findings: previous.findings.join("；"),
-      } : emptyReview()];
-    })));
-  }, [deck]);
-  const canSubmit = useMemo(() => Boolean(!readOnly && deck?.pageIds.length && deck.pageIds.every((pageId) => validReview(reviews[pageId]))), [deck, readOnly, reviews]);
   if (!deck || !item.artifactId) return null;
+  return <PptFullDeckReviewForm key={`${item.artifactId}:${deck.candidateDigest}`} projectId={projectId} artifactId={item.artifactId} item={item} onSubmit={onSubmit} />;
+}
+
+function PptFullDeckReviewForm({ projectId, artifactId, item, onSubmit }: {
+  projectId: string;
+  artifactId: string;
+  item: ArtifactItem;
+  onSubmit: (item: ArtifactItem, review: PptFullDeckReviewSubmission) => Promise<void>;
+}) {
+  const deck = item.pptFullDeckReview!;
+  const [reviews, setReviews] = useState<Record<string, PageReview>>(() => buildReviews(deck));
+  const [submitting, setSubmitting] = useState(false);
+  const readOnly = item.status === "approved" || deck.reviewStatus === "passed";
+  const canSubmit = useMemo(() => Boolean(!readOnly && deck.pageIds.length && deck.pageIds.every((pageId) => validReview(reviews[pageId]))), [deck, readOnly, reviews]);
   const currentDeck = deck;
 
-  const evidenceBase = `/api/workbench/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(item.artifactId)}/ppt-full-deck-evidence`;
+  const evidenceBase = `/api/workbench/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/ppt-full-deck-evidence`;
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -101,6 +99,18 @@ export function PptFullDeckReviewPanel({ projectId, item, onSubmit }: {
 }
 
 function emptyReview(): PageReview { return { design: false, visual: false, provenance: false, readability: false, findings: "" }; }
+function buildReviews(deck: NonNullable<ArtifactItem["pptFullDeckReview"]>): Record<string, PageReview> {
+  return Object.fromEntries(deck.pageIds.map((pageId) => {
+    const previous = deck.qa?.find((entry) => entry.pageId === pageId);
+    return [pageId, previous ? {
+      design: previous.design === "passed",
+      visual: previous.visual === "passed",
+      provenance: previous.provenance === "passed",
+      readability: previous.readability === "passed",
+      findings: previous.findings.join("；"),
+    } : emptyReview()];
+  }));
+}
 function allChecksPass(review: PageReview) { return review.design && review.visual && review.provenance && review.readability; }
 function validReview(review: PageReview | undefined) { return Boolean(review && (allChecksPass(review) ? !review.findings.trim() : Boolean(review.findings.trim()))); }
 function update(setReviews: Dispatch<SetStateAction<Record<string, PageReview>>>, pageId: string, field: keyof PageReview, value: boolean | string) { setReviews((current) => ({ ...current, [pageId]: { ...(current[pageId] ?? emptyReview()), [field]: value } })); }

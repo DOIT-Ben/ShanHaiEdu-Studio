@@ -299,7 +299,7 @@ async function activateOfflineTask(project: Awaited<ReturnType<ReturnType<typeof
     goal: "生成课堂视觉图",
     requestedOutputs: ["image"],
     constraints: ["offline_fixture_only"],
-    excludedOutputs: ["real_provider"],
+    excludedOutputs: [],
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: `message:${project.id}`,
   });

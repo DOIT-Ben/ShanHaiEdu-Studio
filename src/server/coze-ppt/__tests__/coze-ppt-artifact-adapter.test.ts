@@ -131,6 +131,10 @@ describe("Local Real MVP M17 Coze PPT artifact adapter", () => {
         taskId: taskBrief.taskId,
         taskBriefDigest: taskBrief.digest,
       }),
+      toolInput: expect.objectContaining({
+        sourceArtifactId: sourceArtifact.id,
+        taskBrief: expect.objectContaining({ taskId: taskBrief.taskId, digest: taskBrief.digest }),
+      }),
       artifactRefs: [expect.objectContaining({
         kind: "ppt_design_draft",
         artifactId: sourceArtifact.id,

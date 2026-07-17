@@ -198,7 +198,7 @@ function taskBrief(requestedOutputs: string[]) {
     goal: "形成一句话PPT结构候选",
     requestedOutputs,
     constraints: ["offline fixture only"],
-    excludedOutputs: ["pptx", "image", "video", "zip"],
+    excludedOutputs: ["image", "video", "package"],
     generationIntensity: "standard",
     sourceMessageId: "message-runtime-ab-a11-a12",
   });

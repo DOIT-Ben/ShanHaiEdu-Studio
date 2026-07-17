@@ -165,7 +165,7 @@ describe("ToolRegistry", () => {
     expect(getToolDefinitionByCapabilityId("lesson_plan")).toMatchObject({
       id: "create_lesson_plan",
       adapterKind: "internal_capability",
-      requiredArtifactKinds: ["requirement_spec"],
+      requiredArtifactKinds: [],
       producedArtifactKind: "lesson_plan",
       requiresHumanGate: false,
     });
@@ -246,8 +246,8 @@ describe("ToolRegistry", () => {
     ((listedTool!.inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength = 99;
 
     expect(getToolDefinition("create_lesson_plan")).toMatchObject({
-      description: "基于已确认需求和教材依据生成公开课教案。",
-      requiredArtifactKinds: ["requirement_spec"],
+      description: "基于当前TaskBrief、教材依据和可信来源生成公开课教案。",
+      requiredArtifactKinds: [],
     });
     expect(((getToolDefinition("create_lesson_plan").inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength).toBe(1);
 
@@ -256,7 +256,7 @@ describe("ToolRegistry", () => {
     ((fetchedTool.inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength = 100;
 
     expect(getToolDefinition("create_lesson_plan")).toMatchObject({
-      description: "基于已确认需求和教材依据生成公开课教案。",
+      description: "基于当前TaskBrief、教材依据和可信来源生成公开课教案。",
     });
     expect(((getToolDefinition("create_lesson_plan").inputSchema.properties as Record<string, unknown>).projectId as Record<string, unknown>).minLength).toBe(1);
   });

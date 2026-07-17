@@ -4,23 +4,33 @@ import { useEffect, useRef, useState } from "react";
 import type { ArtifactItem } from "@/lib/types";
 
 type DownloadState = "idle" | "done" | "failed";
+type ScopedDownloadState = {
+  operationId: number;
+  scopeKey: string;
+  state: DownloadState;
+};
 
 export function useFinalPackageDownload(projectId: string, item: ArtifactItem) {
-  const [downloadState, setDownloadState] = useState<DownloadState>("idle");
+  const scopeKey = `${projectId}:${item.key}`;
+  const [downloadFeedback, setDownloadFeedback] = useState<ScopedDownloadState>({ operationId: 0, scopeKey, state: "idle" });
   const timerRef = useRef<number | null>(null);
+  const operationRef = useRef(0);
   const canDownloadPackage = Boolean(projectId && item.artifactId && item.nodeKey === "final_delivery");
 
-  useEffect(() => {
-    setDownloadState("idle");
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    return () => {
+  useEffect(
+    () => () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
-    };
-  }, [item.key, projectId]);
+    },
+    [],
+  );
 
   async function downloadPackage() {
     if (!canDownloadPackage || !item.artifactId) return;
+    operationRef.current += 1;
+    const operationId = operationRef.current;
+    const operationScopeKey = scopeKey;
     if (timerRef.current) window.clearTimeout(timerRef.current);
+    setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "idle" });
 
     try {
       const response = await fetch(`/api/workbench/projects/${projectId}/artifacts/${item.artifactId}/package`);
@@ -34,14 +44,21 @@ export function useFinalPackageDownload(projectId: string, item: ArtifactItem) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setDownloadState("done");
+      if (operationRef.current !== operationId) return;
+      setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "done" });
     } catch {
-      setDownloadState("failed");
+      if (operationRef.current !== operationId) return;
+      setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "failed" });
     }
 
-    timerRef.current = window.setTimeout(() => setDownloadState("idle"), 1400);
+    timerRef.current = window.setTimeout(() => {
+      if (operationRef.current === operationId) {
+        setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "idle" });
+      }
+    }, 1400);
   }
 
+  const downloadState = downloadFeedback.scopeKey === scopeKey ? downloadFeedback.state : "idle";
   const downloadPackageLabel = downloadState === "done" ? "已下载" : downloadState === "failed" ? "下载失败" : "下载材料包";
   return { canDownloadPackage, downloadPackage, downloadPackageLabel };
 }

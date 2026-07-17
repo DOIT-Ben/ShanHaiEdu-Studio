@@ -38,14 +38,13 @@ export function waitForProjectAgentEvent(input: {
   return new Promise((resolve) => {
     const waiters = state.waitersByProject.get(input.projectId) ?? new Set<EventWaiter>();
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const waiter: EventWaiter = {
       afterSequence: input.afterSequence,
       resolve: finish,
     };
     waiters.add(waiter);
     state.waitersByProject.set(input.projectId, waiters);
-    timer = setTimeout(() => finish("fallback"), Math.max(100, input.fallbackMs ?? 2_000));
+    const timer = setTimeout(() => finish("fallback"), Math.max(100, input.fallbackMs ?? 2_000));
     input.signal?.addEventListener("abort", onAbort, { once: true });
 
     function onAbort() {

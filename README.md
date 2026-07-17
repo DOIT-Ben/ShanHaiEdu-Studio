@@ -20,9 +20,9 @@ E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main
 6. `docs\architecture\README.md`
 7. `docs\architecture\V1.0 重构设计.md`
 8. `docs\stages\README.md`
-9. `docs\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan
+9. `docs\stages\README.md`；只有存在活动阶段时再读取对应plan/test-plan
 
-当前状态：**REMEDIATION IN PROGRESS / CONTRACT RED / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；阶段A控制授权、阶段B任务语义、阶段C事实/消息投影和阶段D健康恢复均已达到本地局部Go，阶段E全量回归与真实桌面核验是唯一下一动作。R5整体尚未关闭，V1-9尚未启动；V1发布前不新增390px真实黑盒，不调用本轮范围外的媒体或整包Provider，也不以离线fixture冒充真实产品链路。
+当前状态：**REMEDIATION VERIFIED / CONTRACT GO / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。整改前基线为`b4ad3849f6ae0953f3dfe856ce000e0def292023`；8项P1、7项P2及五阶段本地整改门已通过，完成计划已归档。R5整体仍未关闭，连续多轮Provider稳定性、V1-9、教师签收和发布均未完成；本轮未运行390px，未调用图片、视频、PPTX、ZIP或整包Provider，也未把离线fixture上推为真实产品链路。
 
 ## 文档分区
 

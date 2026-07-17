@@ -146,7 +146,7 @@ describe("business Tool Skill runtime", () => {
         artifactContractAuthority: "tool",
         toolName: "create_lesson_plan",
         contracts: {
-          tool: { consumes: ["requirement_spec"], produces: ["lesson_plan"] },
+          tool: { consumes: [], produces: ["lesson_plan"] },
         },
       },
     });

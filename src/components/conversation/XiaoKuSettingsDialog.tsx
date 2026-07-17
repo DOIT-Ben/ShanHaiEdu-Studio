@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, Check, SlidersHorizontal } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { generationIntensityOptions } from "@/lib/generation-intensity";
@@ -23,12 +23,12 @@ type XiaoKuSettingsDialogProps = {
 };
 
 export function XiaoKuSettingsDialog({ open, value, generationIntensity, generationIntensitySuggestion, onOpenChange, onChange, onGenerationIntensityChange }: XiaoKuSettingsDialogProps) {
-  const [draftIndex, setDraftIndex] = useState(() => intensityIndex(generationIntensity));
+  const [draft, setDraft] = useState(() => ({ generationIntensity, index: intensityIndex(generationIntensity) }));
+  const draftIndex = draft.generationIntensity === generationIntensity ? draft.index : intensityIndex(generationIntensity);
+  const setDraftIndex = (index: number) => setDraft({ generationIntensity, index });
   const [pendingExtremeActionId, setPendingExtremeActionId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  useEffect(() => setDraftIndex(intensityIndex(generationIntensity)), [generationIntensity]);
 
   async function commitIntensity(index = draftIndex) {
     const target = generationIntensityOptions[index]?.id ?? "standard";

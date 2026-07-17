@@ -4,7 +4,7 @@
 
 本目录只保留当前架构不变量、V1.0重构设计和已接受ADR。历史架构包、早期五平面/十二系统材料和已被覆盖的ADR已归档。
 
-当前实现尚未完成最终全量核验。阶段A已收敛HumanGate恢复、控制抢先和持久授权复核；阶段B已收敛Tool独立资格、canonical局部TaskBrief、共享范围策略和Provider逐调用预算；阶段C已收敛Observation/ValidationReport失败身份、真实消息顺序、等待态和失败去重；阶段D已收敛Provider未配置安全失败与SQLite schema readiness。唯一实施路线和验收门以`..\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan为准；不得把局部合同通过上推为产品E2E或发布证据。
+当前实现已通过V1.0原子Tool整改的本地合同与执行门：阶段A收敛HumanGate恢复、控制抢先和持久授权复核；阶段B收敛Tool独立资格、canonical局部TaskBrief、共享范围策略和Provider逐调用预算；阶段C收敛Observation/ValidationReport失败身份、真实消息顺序、等待态和失败去重；阶段D收敛Provider未配置安全失败与SQLite schema readiness；阶段E完成全量测试、Lint、构建、启动与局部桌面核验。完成证据从`..\archive\2026-07-17-agent-atomic-tool-remediation\README.md`追溯；不得把本地合同Go上推为连续多轮Provider、V1-9、产品E2E或发布完成。
 
 ## 当前设计基线
 

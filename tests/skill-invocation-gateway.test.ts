@@ -45,7 +45,7 @@ describe("ShanHai Skill invocation gateway", () => {
       inputs: [],
       constraints: {
         contentBoundary: "只制作课堂PPT",
-        mustNotPreteach: ["完整教案", "视频成片"],
+        mustNotPreteach: ["lesson_plan", "video"],
         language: "zh-CN",
       },
       authorization: {
@@ -299,9 +299,9 @@ function executionScope(grantOverrides: Partial<IntentGrant> = {}) {
     projectId: "project-1",
     intentEpoch: 2,
     goal: "制作课堂PPT",
-    requestedOutputs: ["课堂PPT"],
+    requestedOutputs: ["ppt"],
     constraints: ["只制作课堂PPT"],
-    excludedOutputs: ["完整教案", "视频成片"],
+    excludedOutputs: ["lesson_plan", "video"],
     generationIntensity: "standard",
     sourceMessageId: "message-1",
   });

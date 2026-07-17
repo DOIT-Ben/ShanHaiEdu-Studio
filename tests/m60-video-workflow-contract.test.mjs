@@ -22,7 +22,7 @@ const videoNodeKeys = [
   "concat_only_assemble",
 ];
 
-test("M60 registers the complete video workflow node and capability chain", () => {
+test("M60 registers atomic video capabilities without a fixed requirement-spec prerequisite", () => {
   const workbenchTypes = readSource("src/server/workbench/types.ts");
   const workflowDefaults = readSource("src/server/workbench/workflow-defaults.ts");
   const capabilityTypes = readSource("src/server/capabilities/types.ts");
@@ -37,8 +37,8 @@ test("M60 registers the complete video workflow node and capability chain", () =
     assert.match(plannerSource, new RegExp(`"${nodeKey}"`));
   }
 
-  assert.match(registrySource, /id: "knowledge_anchor_extract"[\s\S]*upstreamCapabilities: \["requirement_spec"\]/);
-  assert.match(registrySource, /id: "creative_theme_generate"[\s\S]*upstreamCapabilities: \["requirement_spec"\]/);
+  assert.match(registrySource, /id: "knowledge_anchor_extract"[\s\S]*inputSchema: \{ required: \["taskBrief"\] \}[\s\S]*upstreamCapabilities: \[\]/);
+  assert.match(registrySource, /id: "creative_theme_generate"[\s\S]*inputSchema: \{ required: \["taskBrief"\] \}[\s\S]*upstreamCapabilities: \[\]/);
   assert.match(registrySource, /id: "video_script_generate"[\s\S]*upstreamCapabilities: \["creative_theme_generate"\]/);
   assert.match(registrySource, /id: "storyboard_generate"[\s\S]*upstreamCapabilities: \["video_script_generate"\]/);
   assert.match(registrySource, /id: "asset_image_generate"[\s\S]*upstreamCapabilities: \["asset_brief_generate"\]/);

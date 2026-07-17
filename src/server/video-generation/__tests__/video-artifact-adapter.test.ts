@@ -24,7 +24,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       subject: "数学",
       lessonTopic: "百分数",
     });
-    const { taskBrief } = await seedArtifactRouteTask(project, ["video_segment_generate"]);
+    const { taskBrief } = await seedArtifactRouteTask(project, ["video_shot"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",
@@ -119,6 +119,10 @@ describe("Local Real MVP M21 video artifact adapter", () => {
         taskId: taskBrief.taskId,
         taskBriefDigest: taskBrief.digest,
       }),
+      toolInput: expect.objectContaining({
+        sourceArtifactId: sourceArtifact.id,
+        taskBrief: expect.objectContaining({ taskId: taskBrief.taskId, digest: taskBrief.digest }),
+      }),
       artifactRefs: [approvedSourceArtifact, approvedStoryboard, approvedAssetImages].map((artifact) => ({
         kind: artifact.kind,
         artifactId: artifact.id,
@@ -180,7 +184,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
   ])("does not save a video artifact when provider success proof is invalid: $label", async ({ proof }) => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "Video provider truth gate" });
-    await seedArtifactRouteTask(project, ["video_segment_generate"]);
+    await seedArtifactRouteTask(project, ["video_shot"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",
@@ -262,7 +266,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
   it("does not save a video artifact and fails the job when ToolRouter fails", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "M64-R video ToolRouter failure" });
-    await seedArtifactRouteTask(project, ["video_segment_generate"]);
+    await seedArtifactRouteTask(project, ["video_shot"]);
     const sourceArtifact = await service.saveArtifact(project.id, {
       nodeKey: "video_segment_plan",
       kind: "video_segment_plan",

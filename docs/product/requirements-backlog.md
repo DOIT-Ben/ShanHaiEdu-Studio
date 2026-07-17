@@ -8,11 +8,10 @@
 
 | ID | 未完成项 | 完成条件 | 当前边界 |
 |---|---|---|---|
-| P0-08 | V1.0智能体原子Tool控制面整改 | 8项P1和7项P2全部进入Go/No-Go；HumanGate可恢复、控制抢先提交、持久授权复核、非固定DAG、局部TaskBrief、逐Provider调用预算、Observation原子事实、消息顺序/去重/等待态和schema readiness全部通过 | 严格按唯一五阶段修复主线执行；不运行真实交付物Provider或V1-9 |
 | P0-05 | 重构关闭后由用户执行并验收唯一V1-9真实产品链路 | V1.0重构全部Go/No-Go通过后，按最新已验收合同重新生成plan、manifest和runId并完成桌面真实全链路与产物验收 | 重构前旧V1-9 plan/test-plan、manifest和runId只作历史证据；当前不创建或恢复 |
 | P0-06 | V1签收与发布门 | V1-9通过后完成教师签收、候选环境、恢复、原子切流和发布后验证 | 部署与生产写入另取当次授权 |
 
-此前Main Agent文本流、Prompt Cache和assistant-ui步骤投影的实现证据保留为P0-08前置能力，不在本总账保存已完成流水账。`node_modules`未逐文件字节冻结仍是发布级残余，只在未来release门重新评估。
+V1.0智能体原子Tool控制面整改已完成并从本总账移除，证据见当前主线状态和归档。`node_modules`未逐文件字节冻结、依赖审计中危项、Lint warning和Turbopack动态追踪warning仍是发布级残余，只在未来release门重新评估。
 
 ## 2. 当前阶段固定边界
 

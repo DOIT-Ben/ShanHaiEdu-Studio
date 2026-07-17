@@ -2,7 +2,7 @@
 
 日期：2026-07-17
 
-状态：REMEDIATION IN PROGRESS / GO GATE RED
+状态：REMEDIATION VERIFIED / GO
 
 ## 1. 测试原则
 
@@ -99,6 +99,18 @@
 
 ### 阶段E：最终验证
 
+状态：**GO（本地整改门）**。2026-07-17从最终工作树执行：
+
+- `npm test`：Node `387/387`；独立SQLite单worker Vitest `1557/1557`，196个文件。
+- `npx tsc --noEmit`：通过。
+- `npm run lint`：通过，0 error、150 warning；warning保留为发布级工程债。
+- `npm run build`：通过；13条Turbopack动态文件追踪warning保留为发布级工程债。
+- `npm run desktop:smoke`：全部检查通过。
+- 隔离生产构建`/api/health`：HTTP 200，database/artifactStorage均ready。
+- Playwright CLI 1440x900：登录、新建项目、普通讨论、局部需求规格、刷新终态和浏览器控制台通过；未运行390px。
+- 持久事实：模糊讨论后IntentEpoch 0、Artifact/TaskAggregate/Invocation均0；局部回合仅`create_requirement_spec` 1次、`requirement_spec` Artifact 1个、TaskAggregate completed、requestedOutputs仅`requirement_spec`。
+- `git diff --check`：通过。
+
 按顺序执行：
 
 1. Node合同全量。
@@ -124,4 +136,4 @@ Go必须同时满足：
 - 全量测试、TypeScript、适用Lint、生产构建和diff检查通过。
 - 当前HEAD桌面核心流程通过；没有把fixture上推为真实产品或release证据。
 
-任一项缺失均为No-Go。No-Go必须保留具体ID、责任层和恢复入口，不恢复旧方案，不进入V1-9。
+以上本地整改门全部满足。该Go不等于R5连续多轮、V1-9、完整产品E2E、教师签收或release通过；这些事项必须分别取得新鲜证据。

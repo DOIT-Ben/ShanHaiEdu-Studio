@@ -33,11 +33,11 @@ describe("M54-B MainConversationAgent", () => {
 
     expect(["planning_tools", "awaiting_confirmation"]).toContain(turn.state);
     expect(turn.toolPlan).toMatchObject({
-      capabilityId: "requirement_spec",
+      capabilityId: "ppt_outline",
       requiresConfirmation: true,
     });
     expect(turn.shouldRunToolNow).toBe(false);
-    expect(turn.quickReplies.map((reply) => reply.prompt)).toContain("确认开始，先整理需求规格。");
+    expect(turn.quickReplies.map((reply) => reply.prompt)).toContain("确认开始，按本轮目标生成。");
   });
 
   it("creates a teacher-readable delivery plan for complete material package requests", async () => {

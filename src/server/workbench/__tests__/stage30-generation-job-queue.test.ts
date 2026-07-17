@@ -256,7 +256,7 @@ async function activateRouteTask(
     goal: "根据已确认大纲生成课堂视觉图",
     requestedOutputs: ["image"],
     constraints: ["offline_fixture_only"],
-    excludedOutputs: ["real_provider"],
+    excludedOutputs: [],
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId,
   });

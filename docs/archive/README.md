@@ -15,4 +15,6 @@
 
 2026-07-17整改基线入口：`2026-07-17-remediation-baseline\README.md`。该目录保存整改前规则快照和已失效的阶段closeout；其中的“已关闭”结论不再控制当前开发。
 
+2026-07-17原子Tool整改完成入口：`2026-07-17-agent-atomic-tool-remediation\README.md`。该目录保存五阶段完成计划、测试门和SHA-256 manifest；只作完成证据，不自动启动V1-9。
+
 既有archive内容和规则备份在本轮保持原位不变。

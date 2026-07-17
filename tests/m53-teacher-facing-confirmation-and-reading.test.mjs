@@ -137,8 +137,10 @@ test("assistant feedback actions persist a message-specific reaction", () => {
 test("generating indicator keeps waiting text understandable for teachers", () => {
   const generatingSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
 
-  assert.match(generatingSource, /aria-label="正在准备回复"|aria-label="正在生成"/);
+  assert.match(generatingSource, /aria-label="小酷正在回复"/);
+  assert.match(generatingSource, /已运行 \{elapsedSeconds\} 秒/);
   assert.match(generatingSource, /getGeneratingLabel/);
+  assert.doesNotMatch(generatingSource, /正在理解|正在选择|正在组织/);
   assert.doesNotMatch(generatingSource, /debug|provider|schema|manifest|node_id|storage/i);
 });
 

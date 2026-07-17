@@ -7,6 +7,7 @@ import {
   getComposerAttachmentKind,
   getComposerToolMenuItems,
   getTextareaHeightPlan,
+  hasCompletedComposerAttachmentSubmission,
   normalizeAttachmentStatus,
   normalizeQuickReplies,
 } from "@/components/conversation/composer/composer-contracts";
@@ -100,6 +101,35 @@ describe("M54-A frontend workbench contracts", () => {
       canUseAsReference: false,
     });
     expect(`${imageCard.teacherLabel} ${docCard.teacherLabel}`).not.toMatch(/OCR|已解析|作为材料参考|schema|manifest|provider|node_id|storage|API|debug|local path/i);
+  });
+
+  it("does not restore an attachment after its submitted draft has been consumed", () => {
+    const snapshot = { value: "请参考这张图", reference: null };
+
+    expect(hasCompletedComposerAttachmentSubmission({
+      snapshot,
+      value: snapshot.value,
+      reference: snapshot.reference,
+      composerSubmitting: false,
+    })).toBe(false);
+    expect(hasCompletedComposerAttachmentSubmission({
+      snapshot,
+      value: "",
+      reference: null,
+      composerSubmitting: true,
+    })).toBe(false);
+    expect(hasCompletedComposerAttachmentSubmission({
+      snapshot,
+      value: "",
+      reference: null,
+      composerSubmitting: false,
+    })).toBe(true);
+    expect(hasCompletedComposerAttachmentSubmission({
+      snapshot,
+      value: "下一轮要求",
+      reference: null,
+      composerSubmitting: false,
+    })).toBe(true);
   });
 
   it("offers welcome prompts that fill the composer but never auto-send", () => {

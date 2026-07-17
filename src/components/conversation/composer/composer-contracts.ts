@@ -42,6 +42,11 @@ export type ComposerAttachmentCard = {
   canUseAsReference: boolean;
 };
 
+export type ComposerAttachmentSubmissionSnapshot = {
+  value: string;
+  reference: string | null;
+};
+
 export type GeneratingState = "generating" | "streaming" | "saving_artifact";
 
 export function getTextareaHeightPlan(value: string, options: { minRows?: number; maxRows?: number } = {}): TextareaHeightPlan {
@@ -138,6 +143,16 @@ export function buildComposerAttachmentCard(input: {
     teacherLabel: normalized.teacherLabel,
     canUseAsReference: normalized.understood,
   };
+}
+
+export function hasCompletedComposerAttachmentSubmission(input: {
+  snapshot: ComposerAttachmentSubmissionSnapshot | null;
+  value: string;
+  reference: string | null;
+  composerSubmitting: boolean;
+}): boolean {
+  if (!input.snapshot || input.composerSubmitting) return false;
+  return input.value !== input.snapshot.value || input.reference !== input.snapshot.reference;
 }
 
 export function getGeneratingLabel(state: GeneratingState): string {

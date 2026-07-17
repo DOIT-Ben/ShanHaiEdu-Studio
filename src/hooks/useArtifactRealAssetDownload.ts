@@ -5,6 +5,11 @@ import type { RealAssetKind } from "@/lib/artifact-real-assets";
 import type { ArtifactItem } from "@/lib/types";
 
 type DownloadState = "idle" | "done" | "failed";
+type ScopedDownloadState = {
+  operationId: number;
+  scopeKey: string;
+  state: DownloadState;
+};
 type DownloadableRealAssetKind = Extract<RealAssetKind, "image" | "video">;
 
 const routeSegmentByKind: Record<DownloadableRealAssetKind, string> = {
@@ -23,21 +28,26 @@ const fallbackExtensionByKind: Record<DownloadableRealAssetKind, string> = {
 };
 
 export function useArtifactRealAssetDownload(projectId: string, item: ArtifactItem, assetKind: DownloadableRealAssetKind) {
-  const [downloadState, setDownloadState] = useState<DownloadState>("idle");
+  const scopeKey = `${projectId}:${item.key}:${assetKind}`;
+  const [downloadFeedback, setDownloadFeedback] = useState<ScopedDownloadState>({ operationId: 0, scopeKey, state: "idle" });
   const timerRef = useRef<number | null>(null);
+  const operationRef = useRef(0);
   const canDownloadRealAsset = Boolean(projectId && item.artifactId && item.realAssetDownloads?.includes(assetKind));
 
-  useEffect(() => {
-    setDownloadState("idle");
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    return () => {
+  useEffect(
+    () => () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
-    };
-  }, [assetKind, item.key, projectId]);
+    },
+    [],
+  );
 
   async function downloadRealAsset() {
     if (!canDownloadRealAsset || !item.artifactId) return;
+    operationRef.current += 1;
+    const operationId = operationRef.current;
+    const operationScopeKey = scopeKey;
     if (timerRef.current) window.clearTimeout(timerRef.current);
+    setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "idle" });
 
     try {
       const response = await fetch(`/api/workbench/projects/${projectId}/artifacts/${item.artifactId}/${routeSegmentByKind[assetKind]}`);
@@ -52,14 +62,21 @@ export function useArtifactRealAssetDownload(projectId: string, item: ArtifactIt
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setDownloadState("done");
+      if (operationRef.current !== operationId) return;
+      setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "done" });
     } catch {
-      setDownloadState("failed");
+      if (operationRef.current !== operationId) return;
+      setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "failed" });
     }
 
-    timerRef.current = window.setTimeout(() => setDownloadState("idle"), 1400);
+    timerRef.current = window.setTimeout(() => {
+      if (operationRef.current === operationId) {
+        setDownloadFeedback({ operationId, scopeKey: operationScopeKey, state: "idle" });
+      }
+    }, 1400);
   }
 
+  const downloadState = downloadFeedback.scopeKey === scopeKey ? downloadFeedback.state : "idle";
   const downloadRealAssetLabel = downloadState === "done" ? "已下载" : downloadState === "failed" ? "下载失败" : labelByKind[assetKind];
   return { canDownloadRealAsset, downloadRealAsset, downloadRealAssetLabel };
 }

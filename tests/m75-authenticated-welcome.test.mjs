@@ -16,7 +16,7 @@ const globalCss = readSource("src/app/globals.css");
 test("M75 initializes with only the active project list and never restores a snapshot", () => {
   const initialLoader = controllerSource.slice(
     controllerSource.indexOf("async function loadInitialState()"),
-    controllerSource.indexOf("useEffect(() => {", controllerSource.indexOf("async function loadInitialState()") + 1),
+    controllerSource.indexOf("function setXiaoKuResponseStyle", controllerSource.indexOf("async function loadInitialState()") + 1),
   );
   assert.match(initialLoader, /dataSource\.listProjects\("active"\)/);
   assert.match(initialLoader, /setActiveProjectId\(""\)/);
@@ -63,7 +63,7 @@ test("M75 lifecycle views and startup never auto-enter an old conversation", () 
   assert.match(viewLoader, /dataSource\.listProjects\(view\)/);
   assert.match(viewLoader, /clearActiveProject\(\)/);
   assert.doesNotMatch(viewLoader, /localStorage\.getItem|getProjectSnapshot|nextProjects\[0\]|loadProject\(/);
-  assert.doesNotMatch(controllerSource.slice(controllerSource.indexOf("async function loadInitialState()"), controllerSource.indexOf("useEffect(() => {", controllerSource.indexOf("async function loadInitialState()") + 1)), /applySnapshot/);
+  assert.doesNotMatch(controllerSource.slice(controllerSource.indexOf("async function loadInitialState()"), controllerSource.indexOf("function setXiaoKuResponseStyle", controllerSource.indexOf("async function loadInitialState()") + 1)), /applySnapshot/);
 });
 
 test("M75 loading and errors stay on welcome and animation respects reduced motion", () => {

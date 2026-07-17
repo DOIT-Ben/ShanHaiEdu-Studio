@@ -239,7 +239,7 @@ function isUnavailableToolPlan(toolPlan: CapabilityToolPlan): boolean {
 
 function singleStepConfirmationReplies(): QuickReply[] {
   return [
-    { label: "确认开始", prompt: "确认开始，先整理需求规格。", recommended: true },
+    { label: "确认开始", prompt: "确认开始，按本轮目标生成。", recommended: true },
     { label: "补充要求", prompt: "我想补充教学风格和课堂时长。" },
     { label: "先聊创意", prompt: "先不要生成，继续聊几个课堂创意。" },
   ];
