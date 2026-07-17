@@ -32,15 +32,17 @@ test("quality-gates workflow calls the repository CI entry without a success byp
   const installMedia = steps.find((step) => step.name === "Install real media dependencies");
   assert.equal(installMedia?.run?.trimEnd(), [
     "choco install ffmpeg libreoffice-fresh --yes --no-progress",
-    "choco install poppler --version=22.11.0.20240421 --yes --no-progress",
+    "winget install --id oschwartz10612.Poppler --version 25.07.0-0 --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --location \"$env:RUNNER_TEMP\\poppler\"",
   ].join("\n"));
   const exposeMedia = steps.find((step) => step.name === "Expose real media binaries");
   assert.match(exposeMedia?.run ?? "", /FFMPEG_PATH=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /FFPROBE_PATH=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /PDFINFO_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /PDFTOPPM_BIN=.*GITHUB_ENV/s);
-  assert.match(exposeMedia?.run ?? "", /ChocolateyInstall.*lib\\poppler\\tools/s);
+  assert.match(exposeMedia?.run ?? "", /RUNNER_TEMP.*poppler/s);
   assert.match(exposeMedia?.run ?? "", /Poppler installation did not provide pdfinfo\.exe and pdftoppm\.exe/s);
+  assert.match(exposeMedia?.run ?? "", /pdfinfo\.exe is not runnable/s);
+  assert.match(exposeMedia?.run ?? "", /pdftoppm\.exe is not runnable/s);
   assert.match(exposeMedia?.run ?? "", /LIBREOFFICE_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /GITHUB_PATH/);
   const npmCommands = steps

@@ -26,18 +26,22 @@ jobs:
       - name: Install real media dependencies
         run: |
           choco install ffmpeg libreoffice-fresh --yes --no-progress
-          choco install poppler --version=22.11.0.20240421 --yes --no-progress
+          winget install --id oschwartz10612.Poppler --version 25.07.0-0 --exact --silent --disable-interactivity --accept-package-agreements --accept-source-agreements --location "$env:RUNNER_TEMP\poppler"
       - name: Expose real media binaries
         shell: pwsh
         run: |
           $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
           $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
-          $popplerRoot = Join-Path $env:ChocolateyInstall "lib\poppler\tools"
+          $popplerRoot = Join-Path $env:RUNNER_TEMP "poppler"
           $pdfinfo = (Get-ChildItem -LiteralPath $popplerRoot -Filter pdfinfo.exe -File -Recurse | Select-Object -First 1).FullName
           $pdftoppm = (Get-ChildItem -LiteralPath $popplerRoot -Filter pdftoppm.exe -File -Recurse | Select-Object -First 1).FullName
           if (-not $pdfinfo -or -not $pdftoppm) {
             throw "Poppler installation did not provide pdfinfo.exe and pdftoppm.exe"
           }
+          & $pdfinfo -v
+          if ($LASTEXITCODE -ne 0) { throw "pdfinfo.exe is not runnable" }
+          & $pdftoppm -v
+          if ($LASTEXITCODE -ne 0) { throw "pdftoppm.exe is not runnable" }
           $popplerBin = Split-Path -Parent $pdfinfo
           $libreOfficeDir = Join-Path $env:ProgramFiles "LibreOffice\program"
           $soffice = Join-Path $libreOfficeDir "soffice.exe"
