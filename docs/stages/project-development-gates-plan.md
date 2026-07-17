@@ -60,6 +60,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第七次clean checkout确认Chocolatey Poppler安装成功，但该包不创建`pdfinfo.exe`/`pdftoppm.exe` shim。workflow现从受控的`ChocolateyInstall\lib\poppler\tools`解析实际二进制，要求两者同时存在，并把实际bin目录与显式路径传给后续验证；不绑定具体包版本或runner盘符。
 
+第八次clean checkout进一步证明当前Chocolatey `poppler 26.6.0`本身只包含C++源码和man page，不是Windows运行包，因此递归解析仍失败。经直接检查Chocolatey版本化nupkg，`22.11.0.20240421`明确包含`Library/bin/pdfinfo.exe`与`Library/bin/pdftoppm.exe`；workflow只对Poppler固定该已核验二进制版本，继续由Chocolatey校验和安装，路径解析仍不绑定runner盘符。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

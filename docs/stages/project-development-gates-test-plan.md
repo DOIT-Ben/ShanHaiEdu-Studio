@@ -37,6 +37,7 @@
 | DG-22 | 仓库由私有转公开后，当前权威文档和媒体解析包含本机绝对路径 | 当前开发入口只保留仓库相对或环境中立位置；媒体工具以显式环境变量或PATH解析；AGENTS修改前双份备份；历史敏感信息审计不回显候选值 |
 | DG-23 | clean runner缺Poppler、显式TTS env未绑定fixture根、health初始化超过默认5秒 | 安装并解析真实`pdfinfo`/`pdftoppm`；TTS用例显式使用仓内无密钥ledger；health行为断言不变且仅该真实集成用例上限为15秒 |
 | DG-24 | Chocolatey Poppler安装成功但没有命令shim | 从`ChocolateyInstall\lib\poppler\tools`解析并验证两项实际二进制，不绑定包版本或runner盘符，并写入job环境 |
+| DG-25 | Chocolatey当前Poppler版本实际是源码包 | Poppler固定为已检查nupkg且含两项Windows二进制的`22.11.0.20240421`；FFmpeg与LibreOffice不随之降级；仍从受控包目录解析实际路径 |
 
 ## 实际命令
 

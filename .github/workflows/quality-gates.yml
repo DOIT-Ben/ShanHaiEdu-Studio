@@ -24,7 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install real media dependencies
-        run: choco install ffmpeg libreoffice-fresh poppler --yes --no-progress
+        run: |
+          choco install ffmpeg libreoffice-fresh --yes --no-progress
+          choco install poppler --version=22.11.0.20240421 --yes --no-progress
       - name: Expose real media binaries
         shell: pwsh
         run: |
