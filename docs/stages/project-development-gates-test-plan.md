@@ -40,6 +40,7 @@
 | DG-25 | Chocolatey当前Poppler版本实际是源码包 | 拒绝只含源码或只证明文件存在的包；Windows二进制来源必须固定版本、由包管理器校验并真实执行 |
 | DG-26 | hosted runner暴露TTS分支漏绑fixture、第二组health 5秒假设和PPT命令黑盒 | TTS所有分支固定仓内ledger；health readiness三个真实集成用例各15秒；LibreOffice使用唯一profile，Office/Poppler错误映射稳定阶段码并有行为测试 |
 | DG-27 | 旧Chocolatey Poppler可发现但`pdftoppm`真实转换失败 | WinGet固定`oschwartz10612.Poppler 25.07.0-0`到runner临时根，实际执行`pdfinfo -v`和`pdftoppm -v`后才进入唯一验证入口 |
+| DG-28 | clean CI artifact的policy/stage SHA与同一Git tree本机复核不一致 | policy、active-stage与三份bound contract全部声明`eol=lf`，政策门缺任一声明即失败；下一artifact跨机器SHA一致 |
 
 ## 实际命令
 

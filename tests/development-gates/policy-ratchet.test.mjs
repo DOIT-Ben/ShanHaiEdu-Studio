@@ -76,10 +76,15 @@ test("bound contracts require LF checkout attributes for stable cross-runner has
   const bound = [{
     path: "docs/contract.md",
     sha256: createHash("sha256").update("contract\n").digest("hex"),
-  }];
+  }, { path: "config/development-gates.json" }, { path: "docs/stages/active-stage.json" }];
 
   assert.throws(() => verifyBoundContractAttributes(root, bound), /eol=lf/i);
-  writeFileSync(path.join(root, ".gitattributes"), "docs/contract.md text eol=lf\n");
+  writeFileSync(path.join(root, ".gitattributes"), [
+    "docs/contract.md text eol=lf",
+    "config/development-gates.json text eol=lf",
+    "docs/stages/active-stage.json text eol=lf",
+    "",
+  ].join("\n"));
   assert.doesNotThrow(() => verifyBoundContractAttributes(root, bound));
 });
 

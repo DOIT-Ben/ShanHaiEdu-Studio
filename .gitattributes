@@ -2,3 +2,5 @@ fixtures/ppt/*.md text eol=lf
 AGENTS.md text eol=lf
 docs/contracts/development-quality-gate.md text eol=lf
 docs/architecture/decisions/2026-07-17-adr-project-development-gates.md text eol=lf
+config/development-gates.json text eol=lf
+docs/stages/active-stage.json text eol=lf

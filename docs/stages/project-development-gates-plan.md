@@ -66,6 +66,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第十次clean checkout证明TTS与两组health已关闭，唯一失败收敛为旧Chocolatey Poppler的`pdftoppm`真实执行。现改用WinGet官方manifest中的`oschwartz10612.Poppler 25.07.0-0` portable包：manifest固定下载SHA-256、包含VC运行库依赖与poppler-data；workflow安装到`RUNNER_TEMP\poppler`受控目录，解析后实际执行`pdfinfo -v`和`pdftoppm -v`，再进入仓内验证。Chocolatey仅继续提供FFmpeg和LibreOffice。
 
+第十一次clean checkout已全绿并上传`dirty=false` artifact；HEAD、Git tree和五项检查均匹配，但跨机器复核发现policy SHA与active-stage SHA仍受Windows checkout行尾影响。两项manifest输入现与三份bound contract一样声明`eol=lf`，policy门同时强制五个SHA输入全部具有LF checkout属性；缺任一声明都失败关闭。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

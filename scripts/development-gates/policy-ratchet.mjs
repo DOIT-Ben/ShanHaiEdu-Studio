@@ -5,6 +5,10 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const policySchemaVersion = "shanhai-development-gates.v1";
+const shaBoundManifestInputs = [
+  "config/development-gates.json",
+  "docs/stages/active-stage.json",
+];
 const captureBootstrapProductionPaths = [
   "src/server/conversation/conversation-turn-service.ts",
   "src/server/conversation/main-conversation-agent.ts",
@@ -106,7 +110,10 @@ export function verifyCurrentPolicy({ root = process.cwd(), policy, activeStage,
   if (!policy || policy.schemaVersion !== policySchemaVersion) throw new Error("Unsupported development gate policy schema.");
   requirePolicySections(policy);
   verifyBoundContracts(root, policy.boundContracts);
-  verifyBoundContractAttributes(root, policy.boundContracts);
+  verifyBoundContractAttributes(root, [
+    ...policy.boundContracts,
+    ...shaBoundManifestInputs.map((manifestPath) => ({ path: manifestPath })),
+  ]);
   if (previousPolicy) {
     assertPolicyRatchet(previousPolicy, policy);
     return { ok: true, mode: "ratchet" };
