@@ -391,9 +391,12 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
     "tests/development-gates/provider-continuity.test.mjs",
     "tests/fixtures/provider-ledger/manifest.json",
     "tests/health-route.test.ts",
+    "tests/health-readiness.test.ts",
     "tests/package-tool-adapter.test.ts",
+    "tests/ppt-key-sample-renderer.test.ts",
     "tests/video-narration-provider.test.ts",
     "src/server/video-quality/video-timeline-assembler.ts",
+    "src/server/ppt-quality/ppt-key-sample-renderer.ts",
     "docs/stages/active-stage.json",
     ...CAPTURE_PRODUCTION_PATHS,
   ];

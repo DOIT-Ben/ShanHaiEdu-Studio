@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { PptAssetManifest, PptSampleOverviewKind } from "./ppt-asset-types";
@@ -67,14 +68,31 @@ export async function renderPptKeySamples(input: {
 }
 
 async function convertWithLibreOffice(input: { pptxPath: string; outputDir: string }): Promise<string[]> {
-  await execFileAsync(process.env.LIBREOFFICE_BIN?.trim() || "soffice", ["--headless", "--convert-to", "pdf", "--outdir", input.outputDir, input.pptxPath], { windowsHide: true });
+  const profile = pathToFileURL(path.join(input.outputDir, "libreoffice-profile")).href;
+  await runExternal(
+    process.env.LIBREOFFICE_BIN?.trim() || "soffice",
+    [`-env:UserInstallation=${profile}`, "--headless", "--convert-to", "pdf", "--outdir", input.outputDir, input.pptxPath],
+    "ppt_sample_libreoffice_convert_failed",
+  );
   const pdfPath = path.join(input.outputDir, "key-samples.pdf");
   const renderPrefix = path.join(input.outputDir, "render");
-  await execFileAsync(process.env.PDFTOPPM_BIN?.trim() || "pdftoppm", ["-png", "-r", "144", pdfPath, renderPrefix], { windowsHide: true });
+  await runExternal(
+    process.env.PDFTOPPM_BIN?.trim() || "pdftoppm",
+    ["-png", "-r", "144", pdfPath, renderPrefix],
+    "ppt_sample_pdf_render_failed",
+  );
   return readdirSync(input.outputDir)
     .filter((name) => /^render-\d+\.png$/i.test(name))
     .sort((left, right) => numericSuffix(left) - numericSuffix(right))
     .map((name) => path.join(input.outputDir, name));
+}
+
+async function runExternal(program: string, args: string[], errorCode: string): Promise<void> {
+  try {
+    await execFileAsync(program, args, { windowsHide: true });
+  } catch {
+    throw new Error(errorCode);
+  }
 }
 
 function resolveManifestPaths(manifest: PptAssetManifest, assetKind: "AI_SCENE" | "AI_ASSET"): string[] {

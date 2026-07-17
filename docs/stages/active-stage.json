@@ -40,6 +40,7 @@
     "src/server/gpt-protocol/openai-responses-adapter.ts",
     "src/server/gpt-protocol/types.ts",
     "src/server/provider-ledger/provider-call-trace.ts",
+    "src/server/ppt-quality/ppt-key-sample-renderer.ts",
     "src/server/video-quality/video-timeline-assembler.ts",
     "tests/conversation-turn-service.test.ts",
     "tests/capability-availability.test.ts",
@@ -47,9 +48,11 @@
     "tests/fixtures/provider-ledger/manifest.json",
     "tests/gpt-protocol-adapter.test.ts",
     "tests/health-route.test.ts",
+    "tests/health-readiness.test.ts",
     "tests/model-main-conversation-agent.test.ts",
     "tests/package-tool-adapter.test.ts",
     "tests/provider-call-trace.test.ts",
+    "tests/ppt-key-sample-renderer.test.ts",
     "tests/video-narration-provider.test.ts"
   ],
   "protectedPathExceptions": [
@@ -57,7 +60,7 @@
     "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak"
   ],
   "budgets": {
-    "maxChangedFiles": 57,
+    "maxChangedFiles": 60,
     "maxAddedLines": 7800,
     "maxDeletedLines": 500,
     "maxBinaryFiles": 0
@@ -130,6 +133,16 @@
       "tests/video-narration-provider.test.ts"
     ],
     "reason": "The sixth clean GitHub checkout proved the TTS test had relied on a workstation ledger root, PPT rendering also requires real Poppler binaries, and isolated schema initialization can exceed Vitest's five-second default on a hosted runner. The fixture root is now explicit, real Poppler is installed, and only the real health integration test receives a 15-second timeout. Assertions and Provider boundaries are unchanged."
+  },
+  "ciHostedIntegrationRevision": {
+    "previousMaxChangedFiles": 57,
+    "revisedMaxChangedFiles": 60,
+    "addedAllowedPaths": [
+      "src/server/ppt-quality/ppt-key-sample-renderer.ts",
+      "tests/health-readiness.test.ts",
+      "tests/ppt-key-sample-renderer.test.ts"
+    ],
+    "reason": "The ninth clean GitHub checkout proved one TTS missing-config branch still lacked the explicit fixture root, a second health integration suite retained the five-second local-speed assumption, and the real PPT sample converter exposed only a redacted command failure. The converter now uses an isolated LibreOffice profile and stable phase errors, with a behavior test; both health integration suites use exact 15-second per-test limits. No assertion, Provider call, or artifact standard was removed."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

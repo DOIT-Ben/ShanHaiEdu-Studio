@@ -48,6 +48,22 @@ describe("V1 Stage 3B key sample render evidence", () => {
       convertPptxToPngs: async () => [],
     })).rejects.toThrow(/render_count_mismatch/);
   });
+
+  it("reports a stable phase when the real office converter cannot run", async () => {
+    const fixtures = validPptSampleFixtures();
+    const previous = process.env.LIBREOFFICE_BIN;
+    process.env.LIBREOFFICE_BIN = process.execPath;
+    try {
+      await expect(renderPptKeySamples({
+        pptxBuffer: Buffer.from("PK invalid office input"),
+        samplePageIds: fixtures.designPackage.samplePlan.samplePageIds,
+        manifest: fixtures.manifest,
+      })).rejects.toThrow("ppt_sample_libreoffice_convert_failed");
+    } finally {
+      if (previous === undefined) delete process.env.LIBREOFFICE_BIN;
+      else process.env.LIBREOFFICE_BIN = previous;
+    }
+  });
 });
 
 async function materializeManifestImages(manifest: ReturnType<typeof validPptSampleFixtures>["manifest"]): Promise<void> {

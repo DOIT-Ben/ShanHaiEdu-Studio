@@ -62,6 +62,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第八次clean checkout进一步证明当前Chocolatey `poppler 26.6.0`本身只包含C++源码和man page，不是Windows运行包，因此递归解析仍失败。经直接检查Chocolatey版本化nupkg，`22.11.0.20240421`明确包含`Library/bin/pdfinfo.exe`与`Library/bin/pdftoppm.exe`；workflow只对Poppler固定该已核验二进制版本，继续由Chocolatey校验和安装，路径解析仍不绑定runner盘符。
 
+第九次clean checkout已通过全部五种原生工具安装、解析和`npm ci`，随后证明TTS缺配置分支仍未显式绑定fixture根、另一组health集成测试仍保留5秒本机速度假设，且关键样张真实转换只返回被脱敏的命令失败。TTS所有分支现统一使用仓内fixture根；三个health readiness真实集成用例各自使用15秒上限；关键样张转换使用每次唯一LibreOffice profile并把Office/Poppler失败映射为稳定阶段码，新增行为测试。精确文件预算由57修订为60，不减少断言或产物标准。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

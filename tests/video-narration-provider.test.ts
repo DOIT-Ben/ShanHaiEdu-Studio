@@ -7,10 +7,16 @@ function script() {
   return createVideoNarrationScript({ schemaVersion: "video-narration-script.v1", language: "zh-CN", voiceId: "zh-CN-warm-neutral", text: "装置为什么会连续发生三次变化？先别急着下结论，带着这个问题回到课堂。", courseAnchor: "带着问题回到课堂", answerDisclosureBoundary: "不解释课程答案" });
 }
 
-function providerEnv(): NodeJS.ProcessEnv {
+function ledgerEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
     SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests/fixtures/provider-ledger"),
+  };
+}
+
+function providerEnv(): NodeJS.ProcessEnv {
+  return {
+    ...ledgerEnv(),
     TTS_PROVIDER_MODE: "minimax",
     MINIMAX_API_KEY: "test-only",
     MINIMAX_BASE_URL: "https://api.example",
@@ -36,7 +42,7 @@ describe("V1-9C MiniMax controlled narration provider", () => {
   });
 
   it("rejects missing config, missing subtitles, and invalid timing", async () => {
-    await expect(generateMiniMaxVideoNarration({ script: script(), env: { NODE_ENV: "test" }, fetchImpl: vi.fn() as typeof fetch })).rejects.toThrow("provider_env_missing");
+    await expect(generateMiniMaxVideoNarration({ script: script(), env: ledgerEnv(), fetchImpl: vi.fn() as typeof fetch })).rejects.toThrow("provider_env_missing");
     const noSubtitle = vi.fn(async () => new Response(JSON.stringify({ data: { audio: Buffer.alloc(1024).toString("hex") }, base_resp: { status_code: 0 } }), { status: 200 }));
     await expect(generateMiniMaxVideoNarration({ script: script(), env: providerEnv(), fetchImpl: noSubtitle as typeof fetch })).rejects.toThrow("subtitle_url_invalid");
     const badTiming = vi.fn(async (url: string | URL | Request) => String(url).includes("t2a_v2")

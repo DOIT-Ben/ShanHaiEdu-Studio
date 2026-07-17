@@ -27,7 +27,7 @@ describe("V1-10A health readiness", () => {
       reasons: [],
     });
     expect(JSON.stringify(result)).not.toContain(fixture.root);
-  });
+  }, 15_000);
 
   it("fails closed with a stable response when either dependency is unavailable", () => {
     const fixture = makeFixture();
@@ -49,7 +49,7 @@ describe("V1-10A health readiness", () => {
       reasons: [{ code: "artifact_storage_unavailable" }],
     });
     expect(JSON.stringify([missingDatabase, missingStorage])).not.toContain(fixture.root);
-  });
+  }, 15_000);
 
   it("reports stable missing-table and missing-column reasons", () => {
     const fixture = makeFixture();
@@ -75,7 +75,7 @@ describe("V1-10A health readiness", () => {
     });
     expect(JSON.stringify([missingTable, missingColumn])).not.toContain(fixture.root);
     expect(JSON.stringify([missingTable, missingColumn])).not.toContain(columnFixture.root);
-  });
+  }, 15_000);
 
   it("keeps the required control-plane schema contract explicit", () => {
     const requirements = new Map(HEALTH_SCHEMA_REQUIREMENTS.map((entry) => [entry.table, entry.columns]));
