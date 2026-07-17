@@ -383,6 +383,8 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
   const changedPaths = [
     ".gitattributes",
     "config/development-gates.json",
+    "fixtures/ppt-sample-manifest.json",
+    "scripts/run-tests.mjs",
     "scripts/development-gates/provider-continuity.mjs",
     "tests/development-gates/provider-continuity.test.mjs",
     "docs/stages/active-stage.json",

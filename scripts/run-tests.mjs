@@ -1,23 +1,43 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nodeTestDatabasePath = path.join(root, ".tmp", "node-test-workbench.db");
 const vitestDatabasePath = path.join(root, ".tmp", "vitest-test-workbench.db");
-const baseEnv = {
-  ...process.env,
-  VITEST_MAX_WORKERS: process.env.VITEST_MAX_WORKERS ?? "1",
-};
+const baseEnv = createTestBaseEnv();
 const nodeTestEnv = suiteEnv("node-test-workbench.db");
 const vitestEnv = suiteEnv("vitest-test-workbench.db");
 
-run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
-initializeTestDatabase(nodeTestDatabasePath, nodeTestEnv);
-run(process.execPath, ["--test", "tests/*.test.mjs"], { env: nodeTestEnv });
-initializeTestDatabase(vitestDatabasePath, vitestEnv);
-run(npxCommand(), ["vitest", "run", "--maxWorkers=1"], { shell: process.platform === "win32", env: vitestEnv });
+export function runAllTests() {
+  run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
+  initializeTestDatabase(nodeTestDatabasePath, nodeTestEnv);
+  run(process.execPath, ["--test", "tests/*.test.mjs"], { env: nodeTestEnv });
+  initializeTestDatabase(vitestDatabasePath, vitestEnv);
+  run(npxCommand(), ["vitest", "run", "--maxWorkers=1"], { shell: process.platform === "win32", env: vitestEnv });
+}
+
+export function resolveCanonicalTestTempRoot({ fileSystem = fs, tempRoot = os.tmpdir() } = {}) {
+  const nativeRealpath = fileSystem.realpathSync?.native;
+  const canonical = typeof nativeRealpath === "function"
+    ? nativeRealpath.call(fileSystem.realpathSync, tempRoot)
+    : fileSystem.realpathSync(tempRoot);
+  const stat = fileSystem.lstatSync(canonical);
+  if (!stat.isDirectory()) throw new Error("Test temp root must resolve to a physical directory.");
+  return path.resolve(canonical);
+}
+
+export function createTestBaseEnv({ env = process.env, tempRoot = resolveCanonicalTestTempRoot() } = {}) {
+  return {
+    ...env,
+    TEMP: tempRoot,
+    TMP: tempRoot,
+    TMPDIR: tempRoot,
+    VITEST_MAX_WORKERS: env.VITEST_MAX_WORKERS ?? "1",
+  };
+}
 
 function initializeTestDatabase(databasePath, env) {
   fs.rmSync(databasePath, { force: true });
@@ -50,4 +70,8 @@ function run(command, args, options = {}) {
 
 function npxCommand() {
   return process.platform === "win32" ? "npx.cmd" : "npx";
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runAllTests();
 }

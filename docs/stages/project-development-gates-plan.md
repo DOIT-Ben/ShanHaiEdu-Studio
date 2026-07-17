@@ -48,6 +48,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 第二次clean checkout越过政策门后在`typecheck`失败，证明本机已有`src/generated/prisma`掩盖了缺失前置条件。项目权威`typecheck`命令现先执行`prisma generate`再执行`tsc --noEmit`；workflow仍只执行`npm run verify:ci`，生成步骤不是CI私有旁路。
 
+第三次clean checkout通过TypeScript与Lint后，Node测试暴露GitHub runner临时目录的上游reparse和一项CRLF派生fixture manifest。测试入口现在把`TEMP`、`TMP`和`TMPDIR`统一到`realpath`后的物理目录，安全测试仍拒绝该根内部的链接；PPT文字fixture的manifest改绑定仓库LF blob字节，不通过跳过或放宽路径检查制造通过。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

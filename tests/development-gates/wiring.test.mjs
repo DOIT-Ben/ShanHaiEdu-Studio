@@ -4,6 +4,11 @@ import path from "node:path";
 import { test } from "node:test";
 import YAML from "yaml";
 
+import {
+  createTestBaseEnv,
+  resolveCanonicalTestTempRoot,
+} from "../../scripts/run-tests.mjs";
+
 test("package exposes one development, CI, manifest, Provider, and release gate family", () => {
   const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
   assert.equal(pkg.scripts?.typecheck, "prisma generate && tsc --noEmit");
@@ -27,4 +32,22 @@ test("quality-gates workflow calls the repository CI entry without a success byp
   const upload = (job?.steps ?? []).find((step) => step.uses?.startsWith("actions/upload-artifact@"));
   assert.equal(upload?.if, "always()");
   assert.equal(upload?.with?.path, ".tmp/verification/development-verification.json");
+});
+
+test("the test runner resolves a physical temp root before security-sensitive fixtures", () => {
+  const fileSystem = {
+    realpathSync: Object.assign(() => "C:\\physical-temp", {
+      native: () => "C:\\physical-temp",
+    }),
+    lstatSync: () => ({ isDirectory: () => true }),
+  };
+  const tempRoot = resolveCanonicalTestTempRoot({ fileSystem, tempRoot: "D:\\runner-link" });
+  assert.equal(tempRoot, "C:\\physical-temp");
+  assert.deepEqual(createTestBaseEnv({ env: { EXISTING: "yes" }, tempRoot }), {
+    EXISTING: "yes",
+    TEMP: tempRoot,
+    TMP: tempRoot,
+    TMPDIR: tempRoot,
+    VITEST_MAX_WORKERS: "1",
+  });
 });

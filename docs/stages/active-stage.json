@@ -15,6 +15,7 @@
     "docs/architecture/decisions/README.md",
     "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
     "docs/contracts/development-quality-gate.md",
+    "fixtures/ppt-sample-manifest.json",
     "docs/README.md",
     "docs/mainlines/current-mainline-status.md",
     "docs/product/requirements-backlog.md",
@@ -28,6 +29,7 @@
     "docs/stages/project-development-gates-test-plan.md",
     "package.json",
     "scripts/development-gates/**",
+    "scripts/run-tests.mjs",
     "src/server/conversation/conversation-turn-service.ts",
     "src/server/conversation/main-conversation-agent.ts",
     "src/server/conversation/model-main-conversation-agent.ts",
@@ -79,6 +81,13 @@
   "ciCleanCheckoutRevision": {
     "changedScript": "typecheck",
     "reason": "The second clean GitHub checkout proved local generated Prisma types had masked a missing verification prerequisite. The authoritative typecheck command now generates the client before tsc; the workflow still calls only verify:ci."
+  },
+  "ciPhysicalFixtureRevision": {
+    "addedAllowedPaths": [
+      "fixtures/ppt-sample-manifest.json",
+      "scripts/run-tests.mjs"
+    ],
+    "reason": "The third clean GitHub checkout proved runner-managed reparse ancestors and a CRLF-derived fixture manifest made otherwise strict tests host-dependent. Tests now use the real physical temp root, while fixture hashes bind canonical LF Git bytes. Security assertions and test counts are unchanged."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

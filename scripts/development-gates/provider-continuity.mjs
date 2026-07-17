@@ -20,6 +20,8 @@ const BOOTSTRAP_ALLOWED_PATHS = [
   ".gitattributes",
   "AGENTS.md",
   "config/development-gates.json",
+  "fixtures/ppt-sample-manifest.json",
+  "scripts/run-tests.mjs",
   "scripts/development-gates/**",
   "tests/development-gates/**",
   "docs/**",
