@@ -381,6 +381,7 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
   const root = setupRepository(t);
   writeCaptureBootstrapStage(root);
   const changedPaths = [
+    ".gitattributes",
     "config/development-gates.json",
     "scripts/development-gates/provider-continuity.mjs",
     "tests/development-gates/provider-continuity.test.mjs",
@@ -405,6 +406,10 @@ test("capture bootstrap is development-only, exact-path, expiring, and never a p
     () => verify(root, {
       changedPaths: [...changedPaths, "src/server/tools/provider-tool-adapter.ts"],
     }),
+    /receipt.*missing/i,
+  );
+  assert.throws(
+    () => verify(root, { changedPaths: [...changedPaths, "unplanned-root.txt"] }),
     /receipt.*missing/i,
   );
   assert.throws(

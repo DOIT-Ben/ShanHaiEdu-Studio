@@ -6,6 +6,7 @@
   "plan": "docs/stages/project-development-gates-plan.md",
   "testPlan": "docs/stages/project-development-gates-test-plan.md",
   "allowedPaths": [
+    ".gitattributes",
     ".github/workflows/quality-gates.yml",
     "AGENTS.md",
     "config/development-gates.json",
@@ -70,6 +71,10 @@
     "previousMaxAddedLines": 6500,
     "revisedMaxAddedLines": 7800,
     "reason": "P0-05A entry audit proved the existing ledger is health-probe evidence, not per-call runtime evidence. The exact, expiring bootstrap only admits six named production files and four behavior-test files needed to add sanitized call tracing; it cannot produce a passing continuity receipt."
+  },
+  "ciPortabilityRevision": {
+    "addedAllowedPath": ".gitattributes",
+    "reason": "The first clean GitHub Windows checkout proved bound contract hashes were sensitive to core.autocrlf. The exact contract paths now declare LF checkout bytes; SHA checks and budgets are unchanged."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

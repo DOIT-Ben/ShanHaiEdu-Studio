@@ -17,6 +17,7 @@ const BOOTSTRAP_BASELINE = "63b9bd3866195b8062756f2b7016faf44e22208f";
 const BOOTSTRAP_PLAN = "docs/stages/project-development-gates-plan.md";
 const BOOTSTRAP_TEST_PLAN = "docs/stages/project-development-gates-test-plan.md";
 const BOOTSTRAP_ALLOWED_PATHS = [
+  ".gitattributes",
   "AGENTS.md",
   "config/development-gates.json",
   "scripts/development-gates/**",

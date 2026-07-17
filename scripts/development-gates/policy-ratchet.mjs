@@ -73,10 +73,40 @@ export function verifyBoundContracts(root, boundContracts) {
   return { ok: true, contractCount: seen.size };
 }
 
+export function verifyBoundContractAttributes(root, boundContracts) {
+  if (!Array.isArray(boundContracts) || boundContracts.length === 0) {
+    throw new Error("At least one bound contract is required.");
+  }
+  const paths = boundContracts.map((entry) => {
+    if (!entry || !isSafeRelativePath(entry.path)) {
+      throw new Error("Bound contract contains an unsafe path.");
+    }
+    return normalizePath(entry.path);
+  });
+  const result = spawnSync("git", ["check-attr", "-z", "eol", "--", ...paths], {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (result.status !== 0) throw new Error("Bound contract checkout attributes could not be verified.");
+  const fields = result.stdout.split("\0").filter(Boolean);
+  if (fields.length !== paths.length * 3) {
+    throw new Error("Bound contract checkout attributes are incomplete.");
+  }
+  for (let index = 0; index < fields.length; index += 3) {
+    const [contractPath, attribute, value] = fields.slice(index, index + 3);
+    if (attribute !== "eol" || value !== "lf" || !paths.includes(normalizePath(contractPath))) {
+      throw new Error(`Bound contract must declare eol=lf: ${contractPath}`);
+    }
+  }
+  return { ok: true, contractCount: paths.length };
+}
+
 export function verifyCurrentPolicy({ root = process.cwd(), policy, activeStage, previousPolicy } = {}) {
   if (!policy || policy.schemaVersion !== policySchemaVersion) throw new Error("Unsupported development gate policy schema.");
   requirePolicySections(policy);
   verifyBoundContracts(root, policy.boundContracts);
+  verifyBoundContractAttributes(root, policy.boundContracts);
   if (previousPolicy) {
     assertPolicyRatchet(previousPolicy, policy);
     return { ok: true, mode: "ratchet" };

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import { afterEach, test } from "node:test";
 
 import {
   assertPolicyRatchet,
+  verifyBoundContractAttributes,
   verifyBoundContracts,
 } from "../../scripts/development-gates/policy-ratchet.mjs";
 
@@ -64,6 +66,27 @@ test("bound contract verification rejects tampering and path escape", () => {
   assert.throws(() => verifyBoundContracts(root, bound), /contract hash/i);
   assert.throws(() => verifyBoundContracts(root, [{ path: "../outside", sha256: "a".repeat(64) }]), /unsafe/i);
 });
+
+test("bound contracts require LF checkout attributes for stable cross-runner hashes", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-policy-attributes-"));
+  roots.push(root);
+  runGit(root, ["init"]);
+  mkdirSync(path.join(root, "docs"));
+  writeFileSync(path.join(root, "docs", "contract.md"), "contract\n");
+  const bound = [{
+    path: "docs/contract.md",
+    sha256: createHash("sha256").update("contract\n").digest("hex"),
+  }];
+
+  assert.throws(() => verifyBoundContractAttributes(root, bound), /eol=lf/i);
+  writeFileSync(path.join(root, ".gitattributes"), "docs/contract.md text eol=lf\n");
+  assert.doesNotThrow(() => verifyBoundContractAttributes(root, bound));
+});
+
+function runGit(root, args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr);
+}
 
 function policy() {
   return {
