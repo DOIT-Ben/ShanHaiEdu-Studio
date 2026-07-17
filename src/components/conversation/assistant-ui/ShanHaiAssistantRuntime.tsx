@@ -12,7 +12,7 @@ import type { SubmitConversationMessageInput } from "@/hooks/useWorkbenchControl
 import { ShanHaiThread, type ShanHaiThreadProps } from "@/components/conversation/assistant-ui/ShanHaiThread";
 import { chatMessageToAssistantUi, messageBodyFromAssistantUi } from "@/components/conversation/assistant-ui/message-adapter";
 import { useProjectAgentEvents } from "@/components/conversation/assistant-ui/useProjectAgentEvents";
-import { mergeTeacherAgentEventsIntoMessages } from "@/lib/teacher-agent-events";
+import { hasCurrentTurnAgentProjection, mergeTeacherAgentEventsIntoMessages } from "@/lib/teacher-agent-events";
 import type { TeacherAgentEvent } from "@/lib/teacher-agent-events";
 
 type ShanHaiAssistantRuntimeProps = ShanHaiThreadProps & {
@@ -40,7 +40,7 @@ export function ShanHaiAssistantRuntime({
     () => mergeTeacherAgentEventsIntoMessages(messages, agentEvents),
     [agentEvents, messages],
   );
-  const hasLiveAgentProjection = runtimeMessages.some((message) => Boolean(message.projectionKind));
+  const hasLiveAgentProjection = hasCurrentTurnAgentProjection(messages, agentEvents);
   const runtime = useExternalStoreRuntime<ChatMessage>({
     messages: runtimeMessages,
     convertMessage: chatMessageToAssistantUi,

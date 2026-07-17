@@ -48,15 +48,15 @@ test("M58 no longer derives a fixed macro stage from artifacts or text", () => {
   assert.equal(existsSync(path.join(root, "src/components/conversation/StageProgress.tsx")), false);
 });
 
-test("M58 shows teacher-readable execution feedback while sending", () => {
+test("M58 shows neutral waiting feedback until persisted activity exists", () => {
   const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
   const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
   const indicatorSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
 
   assert.match(controllerSource, /executionFeedback/);
-  assert.match(controllerSource, /正在理解你的备课要求/);
-  assert.match(controllerSource, /正在组织教案、课件和素材任务/);
-  assert.match(controllerSource, /正在保存本轮成果/);
+  assert.doesNotMatch(controllerSource, /正在理解你的备课要求/);
+  assert.doesNotMatch(controllerSource, /正在组织教案、课件和素材任务/);
+  assert.doesNotMatch(controllerSource, /正在保存本轮成果/);
   assert.match(conversationSource, /executionFeedback/);
   assert.doesNotMatch(controllerSource, /stageIndex/);
   assert.doesNotMatch(conversationSource, /deriveWorkbenchStageIndex|StageProgress/);

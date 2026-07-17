@@ -70,6 +70,14 @@
 
 ### 阶段C：Observation与消息投影
 
+状态：**GO（局部）**。阶段C合并绿证据使用隔离库`.tmp/stage-c-precommit-final-2-20260717.db`、单worker，于2026-07-17执行：
+
+- 9个阶段C及直接依赖Vitest文件：`141/141`。
+- assistant-ui event route与M58 Node合同：`5/5`。
+- 后端Observation/ValidationReport身份定向：`46/46`。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过（仅Git行尾转换提示）。
+
 - Dispatcher/ValidationReport身份原子性测试。
 - stream projection与assistant-ui adapter顺序测试。
 - 等待态生命周期与固定伪文案静态合同。

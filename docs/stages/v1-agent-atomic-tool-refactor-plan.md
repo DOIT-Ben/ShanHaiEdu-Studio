@@ -37,16 +37,18 @@
 - RMD-P1-05：PPT批次逐Provider submission计预算并持久化，部分失败停止且恢复不重复扣费。
 - 暂停状态合同补充收敛：教师可见plan为`paused`，TaskAggregate为`paused_recovery`；恢复保持task/digest/epoch并原子清除普通恢复点，ReAct checkpoint保留到模型续轮读取。
 
+### 阶段C已关闭
+
+- RMD-P1-07：实时与刷新共用sequence timeline reducer；同Tool状态合并并保留sequence首尾，文本、Tool、Observation、Artifact和终态不再按类型重排。
+- RMD-P1-08：终态失败只在reasonCode和完整evidenceRefs相同时去重，不同原因不得被旧Tool失败遮蔽。
+- RMD-P2-01/P2-02：删除客户端伪等待阶段；只有当前pending turn的持久活动能隐藏中性等待，历史completed不再误判live。
+- RMD-P2-03：Dispatcher blocked返回、事件、Invocation和存储复用同一Observation ID。
+- RMD-P2-04：失败ValidationReport先校验并重签为invocation-bound报告，与Observation/Event原子持久化后才返回模型引用。
+
 ### 尚未满足设计
 
 | ID | 级别 | 已确认问题 | 根因/责任层 |
 |---|---|---|---|
-| RMD-P1-07 | P1 | 同turn文本与Tool事件被重排为活动在前、合并文本在后 | 消息投影排序 |
-| RMD-P1-08 | P1 | 任意旧Tool失败可遮蔽不同原因的最终`run_failed` | 失败身份与去重 |
-| RMD-P2-01 | P2 | 客户端仍含固定“正在理解/正在组织...”伪等待文案 | 等待态投影 |
-| RMD-P2-02 | P2 | 任意completed projection会隐藏真实等待提示 | 等待态生命周期 |
-| RMD-P2-03 | P2 | Dispatcher blocked路径持久化与返回的Observation ID不一致 | Observation身份 |
-| RMD-P2-04 | P2 | 失败Tool的ValidationReport digest返回模型但报告未持久化 | 原子失败提交 |
 | RMD-P2-06 | P2 | Provider未配置时native intake抛内部错误，绕过教师安全回复 | 入口错误恢复 |
 | RMD-P2-07 | P2 | `/api/health`不检查新增列和控制面表 | schema readiness |
 
@@ -94,6 +96,8 @@
 
 ### 阶段C：Observation与消息投影
 
+阶段状态：**LOCAL GO**（总整改门仍为RED）。
+
 涉及：RMD-P1-07、P1-08、P2-01、P2-02、P2-03、P2-04。
 
 修改范围：Dispatcher、失败原子提交、stream projection、message adapter/renderers、等待态与失败去重。
@@ -104,6 +108,8 @@
 - 同turn文本、Tool、Observation和Artifact按真实发生顺序投影。
 - 失败按原因和终态身份去重，不由旧失败遮蔽新`run_failed`。
 - 无持久化活动事实时只显示中性等待与真实耗时；completed历史投影不隐藏当前等待。
+
+本阶段实际完成：blocked Observation ID和失败ValidationReport由同一原子提交事实驱动；`agentTimeline`统一实时与刷新投影并在queue终态后回写assistant message；相邻文本合并、同Tool状态合并且保留事件sequence范围；最终正文与流式正文不一致时仍完整保留；失败按reason/evidence身份去重；客户端不再注入“正在理解/组织/保存”等未持久动作，当前等待只由当前pending turn活动控制。
 
 ### 阶段D：健康与恢复
 

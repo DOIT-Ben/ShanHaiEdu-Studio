@@ -14,7 +14,7 @@ import { actionRiskForTool, createPendingDecisionForAction, evaluateActionPolicy
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { resolveBudgetUpgrade, resolveStandardTaskBudget } from "@/server/guards/task-budget-policy";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
-import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
+import { createValidationReport, hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
 import { adaptPptAgentCriticReview } from "@/server/ppt-quality/ppt-agent-critic-review-adapter";
@@ -37,6 +37,7 @@ import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-s
 import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import type { ToolDefinition } from "@/server/tools/tool-types";
+import type { ValidationReport } from "@/server/quality/quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactRecord, ConversationMessageRecord, ExecutionIdentitySnapshot, GenerationJobRecord, ProjectExecutionFence, ProjectRecord, SaveArtifactInput } from "@/server/workbench/types";
 import type { MainConversationAgentInput } from "./main-conversation-agent";
@@ -999,6 +1000,7 @@ export function createMainAgentToolLoopOptions(
       if (dispatch.kind === "blocked") {
         if (executionEnvelope) {
           const blockedObservation = createAgentObservation({
+            observationId: dispatch.result.observation.observationId,
             projectId: input.project.id,
             source: "tool",
             status: "blocked",
@@ -1060,10 +1062,20 @@ export function createMainAgentToolLoopOptions(
             ...validationFailureDetails(dispatch.result.validationReport),
           ])];
           const reasonCodes = [...new Set([primaryReason, ...failureDetails])];
+          const invocationValidationReport = bindFailureValidationReportToInvocation(
+            dispatch.result.validationReport,
+            invocationId,
+            input.project.intentEpoch ?? 0,
+          );
+          const reportRefs = invocationValidationReport ? [{
+            id: invocationValidationReport.reportId,
+            kind: "validation" as const,
+            digest: invocationValidationReport.reportDigest,
+          }] : [];
           const observation = createAgentObservation({
             projectId: input.project.id, source: "tool", status: dispatch.result.status === "needs_input" ? "inconclusive" : "failed",
             actionKey: dispatch.result.toolId, inputHash: hashRunInput({ toolId: dispatch.result.toolId, call: call.arguments }),
-            reasonCodes, reportRefs: [], targetLocators: [],
+            reasonCodes, reportRefs, targetLocators: [],
             responsibleStage: dispatch.result.capabilityId, minimalNextAction: "repair_upstream",
             teacherSafeSummary: dispatch.result.status === "needs_input" ? dispatch.result.assistantPrompt : dispatch.result.observation.teacherSafeSummary,
           });
@@ -1087,6 +1099,7 @@ export function createMainAgentToolLoopOptions(
                 ...(providerBudgetEvent ? { budgetEvent: structuredClone(providerBudgetEvent) } : {}),
               } as unknown as Record<string, unknown>,
             },
+            ...(invocationValidationReport ? { validationReport: invocationValidationReport } : {}),
             event: {
               eventId: randomUUID(),
               projectId: input.project.id,
@@ -1104,11 +1117,7 @@ export function createMainAgentToolLoopOptions(
           return {
             status: observationStatusForModel(observation),
             observation: observationForContinuation(observation, {
-              reportRefs: dispatch.result.validationReport ? [{
-                id: dispatch.result.validationReport.reportId,
-                kind: "validation",
-                digest: dispatch.result.validationReport.reportDigest,
-              }] : [],
+              reportRefs,
               nextAction: "replan",
               reasonCodes,
               summary: dispatch.result.status === "needs_input"
@@ -1513,6 +1522,22 @@ const reviewableOutputs: readonly TaskRequestedOutput[] = [
 function taskBriefAllowsAny(taskBrief: TaskBrief | undefined, outputs: readonly TaskRequestedOutput[]): boolean {
   if (!taskBrief) return false;
   return outputs.some((output) => taskBrief.requestedOutputs.includes(output) && !taskBrief.excludedOutputs.includes(output));
+}
+
+function bindFailureValidationReportToInvocation(
+  report: ValidationReport | undefined,
+  invocationId: string,
+  intentEpoch: number,
+): ValidationReport | undefined {
+  if (!report || report.overallStatus !== "failed" || !hasValidValidationReportDigest(report)) return undefined;
+  const { reportDigest: _reportDigest, reportId: _reportId, createdAt: _createdAt, ...semanticReport } = report;
+  return createValidationReport({
+    ...semanticReport,
+    reportId: randomUUID(),
+    createdAt: new Date().toISOString(),
+    target: { kind: "tool_invocation", targetId: invocationId },
+    intentEpoch,
+  });
 }
 
 function toRuntimeProjectContext(project: ProjectRecord, taskBrief?: TaskBrief) {

@@ -21,7 +21,18 @@ describe("conversation terminal events", () => {
 
     await drainProjectConversationQueue(project.id, {
       service,
-      executor: async ({ service: guarded }) => {
+      executor: async ({ service: guarded, job }) => {
+        await createControlPlaneStore().appendEvent({
+          eventId: crypto.randomUUID(),
+          projectId: project.id,
+          taskId: `conversation-turn:${job.id}`,
+          runId: `turn:${teacher.id}`,
+          intentEpoch: 0,
+          kind: "tool_started",
+          visibility: "teacher",
+          occurredAt: new Date().toISOString(),
+          payload: { activityId: "tool:outline", label: "生成课件结构", status: "running" },
+        });
         const assistant = await guarded.addMessage(project.id, { role: "assistant", content: "课件结构已经整理完成。" });
         return { assistantMessageId: assistant.id };
       },
@@ -35,6 +46,12 @@ describe("conversation terminal events", () => {
       visibility: "teacher",
       payload: { text: "课件结构已经整理完成。" },
     });
+    const assistant = (await service.getMessages(project.id)).find((message) => message.role === "assistant");
+    expect(assistant?.metadata.agentTimeline).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "activity", activityId: "tool:outline" }),
+      expect.objectContaining({ type: "text", text: "课件结构已经整理完成。" }),
+      expect.objectContaining({ type: "activity", status: "completed" }),
+    ]));
   });
 
   it("does not mark a TurnJob succeeded while its TaskAggregate still has requested outputs", async () => {

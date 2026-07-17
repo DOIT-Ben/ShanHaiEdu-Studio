@@ -106,7 +106,7 @@ describe("conversation streaming progress", () => {
           kind: "task",
           proposal: {
             goal: "为五年级数学百分数形成 PPT 结构候选，不生成 PPTX",
-            requestedOutputs: ["ppt"],
+            requestedOutputs: ["ppt_outline"],
             constraints: ["五年级", "数学"],
             excludedOutputs: ["ppt"],
           },

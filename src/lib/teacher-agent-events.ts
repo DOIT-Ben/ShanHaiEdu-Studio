@@ -86,6 +86,9 @@ export function teacherAgentEventToActivityPart(event: TeacherAgentEvent): Activ
   return {
     type: "activity",
     schemaVersion: MESSAGE_PART_VERSION,
+    sourceEventIds: [event.eventId],
+    sourceSequence: event.sequence,
+    sourceSequenceEnd: event.sequence,
     ...structuredClone(event.payload.activity),
   };
 }
@@ -109,94 +112,115 @@ export function collectPersistentTeacherMessageParts(
   events: AgentEventEnvelope[],
   runId: string,
 ): MessagePart[] {
+  return buildTeacherAgentTimeline(events
+    .filter((event) => event.runId === runId)
+    .map(projectTeacherAgentEvent)
+    .filter((event): event is TeacherAgentEvent => Boolean(event)));
+}
+
+export function buildTeacherAgentTimeline(events: TeacherAgentEvent[]): MessagePart[] {
   const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
-  const latestByActivity = new Map<string, { event: TeacherAgentEvent; firstSequence: number }>();
+  const includeSuccessfulTerminal = ordered.some((event) => isSubstantiveActivityEvent(event.kind));
+  const timeline: MessagePart[] = [];
+  let pendingText: TextMessagePart | undefined;
+  let sawText = false;
+
+  const flushText = () => {
+    if (pendingText?.text) timeline.push(pendingText);
+    pendingText = undefined;
+  };
+
   for (const event of ordered) {
-    if (event.runId !== runId || !isBusinessActivityEvent(event.kind)) continue;
-    const projected = projectTeacherAgentEvent(event);
-    if (!projected) continue;
-    if (isGenericFailureShadowed(projected, latestByActivity)) continue;
-    const activityId = projected.payload.activity.activityId;
-    const existing = latestByActivity.get(activityId);
-    latestByActivity.set(activityId, { event: projected, firstSequence: existing?.firstSequence ?? event.sequence });
+    if (isTextEvent(event.kind)) {
+      const text = event.payload.text ?? "";
+      if (event.kind === "text_started") flushText();
+      if (text && (event.kind !== "text_completed" || !sawText)) {
+        if (!pendingText) pendingText = textEventPart(text, event);
+        else {
+          pendingText.text += text;
+          pendingText.sourceEventIds = [...(pendingText.sourceEventIds ?? []), event.eventId];
+          pendingText.sourceSequenceEnd = event.sequence;
+        }
+        sawText = true;
+      } else if (event.kind === "text_completed" && pendingText) {
+        pendingText.sourceEventIds = [...(pendingText.sourceEventIds ?? []), event.eventId];
+        pendingText.sourceSequenceEnd = event.sequence;
+      }
+      continue;
+    }
+    if (!isBusinessActivityEvent(event.kind) || (event.kind === "run_completed" && !includeSuccessfulTerminal)) continue;
+    flushText();
+    if (isDuplicateTerminalFailure(event, timeline)) continue;
+    const eventParts = teacherAgentEventToMessageParts(event);
+    if (event.kind === "tool_observed") {
+      const nextActivity = eventParts.find((part): part is ActivityMessagePart => part.type === "activity");
+      const existingIndex = nextActivity ? timeline.findIndex((part) =>
+        part.type === "activity" && part.activityId === nextActivity.activityId && part.activityKind === "tool",
+      ) : -1;
+      if (nextActivity && existingIndex >= 0) {
+        const existing = timeline[existingIndex] as ActivityMessagePart;
+        timeline[existingIndex] = {
+          ...nextActivity,
+          sourceEventIds: [...(existing.sourceEventIds ?? []), ...(nextActivity.sourceEventIds ?? [])],
+          sourceSequence: existing.sourceSequence,
+          sourceSequenceEnd: nextActivity.sourceSequenceEnd,
+        };
+        continue;
+      }
+    }
+    timeline.push(...eventParts);
   }
-  return [...latestByActivity.values()]
-    .sort((left, right) => left.firstSequence - right.firstSequence)
-    .flatMap(({ event }) => teacherAgentEventToMessageParts(event));
+  flushText();
+  return timeline;
 }
 
 export function mergeTeacherAgentEventsIntoMessages(
   messages: ChatMessage[],
   events: TeacherAgentEvent[],
 ): ChatMessage[] {
-  const textByRun = new Map<string, string>();
-  const activityByRun = new Map<string, Map<string, { event: TeacherAgentEvent; firstSequence: number }>>();
   const orderedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
   const runIds = new Set<string>();
-  for (const event of orderedEvents) {
-    runIds.add(event.runId);
-    let text = textByRun.get(event.runId) ?? "";
-    const eventText = typeof event.payload.text === "string" ? event.payload.text : "";
-    if (event.kind === "text_started") text = eventText;
-    else if (event.kind === "text_delta") text += eventText;
-    else if (event.kind === "text_completed" && eventText) text = eventText;
-    textByRun.set(event.runId, text);
-    if (isBusinessActivityEvent(event.kind)) {
-      const runActivities = activityByRun.get(event.runId) ?? new Map();
-      if (isGenericFailureShadowed(event, runActivities)) continue;
-      const existing = runActivities.get(event.payload.activity.activityId);
-      runActivities.set(event.payload.activity.activityId, {
-        event,
-        firstSequence: existing?.firstSequence ?? event.sequence,
-      });
-      activityByRun.set(event.runId, runActivities);
-    }
-  }
+  for (const event of orderedEvents) runIds.add(event.runId);
 
   const runs = [...runIds]
     .map((runId) => ({
       runId,
-      entries: [...(activityByRun.get(runId)?.values() ?? [])].sort((left, right) => left.firstSequence - right.firstSequence),
       runEvents: orderedEvents.filter((event) => event.runId === runId),
     }))
+    .map((run) => ({ ...run, timeline: buildTeacherAgentTimeline(run.runEvents) }))
     .sort((left, right) => (left.runEvents[0]?.sequence ?? 0) - (right.runEvents[0]?.sequence ?? 0));
-  const activityPartsByTeacherMessageId = new Map<string, MessagePart[]>();
+  const timelineByTeacherMessageId = new Map<string, MessagePart[]>();
   for (const run of runs) {
     const teacherMessageId = teacherMessageIdFromRun(run.runId);
-    if (!teacherMessageId || !run.entries.length) continue;
-    activityPartsByTeacherMessageId.set(
-      teacherMessageId,
-      run.entries.flatMap(({ event }) => teacherAgentEventToMessageParts(event)),
-    );
+    if (!teacherMessageId || !run.timeline.length) continue;
+    timelineByTeacherMessageId.set(teacherMessageId, run.timeline);
   }
   const messagesWithSettledActivities = messages.map((message) => {
     if (message.speaker !== "assistant" || !message.turnSourceMessageId) return message;
-    const activityParts = activityPartsByTeacherMessageId.get(message.turnSourceMessageId);
-    if (!activityParts?.length) return message;
+    const timeline = timelineByTeacherMessageId.get(message.turnSourceMessageId);
+    if (!timeline?.length) return message;
     return {
       ...message,
-      parts: mergeActivityParts(
-        activityParts,
+      parts: mergeTimelineParts(
+        timeline,
         message.parts?.length ? message.parts : legacyContentToMessageParts(message.body),
+        message.body,
       ),
     };
   });
   const activities = runs
     .filter(({ runId }) => !hasPersistedAssistantResponse(messages, runId))
     .slice(-8)
-    .flatMap<ChatMessage>(({ runId, entries, runEvents }) => {
-      const text = textByRun.get(runId) ?? "";
-      if (!entries.length && !text) return [];
-      const latest = entries.at(-1)?.event ?? runEvents.at(-1)!;
-      const projectionKind = entries.length ? "agent-activity" as const : "agent-response" as const;
+    .flatMap<ChatMessage>(({ runId, timeline, runEvents }) => {
+      const text = timeline.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
+      if (!timeline.length) return [];
+      const latest = runEvents.at(-1)!;
+      const projectionKind = timeline.some((part) => part.type === "activity") ? "agent-activity" as const : "agent-response" as const;
       return [{
         id: `${projectionKind}:${runId}`,
         speaker: "assistant",
         body: text,
-        parts: [
-          ...entries.flatMap(({ event }) => teacherAgentEventToMessageParts(event)),
-          ...(text ? [textEventPart(text)] : []),
-        ],
+        parts: timeline,
         projectionKind,
         timeLabel: formatEventTime(latest.occurredAt),
       }];
@@ -205,32 +229,41 @@ export function mergeTeacherAgentEventsIntoMessages(
   return activities.length ? [...messagesWithSettledActivities, ...activities] : messagesWithSettledActivities;
 }
 
-function mergeActivityParts(activityParts: MessagePart[], messageParts: MessagePart[]) {
-  const existingActivityIds = new Set(messageParts.flatMap((part) =>
-    part.type === "activity" ? [part.activityId] : [],
-  ));
-  const existingDialogueIds = new Set(messageParts.flatMap((part) =>
-    part.type === "dialogue-checkpoint" ? [part.checkpointId] : [],
-  ));
-  return [
-    ...activityParts.filter((part) =>
-      part.type === "activity" ? !existingActivityIds.has(part.activityId)
-        : part.type === "dialogue-checkpoint" ? !existingDialogueIds.has(part.checkpointId)
-          : true),
-    ...messageParts,
-  ];
+function mergeTimelineParts(timeline: MessagePart[], messageParts: MessagePart[], messageBody: string) {
+  const liveEventIds = new Set(timeline.flatMap((part) => part.sourceEventIds ?? []));
+  const persistedTimeline = messageParts.filter((part) => part.sourceEventIds?.length);
+  const missingPersisted = persistedTimeline.filter((part) =>
+    !(part.sourceEventIds ?? []).some((eventId) => liveEventIds.has(eventId)),
+  );
+  const sequenced = [...missingPersisted, ...timeline]
+    .sort((left, right) => (left.sourceSequence ?? Number.MAX_SAFE_INTEGER) - (right.sourceSequence ?? Number.MAX_SAFE_INTEGER));
+  const liveText = sequenced.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
+  const unsequenced = messageParts.filter((part) => !part.sourceEventIds?.length)
+    .filter((part) => part.type !== "text" || (liveText !== messageBody && part.text !== liveText));
+  return [...sequenced, ...unsequenced];
+}
+
+export function hasCurrentTurnAgentProjection(messages: ChatMessage[], events: TeacherAgentEvent[]) {
+  const currentTeacherMessage = [...messages].reverse().find((message) =>
+    message.speaker === "teacher" && (message.turnStatus === "queued" || message.turnStatus === "running"),
+  );
+  if (!currentTeacherMessage) return false;
+  return buildTeacherAgentTimeline(events.filter((event) => event.runId === `turn:${currentTeacherMessage.id}`)).length > 0;
 }
 
 export function shouldRefreshSnapshotForAgentEvent(event: TeacherAgentEvent) {
   return event.kind !== "text_started" && event.kind !== "text_delta";
 }
 
-function textEventPart(text: string): TextMessagePart {
+function textEventPart(text: string, event: TeacherAgentEvent): TextMessagePart {
   return {
     type: "text",
     schemaVersion: MESSAGE_PART_VERSION,
     text,
     format: "plain",
+    sourceEventIds: [event.eventId],
+    sourceSequence: event.sequence,
+    sourceSequenceEnd: event.sequence,
   };
 }
 
@@ -364,9 +397,14 @@ function isBusinessActivityEvent(kind: AgentEventKind) {
     "decision_pending",
     "artifact_committed",
     "quality_updated",
+    "run_completed",
     "run_failed",
     "task_failed",
   ].includes(kind);
+}
+
+function isSubstantiveActivityEvent(kind: AgentEventKind) {
+  return isBusinessActivityEvent(kind) && kind !== "run_completed" && kind !== "run_failed" && kind !== "task_failed";
 }
 
 function isTeacherAgentEvent(value: unknown): value is TeacherAgentEvent {
@@ -454,16 +492,21 @@ function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function isGenericFailureShadowed(
-  event: TeacherAgentEvent,
-  activities: Map<string, { event: TeacherAgentEvent; firstSequence: number }>,
-) {
+function isDuplicateTerminalFailure(event: TeacherAgentEvent, timeline: MessagePart[]) {
   const genericTerminalFailure = event.kind === "run_failed" || event.kind === "task_failed" ||
     (event.kind === "activity_updated" && event.payload.activity.status === "failed" && event.payload.activity.activityKind !== "tool");
   if (!genericTerminalFailure) return false;
-  return [...activities.values()].some(({ event: candidate }) =>
-    candidate.payload.activity.activityKind === "tool" &&
-    (candidate.payload.activity.status === "failed" || candidate.payload.activity.status === "blocked"));
+  const reasonCode = event.payload.activity.reasonCode;
+  const evidence = [...event.payload.activity.evidenceRefs].sort();
+  if (!reasonCode || !evidence.length) return false;
+  return timeline.some((part) => part.type === "activity"
+    && (part.status === "failed" || part.status === "blocked")
+    && part.reasonCode === reasonCode
+    && sameStrings([...part.evidenceRefs].sort(), evidence));
+}
+
+function sameStrings(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function optionalText(value: unknown) {

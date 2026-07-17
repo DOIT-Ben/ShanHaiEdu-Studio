@@ -131,8 +131,8 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     intentEpoch,
     goal: "Generate one classroom image from the current PPT outline.",
     requestedOutputs: ["image"],
-    constraints: ["offline_contract_fixture"],
-    excludedOutputs: ["real_provider"],
+    constraints: ["offline_contract_fixture", "do_not_call_real_provider"],
+    excludedOutputs: [],
     generationIntensity: project.generationIntensity ?? "standard",
     sourceMessageId: `message:${project.id}`,
   });

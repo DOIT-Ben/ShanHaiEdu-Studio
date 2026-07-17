@@ -48,7 +48,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   const [composerArtifactRefs, setComposerArtifactRefs] = useState<string[]>([]);
   const [composerSubmitting, setComposerSubmitting] = useState(false);
   const [turnJobs, setTurnJobs] = useState<ConversationTurnJob[]>([]);
-  const [executionFeedback, setExecutionFeedback] = useState<WorkbenchExecutionFeedback | null>(null);
+  const executionFeedback: WorkbenchExecutionFeedback | null = null;
   const [notice, setNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
@@ -516,7 +516,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     setComposerArtifactRefs([]);
     composerSubmittingRef.current = true;
     setComposerSubmitting(true);
-    setExecutionFeedback({ label: "正在理解你的备课要求" });
     setMessages((current) => [...current, optimisticMessage]);
     flashComposerNotice(projectBusy ? "已加入队列" : "已发送，正在生成");
     try {
@@ -533,7 +532,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
         snapshotRequest = beginSnapshotRequest(targetProjectId);
       }
 
-      setExecutionFeedback({ label: "正在组织教案、课件和素材任务" });
       const messageSignature = buildClientMessageSignature(targetProjectId, body, submittedReference, confirmationActionId, xiaokuResponseStyle, artifactRefs);
       const sendOptions: WorkbenchSendMessageOptions = {
         idempotencyKey: getRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature),
@@ -546,7 +544,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
         artifactRefs,
         ...sendOptions,
       });
-      setExecutionFeedback({ label: "正在保存本轮成果" });
       if (!snapshotRequest) throw new Error("Conversation snapshot commit token is missing.");
       applySnapshot(snapshot, snapshotRequest);
       messageIdempotencyRef.current = null;
@@ -561,7 +558,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     } finally {
       composerSubmittingRef.current = false;
       setComposerSubmitting(false);
-      setExecutionFeedback(null);
     }
   }
 

@@ -4,7 +4,7 @@
 
 本目录只保留当前架构不变量、V1.0重构设计和已接受ADR。历史架构包、早期五平面/十二系统材料和已被覆盖的ADR已归档。
 
-当前实现尚未完全满足本架构。阶段A已收敛HumanGate恢复、控制抢先和持久授权复核；阶段B已收敛Tool独立资格、canonical局部TaskBrief、共享范围策略和Provider逐调用预算。Observation/ValidationReport原子失败事实、真实消息顺序、等待态、失败去重、Provider未配置恢复和schema readiness仍处于整改中。唯一实施路线和验收门以`..\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan为准；不得把局部合同通过上推为产品E2E或发布证据。
+当前实现尚未完全满足本架构。阶段A已收敛HumanGate恢复、控制抢先和持久授权复核；阶段B已收敛Tool独立资格、canonical局部TaskBrief、共享范围策略和Provider逐调用预算；阶段C已收敛Observation/ValidationReport失败身份、真实消息顺序、等待态和失败去重。Provider未配置恢复和schema readiness仍处于整改中。唯一实施路线和验收门以`..\stages\v1-agent-atomic-tool-refactor-plan.md`及对应test-plan为准；不得把局部合同通过上推为产品E2E或发布证据。
 
 ## 当前设计基线
 
@@ -20,7 +20,7 @@
 - `ToolExecutionGateway`强制ExecutionEnvelope、ActionPolicy、幂等和实际参数对账。
 - ToolInvocation、ValidationReport、Observation、Artifact、GenerationJob和事件按同一结果原子提交。
 - TaskBrief冻结目标、canonical输出范围、课程上下文、初始可信输入引用和质量目标；IntentGrant独占预算与授权；TaskAggregate/ExecutionEnvelope绑定plan revision；checkpoint与SemanticSnapshot保存动态可信Artifact、Observation和恢复事实。
-- assistant-ui只消费项目自有MessagePart和AgentEventEnvelope，不成为业务真源。
+- assistant-ui只消费项目自有MessagePart和AgentEventEnvelope，不成为业务真源；`agentTimeline`按真实sequence持久化并在queue终态后回写，历史completed不能替代当前turn活动。
 - Provider和Skill通过Adapter与Binding Policy接入，不进入React组件，不取得编排权。
 - mock、deterministic、placeholder和degraded产物不能提升为生产Artifact。
 

@@ -6,6 +6,7 @@ import type { ConversationTurnJobRecord } from "@/server/workbench/types";
 import type { ExecutionIdentitySnapshot, ProjectExecutionFence } from "@/server/workbench/types";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
+import { collectPersistentTeacherMessageParts } from "@/lib/teacher-agent-events";
 import { randomUUID } from "node:crypto";
 import type { MainAgentFailure } from "./main-agent-failure";
 import { createControlPlaneStore } from "./control-plane-store";
@@ -282,6 +283,16 @@ async function appendTerminalConversationEvents(input: {
         } : {}),
       },
     });
+    if (assistantMessage) {
+      const agentTimeline = collectPersistentTeacherMessageParts(
+        await store.listEvents(input.projectId),
+        runId,
+      );
+      await input.service.updateMessageMetadata(input.projectId, assistantMessage.id, {
+        ...assistantMessage.metadata,
+        ...(agentTimeline.length ? { agentTimeline } : {}),
+      });
+    }
   } catch {
     // The durable message and TurnJob are already committed; a later snapshot remains a safe recovery path.
   }

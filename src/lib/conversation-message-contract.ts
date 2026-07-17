@@ -3,6 +3,9 @@ export const MESSAGE_PART_VERSION = "message-part.v1" as const;
 type MessagePartBase<TType extends string> = {
   type: TType;
   schemaVersion: typeof MESSAGE_PART_VERSION;
+  sourceEventIds?: string[];
+  sourceSequence?: number;
+  sourceSequenceEnd?: number;
 };
 
 export type TextMessagePart = MessagePartBase<"text"> & {
@@ -148,11 +151,14 @@ export function projectConversationMessageParts(input: {
   artifactRefs?: ConversationMessageArtifactProjection[];
   metadata?: Record<string, unknown>;
 }): MessagePart[] {
-  const parts: MessagePart[] = legacyContentToMessageParts(input.content);
+  const metadata = isRecord(input.metadata) ? input.metadata : {};
+  const persistentTimeline = toPersistentTimelineParts(metadata.agentTimeline);
+  const parts: MessagePart[] = persistentTimeline.length
+    ? appendUnprojectedContent(persistentTimeline, input.content)
+    : legacyContentToMessageParts(input.content);
   if (input.role !== "assistant") return parts;
 
-  const metadata = isRecord(input.metadata) ? input.metadata : {};
-  const persistentActivities = toPersistentActivityParts(metadata.agentActivities);
+  const persistentActivities = persistentTimeline.length ? [] : toPersistentActivityParts(metadata.agentActivities);
   if (persistentActivities.length) parts.unshift(...persistentActivities);
   const dialogueCheckpoint = toDialogueCheckpointPart(metadata.dialogueCheckpoint);
   if (dialogueCheckpoint) parts.push(dialogueCheckpoint);
@@ -245,6 +251,9 @@ export function projectMessagePartsToAssistantUi(input: {
 
 function isMessagePart(value: unknown): value is MessagePart {
   if (!isRecord(value) || value.schemaVersion !== MESSAGE_PART_VERSION || typeof value.type !== "string") return false;
+  if ((value.sourceEventIds !== undefined && (!Array.isArray(value.sourceEventIds) || !value.sourceEventIds.every(isNonEmptyString)))
+    || (value.sourceSequence !== undefined && !isPositiveInteger(value.sourceSequence))
+    || (value.sourceSequenceEnd !== undefined && !isPositiveInteger(value.sourceSequenceEnd))) return false;
   switch (value.type) {
     case "text":
       return isNonEmptyString(value.text) && (value.format === "plain" || value.format === "markdown");
@@ -351,6 +360,25 @@ function toPersistentActivityParts(value: unknown): ActivityMessagePart[] {
   return value.flatMap((part) =>
     isMessagePart(part) && part.type === "activity" ? [structuredClone(part)] : [],
   );
+}
+
+function toPersistentTimelineParts(value: unknown): MessagePart[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((part) =>
+    isMessagePart(part) && (part.type === "text" || part.type === "activity") && part.sourceEventIds?.length
+      ? [structuredClone(part)]
+      : [],
+  );
+}
+
+function appendUnprojectedContent(timeline: MessagePart[], content: string): MessagePart[] {
+  if (!content) return timeline;
+  const projectedText = timeline.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
+  if (projectedText === content) return timeline;
+  if (projectedText && content.startsWith(projectedText)) {
+    return [...timeline, ...legacyContentToMessageParts(content.slice(projectedText.length))];
+  }
+  return [...timeline, ...legacyContentToMessageParts(content)];
 }
 
 export function toDialogueCheckpointPart(value: unknown): DialogueCheckpointMessagePart | undefined {

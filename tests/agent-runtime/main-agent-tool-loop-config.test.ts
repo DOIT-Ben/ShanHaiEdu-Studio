@@ -6,7 +6,7 @@ import { readAgentToolReportsFromMessages } from "@/server/tools/agent-tool-repo
 import { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { createWorkbenchActor } from "@/server/auth/actor";
-import { hashArtifactDraft } from "@/server/contracts/contract-validator";
+import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { buildAgentHarnessBudgetEvent, countSubmittedExternalProviderCalls, readAgentHarnessBudgetEventsFromMessages } from "@/server/conversation/agent-harness-budget";
 import { videoCourseAnchorHardGateIds } from "@/server/tools/video-course-anchor-gate";
 import { buildCapabilityAvailability } from "@/server/capabilities/capability-availability";
@@ -20,6 +20,7 @@ import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent
 import type { BusinessToolSkillRuntime } from "@/server/skills/business-tool-skill-runtime";
 import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
+import { prisma } from "@/server/db/client";
 
 describe("V1-3 Main Agent Agent Tool loop config", () => {
   it("atomically persists production ReAct segment checkpoints with the current semantic snapshot", async () => {
@@ -633,6 +634,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         payload: { status: "blocked" },
       });
       const observationId = String(blockedEvent?.payload.observationId ?? "");
+      expect(result.observation.observationId).toBe(observationId);
       const observation = await controlPlaneStore.getObservation(observationId);
       expect(observation).toMatchObject({ status: "blocked", reasonCodes: ["missing_grant"] });
       if (!observation?.invocationId) throw new Error("Blocked policy observation must bind its ToolInvocation.");
@@ -1468,10 +1470,8 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
         status: "failed",
         kind: "quality_gate_failed",
       }),
-      validationReport: {
+      validationReport: createValidationReport({
         reportId: "report-cycle",
-        reportDigest: "a".repeat(64),
-        authority: "deterministic" as const,
         domain: "ppt" as const,
         stage: "ppt_key_samples",
         target: { kind: "tool_execution" as const },
@@ -1488,7 +1488,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
           reasonCode: "sample_high_risk_page_missing",
         }],
         createdAt: new Date().toISOString(),
-      },
+      }),
     }));
     const intentGrant = {
       schemaVersion: "intent-grant.v1" as const,
@@ -1536,6 +1536,18 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       expect(readAgentObservationsFromMessages(messages).at(-1)?.reasonCodes)
         .toContain("sample_high_risk_page_missing");
       expect(readLatestRunCheckpointFromMessages(messages)).toBeNull();
+      const persistedReports = await prisma.validationReportRecord.findMany({
+        where: { projectId: project.id, stage: "ppt_key_samples" },
+      });
+      expect(persistedReports).toHaveLength(3);
+      for (const persisted of persistedReports) {
+        const report = JSON.parse(persisted.payloadJson) as { reportId: string; reportDigest: string; target: { kind: string; targetId?: string } };
+        expect(report).toMatchObject({
+          reportId: persisted.id,
+          reportDigest: persisted.reportDigest,
+          target: { kind: "tool_invocation", targetId: expect.any(String) },
+        });
+      }
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }

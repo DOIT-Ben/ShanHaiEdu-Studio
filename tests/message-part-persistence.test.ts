@@ -123,6 +123,29 @@ describe("message part persistence", () => {
     expect(parts.filter((part) => part.type === "error-recovery")).toHaveLength(1);
   });
 
+  it("retains final assistant content when it is not a prefix extension of streamed timeline text", () => {
+    const parts = projectConversationMessageParts({
+      role: "assistant",
+      content: "最终经过校正的回复。",
+      metadata: {
+        agentTimeline: [{
+          type: "text",
+          schemaVersion: MESSAGE_PART_VERSION,
+          text: "流式期间的回复。",
+          format: "plain",
+          sourceEventIds: ["event-text-1"],
+          sourceSequence: 1,
+          sourceSequenceEnd: 1,
+        }],
+      },
+    });
+
+    expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual([
+      "流式期间的回复。",
+      "最终经过校正的回复。",
+    ]);
+  });
+
   it("persists server projections when assistant metadata or Artifact refs change", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: `消息投影-${crypto.randomUUID()}` });

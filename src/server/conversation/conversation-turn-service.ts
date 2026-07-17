@@ -69,7 +69,7 @@ import {
 } from "@/server/skills/business-tool-skill-runtime";
 import { buildSemanticContextSnapshot, type SemanticContextSnapshot } from "./context-semantic-snapshot";
 import { findRemainingRequestedOutputs } from "./task-completion-contract";
-import { collectPersistentTeacherActivityParts } from "@/lib/teacher-agent-events";
+import { collectPersistentTeacherMessageParts } from "@/lib/teacher-agent-events";
 import { answerDialogueCheckpoint, isDialogueCheckpoint, type DialogueCheckpoint } from "./dialogue-checkpoint";
 import { rebindMainAgentReActCheckpointAuthorization, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
 
@@ -1030,7 +1030,7 @@ async function executeTeacherMessageTurn(input: {
       intentGrant,
     });
   }
-  const persistentActivities = collectPersistentTeacherActivityParts(
+  const persistentTimeline = collectPersistentTeacherMessageParts(
     await input.controlPlaneStore.listEvents(input.projectId),
     `turn:${input.triggerMessage.id}`,
   );
@@ -1046,7 +1046,7 @@ async function executeTeacherMessageTurn(input: {
     createUnavailableCapabilityObservationMetadata(input.projectId, input.triggerMessage, agentTurn, capabilityAvailability),
     runtimeFailureMetadata,
     { conversationControlDecision: controlResolution.decision },
-    persistentActivities.length ? { agentActivities: persistentActivities } : undefined,
+    persistentTimeline.length ? { agentTimeline: persistentTimeline } : undefined,
     isDialogueCheckpoint(input.triggerMessage.metadata.dialogueCheckpoint)
       ? { dialogueCheckpoint: input.triggerMessage.metadata.dialogueCheckpoint }
       : undefined,
@@ -1256,9 +1256,8 @@ export function capabilityTeacherLabel(toolName: string) {
 const taskOutputTeacherLabels: Record<string, string> = {
   requirement_spec: "需求规格",
   lesson_plan: "公开课教案",
-  ppt: "PPT 结构候选",
+  ppt: "可编辑 PPTX",
   ppt_outline: "PPT 结构候选",
-  pptx: "可编辑 PPTX",
   video_script: "视频脚本",
   image: "图片资产",
   video: "视频成片",

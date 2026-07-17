@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendTeacherAgentEvent,
+  collectPersistentTeacherMessageParts,
+  hasCurrentTurnAgentProjection,
   mergeTeacherAgentEventsIntoMessages,
   parseTeacherAgentEvent,
   projectTeacherAgentEvent,
   teacherAgentEventToActivityPart,
 } from "@/lib/teacher-agent-events";
+import { projectConversationMessageParts } from "@/lib/conversation-message-contract";
 import { normalizeSnapshot } from "@/lib/workbench-mappers";
 import { AGENT_EVENT_VERSION, type AgentEventEnvelope } from "@/server/conversation/agent-event-envelope";
 
@@ -116,7 +119,7 @@ describe("assistant-ui teacher event projection", () => {
     });
   });
 
-  it("keeps one concrete failed Tool step instead of adding a generic run failure step", () => {
+  it("keeps a terminal failure when its evidence differs from the earlier Tool failure", () => {
     const toolFailure = projectTeacherAgentEvent(event({
       eventId: "tool-failure",
       sequence: 1,
@@ -137,8 +140,32 @@ describe("assistant-ui teacher event projection", () => {
     ], [toolFailure, runFailure]);
     const activityParts = merged.at(-1)?.parts?.filter((part) => part.type === "activity") ?? [];
 
-    expect(activityParts).toHaveLength(1);
+    expect(activityParts).toHaveLength(2);
     expect(activityParts[0]).toMatchObject({ activityId: "tool-1", reasonCode: "outline_invalid" });
+    expect(activityParts[1]).toMatchObject({ activityId: "turn:message-teacher-1", reasonCode: "outline_invalid" });
+  });
+
+  it("deduplicates only a terminal failure with the same reason and evidence", () => {
+    const toolFailure = projectTeacherAgentEvent(event({
+      eventId: "tool-failure",
+      sequence: 1,
+      kind: "tool_observed",
+      visibility: "teacher",
+      payload: { activityId: "tool-1", label: "大纲未通过", status: "failed", observationId: "failure-1", reasonCode: "outline_invalid" },
+    }))!;
+    const runFailure = projectTeacherAgentEvent(event({
+      eventId: "run-failure",
+      sequence: 2,
+      kind: "run_failed",
+      visibility: "teacher",
+      payload: { label: "本轮未完成", status: "failed", observationId: "failure-1", reasonCode: "outline_invalid" },
+    }))!;
+
+    const parts = mergeTeacherAgentEventsIntoMessages([
+      { id: "message-teacher-1", speaker: "teacher", body: "做PPT" },
+    ], [toolFailure, runFailure]).at(-1)?.parts ?? [];
+
+    expect(parts.filter((part) => part.type === "activity")).toHaveLength(1);
   });
 
   it("keeps completed Tool steps in one ordered progress timeline for the turn", () => {
@@ -174,7 +201,7 @@ describe("assistant-ui teacher event projection", () => {
       projectionKind: "agent-activity",
     });
     expect(merged[1].parts).toEqual([
-      expect.objectContaining({ type: "activity", activityId: "tool-1", status: "succeeded" }),
+      expect.objectContaining({ type: "activity", activityId: "tool-1", status: "succeeded", sourceSequence: 1, sourceSequenceEnd: 2 }),
       expect.objectContaining({ type: "activity", activityId: "tool-2", status: "running" }),
     ]);
   });
@@ -291,6 +318,65 @@ describe("assistant-ui teacher event projection", () => {
         expect.objectContaining({ type: "text", text: "PPT outline" }),
       ],
     });
+  });
+
+  it("keeps text, Tool, Observation, Artifact and terminal in committed sequence across refresh", () => {
+    const envelopes = [
+      event({ eventId: "text-1", sequence: 1, kind: "text_delta", payload: { text: "先形成结构。" } }),
+      event({ eventId: "tool-1", sequence: 2, kind: "tool_started", payload: { activityId: "outline", label: "正在生成大纲", status: "running" } }),
+      event({ eventId: "observation-1", sequence: 3, kind: "tool_observed", payload: { activityId: "outline", label: "大纲已完成", status: "succeeded", observationId: "obs-1" } }),
+      event({ eventId: "artifact-1", sequence: 4, kind: "artifact_committed", payload: { label: "已保存大纲", status: "succeeded", artifactId: "artifact-outline" } }),
+      event({ eventId: "text-2", sequence: 5, kind: "text_delta", payload: { text: "可以继续审阅。" } }),
+      event({ eventId: "terminal-1", sequence: 6, kind: "run_completed", payload: { label: "本轮任务已经完成", status: "completed" } }),
+    ];
+    const projectedEvents = envelopes.map((item) => projectTeacherAgentEvent(item)!);
+    const liveParts = mergeTeacherAgentEventsIntoMessages([
+      { id: "message-teacher-1", speaker: "teacher", body: "做PPT" },
+    ], projectedEvents).at(-1)?.parts ?? [];
+    const persistedTimeline = collectPersistentTeacherMessageParts(envelopes, "turn:message-teacher-1");
+    const refreshedParts = projectConversationMessageParts({
+      role: "assistant",
+      content: "先形成结构。可以继续审阅。",
+      metadata: { agentTimeline: persistedTimeline },
+    });
+
+    const signature = (parts: typeof liveParts) => parts.map((part) =>
+      part.type === "text" ? `text:${part.text}` : `${part.type}:${"status" in part ? part.status : ""}`,
+    );
+    expect(signature(liveParts)).toEqual([
+      "text:先形成结构。",
+      "activity:succeeded",
+      "activity:succeeded",
+      "text:可以继续审阅。",
+      "activity:completed",
+    ]);
+    expect(signature(refreshedParts)).toEqual(signature(liveParts));
+  });
+
+  it("does not let a historical completed projection hide a new pending turn", () => {
+    const historical = [projectTeacherAgentEvent(event({
+      eventId: "old-terminal",
+      sequence: 1,
+      runId: "turn:message-teacher-old",
+      kind: "run_completed",
+      payload: { status: "completed" },
+    }))!];
+    const messages = [
+      { id: "message-teacher-old", speaker: "teacher" as const, body: "旧任务", turnStatus: "succeeded" as const },
+      { id: "message-teacher-new", speaker: "teacher" as const, body: "新任务", turnStatus: "running" as const },
+    ];
+
+    expect(hasCurrentTurnAgentProjection(messages, historical)).toBe(false);
+    expect(hasCurrentTurnAgentProjection(messages, [
+      ...historical,
+      projectTeacherAgentEvent(event({
+        eventId: "new-tool",
+        sequence: 2,
+        runId: "turn:message-teacher-new",
+        kind: "tool_started",
+        payload: { activityId: "new-tool", status: "running" },
+      }))!,
+    ])).toBe(true);
   });
 
   it("does not create a task timeline for response lifecycle events before the first Tool", () => {

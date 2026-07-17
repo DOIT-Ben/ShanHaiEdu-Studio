@@ -2,7 +2,7 @@
 
 更新时间：2026-07-17
 
-`docs\stages\`当前唯一活动阶段是V1.0 Main Agent唯一编排与原子Tool控制面整改。阶段A、B已达到本地局部Go，阶段C是唯一下一动作；总门状态仍为 **REMEDIATION IN PROGRESS / CONTRACT RED**。
+`docs\stages\`当前唯一活动阶段是V1.0 Main Agent唯一编排与原子Tool控制面整改。阶段A、B、C已达到本地局部Go，阶段D是唯一下一动作；总门状态仍为 **REMEDIATION IN PROGRESS / CONTRACT RED**。
 
 ## 活动文件
 
