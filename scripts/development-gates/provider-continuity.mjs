@@ -220,8 +220,22 @@ function runGit(root, args, description) {
 
 function collectChangedPaths(root) {
   const explicitBase = process.env.DEVELOPMENT_GATE_BASE_SHA?.trim();
-  const commands = explicitBase
-    ? [["diff", "--name-only", `${explicitBase}...HEAD`]]
+  if (explicitBase && !SHA1_PATTERN.test(explicitBase)) {
+    fail("DEVELOPMENT_GATE_BASE_SHA must be a Git SHA.");
+  }
+  let activeStageBase = null;
+  try {
+    const stage = readJsonFile(root, ACTIVE_STAGE_PATH, "Active stage declaration").value;
+    if (SHA1_PATTERN.test(stage?.baselineSha ?? "")) activeStageBase = stage.baselineSha;
+  } catch {
+    activeStageBase = null;
+  }
+  const comparisonBase = explicitBase || activeStageBase;
+  const commands = comparisonBase
+    ? [
+        ["diff", "--name-only", comparisonBase, "--"],
+        ["ls-files", "--others", "--exclude-standard"],
+      ]
     : [
         ["diff", "--name-only", "--cached"],
         ["diff", "--name-only"],

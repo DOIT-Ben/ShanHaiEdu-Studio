@@ -308,6 +308,28 @@ test("detectProviderImpact identifies sensitive files and rejects unsafe paths",
   );
 });
 
+test("detectProviderImpact includes committed sensitive changes from the active stage baseline", (t) => {
+  const root = setupRepository(t);
+  const baselineSha = git(root, "rev-parse", "HEAD");
+  const stagePath = path.join(root, "docs/stages/active-stage.json");
+  const stage = JSON.parse(readFileSync(stagePath, "utf8"));
+  stage.baselineSha = baselineSha;
+  writeJson(stagePath, stage);
+  writeFileSync(
+    path.join(root, "src/server/conversation/provider.ts"),
+    "export const provider = 'changed-real';\n",
+    "utf8",
+  );
+  git(root, "add", "docs/stages/active-stage.json", "src/server/conversation/provider.ts");
+  git(root, "commit", "--quiet", "-m", "committed sensitive change");
+
+  const impact = detectProviderImpact({ root, now: NOW });
+
+  assert.equal(impact.impacted, true);
+  assert.deepEqual(impact.matchedPaths, ["src/server/conversation/provider.ts"]);
+  assert.ok(impact.changedPaths.includes("docs/stages/active-stage.json"));
+});
+
 test("accepts a SHA-bound development receipt with three consecutive real runs", (t) => {
   const root = setupRepository(t);
   writeValidEvidence(root);
