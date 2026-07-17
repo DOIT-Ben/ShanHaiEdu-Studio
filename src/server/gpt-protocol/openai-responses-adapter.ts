@@ -8,16 +8,34 @@ import type {
   GptProtocolTelemetry,
   GptProtocolUsage,
 } from "./types";
+import {
+  digestProviderRequestId,
+  resolveProviderCallTraceRecorderFromEnv,
+  type ProviderCallTraceInput,
+  type ProviderCallTraceRecorder,
+} from "@/server/provider-ledger/provider-call-trace";
+
+type OpenAIResponsesTransportResult = {
+  data: unknown;
+  response: { status: number };
+  request_id: string | null;
+};
+
+type OpenAIResponsesCreateResult = Promise<unknown> | {
+  withResponse(): Promise<OpenAIResponsesTransportResult>;
+};
 
 type OpenAIResponsesAdapterClient = {
   responses: {
-    create(payload: Record<string, unknown>): Promise<unknown>;
+    create(payload: Record<string, unknown>): OpenAIResponsesCreateResult;
   };
 };
 
 type OpenAIResponsesGptAdapterOptions = {
   client: OpenAIResponsesAdapterClient;
   model: string;
+  providerChannel?: ProviderCallTraceInput["channel"];
+  traceRecorder?: ProviderCallTraceRecorder;
 };
 
 type OpenAIResponsesGptAdapter = {
@@ -25,19 +43,30 @@ type OpenAIResponsesGptAdapter = {
 };
 
 export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapterOptions): OpenAIResponsesGptAdapter {
+  const traceRecorder = options.traceRecorder ?? resolveProviderCallTraceRecorderFromEnv();
   return {
     async createResponse(request) {
       const startedAtMs = Date.now();
+      let httpStatus: number | null = null;
+      let requestIdDigest: string | null = null;
       try {
-        const rawResponse = await options.client.responses.create(createResponsesPayload(options.model, request));
+        const pending = options.client.responses.create(createResponsesPayload(options.model, request));
+        const transport = hasWithResponse(pending)
+          ? await pending.withResponse()
+          : { data: await pending, response: null, request_id: null };
+        const rawResponse = transport.data;
+        httpStatus = transport.response?.status ?? null;
+        requestIdDigest = digestProviderRequestId(transport.request_id);
         if (isAsyncIterable(rawResponse)) {
-          return consumeResponseStream(rawResponse, request, options.model, startedAtMs);
+          const response = await consumeResponseStream(rawResponse, request, options.model, startedAtMs);
+          await recordTrace(traceRecorder, options, startedAtMs, httpStatus, requestIdDigest, response.usage, null);
+          return response;
         }
         const rawText = extractRawText(rawResponse);
         const usage = extractUsage(rawResponse);
         const telemetry = createTelemetry(startedAtMs, undefined, 0, rawText, false);
 
-        return {
+        const response = {
           assistantText: rawText,
           rawText,
           functionCalls: extractFunctionCalls(rawResponse),
@@ -48,7 +77,12 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
           telemetry,
           diagnostics: createDiagnostics("succeeded", options.model),
         };
+        await recordTrace(traceRecorder, options, startedAtMs, httpStatus, requestIdDigest, usage, null);
+        return response;
       } catch (error) {
+        httpStatus ??= errorHttpStatus(error);
+        requestIdDigest ??= digestProviderRequestId(errorRequestId(error));
+        await recordTrace(traceRecorder, options, startedAtMs, httpStatus, requestIdDigest, null, error);
         const errorMessage = sanitizeDiagnosticText(extractErrorMessage(error));
         const telemetry = createTelemetry(startedAtMs, undefined, 0, "", true);
         await emitStreamEvent(request, { type: "response_failed", errorMessage, telemetry });
@@ -65,6 +99,71 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
       }
     },
   };
+}
+
+async function recordTrace(
+  recorder: ProviderCallTraceRecorder | undefined,
+  options: OpenAIResponsesGptAdapterOptions,
+  startedAtMs: number,
+  httpStatus: number | null,
+  requestIdDigest: string | null,
+  usage: ProviderCallTraceInput["usage"],
+  error: unknown,
+) {
+  if (!recorder) return;
+  const completedAtMs = Date.now();
+  const timeout = isTimeoutError(error);
+  try {
+    await recorder.record({
+      provider: "openai_responses",
+      channel: options.providerChannel ?? "unknown",
+      model: options.model,
+      startedAt: new Date(startedAtMs).toISOString(),
+      completedAt: new Date(completedAtMs).toISOString(),
+      durationMs: Math.max(0, completedAtMs - startedAtMs),
+      outcome: error ? "failed" : "succeeded",
+      httpStatus,
+      timeout,
+      requestIdDigest,
+      usage,
+      retryCount: 0,
+      errorCategory: classifyTraceError(error, httpStatus, timeout),
+    });
+  } catch {
+    // Missing evidence fails the capture campaign; telemetry must not replace the Provider result.
+  }
+}
+
+function hasWithResponse(value: OpenAIResponsesCreateResult): value is { withResponse(): Promise<OpenAIResponsesTransportResult> } {
+  return typeof value === "object" && value !== null && "withResponse" in value &&
+    typeof value.withResponse === "function";
+}
+
+function errorHttpStatus(error: unknown) {
+  return isRecord(error) && Number.isInteger(error.status) && Number(error.status) >= 100 && Number(error.status) <= 599
+    ? Number(error.status)
+    : null;
+}
+
+function errorRequestId(error: unknown) {
+  return isRecord(error) && typeof error.request_id === "string" ? error.request_id : null;
+}
+
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && (error.name === "APIConnectionTimeoutError" || /timeout|timed out/iu.test(error.message));
+}
+
+function classifyTraceError(
+  error: unknown,
+  status: number | null,
+  timeout: boolean,
+): ProviderCallTraceInput["errorCategory"] {
+  if (!error) return "none";
+  if (timeout) return "timeout";
+  if (status === 429) return "rate_limit";
+  if (status !== null) return "provider";
+  if (error instanceof Error && /connection|network|socket|fetch/iu.test(error.name + error.message)) return "transport";
+  return "unknown";
 }
 
 function createResponsesPayload(model: string, request: GptProtocolRequest): Record<string, unknown> {

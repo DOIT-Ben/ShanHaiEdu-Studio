@@ -8,6 +8,7 @@
 | `2026-07-14-adr-main-agent-react-checkpoint-compaction.md` | accepted | ReAct只保留确定性checkpoint、最近call/output配对和脱敏遥测 |
 | `2026-07-14-adr-r5-ppt-design-candidate-boundary.md` | accepted | 结构化语义候选与V1-9生产设计包分责 |
 | `2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md` | accepted | Main Agent唯一拥有业务编排权；旧工作流拆为原子Tool、Tool级Skill和质量规则 |
+| `2026-07-17-adr-project-development-gates.md` | accepted | 阶段路径、单调债务、SHA验证manifest和Provider receipt统一为失败关闭门禁 |
 
 未来候选ADR位于 `..\..\roadmap\architecture\`，不控制当前阶段。被覆盖或完成历史使命的ADR位于 `..\..\archive\`；旧文档不得恢复第二编排者、固定Tool顺序或宏节点自动推进。
 

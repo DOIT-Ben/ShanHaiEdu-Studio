@@ -6,7 +6,10 @@
 
 - 最近完成主线：V1.0 Main Agent唯一编排与原子Tool控制面整改。
 - 当前状态：**REMEDIATION VERIFIED / CONTRACT GO / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
-- 阶段A至E和8项P1、7项P2均通过本地整改门；完成计划已归档，当前无活动阶段。
+- 阶段A至E和8项P1、7项P2均通过本地整改门；完成计划已归档。
+- 当前唯一活动阶段：项目开发门禁制度化。P0-05A入场审计已证明既有Provider ledger不是逐调用权威事实源；一次性capture bootstrap及脱敏逐调用事实源已完成相关回归，尚未形成clean提交或激活P0-05A。
+- 当前阶段实现已通过本地dirty工作树验证；仍需在提交后由required CI生成clean候选manifest，且真实Provider receipt仍未取得。
+- 已接受的唯一下一阶段候选是P0-05A“真实Provider连续性与V1-9就绪”；当前只完成roadmap规划，尚未取得活动阶段执行权。
 - 整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`，分支`main`；只本地提交，未push。
 - 目标架构仍是`..\architecture\V1.0 重构设计.md`；当前代码已通过本轮审查问题对应的本地合同与执行验证，但不能据此宣称完整产品E2E或release完成。
 - R5整体尚未关闭。既有桌面单Tool成功和双Tool部分成功只证明局部产品链路；一次Main Agent续轮`502`仍是连续多轮稳定性缺口。
@@ -22,7 +25,9 @@
 
 ## 3. 当前未完成门
 
-本轮审查确认的15项整改问题已关闭。当前未完成项只有整改范围外的真实产品门：连续多轮Provider稳定性、唯一V1-9真实全链路、教师签收与release；不得把本地整改Go上推为这些事项完成。
+本轮审查确认的15项整改问题已关闭。防复发层已建立阶段路径、政策单调性、源码字符串合同、复杂度、SHA验证manifest和Provider receipt门；当前精确锁定26个源码字符串合同债务文件与31个复杂度债务文件，既存值只能收缩。真实Provider receipt尚不存在。新逐调用事实源已可记录SDK HTTP状态、timeout、哈希request ID、channel/model、usage和project/task/turn绑定，且不记录body、header、URL、凭据或错误原文；capture bootstrap仍明确返回`passed=false / deferred_capture_bootstrap`，release不接受。
+
+产品层未完成项仍是连续多轮Provider稳定性、唯一V1-9真实全链路、教师签收与release；不得把开发门通过或bootstrap延期上推为这些事项完成。
 
 ## 4. 五层状态
 
@@ -56,9 +61,13 @@
 
 工程残余：依赖安装审计报告6个moderate项；Lint 150条warning；Turbopack 13条动态文件追踪warning；首次子智能体隔离命令错误曾初始化默认`dev.db`，此后未读取或清理。以上不阻塞本地整改合同Go，但在release门必须重新评估。
 
+项目开发门禁阶段新鲜证据：门禁专属Node测试59项中58项通过、1项因当前Windows不允许创建测试符号链接而跳过；生产门仍拒绝符号链接。`verify:local`中的开发门、TypeScript、Lint、全量测试和生产构建5项均返回0，并生成绑定当前HEAD、Git tree、dirty工作树摘要、政策SHA与阶段SHA的manifest。Lint保持150条既存warning，构建保持13条动态追踪warning。Provider开发门只返回`passed=false / deferred_bootstrap`；release模式因缺少真实receipt返回`PROVIDER_RECEIPT_MISSING`，未执行真实Provider连续性或release。
+
+Provider capture入场新鲜证据：门禁/策略定向Node测试31项通过、1项Windows符号链接用例跳过；Provider trace、GPT协议、Main Agent和conversation turn相关Vitest `125/125`；标准全量`npm test`为Node `387/387`、Vitest `1562/1562`（197个文件）；TypeScript和生产构建通过，构建仍保留13条既存动态追踪warning。第一次全量入口暴露并修复旧源码字符串合同兼容表达；第二次因新增独立Prisma夹具导致共享SQLite锁冲突，删除重复夹具并把断言并入既有queued recovery用例后全量测试通过。以上均未调用真实Provider，不能上推为连续性receipt或model orchestration Go。
+
 ## 6. 唯一下一动作
 
-当前没有自动启动的下一阶段。若用户决定继续，唯一候选是backlog `P0-05`：按当前已验证合同重新规划V1-9、生成新manifest/runId并取得连续多轮Provider与真实产物证据；不得恢复旧V1-9材料。
+先完成全量本地验证，再审查并提交当前门禁阶段，在required CI中生成`dirty=false`且绑定候选SHA的manifest；没有clean manifest时不得关闭本阶段。之后只激活backlog `P0-05A`，先取得真实Provider连续性receipt并完成V1-9入口就绪审计；P0-05A Go后才允许进入P0-05B并创建新的V1-9 plan、manifest和runId。
 
 ## 7. 恢复入口
 
@@ -66,3 +75,6 @@
 - 设计基线：`..\architecture\V1.0 重构设计.md`
 - 完成计划与测试证据：`..\archive\2026-07-17-agent-atomic-tool-remediation\README.md`
 - 过期closeout：`..\archive\2026-07-17-remediation-baseline\v1-agent-atomic-tool-refactor-closeout.md`
+- 当前门禁合同：`..\contracts\development-quality-gate.md`
+- 当前门禁阶段：`..\stages\project-development-gates-plan.md`
+- 下一阶段候选：`..\roadmap\product\p0-05a-provider-continuity-readiness-spec.md`

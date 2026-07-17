@@ -1,8 +1,79 @@
 import { describe, expect, it } from "vitest";
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { classifyGptProviderCapability } from "@/server/gpt-protocol/model-capability-probe";
+import { runWithProviderCallTraceContext } from "@/server/provider-ledger/provider-call-trace";
 
 describe("GptProtocolAdapter", () => {
+  it("captures raw HTTP status and a hashed request id through SDK withResponse", async () => {
+    const records: unknown[] = [];
+    const response = { output_text: "真实结果" };
+    const client = {
+      responses: {
+        create() {
+          return {
+            withResponse: async () => ({
+              data: response,
+              response: new Response(null, { status: 200 }),
+              request_id: "req-secret-success",
+            }),
+          };
+        },
+      },
+    };
+    const adapter = createOpenAIResponsesGptAdapter({
+      client,
+      model: "test-model",
+      providerChannel: "primary",
+      traceRecorder: { record: async (record) => { records.push(record); return true; } },
+    });
+
+    await runWithProviderCallTraceContext(traceContext(), () => adapter.createResponse({
+      instructions: "test",
+      input: "test",
+    }));
+
+    expect(records).toEqual([expect.objectContaining({
+      outcome: "succeeded",
+      httpStatus: 200,
+      timeout: false,
+      requestIdDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      usage: expect.objectContaining({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      retryCount: 0,
+      errorCategory: "none",
+    })]);
+    expect(JSON.stringify(records)).not.toContain("req-secret-success");
+  });
+
+  it("captures Provider status and timeout classification without persisting error text", async () => {
+    const records: unknown[] = [];
+    const unsafeError = Object.assign(new Error("Bearer secret https://secret.example"), {
+      name: "APIConnectionTimeoutError",
+      status: 504,
+      request_id: "req-secret-timeout",
+    });
+    const adapter = createOpenAIResponsesGptAdapter({
+      client: fakeFailingResponsesClient(unsafeError),
+      model: "test-model",
+      providerChannel: "third",
+      traceRecorder: { record: async (record) => { records.push(record); return true; } },
+    });
+
+    await runWithProviderCallTraceContext(traceContext(), () => adapter.createResponse({
+      instructions: "test",
+      input: "test",
+    }));
+
+    expect(records).toEqual([expect.objectContaining({
+      outcome: "failed",
+      httpStatus: 504,
+      timeout: true,
+      requestIdDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      usage: null,
+      retryCount: 0,
+      errorCategory: "timeout",
+    })]);
+    expect(JSON.stringify(records)).not.toMatch(/secret|bearer|https?:\/\//i);
+  });
   it("returns assistant text from OpenAI Responses output_text", async () => {
     const client = fakeResponsesClient({ output_text: "老师您好，这是生成结果。" });
     const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });
@@ -374,5 +445,16 @@ function fakeFailingResponsesClient(error: Error) {
         throw error;
       },
     },
+  };
+}
+
+function traceContext() {
+  return {
+    projectId: "project-1",
+    taskId: "task-1",
+    runId: "turn:message-1",
+    turnJobId: "turn-job-1",
+    teacherMessageId: "message-1",
+    intentEpoch: 2,
   };
 }

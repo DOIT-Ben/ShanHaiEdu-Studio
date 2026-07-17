@@ -105,3 +105,16 @@ contract / executor / model orchestration / product E2E / release
 - 更新本文件前，必须在项目 archive 和 `C:\Users\HB\.codex\AGETNS-bak\` 各保存一份时间戳备份，并在更新后立即重新读取。
 - 不触碰 `.env`、密钥、私有API台账、SQLite/WAL/SHM、用户上传、Artifact、真实媒体、旧run状态或Git标签，除非用户明确授权具体操作。
 - 不在回复、日志、提交、文档或截图中明文展示密钥、token、账号和个人敏感信息。
+
+## 9. 自动开发门禁
+
+项目门禁的唯一政策源是 `config\development-gates.json`，当前阶段的机器可读范围源是 `docs\stages\active-stage.json`。本地开发统一执行 `npm run gate:development`，CI统一执行 `npm run verify:ci`，候选发布统一执行 `npm run gate:release`；不得另建会绕过这些入口的竞争脚本。
+
+- 任何代码修改前必须存在唯一活动阶段，并声明基线SHA、plan、test-plan、允许路径、保护路径例外和变更预算。无活动阶段只允许建立下一阶段合同，不允许修改`src`、生产脚本或测试。
+- 阶段路径门对基线SHA至当前工作树的已提交、暂存、未暂存和未跟踪文件一起核验；越界路径、预算超限、符号链接、修改历史archive原文或基线不是当前HEAD祖先时失败关闭。
+- `.tmp\verification\development-verification.json`是运行时验证manifest。它必须绑定HEAD、Git tree、工作树摘要、政策SHA、阶段合同SHA和实际命令结果；失败命令不得生成成功manifest，manifest不得提交进Git或手工改写。
+- 测试不得新增通过读取实现源码并匹配字符串来证明行为的合同。既存源码字符串合同记录为显式债务，命中数只能减少；行为、接口、schema和运行时事实应由可执行测试验证。
+- 生产源码单文件超过500行、单函数或组件超过150行属于拆分债务。既存超限项必须登记精确基线并只能收缩；不得新增超限项、扩大既存项或通过提高阈值、排除目录、改名绕过门禁。生成代码和测试夹具可按政策明确排除。
+- 命中Main Agent、Provider adapter/ledger、Tool执行、事件/Artifact合同或连续性门本身的敏感路径时，必须提供绑定当前候选SHA和证据文件哈希的真实Provider连续性receipt。缺失、过期、SHA不符、场景不足、任一5xx/timeout、mock、fallback、degraded或placeholder均失败；普通开发门不得把此失败上推为R5关闭。
+- `quality-gates` CI job必须设为受保护分支required check。Workflow文件只能执行仓内同一门禁入口；没有密钥的普通CI不得伪造Provider通过，受保护Provider job或有效receipt未到位时保持阻塞。
+- 需求负责人确认目标与排除项；架构负责人批准合同、阈值和债务基线变化；实现负责人提交代码、测试和manifest；独立审查者核对范围、债务是否单调收缩和证据真实性；发布负责人只在release门全部通过后签发候选。任何角色不得同时以修改receipt或放宽政策代替失败修复。

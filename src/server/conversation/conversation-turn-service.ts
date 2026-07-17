@@ -49,12 +49,7 @@ import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invo
 import type { AgentToolExecutor } from "@/server/tools/agent-tool-types";
 import { readAgentToolReportsFromMessages } from "@/server/tools/agent-tool-report";
 import type { PptDirectorPlanBinding } from "@/server/ppt-quality/ppt-director-design-adapter";
-import {
-  createDeterministicMainConversationAgent,
-  type MainAgentTaskIntakeDecision,
-  type MainConversationAgent,
-  type MainConversationAgentInput,
-} from "./main-conversation-agent";
+import { createDeterministicMainConversationAgent, type MainAgentTaskIntakeDecision, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
 import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
 import { resolveMainAgentToolDefinition } from "@/server/tools/main-agent-tool-registry";
 import { createExecutionEnvelope, createTaskBrief, hasValidTaskBrief, isPendingDecision, withPendingDecisionStatus, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
@@ -72,6 +67,7 @@ import { findRemainingRequestedOutputs } from "./task-completion-contract";
 import { collectPersistentTeacherMessageParts } from "@/lib/teacher-agent-events";
 import { answerDialogueCheckpoint, isDialogueCheckpoint, type DialogueCheckpoint } from "./dialogue-checkpoint";
 import { rebindMainAgentReActCheckpointAuthorization, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
+import { runWithProviderCallTraceBinding } from "@/server/provider-ledger/provider-call-trace";
 
 type WorkbenchService = ReturnType<typeof createWorkbenchService>;
 type ControlPlaneStore = ReturnType<typeof createControlPlaneStore>;
@@ -103,6 +99,7 @@ async function resolveActiveTaskBrief(input: {
   forceProposal?: boolean;
   onProgress?: MainAgentProgressSink;
   activeTask?: TaskBrief;
+  turnJobId: string | null;
 }): Promise<{
   taskBrief?: TaskBrief;
   precomputedTurn?: MainAgentTurn;
@@ -129,7 +126,8 @@ async function resolveActiveTaskBrief(input: {
 
   let decision: MainAgentTaskIntakeDecision;
   if (input.agent.intakeTask) {
-    decision = await input.agent.intakeTask({
+    decision = await runWithProviderCallTraceBinding({ projectId: project.id, taskId: input.activeTask?.taskId,
+      teacherMessageId: message.id, turnJobId: input.turnJobId, intentEpoch: project.intentEpoch ?? 0 }, () => input.agent.intakeTask!({
       userMessage: message.content,
       responseStyle: message.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
       generationIntensity: project.generationIntensity ?? "standard",
@@ -141,7 +139,7 @@ async function resolveActiveTaskBrief(input: {
       activeTask: input.activeTask,
       recentMessages: messages.map((candidate) => ({ role: candidate.role, content: candidate.content })).slice(-8),
       onProgress: input.onProgress,
-    });
+    }));
   } else {
     if (input.requireStructuredIntake) {
       throw new Error("Native Main Agent control plane requires structured task intake.");
@@ -400,7 +398,6 @@ async function executeTeacherMessageTurn(input: {
   const teacherContent = input.teacherContent;
   const reference = input.reference;
   const submittedActionId = input.confirmedActionId?.trim() || undefined;
-
   const storedProject = await input.service.getProject(input.projectId);
   const project = input.generationIntensityOverride
     ? { ...storedProject, generationIntensity: input.generationIntensityOverride }
@@ -493,6 +490,8 @@ async function executeTeacherMessageTurn(input: {
       });
     }
   }
+  const turnJobs = await input.service.getConversationTurnJobs(input.projectId);
+  const turnJobId = turnJobs.find((job) => job.teacherMessageId === input.triggerMessage.id)?.id ?? null;
   const taskIntake = queuedTaskBrief
     ? { taskBrief: queuedTaskBrief }
     : answeredDialogueCheckpoint && previousTaskBrief
@@ -505,6 +504,7 @@ async function executeTeacherMessageTurn(input: {
         requireStructuredIntake: input.enableNativeToolControlPlane === true,
         activeTask: previousTaskBrief,
         onProgress,
+        turnJobId,
       });
   if (taskIntake.control) {
     return commitPreAgentControlTurn({
@@ -614,11 +614,9 @@ async function executeTeacherMessageTurn(input: {
   const workflowNodes = await input.service.getNodes(input.projectId);
   const artifacts = await input.service.getArtifacts(input.projectId);
   const generationJobs = await input.service.getGenerationJobs(input.projectId);
-  const turnJobs = await input.service.getConversationTurnJobs(input.projectId);
   const availableArtifactKinds = artifacts
     .filter((artifact) => isArtifactTrustedForDownstream(artifact) && (!taskBrief || isArtifactBoundToTask(artifact, taskBrief)))
     .map((artifact) => artifact.kind);
-
   const pendingPlan = input.enableNativeToolControlPlane === true && confirmedPendingDecision
     ? null
     : resolveActiveDeliveryPlan(activePlans, confirmedActionId);
@@ -713,7 +711,6 @@ async function executeTeacherMessageTurn(input: {
     agentToolReports,
     runCheckpoint,
   });
-
   const nativeToolControlPlaneOwnsTurn = input.enableNativeToolControlPlane === true;
   const resumeCheckpoint = taskAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1" &&
     (taskBrief?.sourceMessageId === input.triggerMessage.id || Boolean(answeredDialogueCheckpoint) || Boolean(confirmedPendingDecision))
@@ -744,7 +741,9 @@ async function executeTeacherMessageTurn(input: {
     businessSkillRuntime: input.businessSkillRuntime,
     businessSkillRuntimeMode: input.businessSkillRuntimeMode,
   }) : undefined;
-  const rawAgentResponse = taskIntake.precomputedTurn ?? await input.agent.respond({
+  const rawAgentResponse = taskIntake.precomputedTurn ?? await runWithProviderCallTraceBinding({ projectId: project.id,
+    taskId: taskBrief?.taskId, teacherMessageId: input.triggerMessage.id, turnJobId,
+    intentEpoch: taskBrief?.intentEpoch ?? project.intentEpoch ?? 0 }, async () => await input.agent.respond({
     userMessage: teacherContent,
     toolControlPlane: nativeToolControlPlaneOwnsTurn ? "native" : "outer",
     responseStyle: input.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
@@ -756,7 +755,7 @@ async function executeTeacherMessageTurn(input: {
     conversationContext: contextPackageToMainAgentConversationContext(contextPackage, agentWorldState, capabilityAvailability, pendingPlan, semanticSnapshot),
     agentToolLoop: nativeToolLoop,
     onProgress,
-  });
+  }));
   if (nativeToolLoop) {
     input.triggerMessage = (await input.service.getMessages(input.projectId))
       .find((message) => message.id === input.triggerMessage.id) ?? input.triggerMessage;
@@ -877,7 +876,6 @@ async function executeTeacherMessageTurn(input: {
   const effectivePendingPlan = pendingPlan && intentGrant
     ? { ...pendingPlan, intentGrant }
     : pendingPlan;
-
   if (controlResolution.decision.supersedePendingAction && pendingPlan && effectivePendingPlan) {
     await updatePendingPlanStatus(
       input.service,
@@ -935,7 +933,6 @@ async function executeTeacherMessageTurn(input: {
       }),
     });
   }
-
   if (nativeToolControlPlaneOwnsTurn && agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
     const content = "当前任务编排状态需要重新同步，系统没有执行重复计划。";
     const observation = createAgentObservation({
@@ -991,7 +988,6 @@ async function executeTeacherMessageTurn(input: {
       },
     };
   }
-
   if (agentTurn.shouldRunToolNow && (agentTurn.toolPlan || pendingPlan?.toolPlan)) {
     const executionPendingPlan = controlResolution.decision.supersedePendingAction ? null : effectivePendingPlan;
     return runPlannedArtifact({
@@ -1063,10 +1059,8 @@ async function executeTeacherMessageTurn(input: {
     ),
     metadata: assistantMetadata,
   });
-
   return { message: input.triggerMessage, assistantMessage, agentTurn };
 }
-
 function createMainAgentProgressWriter(input: {
   projectId: string;
   teacherMessageId: string;
@@ -1086,7 +1080,6 @@ function createMainAgentProgressWriter(input: {
   let pendingText = "";
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let writeChain = Promise.resolve();
-
   const enqueue = (progress: MainAgentProgressEvent) => {
     writeChain = writeChain.then(async () => {
       try {
@@ -2475,7 +2468,6 @@ async function replanAfterBusinessToolResult(input: {
     input.resultMetadata,
     { orchestrationMode: "main_agent_observe_replan" },
   ) ?? {});
-
   const project = await turnInput.service.getProject(turnInput.project.id);
   const messages = await turnInput.service.getMessages(turnInput.project.id);
   const refreshedTriggerMessage = messages.find((message) => message.id === turnInput.triggerMessage.id) ?? turnInput.triggerMessage;
@@ -2500,6 +2492,10 @@ async function replanAfterBusinessToolResult(input: {
   const turnJobs = await turnInput.service.getConversationTurnJobs(turnInput.project.id);
   const pendingPlan = findPendingDeliveryPlan(messages);
   const authoritativeReplanTaskBrief = replanTaskBrief ?? replanTaskAggregate?.taskBrief;
+  const replanTraceBinding = { projectId: project.id, taskId: authoritativeReplanTaskBrief?.taskId,
+    teacherMessageId: turnInput.triggerMessage.id,
+    turnJobId: turnJobs.find((job) => job.teacherMessageId === turnInput.triggerMessage.id)?.id ?? null,
+    intentEpoch: authoritativeReplanTaskBrief?.intentEpoch ?? project.intentEpoch ?? 0 };
   const contextPackage = buildConversationContextPackage({
     project,
     messages,
@@ -2567,7 +2563,7 @@ async function replanAfterBusinessToolResult(input: {
     },
   };
   let replanned = applyCapabilityAvailabilityToTurn(
-    await turnInput.agent.respond(replanAgentInput),
+    await runWithProviderCallTraceBinding(replanTraceBinding, () => turnInput.agent.respond(replanAgentInput)),
     capabilityAvailability,
   );
   let completionContractBlockedOutputs: string[] = [];
@@ -2581,7 +2577,7 @@ async function replanAfterBusinessToolResult(input: {
       replanned.state !== "failed_retryable" &&
       remainingRequestedOutputs.length > 0) {
     replanned = applyCapabilityAvailabilityToTurn(
-      await turnInput.agent.respond({
+      await runWithProviderCallTraceBinding(replanTraceBinding, () => turnInput.agent.respond({
         ...replanAgentInput,
         replanDirective: {
           reason: "completion_contract_unsatisfied",
@@ -2589,7 +2585,7 @@ async function replanAfterBusinessToolResult(input: {
           observationIds: input.observationIds,
           remainingRequestedOutputs,
         },
-      }),
+      })),
       capabilityAvailability,
     );
     if (!replanned.toolPlan) {

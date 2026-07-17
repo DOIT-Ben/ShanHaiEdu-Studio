@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { createOpenAICompatibleConfigDigest, pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
+import { createOpenAICompatibleConfigDigest, pickOpenAICompatibleConfig, type AgentBrainChannel, type OpenAICompatibleEnv, type OpenAIReasoningEffort } from "@/server/openai-compatible-config";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { getCapabilityDefinition, getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
 import type { CapabilityId, CapabilityToolPlan, DeliveryPlan, MainAgentState, MainAgentTurn, QuickReply, RecommendedOption } from "@/server/capabilities/types";
@@ -16,7 +16,6 @@ import { runMainAgentControlledReActLoop } from "./main-agent-controlled-react-l
 import { projectMainAgentRequestContext } from "./main-agent-request-context";
 import { mainAgentRoundBudgetPauseSummary } from "./main-agent-run-pause";
 import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
-import type { OpenAIReasoningEffort } from "@/server/openai-compatible-config";
 import { classifyMainAgentFailure, type MainAgentFailurePhase } from "./main-agent-failure";
 import { validateTaskBriefProposal } from "./task-intake";
 import { TASK_REQUESTED_OUTPUTS } from "./task-contract";
@@ -31,8 +30,8 @@ type OpenAIMainConversationAgentOptions = {
   reasoningEffort?: OpenAIReasoningEffort;
   onFailureDiagnostic?: (event: MainAgentFailureDiagnostic) => void;
   runtimeEvidenceDigest?: string;
+  providerChannel?: AgentBrainChannel;
 };
-
 export type MainAgentFailureDiagnostic = {
   phase: "direct_response" | "agent_tool_loop" | "output_parse";
   reason: string;
@@ -91,18 +90,18 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
   private readonly reasoningEffort: OpenAIReasoningEffort;
   private readonly onFailureDiagnostic?: (event: MainAgentFailureDiagnostic) => void;
   private readonly runtimeEvidenceDigest?: string;
-
+  private readonly providerChannel?: AgentBrainChannel;
   constructor(options: OpenAIMainConversationAgentOptions) {
     this.client = options.client;
     this.model = options.model;
     this.reasoningEffort = options.reasoningEffort ?? "high";
     this.onFailureDiagnostic = options.onFailureDiagnostic;
     this.runtimeEvidenceDigest = options.runtimeEvidenceDigest;
+    this.providerChannel = options.providerChannel;
   }
-
   async intakeTask(input: MainAgentTaskIntakeInput): Promise<MainAgentTaskIntakeDecision> {
     try {
-      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model, providerChannel: this.providerChannel });
       const response = await adapter.createResponse({
         ...buildTaskIntakeRequest(input, "low"),
         onStreamEvent: createNaturalLanguageMainAgentStreamProjection(input.onProgress),
@@ -138,7 +137,7 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
   async respond(input: MainConversationAgentInput): Promise<MainAgentTurn> {
     try {
       const strategy = input.generationIntensity ? resolveGenerationIntensityStrategy(input.generationIntensity) : null;
-      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: strategy?.model ?? this.model });
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: strategy?.model ?? this.model, providerChannel: this.providerChannel });
       const naturalControlPlane = nativeToolControlPlaneOwnsTurn(input);
       const request = {
         ...buildMainAgentRequest(input, strategy?.reasoningEffort ?? this.reasoningEffort),
@@ -262,6 +261,7 @@ export function createMainConversationAgentFromEnv(env: OpenAICompatibleEnv = pr
     client,
     model: config.model,
     reasoningEffort: config.reasoningEffort,
+    providerChannel: config.channel,
     runtimeEvidenceDigest: createOpenAICompatibleConfigDigest(config),
     onFailureDiagnostic: (event) => console.error("[main-agent-failure]", JSON.stringify(event)),
   });

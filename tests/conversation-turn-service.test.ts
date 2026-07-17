@@ -19,6 +19,7 @@ import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent
 import { withPassedValidationReport } from "./support/validation-report";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
+import { readProviderCallTraceContext } from "@/server/provider-ledger/provider-call-trace";
 
 function createWorkbenchService(...args: Parameters<typeof createWorkbenchServiceBase>) {
   if (args.length > 0) return createWorkbenchServiceBase(...args);
@@ -199,6 +200,8 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       plan: { planId: `plan:${taskBrief.taskId}`, revision: 0, status: "active" },
       checkpoint: null,
     });
+    const job = await service.enqueueConversationTurn(project.id, { teacherMessageId: teacher.id });
+    let traceContext: ReturnType<typeof readProviderCallTraceContext>;
     const turnService = createConversationTurnService({
       service,
       runtime: new DeterministicRuntime(),
@@ -209,6 +212,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
           throw new Error("queued recovery must reuse the frozen TaskBrief");
         },
         async respond() {
+          traceContext = readProviderCallTraceContext();
           return {
             assistantMessage: { body: "已读取当前任务。" },
             state: "succeeded" as const,
@@ -222,6 +226,15 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     });
 
     await turnService.executeQueuedTurn(project.id, { teacherMessageId: teacher.id });
+
+    expect(traceContext).toEqual({
+      projectId: project.id,
+      taskId: taskBrief.taskId,
+      runId: `turn:${teacher.id}`,
+      turnJobId: job.id,
+      teacherMessageId: teacher.id,
+      intentEpoch: 0,
+    });
 
     const persistedTeacher = (await service.getMessages(project.id)).find((message) => message.id === teacher.id)!;
     expect(persistedTeacher.metadata.intentGrant).toMatchObject({
