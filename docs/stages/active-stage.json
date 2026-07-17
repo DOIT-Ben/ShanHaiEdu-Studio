@@ -46,16 +46,18 @@
     "tests/development-gates/**",
     "tests/fixtures/provider-ledger/manifest.json",
     "tests/gpt-protocol-adapter.test.ts",
+    "tests/health-route.test.ts",
     "tests/model-main-conversation-agent.test.ts",
     "tests/package-tool-adapter.test.ts",
-    "tests/provider-call-trace.test.ts"
+    "tests/provider-call-trace.test.ts",
+    "tests/video-narration-provider.test.ts"
   ],
   "protectedPathExceptions": [
     "docs/archive/project-rules-backups/AGENTS.md_20260717-152521.bak",
     "docs/archive/project-rules-backups/AGENTS.md_20260717-210527.bak"
   ],
   "budgets": {
-    "maxChangedFiles": 55,
+    "maxChangedFiles": 57,
     "maxAddedLines": 7800,
     "maxDeletedLines": 500,
     "maxBinaryFiles": 0
@@ -119,6 +121,15 @@
       "tests/package-tool-adapter.test.ts"
     ],
     "reason": "The repository owner changed visibility to public. Current authoritative documents now use repository-relative or environment-neutral locations, the required pre-edit AGENTS backup is preserved exactly, and the media resolver/test helpers no longer expose or depend on one workstation's FFmpeg path. Explicit binary environment variables remain authoritative and PATH is the portable fallback. No Provider call or release scope was added."
+  },
+  "ciNativeDependencyRevision": {
+    "previousMaxChangedFiles": 55,
+    "revisedMaxChangedFiles": 57,
+    "addedAllowedPaths": [
+      "tests/health-route.test.ts",
+      "tests/video-narration-provider.test.ts"
+    ],
+    "reason": "The sixth clean GitHub checkout proved the TTS test had relied on a workstation ledger root, PPT rendering also requires real Poppler binaries, and isolated schema initialization can exceed Vitest's five-second default on a hosted runner. The fixture root is now explicit, real Poppler is installed, and only the real health integration test receives a 15-second timeout. Assertions and Provider boundaries are unchanged."
   },
   "providerContinuity": {
     "requirement": "provider-evidence-capture-bootstrap",

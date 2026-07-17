@@ -68,6 +68,8 @@ Provider capture入场新鲜证据：门禁/策略定向Node测试31项通过、
 
 clean CI新鲜证据：`d03fdc1`对应的`quality-gates #29581139816`已通过开发门、TypeScript、Lint和Node `387/387`，Vitest为`1555/1562`。7项失败全部发生在环境前置：3项因`tts_minimax` fixture漏声明`MINIMAX_TTS_VOICE_ID`，4项因runner不存在真实`ffmpeg`/`ffprobe`/`soffice`。当前修复补齐fixture声明并安装、解析真实工具；在下一次clean CI成功前，本阶段继续保持open。
 
+`2cfd0d1`对应的`quality-gates #29584259746`已真实通过FFmpeg、FFprobe、LibreOffice安装与解析，但继续暴露Poppler缺失、TTS显式ambient env未绑定仓内fixture根，以及health隔离schema初始化超过默认5秒。当前修复安装并解析真实Poppler、固定TTS fixture根，并仅把该health真实集成用例上限设为15秒；在新的clean CI成功前本阶段仍保持open。
+
 ## 6. 唯一下一动作
 
 先完成全量本地验证，再审查并提交当前门禁阶段，在required CI中生成`dirty=false`且绑定候选SHA的manifest；没有clean manifest时不得关闭本阶段。之后只激活backlog `P0-05A`，先取得真实Provider连续性receipt并完成V1-9入口就绪审计；P0-05A Go后才允许进入P0-05B并创建新的V1-9 plan、manifest和runId。

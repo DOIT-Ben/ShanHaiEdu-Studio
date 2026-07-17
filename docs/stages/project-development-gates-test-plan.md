@@ -35,6 +35,7 @@
 | DG-20 | 本机存在外部Provider台账和真实Provider环境值，clean CI不存在 | Vitest固定使用无密钥仓内manifest并删除继承Provider值；能力测试只接受显式假值 |
 | DG-21 | clean GitHub Windows runner没有媒体工具，TTS fixture漏声明voice ID | CI安装并显式解析真实FFmpeg、FFprobe与LibreOffice；fixture声明全部被测TTS环境键；workflow仍只有`npm run verify:ci`一个验证入口 |
 | DG-22 | 仓库由私有转公开后，当前权威文档和媒体解析包含本机绝对路径 | 当前开发入口只保留仓库相对或环境中立位置；媒体工具以显式环境变量或PATH解析；AGENTS修改前双份备份；历史敏感信息审计不回显候选值 |
+| DG-23 | clean runner缺Poppler、显式TTS env未绑定fixture根、health初始化超过默认5秒 | 安装并解析真实`pdfinfo`/`pdftoppm`；TTS用例显式使用仓内无密钥ledger；health行为断言不变且仅该真实集成用例上限为15秒 |
 
 ## 实际命令
 

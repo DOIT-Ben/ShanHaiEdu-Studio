@@ -56,6 +56,8 @@ G6当前实现事实：`provider-call-trace.ts`使用显式development配置和A
 
 仓库转为公开后，推送前审计发现当前权威文档和媒体二进制解析仍包含用户目录、工作区或本机工具绝对路径。公开仓库卫生修订把文档位置替换为仓库相对或环境中立说明，把媒体解析改为显式环境变量优先、标准PATH命令兜底，并按项目准则保存AGENTS原文备份；精确Git变更文件预算由50修订为55，本地忽略的备份不计入Git预算，不调用Provider或进入release范围。
 
+第六次clean checkout确认真实FFmpeg与LibreOffice安装、解析成功，随后暴露三项更深的runner合同：PPT转图还依赖Poppler；TTS用例的显式ambient env没有携带仓内ledger root，本机真实台账曾掩盖该缺口；隔离health schema初始化在hosted runner上超过Vitest默认5秒。workflow现安装并显式解析真实Poppler，TTS用例固定仓内无密钥fixture，health真实集成用例单独使用15秒上限；精确文件预算由55修订为57，不减少任何行为断言。
+
 SDK依据：OpenAI官方`openai-node` v6.46.0 [Request IDs](https://github.com/openai/openai-node/blob/v6.46.0/README.md#request-ids)、[Handling errors](https://github.com/openai/openai-node/blob/v6.46.0/README.md#handling-errors)与[Timeouts](https://github.com/openai/openai-node/blob/v6.46.0/README.md#timeouts)。当前生产客户端继续固定`maxRetries: 0`，避免SDK自动重试掩盖原始失败。
 
 ## 回退

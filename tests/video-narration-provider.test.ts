@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import path from "node:path";
 import { generateMiniMaxVideoNarration, VideoNarrationProviderError } from "@/server/video-generation/video-narration-provider";
 import { createVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 
@@ -9,6 +10,7 @@ function script() {
 function providerEnv(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
+    SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests/fixtures/provider-ledger"),
     TTS_PROVIDER_MODE: "minimax",
     MINIMAX_API_KEY: "test-only",
     MINIMAX_BASE_URL: "https://api.example",

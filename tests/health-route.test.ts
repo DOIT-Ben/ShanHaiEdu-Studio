@@ -43,7 +43,7 @@ describe("V1-10A health route", () => {
       reasons: [{ code: "database_schema_missing_column", table: "GenerationJob", column: "providerResultJson" }],
     });
     expect(JSON.stringify(body)).not.toContain(fixture.root);
-  });
+  }, 15_000);
 });
 
 function makeFixture() {

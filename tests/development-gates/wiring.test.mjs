@@ -30,10 +30,12 @@ test("quality-gates workflow calls the repository CI entry without a success byp
   assert.equal(job?.["continue-on-error"], undefined);
   const steps = job?.steps ?? [];
   const installMedia = steps.find((step) => step.name === "Install real media dependencies");
-  assert.equal(installMedia?.run, "choco install ffmpeg libreoffice-fresh --yes --no-progress");
+  assert.equal(installMedia?.run, "choco install ffmpeg libreoffice-fresh poppler --yes --no-progress");
   const exposeMedia = steps.find((step) => step.name === "Expose real media binaries");
   assert.match(exposeMedia?.run ?? "", /FFMPEG_PATH=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /FFPROBE_PATH=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /PDFINFO_BIN=.*GITHUB_ENV/s);
+  assert.match(exposeMedia?.run ?? "", /PDFTOPPM_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /LIBREOFFICE_BIN=.*GITHUB_ENV/s);
   assert.match(exposeMedia?.run ?? "", /GITHUB_PATH/);
   const npmCommands = steps
