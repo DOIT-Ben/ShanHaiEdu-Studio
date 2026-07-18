@@ -10,6 +10,10 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 
+import { verifyProviderContinuityReceiptV2 } from "./provider-continuity/receipt-v2.mjs";
+import { loadTrustedCaptureKeys } from "./provider-continuity/trust-store.mjs";
+import { collectGitVerificationSubject } from "./verification-subject.mjs";
+
 const DEFAULT_CONFIG_PATH = "config/development-gates.json";
 const ACTIVE_STAGE_PATH = "docs/stages/active-stage.json";
 const BOOTSTRAP_STAGE_ID = "project-development-gates";
@@ -21,6 +25,7 @@ const BOOTSTRAP_ALLOWED_PATHS = [
   "AGENTS.md",
   "README.md",
   "config/development-gates.json",
+  "config/provider-capture-trust.json",
   "fixtures/ppt-sample-manifest.json",
   "scripts/run-tests.mjs",
   "scripts/development-gates/**",
@@ -64,6 +69,8 @@ const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-te
 const READINESS_EXPIRES_ON = "2026-07-24";
 const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
   "config/development-gates.json",
+  "config/provider-capture-trust.json",
+  "docs/stages/active-stage.json",
   "package.json",
   "scripts/development-gates/provider-continuity.mjs",
   "scripts/development-gates/provider-continuity/**",
@@ -238,7 +245,7 @@ function loadPolicy(root, configPath = DEFAULT_CONFIG_PATH) {
   ) {
     fail("Provider continuity policy must define sensitive paths, forbidden modes, and exactly four scenarios.");
   }
-  for (const field of ["manifestPath", "receiptPath", "evidenceRoot"]) {
+  for (const field of ["manifestPath", "receiptPath", "evidenceRoot", "trustStorePath"]) {
     normalizeRelativePath(policy[field], `providerContinuity.${field}`);
   }
   const scenarioIds = policy.requiredScenarios.map((scenario) => scenario?.id);
@@ -372,6 +379,7 @@ function inspectReadinessImplementation(root, matchedPaths, productionMatched, n
     continuity?.liveAuthorization === null &&
     continuity?.requiredReceiptSchema === "shanhai-provider-continuity-receipt.v2" &&
     Array.isArray(continuity?.trustedCaptureKeyIds) && continuity.trustedCaptureKeyIds.length === 0 &&
+    Array.isArray(continuity?.trustedLedgerAuthorityKeyIds) && continuity.trustedLedgerAuthorityKeyIds.length === 0 &&
     continuity?.expiresOn === READINESS_EXPIRES_ON &&
     isDeepStrictEqual(continuity?.allowedImplementationPaths, READINESS_ALLOWED_IMPLEMENTATION_PATHS);
   const allowedSensitivePaths = matchedPaths.every((entry) =>
@@ -820,7 +828,43 @@ export function verifyProviderContinuityEvidence(options = {}) {
   const receiptFile = readJsonFile(root, policy.receiptPath, "Provider continuity receipt");
   const manifest = manifestFile.value;
   const receipt = receiptFile.value;
-  enforceActiveReceiptContract(root, manifest, receipt);
+  const activeReceiptContract = enforceActiveReceiptContract(root, manifest, receipt);
+  if (activeReceiptContract) {
+    if (mode !== "development") {
+      fail("P0-05A v2 Provider receipts are development-only.", "PROVIDER_RECEIPT_MODE_UNSUPPORTED");
+    }
+    try {
+      const trustedCaptureKeys = options.trustedCaptureKeys ?? loadTrustedCaptureKeys({
+        repositoryRoot: root,
+        relativePath: policy.trustStorePath,
+      });
+      const requiredRuns = policy.developmentConsecutiveRuns;
+      const verified = verifyProviderContinuityReceiptV2({
+        repositoryRoot: root,
+        manifestBytes: manifestFile.bytes,
+        receiptBytes: receiptFile.bytes,
+        requiredRuns,
+        trustedCaptureKeys,
+        now,
+        maxAgeHours: policy.maxAgeHours,
+      });
+      const currentSubject = collectGitVerificationSubject(root);
+      if (!isDeepStrictEqual(verified.subject, currentSubject)) {
+        fail("Provider v2 receipt subject does not match the current verification candidate.",
+          "PROVIDER_RECEIPT_SUBJECT_MISMATCH");
+      }
+      return {
+        ...verified,
+        mode,
+        verifiedAt: receipt.verifiedAt,
+        manifestSha256: receipt.manifestSha256,
+      };
+    } catch (error) {
+      if (error instanceof ProviderContinuityError) throw error;
+      fail(`Provider continuity v2 verification failed: ${error instanceof Error ? error.message : "invalid evidence"}.`,
+        "PROVIDER_RECEIPT_V2_INVALID");
+    }
+  }
   assertSchema(manifest, "shanhai-provider-continuity-manifest.v1", "Provider manifest");
   assertSchema(receipt, "shanhai-provider-continuity-receipt.v1", "Provider receipt");
   assertNoManifestSelfReference(manifest);
@@ -896,12 +940,16 @@ function enforceActiveReceiptContract(root, manifest, receipt) {
     fail("P0-05A rejects legacy Provider receipts because v1 does not prove signed runtime provenance.",
       "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");
   }
-  if (!Array.isArray(continuity?.trustedCaptureKeyIds) || continuity.trustedCaptureKeyIds.length === 0) {
-    fail("P0-05A has no trusted capture key configured; a Provider receipt cannot be promoted.",
+  if (!Array.isArray(continuity?.trustedCaptureKeyIds) || continuity.trustedCaptureKeyIds.length === 0 ||
+      !Array.isArray(continuity?.trustedLedgerAuthorityKeyIds) || continuity.trustedLedgerAuthorityKeyIds.length === 0) {
+    fail("P0-05A has no trusted capture or ledger authority key configured; a Provider receipt cannot be promoted.",
       "PROVIDER_CAPTURE_TRUST_ROOT_MISSING");
   }
-  fail("Provider continuity v2 verification is not implemented for the current candidate.",
-    "PROVIDER_RECEIPT_V2_NOT_IMPLEMENTED");
+  if (continuity.liveCallsAuthorized !== true || !continuity.liveAuthorization) {
+    fail("P0-05A live authorization is missing; a Provider receipt cannot be promoted.",
+      "PROVIDER_LIVE_AUTHORIZATION_MISSING");
+  }
+  return continuity;
 }
 
 function parseCliArguments(argv) {

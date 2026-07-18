@@ -74,6 +74,41 @@ describe("GptProtocolAdapter", () => {
     })]);
     expect(JSON.stringify(records)).not.toMatch(/secret|bearer|https?:\/\//i);
   });
+
+  it("fails the Provider call when an enabled trace recorder cannot persist the attempt", async () => {
+    let recordAttempts = 0;
+    const adapter = createOpenAIResponsesGptAdapter({
+      client: fakeResponsesClient({ output_text: "不得在缺少trace时返回" }),
+      model: "test-model",
+      providerChannel: "primary",
+      traceRecorder: {
+        record: async () => {
+          recordAttempts += 1;
+          throw new Error("disk detail must not escape");
+        },
+      },
+    });
+
+    await expect(runWithProviderCallTraceContext(traceContext(), () => adapter.createResponse({
+      instructions: "test",
+      input: "test",
+    }))).rejects.toThrow("provider_trace_persistence_failed");
+    expect(recordAttempts).toBe(1);
+  });
+
+  it("treats a false recorder result as missing continuity evidence", async () => {
+    const adapter = createOpenAIResponsesGptAdapter({
+      client: fakeResponsesClient({ output_text: "不得在缺少trace时返回" }),
+      model: "test-model",
+      providerChannel: "primary",
+      traceRecorder: { record: async () => false },
+    });
+
+    await expect(runWithProviderCallTraceContext(traceContext(), () => adapter.createResponse({
+      instructions: "test",
+      input: "test",
+    }))).rejects.toThrow("provider_trace_persistence_failed");
+  });
   it("returns assistant text from OpenAI Responses output_text", async () => {
     const client = fakeResponsesClient({ output_text: "老师您好，这是生成结果。" });
     const adapter = createOpenAIResponsesGptAdapter({ client, model: "test-model" });

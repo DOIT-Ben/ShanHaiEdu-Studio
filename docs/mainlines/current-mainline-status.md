@@ -90,17 +90,17 @@ P0-05A离线readiness定向证据：Provider trace、GPT协议、conversation tu
 
 P0-05A全量验证曾连续两次在单个长寿Vitest worker末段出现`Worker exited unexpectedly`；其中一次表面落在`external-audit-evidence-ingress`初始化，但该文件隔离复跑`16/16`通过。测试入口已改为两个顺序分片，每片单worker、禁止文件并行、使用独立SQLite并在分片间重启worker，不减少测试集合。独立报告为第1分片`770/770`、第2分片`794/794`，合计Vitest `1564/1564`；后续全流程又出现一次Node并发瞬时失败而同命令隔离复跑`384/384`，Node入口也已固定`--test-concurrency=1`。所有最终证据以当前manifest和clean CI为准。未发现残留Vitest、Jest或Playwright worker。
 
-提交前独立审查进一步阻塞了原候选：capture路径未位于campaign、调用序号会随recorder重建归1、evidence可省略失败trace且scenario仍由runner自报、D没有真实post-tool调用、live授权只校验格式、Tool调用缺显式phase/channel、archive例外未撤销。当前实现已把阶段基线固定到`336e6b3`并撤销archive例外；trace严格写入匹配campaign、序号按同一turn跨recorder连续、Tool使用`tool` phase与显式channel；campaign evidence只接受阶段预绑定公钥验证过的v2 source index，枚举capture目录全部文件并校验四场景Tool/Artifact/Observation/Intent与D的真实`post_tool`调用，最多输出`source-verified`；live preflight要求阶段批准值、有效期、可信key、受保护环境和ledger权威验证全部通过。当前阶段可信key为空且没有受保护signer，因此真实证据仍失败关闭。最终本地证据必须绑定当前工作树，clean CI仍须重新生成，不得沿用修复前manifest上推完成。
+提交前独立审查进一步阻塞了原候选：capture路径未位于campaign、调用序号会随recorder重建归1、evidence可省略失败trace且scenario仍由runner自报、D没有真实post-tool调用、live授权只校验格式、Tool调用缺显式phase/channel、archive例外未撤销。当前实现已把阶段基线固定到`336e6b3`并撤销archive例外；trace严格写入匹配campaign、序号按同一turn跨recorder连续、Tool使用`tool` phase与显式channel；campaign evidence只接受阶段预绑定公钥验证过的v2 source index，枚举capture目录全部文件并校验四场景Tool/Artifact/Observation/Intent与D的真实`post_tool`调用，最多输出`source-verified`。首批离线readiness提交`b013a96`及`quality-gates #29630858178`已通过，clean manifest全部字段匹配。当前切片已在本地完成双签名signer、v2 receipt重建验证、trust store、trace落盘失败关闭和writer路径安全：独立ledger-authority key先绑定受保护环境、campaign nonce、server、run、全部facts/capture SHA、eventId和成本，capture key才可签最终index；主verifier集成测试证明其从真实trust-store返回实际验签receipt字节SHA与当前Git subject。当前阶段仍保持`liveCallsAuthorized=false`、`liveAuthorization=null`、空capture key和空ledger-authority key，因此真实证据继续失败关闭。
 
 精确暂存复核又发现旧`workingTreeDigest`会因“未跟踪文件变为已暂存”而漂移，即使文件字节完全不变。runner与verifier现共用内容摘要模块，按相对路径、当前文件SHA或删除标记计算，staged/unstaged/untracked只要工作树内容相同就保持同一摘要，实际字节变化仍会改变摘要；相关manifest脚本已纳入Provider敏感路径，后续修改必须触发continuity门。
 
 提交前独立安全复核还发现verification runner会在完成物理路径检查前删除配置目标。当前只允许仓库相对`.tmp/verification/**`输出，并在任何删除前逐段拒绝绝对路径、反斜杠、路径逃逸、junction/reparse/symlink、非目录父级和非普通文件目标；manifest写入后重新采集subject，若输出导致候选漂移则删除manifest并失败。对应合同为`PC-A26`。
 
-V1-9入口只读矩阵结论为NO-GO：隔离server/SQLite/Artifact/Playwright和一次提交后观察方式可复用；fresh run仍强制历史predecessor，baseline lock缺clean verification/policy/stage/continuity receipt，runner仍可用env决定恢复重试，observer的无外部编排证明未绑定产品侧权威事件。完整媒体preflight退出P0-05A，只保留给P0-05B。
+V1-9入口二次只读审查结论仍为NO-GO：fresh run还被preparation transaction强制历史predecessor；baseline lock缺clean verification/policy/stage/continuity receipt；runner仍通过env取得恢复权；observer的零外部编排是浏览器自证而非产品持久audit，并会从项目全局latest跨任务拼接恢复事实。完整媒体preflight退出P0-05A，只保留给P0-05B。
 
 ## 6. 唯一下一动作
 
-提交并推送P0-05A离线readiness首批实现，等待远端`quality-gates`生成clean manifest并核对五项证据。下一子阶段是受保护capture signer、v2 receipt verifier与V1-9四项最小适配；真实Provider driver和连续3组仍等待用户另行批准channel、model fingerprint、总费用、最大调用次数和可信capture key。所有矩阵`blocked`关闭且真实receipt有效后，P0-05A才可Go并进入P0-05B。
+当前唯一动作是提交并推送已完成的signer/v2 verifier切片，等待独立clean `quality-gates`并核对manifest；通过后严格串行进入V1-9 fresh/baseline、产品audit和DB recovery三个切片。真实Provider driver和连续3组仍等待用户另行批准channel、model fingerprint、总费用、最大调用次数和可信capture key。所有矩阵`blocked`关闭且真实receipt有效后，P0-05A才可Go并进入P0-05B。
 
 ## 7. 恢复入口
 

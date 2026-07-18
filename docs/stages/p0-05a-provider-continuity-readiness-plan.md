@@ -34,13 +34,13 @@
 - 在required CI运行`verify:ci`，下载并核验`dirty=false` manifest。
 - 把当前阶段plan/test-plan按项目归档规则迁移并记录SHA-256；历史原文不改。
 - 用clean HEAD建立新的P0-05A `active-stage.json`，只允许本计划明确文件。
-- 已确认现有Provider adapter evidence不足；当前门禁阶段已建立精确capture bootstrap和脱敏逐调用事实源，包含HTTP状态、timeout、request-id摘要、channel/model、usage及project/task/turn绑定，且仍保持`passed=false`。剩余动作是完成全量验证、clean提交和CI manifest。
+- 已确认现有Provider adapter evidence不足；当前门禁阶段已建立精确capture bootstrap和脱敏逐调用事实源，包含HTTP状态、timeout、request-id摘要、channel/model、usage及project/task/turn绑定，且仍保持`passed=false`。首批离线readiness已在`b013a96`完成提交、推送和clean CI manifest核验。
 
 验收结果：GitHub Actions run `29592707672` 的 artifact 与本机重算的 HEAD、tree、working tree digest、policy SHA、stage SHA 一致，五项检查退出码均为0；`quality-gates` 已成为 `main` required check。旧阶段原件已按逐文件 SHA-256 归档。
 
 ## 3. 阶段1：证据合同和红测试
 
-状态：v2签名source index验证、capture全文件枚举、SHA重算、scenario绑定和Tool trace合同已实现；受保护capture signer与v2 receipt验证仍未实现。
+状态：v2签名source index验证、capture全文件枚举、SHA重算、scenario绑定和Tool trace合同已实现；当前代码切片已完成独立ledger-authority attestation、capture signer、v2 receipt验证、trace落盘失败关闭、trust store和writer路径安全，未启动真实driver。
 
 目标：先证明现有系统不能生成合格真实receipt，再实现。
 
@@ -51,6 +51,9 @@
 - 为Provider边界事实优先于UI/runner自报字段、场景C/D共享`teacherMessageId`和`turnJobId`写失败测试。
 - 为manifest/receipt原子写、目录额外文件、路径逃逸、候选漂移和重封装旧run写失败测试。
 - 给`package.json`新增唯一`gate:provider:live`命令合同测试。
+- ledger-authority issuer必须从产品DB和只追加ledger自行导出完整事实并用独立key签名；capture signer不得接受调用方自报attestation，只能验证其campaign nonce、环境、server、run、全部文件SHA、eventId和成本后再生成index。
+- capture signer必须自行枚举capture/facts并生成确定性index，只调用第二个受保护签名接口；两层只接受`Ed25519`和固定用途域，key ID与公钥摘要必须相互独立，私钥不得进入仓库、命令参数、日志、fixture输出或receipt。
+- trace recorder存在时，任何落盘失败都必须使当前Provider调用/campaign失败，不能吞错后继续晋升。
 
 验收：新增特征测试因入口缺失或证据不完整而红；现有provider verifier测试保持绿。
 
@@ -73,7 +76,7 @@
 
 ## 5. 阶段3：证据与receipt生成
 
-状态：签名source index、capture全文件枚举、SHA重算、scenario/Provider call对齐builder、不可覆盖原子写和失败关闭seal入口已实现；builder最多输出`source-verified`，活动阶段拒绝v1，且因可信capture key为空、受保护signer和v2 receipt verifier缺失而不能形成当前证据或签发passed receipt。
+状态：双签名signer合同、签名source index验证、capture全文件枚举、SHA重算、scenario/Provider call对齐builder、v2重建verifier和安全writer均已实现；builder最多输出`source-verified`。主verifier已消费v2结果并原子返回实际receipt字节SHA与subject；当前capture与ledger-authority可信key均为空，仍不能签发真实passed receipt。
 
 目标：只从实际持久事实确定性生成verifier可接受的两文件证据。
 
@@ -82,7 +85,8 @@
 - 每组运行写一个不可覆盖evidence文档，包含四场景和候选subject。
 - evidence只接受运行时Provider轨迹中的status/timeout/mode；Playwright或runner提供的不一致值必须失败。
 - manifest只描述subject、期望场景与evidence路径，不引用自身。
-- receipt绑定manifest SHA、subject bundle、每个evidence SHA和连续run列表。
+- manifest绑定clean verification manifest、subject、policy/stage SHA、授权channel/model、预算、ledger、server实例和精确run数。
+- receipt绑定manifest SHA和精确`1..N` campaign；verifier必须重新验签source index、重建evidence并返回它实际读取字节的`receiptSha256`与已验证subject，baseline不得二次重读receipt计算摘要。
 - 写入使用临时文件加原子rename；目标存在时拒绝覆盖。
 - 生成后立即调用现有verifier，验证失败则整组失败。
 
@@ -90,18 +94,15 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：只读矩阵已完成，结论为NO-GO；fresh-run predecessor、baseline lock、恢复权和observer权威来源仍需适配。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：二次只读审查确认NO-GO，并发现原四文件估计不足。fresh-run还依赖preparation transaction；baseline必须升级v2并原子消费Provider verifier结果；恢复权必须由产品SQLite事实派生；observer必须消费产品服务端持久audit，而不是浏览器自证。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
-审计范围仅限：
+最小适配拆成三个严格串行切片：
 
-- `scripts/run-v1-9-e2e.mjs`
-- `scripts/prepare-v1-9-run.ts`
-- `scripts/v1-9-product-preflight.ts`
-- `scripts/lib/v1-9-e2e-contract.mjs`
-- `tests/e2e/v1-9-unique-real-product.spec.ts`
-- 它们的直接测试和类型声明
+1. fresh/baseline：`prepare-v1-9-run`、preparation transaction、单一prompt合同、可空predecessor和baseline lock v2；
+2. 产品audit：服务端持久记录项目写attempt与Main Agent编排authority，observer只消费权威摘要；
+3. DB recovery：产品启动从精确绑定的TurnJob、task、epoch、message和checkpoint派生恢复动作，runner不再传恢复布尔。
 
 必须回答：
 
@@ -114,13 +115,13 @@
 - 重复冻结prompt是否已收敛为单一合同；完整媒体preflight是否与本阶段capability-scoped preflight分责；
 - 中断、恢复和合同升级是否终止旧run并创建显式后继。
 
-只做进入P0-05B所必需的最小适配。任何适配先写行为测试；无法在5个文件内完成的任务继续拆分，不做顺手重构。
+只做进入P0-05B所必需的最小适配。每个切片先写行为测试并独立验证；不得伪造genesis predecessor、默认authority为零、用observer自报替代产品audit，或用mock改run-state冒充真实SQLite恢复。
 
 验收：形成`reuse / adapt / retire / blocked`矩阵；所有`adapt`已有绿测试，所有`blocked`都会使P0-05A No-Go。
 
 ## 7. 阶段5：完整离线验证与冻结
 
-状态：提交前独立审查发现的证据与授权P1已修复；最终本地证据以当前工作树最新manifest为准，clean提交和远端CI manifest待完成。
+状态：首批离线readiness提交`b013a96`及GitHub Actions run`29630858178`已通过，远端manifest为`dirty=false`且HEAD/tree/workingTreeDigest/policy/stage与五项退出码全部匹配。signer/v2切片本地`verify:local`五项退出码已全部为0，clean提交与独立CI证据待生成。
 
 目标：在真实费用发生前冻结唯一候选。
 
@@ -194,5 +195,7 @@ P0-05A Go只关闭真实文本/Main Agent连续性与入口就绪，不创建V1-
 | harness成为第二编排者 | 只提交教师输入和观察事实 | 删除强制Tool/next-step逻辑 |
 | 费用失控 | IntentGrant与阶段总预算双门 | 达上限立即失败并保存恢复点 |
 | receipt伪造或重封装 | subject、时间窗、文件集和SHA重算 | verifier失败，receipt不得晋升 |
+| nonce被解释为跨历史一次性凭证 | 当前只保证同一receipt内唯一，真实issuer尚未接线 | live切片必须决定是否增加预发challenge与持久消费账本，不得沿用本阶段口径上推 |
+| Provider门禁巨型模块继续增长 | 当前`provider-continuity.mjs`仍超过500行且`scripts`未进入复杂度扫描 | 后续新增职责前先拆出v1/v2路由与阶段合同，并单独规划scripts复杂度ratchet |
 
 回退只撤销P0-05A新增代码和接线；不恢复旧runner控制权，不覆盖历史证据，不删除真实失败记录。

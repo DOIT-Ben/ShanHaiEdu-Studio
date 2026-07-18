@@ -30,6 +30,8 @@ const CAPTURE_PRODUCTION_PATHS = [
 ];
 const READINESS_IMPLEMENTATION_PATHS = [
   "config/development-gates.json",
+  "config/provider-capture-trust.json",
+  "docs/stages/active-stage.json",
   "package.json",
   "scripts/development-gates/provider-continuity.mjs",
   "scripts/development-gates/provider-continuity/**",
@@ -83,10 +85,13 @@ function makeConfig() {
         "src/server/provider-ledger/**",
         "scripts/development-gates/provider-continuity.mjs",
         "config/development-gates.json",
+        "config/provider-capture-trust.json",
+        "docs/stages/active-stage.json",
       ],
       manifestPath: ".tmp/provider-continuity/provider-continuity.manifest.json",
       receiptPath: ".tmp/provider-continuity/provider-continuity.receipt.json",
       evidenceRoot: ".tmp/provider-continuity/evidence",
+      trustStorePath: "config/provider-capture-trust.json",
       maxAgeHours: 168,
       developmentConsecutiveRuns: 3,
       releaseConsecutiveRuns: 5,
@@ -157,6 +162,7 @@ function writeReadinessStage(root, overrides = {}) {
       liveAuthorization: null,
       requiredReceiptSchema: "shanhai-provider-continuity-receipt.v2",
       trustedCaptureKeyIds: [],
+      trustedLedgerAuthorityKeyIds: [],
       allowedImplementationPaths: READINESS_IMPLEMENTATION_PATHS,
       ...overrides,
     },
@@ -215,6 +221,7 @@ function setupRepository(t) {
 function computeBundle(root) {
   const files = [
     "config/development-gates.json",
+    "docs/stages/active-stage.json",
     "src/server/conversation/provider.ts",
   ];
   const digest = createHash("sha256");
@@ -352,6 +359,13 @@ test("detectProviderImpact identifies sensitive files and rejects unsafe paths",
 
   assert.equal(impact.impacted, true);
   assert.deepEqual(impact.matchedPaths, ["src/server/conversation/provider.ts"]);
+  const trustImpact = detectProviderImpact({
+    root,
+    changedPaths: ["config/provider-capture-trust.json", "docs/stages/active-stage.json"],
+    now: NOW,
+  });
+  assert.equal(trustImpact.impacted, true);
+  assert.deepEqual(trustImpact.matchedPaths, ["config/provider-capture-trust.json", "docs/stages/active-stage.json"]);
   assert.throws(
     () => detectProviderImpact({ root, changedPaths: ["../outside.ts"], now: NOW }),
     /unsafe changed path/i,
@@ -376,7 +390,7 @@ test("detectProviderImpact includes committed sensitive changes from the active 
   const impact = detectProviderImpact({ root, now: NOW });
 
   assert.equal(impact.impacted, true);
-  assert.deepEqual(impact.matchedPaths, ["src/server/conversation/provider.ts"]);
+  assert.deepEqual(impact.matchedPaths, ["docs/stages/active-stage.json", "src/server/conversation/provider.ts"]);
   assert.ok(impact.changedPaths.includes("docs/stages/active-stage.json"));
 });
 

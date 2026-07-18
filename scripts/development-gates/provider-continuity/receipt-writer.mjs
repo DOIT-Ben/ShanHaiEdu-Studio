@@ -1,18 +1,103 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-export function writeExclusiveJson(target, value) {
+export function writeExclusiveJson({ root, relativePath, value } = {}) {
+  const repositoryRoot = requireOrdinaryRoot(root);
+  const target = resolveContinuityTarget(repositoryRoot, relativePath);
+  ensureSafeParent(repositoryRoot, target);
+  assertSafeTarget(repositoryRoot, target);
   if (existsSync(target)) throw new Error(`Evidence target already exists: ${path.basename(target)}.`);
-  mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;
   try {
+    assertSafeTarget(repositoryRoot, target);
+    assertSafeTarget(repositoryRoot, temporary);
     writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    assertSafeTarget(repositoryRoot, target);
+    assertSafeTarget(repositoryRoot, temporary);
     if (existsSync(target)) throw new Error(`Evidence target already exists: ${path.basename(target)}.`);
-    renameSync(temporary, target);
+    try {
+      linkSync(temporary, target);
+    } catch (error) {
+      if (error?.code === "EEXIST") throw new Error(`Evidence target already exists: ${path.basename(target)}.`);
+      throw error;
+    }
+    removeSafeTemporary(repositoryRoot, temporary);
+    assertSafeTarget(repositoryRoot, target);
   } finally {
-    rmSync(temporary, { force: true });
+    removeSafeTemporary(repositoryRoot, temporary);
   }
+}
+
+function requireOrdinaryRoot(value) {
+  if (typeof value !== "string" || value.length === 0) throw new Error("Evidence repository root is required.");
+  const lexical = path.resolve(value);
+  const stat = lstatSync(lexical);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Evidence repository root is unsafe.");
+  return realpathSync(lexical);
+}
+
+function resolveContinuityTarget(root, value) {
+  if (typeof value !== "string" || !value || value.includes("\\") ||
+      path.posix.isAbsolute(value) || path.win32.isAbsolute(value) ||
+      value.split("/").some((segment) => !segment || segment === "." || segment === "..") ||
+      !value.startsWith(".tmp/provider-continuity/") || !value.endsWith(".json")) {
+    throw new Error("Evidence output path is unsafe or outside .tmp/provider-continuity.");
+  }
+  return path.resolve(root, ...value.split("/"));
+}
+
+function ensureSafeParent(root, target) {
+  const relativeParent = path.relative(root, path.dirname(target));
+  let current = root;
+  for (const segment of relativeParent.split(path.sep).filter(Boolean)) {
+    assertSafeTarget(root, target);
+    current = path.join(current, segment);
+    if (!existsSync(current)) mkdirSync(current);
+    assertOrdinaryContained(root, current, true, "Evidence output parent is unsafe.");
+  }
+}
+
+function assertSafeTarget(root, target) {
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Evidence output path is unsafe.");
+  }
+  let current = root;
+  for (const segment of relative.split(path.sep).slice(0, -1)) {
+    current = path.join(current, segment);
+    if (!existsSync(current)) break;
+    assertOrdinaryContained(root, current, true, "Evidence output parent is unsafe or traverses a link.");
+  }
+  if (existsSync(target)) {
+    assertOrdinaryContained(root, target, false, "Evidence output target is unsafe.");
+  }
+}
+
+function assertOrdinaryContained(root, target, directory, message) {
+  const stat = lstatSync(target);
+  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw new Error(message);
+  const expected = path.resolve(root, path.relative(root, target));
+  if (!samePath(realpathSync(target), expected)) throw new Error(message);
+}
+
+function removeSafeTemporary(root, target) {
+  assertSafeTarget(root, target);
+  if (existsSync(target)) rmSync(target, { force: true });
+}
+
+function samePath(left, right) {
+  const normalize = (value) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+  return normalize(left) === normalize(right);
 }
 
 export function sealProviderContinuity({ campaignRoot } = {}) {

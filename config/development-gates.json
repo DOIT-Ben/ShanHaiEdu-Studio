@@ -321,11 +321,14 @@
       "scripts/development-gates/run-verification.mjs",
       "scripts/development-gates/verification-manifest.mjs",
       "scripts/development-gates/verification-subject.mjs",
-      "config/development-gates.json"
+      "config/development-gates.json",
+      "config/provider-capture-trust.json",
+      "docs/stages/active-stage.json"
     ],
     "manifestPath": ".tmp/provider-continuity/provider-continuity.manifest.json",
     "receiptPath": ".tmp/provider-continuity/provider-continuity.receipt.json",
     "evidenceRoot": ".tmp/provider-continuity/evidence",
+    "trustStorePath": "config/provider-capture-trust.json",
     "maxAgeHours": 168,
     "developmentConsecutiveRuns": 3,
     "releaseConsecutiveRuns": 5,

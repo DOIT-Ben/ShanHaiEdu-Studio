@@ -10,6 +10,8 @@ import type {
 } from "./types";
 import {
   digestProviderRequestId,
+  persistProviderCallTrace,
+  ProviderTracePersistenceError,
   resolveProviderCallTraceRecorderFromEnv,
   type ProviderCallTraceInput,
   type ProviderCallTraceRecorder,
@@ -80,6 +82,7 @@ export function createOpenAIResponsesGptAdapter(options: OpenAIResponsesGptAdapt
         await recordTrace(traceRecorder, options, startedAtMs, httpStatus, requestIdDigest, usage, null);
         return response;
       } catch (error) {
+        if (error instanceof ProviderTracePersistenceError) throw error;
         httpStatus ??= errorHttpStatus(error);
         requestIdDigest ??= digestProviderRequestId(errorRequestId(error));
         await recordTrace(traceRecorder, options, startedAtMs, httpStatus, requestIdDigest, null, error);
@@ -110,28 +113,23 @@ async function recordTrace(
   usage: ProviderCallTraceInput["usage"],
   error: unknown,
 ) {
-  if (!recorder) return;
   const completedAtMs = Date.now();
   const timeout = isTimeoutError(error);
-  try {
-    await recorder.record({
-      provider: "openai_responses",
-      channel: options.providerChannel ?? "unknown",
-      model: options.model,
-      startedAt: new Date(startedAtMs).toISOString(),
-      completedAt: new Date(completedAtMs).toISOString(),
-      durationMs: Math.max(0, completedAtMs - startedAtMs),
-      outcome: error ? "failed" : "succeeded",
-      httpStatus,
-      timeout,
-      requestIdDigest,
-      usage,
-      retryCount: 0,
-      errorCategory: classifyTraceError(error, httpStatus, timeout),
-    });
-  } catch {
-    // Missing evidence fails the capture campaign; telemetry must not replace the Provider result.
-  }
+  await persistProviderCallTrace(recorder, {
+    provider: "openai_responses",
+    channel: options.providerChannel ?? "unknown",
+    model: options.model,
+    startedAt: new Date(startedAtMs).toISOString(),
+    completedAt: new Date(completedAtMs).toISOString(),
+    durationMs: Math.max(0, completedAtMs - startedAtMs),
+    outcome: error ? "failed" : "succeeded",
+    httpStatus,
+    timeout,
+    requestIdDigest,
+    usage,
+    retryCount: 0,
+    errorCategory: classifyTraceError(error, httpStatus, timeout),
+  });
 }
 
 function hasWithResponse(value: OpenAIResponsesCreateResult): value is { withResponse(): Promise<OpenAIResponsesTransportResult> } {

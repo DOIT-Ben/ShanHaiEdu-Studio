@@ -15,7 +15,7 @@
 
 ## 2. 离线合同测试
 
-当前首批定向结果：相关Node合同`40/41`，唯一跳过项为当前Windows不允许创建测试符号链接；Provider边界相关Vitest `125/125`；TypeScript通过。修复前候选的全量Vitest采用两个顺序分片、单worker、禁止文件并行和独立SQLite，第1分片`770/770`、第2分片`794/794`；其`verify:local`五项检查全部返回0。提交前独立审查触发新的P1修复后，新增签名来源、capture全枚举、授权匹配、turn-global ordinal、D续轮和Tool phase/channel定向合同已通过；最终全量结果以提交前当前manifest和clean提交的远端CI manifest为准。
+首批离线readiness提交`b013a96`已完成本地`verify:local`和远端clean `quality-gates`，五项检查退出码均为0；远端manifest的HEAD、tree、workingTreeDigest、policy和stage全部匹配。该证据不包含真实Provider。当前signer/v2切片的Provider Node合同为`52 pass / 0 fail / 1 skip`，GPT adapter为`19/19`，Provider trace与adapter联合为`23/23`，本地`verify:local`五项退出码全部为0；唯一skip是当前Windows普通文件symlink权限限制，junction攻击测试已实际执行通过。最终结果仍必须绑定clean新候选，不能沿用`b013a96`证据。
 
 测试运行器恢复事实：原单分片长寿worker连续两次在末段异常退出，其中一次表面落在`external-audit-evidence-ingress`初始化，但该文件隔离复跑`16/16`通过；后续Node全量在完整流程中一次失败而同命令隔离复跑`384/384`。不得把这类基础设施异常记作业务断言失败，也不得通过减少测试集合处理；当前Node固定单并发，Vitest分片策略保留完整测试集合并在分片间重启worker。
 
@@ -47,6 +47,12 @@
 | PC-A24 | intake临时taskId与TaskBrief taskId变化，或C/D共用turn身份 | ordinal按同一turn连续；仅intake允许精确临时taskId，D不得重复归1或重复引用call |
 | PC-A25 | 相同工作树只改变untracked/staged/unstaged形态 | manifest摘要不变；实际文件字节、路径或删除状态变化时摘要必须变化 |
 | PC-A26 | verification manifest目标为绝对路径、反斜杠、`.tmp/verification`外路径、reparse/symlink或非普通文件，或写入后改变subject | 在删除任何既有目标前失败；写后漂移时删除manifest并失败，不留下成功证据 |
+| PC-A27 | trace recorder存在但Provider调用事实落盘失败 | 当前调用和campaign失败，不得返回可晋升成功结果 |
+| PC-A28 | ledger-authority或capture signer使用非Ed25519、错误用途域、未知key、调用方自报attestation/自制index或未精确枚举capture/facts | 在capture签名和写入前失败；两个私钥均不进入仓库输出 |
+| PC-A29 | 任一调用channel/model、预算、ledger、server或verification subject与阶段授权不同 | evidence和receipt均失败，不得混入其他有效trace |
+| PC-A30 | v2 run数多/少、从2开始、重复、跳号、跨server或receipt字节在验签后变化 | 失败；成功结果原子返回实际`receiptSha256`和subject |
+| PC-A31 | writer目标绝对化、逃逸、junction/symlink、非普通文件、已存在或并发发布 | 删除/覆盖前失败，只允许一个发布成功 |
+| PC-A32 | capture attempt计数、eventId、timing、retry、usage/cost与独立签名ledger attestation不一致或超授权 | 失败，不能用缺失trace或runner自报补齐 |
 
 ## 3. 四场景真实合同
 
@@ -86,6 +92,9 @@
 | VR-A10 | M67兼容入口 | 只保留受控启停/隔离能力，不恢复旧阶段控制口径 |
 | VR-A11 | 连续性证据绑定 | baseline lock绑定clean manifest、policy/stage SHA和有效receipt |
 | VR-A12 | 唯一冻结目标 | prompt只有一个权威合同源，不在prepare/runner重复定义 |
+| VR-A13 | 产品编排audit | 外部写attempt和Tool authority由服务端持久事实派生；缺失、断序或非Main Agent authority失败 |
+| VR-A14 | 产品恢复权 | startup动作只由精确SQLite状态和typed evidence决定，runner/env不能选择恢复 |
+| VR-A15 | 恢复身份 | checkpoint、TurnJob、task、epoch、message任一跨任务或缺失绑定均失败，不取项目全局latest |
 
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 

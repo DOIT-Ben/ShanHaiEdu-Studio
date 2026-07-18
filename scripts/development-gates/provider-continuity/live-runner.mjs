@@ -16,6 +16,7 @@ export function runLivePreflight({
     liveCallsAuthorized: stage?.providerContinuity?.liveCallsAuthorized,
     approvedAuthorization: stage?.providerContinuity?.liveAuthorization,
     trustedCaptureKeyIds: stage?.providerContinuity?.trustedCaptureKeyIds,
+    trustedLedgerAuthorityKeyIds: stage?.providerContinuity?.trustedLedgerAuthorityKeyIds,
     requestedAuthorization: {
       channel: options.channel,
       modelFingerprint: options.modelFingerprint,

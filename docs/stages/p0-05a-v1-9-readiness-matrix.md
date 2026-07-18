@@ -39,3 +39,11 @@
 ## 当前阻塞
 
 P0-05A仍是NO-GO。下一代码子阶段必须先完成fresh-run合同、baseline lock扩展、恢复权归位和observer权威来源四项适配；每项先写行为红测试，并且不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
+
+## 二次审查增补
+
+- fresh run不仅依赖prepare和manifest，还被`v1-9-run-preparation-transaction`的journal、history和predecessor evidence强制绑定；不得伪造genesis predecessor，必须把fresh与合同升级后继拆成显式分支。
+- baseline lock必须升级为v2并绑定clean verification SHA/subject、policy/stage SHA、v2 receipt SHA/subject；receipt SHA只能来自verifier实际验签的同一原始字节，禁止验后重读。
+- `externalCodexOrchestrationCount=0`当前由observer监听自身浏览器后自报，不能发现其他进程直接写API。进入P0-05B前必须由产品服务端持久mutation audit和Tool/ExecutionEnvelope authority派生。
+- runner当前通过`V1_9_RUN_MODE`和`SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START`取得恢复决策权。恢复必须改为产品启动读取精确SQLite身份后决定drain、requeue或停止；mock改run-state不构成恢复证据。
+- checkpoint与failed TurnJob不得从项目全局latest拼接，必须绑定冻结project/task/epoch/teacherMessageId/turnJobId，缺失或冲突即失败关闭。

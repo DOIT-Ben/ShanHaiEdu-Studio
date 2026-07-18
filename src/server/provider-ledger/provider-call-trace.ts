@@ -34,6 +34,26 @@ export type ProviderCallTraceRecorder = {
   record(input: ProviderCallTraceInput): Promise<boolean>;
 };
 
+export class ProviderTracePersistenceError extends Error {
+  constructor() {
+    super("provider_trace_persistence_failed");
+    this.name = "ProviderTracePersistenceError";
+  }
+}
+
+export async function persistProviderCallTrace(
+  recorder: ProviderCallTraceRecorder | undefined,
+  input: ProviderCallTraceInput,
+) {
+  if (!recorder) return;
+  try {
+    if (await recorder.record(input) !== true) throw new ProviderTracePersistenceError();
+  } catch (error) {
+    if (error instanceof ProviderTracePersistenceError) throw error;
+    throw new ProviderTracePersistenceError();
+  }
+}
+
 type ProviderCallTraceEnv = NodeJS.ProcessEnv & {
   SHANHAI_PROVIDER_CALL_TRACE_ENABLED?: string;
   SHANHAI_PROVIDER_CALL_TRACE_MODE?: string;

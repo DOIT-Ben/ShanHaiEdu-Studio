@@ -1,6 +1,6 @@
 # P0-05A Provider连续性运行手册
 
-状态：离线readiness已接线，真实campaign未授权
+状态：首批离线readiness已通过clean CI；signer/v2 receipt离线实现已完成，真实campaign未授权
 
 ## 当前可执行
 
@@ -43,7 +43,7 @@ npm run gate:provider:seal -- --campaign-root .tmp/provider-continuity/campaigns
 
 ## 证据升级边界
 
-v1 manifest/receipt只验证手工JSON自洽，不能证明来源，P0-05A已明确拒绝。campaign builder只接受活动阶段预绑定公钥验证通过的v2 source index；该index必须枚举capture目录全部文件并绑定scenario facts与逐调用SHA，遗漏失败attempt、额外文件、签名或公钥摘要不符都会失败。builder最多输出`source-verified`，不能输出passed。后续v2 receipt还必须绑定clean verification manifest、policy/stage SHA、Provider ledger、批准的逻辑channel/model fingerprint、费用授权、campaign/server身份和全部attempt。当前`trustedCaptureKeyIds=[]`且没有受保护capture signer，所以本阶段工作树不能生成`source-verified`证据或晋升任何receipt。
+v1 manifest/receipt只验证手工JSON自洽，不能证明来源，P0-05A已明确拒绝。权威ledger服务必须自行从产品DB和只追加Provider ledger导出受保护环境、campaign nonce、server、run、全部facts/capture SHA、eventId和成本，并用独立ledger-authority key签发attestation；调用方不能自报这份事实。capture signer验证该attestation后才自行枚举campaign并生成确定性index，只对固定用途域下的精确字节执行第二个Ed25519签名；两类key ID和公钥摘要必须不同。调用者不得提交自制index，任何私钥不得进入仓库、命令参数、日志或receipt。v2 verifier重新验证两层签名、构建evidence，并绑定clean verification、policy/stage、授权channel/model/预算和精确`1..N` campaign；同一receipt内campaign nonce必须唯一，当前未宣称跨历史全局一次性消费。成功结果直接返回实际验签receipt字节SHA与subject。当前两个可信key列表均为空且受保护issuer未授权，所以仍不能生成真实`source-verified`证据或晋升receipt。
 
 ## 四场景
 

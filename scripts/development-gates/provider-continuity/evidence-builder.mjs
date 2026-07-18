@@ -2,6 +2,7 @@ import { createHash, verify as verifySignature } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 
+import { PROVIDER_CAPTURE_SIGNATURE_DOMAIN } from "./capture-signature.mjs";
 import { validateScenarioSequence } from "./scenario-runner.mjs";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
@@ -222,10 +223,17 @@ function validateProviderCall(call, scenario, ordinalState) {
 function validateSignedIndexReference(value) {
   const reference = validateSourceReference(value, "signed source index");
   if (typeof value.keyId !== "string" || !IDENTIFIER_PATTERN.test(value.keyId) ||
+      value.algorithm !== "Ed25519" || value.domain !== PROVIDER_CAPTURE_SIGNATURE_DOMAIN ||
       typeof value.signature !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.signature)) {
     throw new Error("Signed source index signature reference is invalid.");
   }
-  return { ...reference, keyId: value.keyId, signature: value.signature };
+  return {
+    ...reference,
+    algorithm: value.algorithm,
+    domain: value.domain,
+    keyId: value.keyId,
+    signature: value.signature,
+  };
 }
 
 function requireTrustedCaptureKey(keys, keyId, expectedPublicKeySha256) {
@@ -280,7 +288,8 @@ function verifyIndexSignature(bytes, signature, publicKeyPem) {
   } catch {
     throw new Error("Signed source index signature is invalid.");
   }
-  if (decoded.length === 0 || !verifySignature(null, bytes, publicKeyPem, decoded)) {
+  const payload = Buffer.concat([Buffer.from(PROVIDER_CAPTURE_SIGNATURE_DOMAIN, "utf8"), bytes]);
+  if (decoded.length === 0 || !verifySignature(null, payload, publicKeyPem, decoded)) {
     throw new Error("Signed source index signature verification failed.");
   }
 }

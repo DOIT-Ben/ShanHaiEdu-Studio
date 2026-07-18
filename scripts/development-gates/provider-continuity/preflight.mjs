@@ -13,12 +13,16 @@ export function validateLivePreflight(input = {}) {
     throw new Error("Requested Provider authorization does not match the active stage contract.");
   }
   const now = input.now instanceof Date ? input.now : new Date(input.now ?? Date.now());
-  if (!Number.isFinite(now.getTime()) || now.getTime() > Date.parse(approved.expiresAt)) {
+  if (!Number.isFinite(now.getTime()) || now.getTime() >= Date.parse(approved.expiresAt)) {
     throw new Error("Provider authorization has expired.");
   }
   if (!Array.isArray(input.trustedCaptureKeyIds) ||
       !input.trustedCaptureKeyIds.includes(approved.trustedCaptureKeyId)) {
     throw new Error("Provider authorization capture key is not trusted by the active stage.");
+  }
+  if (!Array.isArray(input.trustedLedgerAuthorityKeyIds) ||
+      !input.trustedLedgerAuthorityKeyIds.includes(approved.ledgerAuthorityKeyId)) {
+    throw new Error("Provider authorization ledger authority key is not trusted by the active stage.");
   }
   if (input.verifyProtectedEnvironment?.(approved.protectedEnvironment) !== true) {
     throw new Error("Provider protected environment verification is required.");
@@ -42,13 +46,22 @@ function normalizeApprovedAuthorization(value) {
   const expiresAt = requireTimestamp(value.expiresAt, "authorization expiry");
   const protectedEnvironment = requireIdentifier(value.protectedEnvironment, "protected environment");
   const trustedCaptureKeyId = requireIdentifier(value.trustedCaptureKeyId, "trusted capture key ID");
+  const ledgerAuthorityKeyId = requireIdentifier(value.ledgerAuthorityKeyId, "ledger authority key ID");
+  const trustedCapturePublicKeySha256 = requireDigest(value.trustedCapturePublicKeySha256, "trusted capture public key");
+  const ledgerAuthorityPublicKeySha256 = requireDigest(value.ledgerAuthorityPublicKeySha256, "ledger authority public key");
+  if (ledgerAuthorityKeyId === trustedCaptureKeyId ||
+      ledgerAuthorityPublicKeySha256 === trustedCapturePublicKeySha256) {
+    throw new Error("Capture signing and ledger authority keys must be distinct.");
+  }
   return {
     ...requested,
     expiresAt,
     protectedEnvironment,
     providerLedgerManifestSha256: requireDigest(value.providerLedgerManifestSha256, "Provider ledger manifest"),
     trustedCaptureKeyId,
-    trustedCapturePublicKeySha256: requireDigest(value.trustedCapturePublicKeySha256, "trusted capture public key"),
+    trustedCapturePublicKeySha256,
+    ledgerAuthorityKeyId,
+    ledgerAuthorityPublicKeySha256,
   };
 }
 
