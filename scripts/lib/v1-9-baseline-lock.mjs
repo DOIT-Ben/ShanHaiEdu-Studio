@@ -8,9 +8,16 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-export const V1_9_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v1";
+import {
+  assertV1_9BaselineCandidateUnchanged,
+  collectV1_9BaselineCandidateEvidence,
+} from "./v1-9-baseline-evidence.mjs";
+
+export const V1_9_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v2";
+export const V1_9_LEGACY_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v1";
 
 const comparableFields = Object.freeze([
+  "schemaVersion",
   "branch",
   "gitHead",
   "generationIntensity",
@@ -20,6 +27,14 @@ const comparableFields = Object.freeze([
   "projectionRegistryDigest",
   "providerLedgerManifestDigest",
   "projectionId",
+  "verificationManifestSha256",
+  "workingTreeDigest",
+  "policySha256",
+  "stageSha256",
+  "providerContinuityManifestSha256",
+  "providerContinuityReceiptSha256",
+  "providerContinuityEvidenceRootDigest",
+  "providerContinuitySubjectDigest",
 ]);
 
 const runtimeSourceDirectories = Object.freeze([
@@ -75,6 +90,27 @@ export class V1_9BaselineLockDriftError extends Error {
 }
 
 export function createV1_9BaselineLock(input = {}) {
+  const cwd = resolveRepositoryRoot(input.cwd);
+  const staticInputs = collectV1_9BaselineStaticInputs({ ...input, cwd });
+  const candidate = collectV1_9BaselineCandidateEvidence({ cwd, now: input.now });
+  if (candidate.subject.headSha !== staticInputs.gitHead) throw stableError("v1_9_baseline_subject_drift");
+  const lock = {
+    schemaVersion: V1_9_BASELINE_LOCK_VERSION,
+    ...staticInputs,
+    verificationManifestSha256: candidate.verificationManifestSha256,
+    workingTreeDigest: candidate.subject.workingTreeDigest,
+    policySha256: candidate.subject.policySha256,
+    stageSha256: candidate.subject.stageSha256,
+    providerContinuityManifestSha256: candidate.providerContinuityManifestSha256,
+    providerContinuityReceiptSha256: candidate.providerContinuityReceiptSha256,
+    providerContinuityEvidenceRootDigest: candidate.providerContinuityEvidenceRootDigest,
+    providerContinuitySubjectDigest: candidate.providerContinuitySubjectDigest,
+  };
+  assertV1_9BaselineCandidateUnchanged(cwd, candidate);
+  return Object.freeze(lock);
+}
+
+export function collectV1_9BaselineStaticInputs(input = {}) {
   const cwd = resolveRepositoryRoot(input.cwd);
   const env = input.env ?? process.env;
   const branch = readGitValue(cwd, ["rev-parse", "--abbrev-ref", "HEAD"], "v1_9_baseline_branch_invalid");
@@ -134,7 +170,6 @@ export function createV1_9BaselineLock(input = {}) {
   }
 
   return Object.freeze({
-    schemaVersion: V1_9_BASELINE_LOCK_VERSION,
     branch: "main",
     gitHead,
     generationIntensity: "standard",
@@ -279,7 +314,7 @@ function normalizeBaselineLock(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw stableError("v1_9_baseline_lock_invalid");
   }
-  if (value.schemaVersion !== V1_9_BASELINE_LOCK_VERSION ||
+  if (![V1_9_BASELINE_LOCK_VERSION, V1_9_LEGACY_BASELINE_LOCK_VERSION].includes(value.schemaVersion) ||
       value.branch !== "main" ||
       value.generationIntensity !== "standard") {
     throw stableError("v1_9_baseline_lock_invalid");
@@ -296,8 +331,8 @@ function normalizeBaselineLock(value) {
   }
   const projectionId = String(value.projectionId ?? "").trim();
   if (!isProjectionId(projectionId)) throw stableError("v1_9_baseline_lock_invalid");
-  return {
-    schemaVersion: V1_9_BASELINE_LOCK_VERSION,
+  const normalized = {
+    schemaVersion: value.schemaVersion,
     branch: "main",
     gitHead,
     generationIntensity: "standard",
@@ -307,6 +342,18 @@ function normalizeBaselineLock(value) {
     projectionRegistryDigest,
     providerLedgerManifestDigest,
     projectionId,
+  };
+  if (value.schemaVersion === V1_9_LEGACY_BASELINE_LOCK_VERSION) return normalized;
+  return {
+    ...normalized,
+    verificationManifestSha256: normalizeDigest(value.verificationManifestSha256),
+    workingTreeDigest: normalizeDigest(value.workingTreeDigest),
+    policySha256: normalizeDigest(value.policySha256),
+    stageSha256: normalizeDigest(value.stageSha256),
+    providerContinuityManifestSha256: normalizeDigest(value.providerContinuityManifestSha256),
+    providerContinuityReceiptSha256: normalizeDigest(value.providerContinuityReceiptSha256),
+    providerContinuityEvidenceRootDigest: normalizeDigest(value.providerContinuityEvidenceRootDigest),
+    providerContinuitySubjectDigest: normalizeDigest(value.providerContinuitySubjectDigest),
   };
 }
 

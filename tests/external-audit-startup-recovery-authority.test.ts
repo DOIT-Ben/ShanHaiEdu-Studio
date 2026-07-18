@@ -243,14 +243,17 @@ function createManifest(runId: string, relativeRunRoot: string) {
   return createV1_9RunManifestV2({
     runId,
     relativeRunRoot,
-    prompt: "完成一套公开课材料包。",
     createdAt: "2026-07-15T13:00:00.000Z",
     baselineLock: {
-      schemaVersion: "v1-9-baseline-lock.v1", branch: "main", gitHead: "a".repeat(40),
+      schemaVersion: "v1-9-baseline-lock.v2", branch: "main", gitHead: "a".repeat(40),
       generationIntensity: "standard", runtimeSourceDigest: "4".repeat(64),
       requirementsBaselineDigest: "5".repeat(64), registryDigest: "6".repeat(64),
       projectionRegistryDigest: "6".repeat(64), providerLedgerManifestDigest: "7".repeat(64),
       projectionId: "runtime-projection-a23",
+      verificationManifestSha256: "1".repeat(64), workingTreeDigest: "2".repeat(64),
+      policySha256: "3".repeat(64), stageSha256: "4".repeat(64),
+      providerContinuityManifestSha256: "4".repeat(64), providerContinuityReceiptSha256: "5".repeat(64),
+      providerContinuityEvidenceRootDigest: "e".repeat(64), providerContinuitySubjectDigest: "f".repeat(64),
     },
     skillLock: {
       schemaVersion: "v1-9-skill-lock.v1", projectionLockDigest: "8".repeat(64),

@@ -5,27 +5,67 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const nodeTestDatabasePath = path.join(root, ".tmp", "node-test-workbench.db");
-const vitestDatabaseFamily = "vitest-test-workbench.db";
+const testRunToken = `${process.pid}-${Date.now().toString(36)}`;
+const testDotenvPath = path.join(root, ".tmp", `test-dotenv-${testRunToken}.env`);
+const testDatabaseFamily = "test-workbench.db";
 const providerLedgerFixtureRoot = path.join(root, "tests", "fixtures", "provider-ledger");
 const providerLedgerFixtureEnvKeys = readProviderLedgerFixtureEnvKeys(providerLedgerFixtureRoot);
-const baseEnv = createTestBaseEnv();
-const nodeTestEnv = createSuiteEnv("node-test-workbench.db", { base: baseEnv });
+const baseEnv = { ...createTestBaseEnv(), DOTENV_CONFIG_PATH: testDotenvPath };
 
-export function runAllTests() {
-  run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
-  initializeTestDatabase(nodeTestDatabasePath, nodeTestEnv);
-  run(process.execPath, createNodeTestArgs(), { env: nodeTestEnv });
-  for (const plan of createVitestShardPlans()) {
+export function runAllTests({
+  runCommand = run,
+  initializeDatabase = initializeTestDatabase,
+  cleanupDatabase = removeTestDatabaseFamily,
+} = {}) {
+  fs.mkdirSync(path.dirname(testDotenvPath), { recursive: true });
+  fs.writeFileSync(testDotenvPath, "", { flag: "wx" });
+  try { return runTestSuites({ runCommand, initializeDatabase, cleanupDatabase }); }
+  finally { fs.rmSync(testDotenvPath, { force: true }); }
+}
+
+function runTestSuites({ runCommand, initializeDatabase, cleanupDatabase }) {
+  const nodePlan = createNodeTestPlan({ runToken: testRunToken });
+  runCommand(npxCommand(), ["prisma", "generate"], {
+    shell: process.platform === "win32",
+    env: nodePlan.env,
+  });
+  try {
+    initializeDatabase(nodePlan.databasePath, nodePlan.env);
+    runCommand(process.execPath, createNodeTestArgs(), { env: nodePlan.env });
+  } finally {
+    cleanupDatabase(nodePlan.databasePath);
+  }
+  for (const plan of createVitestShardPlans({ runToken: testRunToken })) {
     const vitestDatabasePath = plan.databasePath;
     const vitestEnv = plan.env;
-    initializeTestDatabase(vitestDatabasePath, vitestEnv);
-    run(npxCommand(), plan.args, { shell: process.platform === "win32", env: vitestEnv });
+    try {
+      initializeDatabase(vitestDatabasePath, vitestEnv);
+      runCommand(npxCommand(), plan.args, { shell: process.platform === "win32", env: vitestEnv });
+    } finally {
+      cleanupDatabase(vitestDatabasePath);
+    }
   }
 }
 
 export function createNodeTestArgs() {
   return ["--test", "--test-concurrency=1", "tests/*.test.mjs"];
+}
+
+export function createNodeTestPlan({
+  root: repositoryRoot = root,
+  base = baseEnv,
+  providerEnvKeys = providerLedgerFixtureEnvKeys,
+  runToken = testRunToken,
+} = {}) {
+  const databaseFileName = createTestDatabaseFileName({ runToken, role: "node" });
+  return Object.freeze({
+    databasePath: path.join(repositoryRoot, ".tmp", databaseFileName),
+    env: createSuiteEnv(databaseFileName, {
+      base,
+      providerLedgerRoot: null,
+      providerEnvKeys,
+    }),
+  });
 }
 
 export function createVitestShardPlans({
@@ -34,14 +74,20 @@ export function createVitestShardPlans({
   providerLedgerRoot = providerLedgerFixtureRoot,
   providerEnvKeys = providerLedgerFixtureEnvKeys,
   shardCount = 2,
+  runToken = null,
 } = {}) {
   if (!Number.isSafeInteger(shardCount) || shardCount < 2 || shardCount > 8) {
     throw new Error("Vitest shardCount must be an integer between 2 and 8.");
   }
+  if (runToken !== null && !/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(runToken)) {
+    throw new Error("Vitest runToken must be a safe identifier.");
+  }
   return Array.from({ length: shardCount }, (_, index) => {
     const sequence = index + 1;
-    const databaseName = path.parse(vitestDatabaseFamily);
-    const databaseFileName = `${databaseName.name}-shard-${sequence}${databaseName.ext}`;
+    const databaseFileName = createTestDatabaseFileName({
+      runToken,
+      role: `vitest-shard-${sequence}`,
+    });
     return Object.freeze({
       sequence,
       databasePath: path.join(repositoryRoot, ".tmp", databaseFileName),
@@ -73,13 +119,31 @@ export function createTestBaseEnv({ env = process.env, tempRoot = resolveCanonic
     TEMP: tempRoot,
     TMP: tempRoot,
     TMPDIR: tempRoot,
-    VITEST_MAX_WORKERS: env.VITEST_MAX_WORKERS ?? "1",
+    VITEST_MAX_WORKERS: "1",
   };
 }
 
+function createTestDatabaseFileName({ runToken, role }) {
+  if (runToken !== null && !/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(runToken)) {
+    throw new Error("Test runToken must be a safe identifier.");
+  }
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(role)) {
+    throw new Error("Test database role must be a safe identifier.");
+  }
+  const databaseName = path.parse(testDatabaseFamily);
+  const tokenSuffix = runToken === null ? "" : `-${runToken}`;
+  return `${databaseName.name}${tokenSuffix}-${role}${databaseName.ext}`;
+}
+
 function initializeTestDatabase(databasePath, env) {
-  fs.rmSync(databasePath, { force: true });
+  removeTestDatabaseFamily(databasePath);
   run(process.execPath, ["scripts/init-sqlite-schema.mjs"], { env });
+}
+
+export function removeTestDatabaseFamily(databasePath, { fileSystem = fs } = {}) {
+  for (const candidate of [`${databasePath}-wal`, `${databasePath}-shm`, databasePath]) {
+    fileSystem.rmSync(candidate, { force: true });
+  }
 }
 
 export function createSuiteEnv(databaseFileName, { base = baseEnv, providerLedgerRoot, providerEnvKeys = [] } = {}) {
@@ -116,7 +180,9 @@ function run(command, args, options = {}) {
   }
 
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    const error = new Error(`Test command failed with exit code ${result.status ?? 1}.`);
+    error.exitCode = result.status ?? 1;
+    throw error;
   }
 }
 

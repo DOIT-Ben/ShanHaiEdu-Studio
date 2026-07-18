@@ -2,10 +2,18 @@ import { createHash } from "node:crypto";
 
 export const V1_9_RUN_MANIFEST_VERSION = "v1-9-run-manifest.v1";
 export const V1_9_RUN_MANIFEST_V2_VERSION = "v1-9-run-manifest.v2";
-export const V1_9_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v1";
+export const V1_9_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v2";
+export const V1_9_LEGACY_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v1";
 export const V1_9_RUN_STATE_VERSION = "v1-9-run-state.v2";
 export const V1_9_RUN_LEDGER_VERSION = "v1-9-run-ledger.v1";
 export const V1_9_TASK_CONTRACT_LOCK_VERSION = "v1-9-task-contract-lock.v1";
+export const V1_9_FROZEN_PROMPT = [
+  "请为五年级数学《百分数》完成一套可直接备课验收的公开课材料包，",
+  "包括结构化教案、约10页可编辑PPTX、课堂视觉图、30至90秒独立创意导入视频、",
+  "唯一最小课程锚点、ClassroomRunSpec和版本一致ZIP。",
+  "视频创意脱离教材仍成立，不固定儿童、教师、教室或课堂活动；标准范围内自主推进，失败只返修受影响页面、镜头或版本。",
+].join("");
+export const V1_9_FROZEN_PROMPT_DIGEST = sha256(V1_9_FROZEN_PROMPT);
 
 const generationIntensities = new Set(["standard", "enhanced", "deep", "extreme"]);
 const providerRuntimeCapabilities = new Set([
@@ -82,7 +90,6 @@ export function createV1_9RunManifestV2(input) {
   assertOnlyFields(source, [
     "runId",
     "relativeRunRoot",
-    "prompt",
     "createdAt",
     "baselineLock",
     "skillLock",
@@ -101,14 +108,18 @@ export function createV1_9RunManifestV2(input) {
     throw new Error("v1_9_agent_brain_runtime_lock_mismatch");
   }
   const predecessor = normalizePredecessor(source.predecessor);
-  if (predecessor.runId === runId) throw new Error("v1_9_predecessor_run_id_invalid");
+  if (predecessor?.runId === runId) throw new Error("v1_9_predecessor_run_id_invalid");
+  const baselineLock = normalizeV1_9BaselineLock(source.baselineLock);
+  if (baselineLock.schemaVersion !== V1_9_BASELINE_LOCK_VERSION) {
+    throw new Error("v1_9_baseline_lock_upgrade_required");
+  }
   return {
     schemaVersion: V1_9_RUN_MANIFEST_V2_VERSION,
     runId,
     relativeRunRoot,
     createdAt: requiredTimestamp(source.createdAt, "createdAt"),
-    promptDigest: sha256(requiredText(source.prompt, "prompt")),
-    baselineLock: normalizeV1_9BaselineLock(source.baselineLock),
+    promptDigest: V1_9_FROZEN_PROMPT_DIGEST,
+    baselineLock,
     skillLock: normalizeSkillLockStrict(source.skillLock),
     agentBrain,
     providerRuntimeLocks,
@@ -117,6 +128,14 @@ export function createV1_9RunManifestV2(input) {
 }
 
 export function normalizeV1_9RunManifestV2(value) {
+  const manifest = normalizeV1_9RunManifestV2ReadOnly(value);
+  if (manifest.baselineLock.schemaVersion !== V1_9_BASELINE_LOCK_VERSION) {
+    throw new Error("v1_9_baseline_lock_upgrade_required");
+  }
+  return manifest;
+}
+
+export function normalizeV1_9RunManifestV2ReadOnly(value) {
   const manifest = requiredRecord(value, "run_manifest");
   assertOnlyFields(manifest, [
     "schemaVersion",
@@ -144,7 +163,7 @@ export function normalizeV1_9RunManifestV2(value) {
     throw new Error("v1_9_agent_brain_runtime_lock_mismatch");
   }
   const predecessor = normalizePredecessor(manifest.predecessor);
-  if (predecessor.runId === runId) throw new Error("v1_9_predecessor_run_id_invalid");
+  if (predecessor?.runId === runId) throw new Error("v1_9_predecessor_run_id_invalid");
   return {
     schemaVersion: V1_9_RUN_MANIFEST_V2_VERSION,
     runId,
@@ -161,7 +180,7 @@ export function normalizeV1_9RunManifestV2(value) {
 
 export function normalizeV1_9BaselineLock(value) {
   const lock = requiredRecord(value, "baseline_lock");
-  assertOnlyFields(lock, [
+  const commonFields = [
     "schemaVersion",
     "branch",
     "gitHead",
@@ -172,8 +191,23 @@ export function normalizeV1_9BaselineLock(value) {
     "projectionRegistryDigest",
     "providerLedgerManifestDigest",
     "projectionId",
-  ], "baseline_lock");
-  if (lock.schemaVersion !== V1_9_BASELINE_LOCK_VERSION) {
+  ];
+  const v2Fields = [
+    ...commonFields,
+    "verificationManifestSha256",
+    "workingTreeDigest",
+    "policySha256",
+    "stageSha256",
+    "providerContinuityManifestSha256",
+    "providerContinuityReceiptSha256",
+    "providerContinuityEvidenceRootDigest",
+    "providerContinuitySubjectDigest",
+  ];
+  if (lock.schemaVersion === V1_9_LEGACY_BASELINE_LOCK_VERSION) {
+    assertOnlyFields(lock, commonFields, "baseline_lock");
+  } else if (lock.schemaVersion === V1_9_BASELINE_LOCK_VERSION) {
+    assertOnlyFields(lock, v2Fields, "baseline_lock");
+  } else {
     throw new Error("v1_9_baseline_lock_version_invalid");
   }
   if (lock.branch !== "main") throw new Error("v1_9_baseline_branch_invalid");
@@ -188,8 +222,8 @@ export function normalizeV1_9BaselineLock(value) {
   if (registryDigest !== projectionRegistryDigest) {
     throw new Error("v1_9_baseline_registry_projection_mismatch");
   }
-  return {
-    schemaVersion: V1_9_BASELINE_LOCK_VERSION,
+  const normalized = {
+    schemaVersion: lock.schemaVersion,
     branch: "main",
     gitHead: requiredGitCommit(lock.gitHead, "baselineLock.gitHead"),
     generationIntensity: "standard",
@@ -202,6 +236,33 @@ export function normalizeV1_9BaselineLock(value) {
       "baselineLock.providerLedgerManifestDigest",
     ),
     projectionId: requiredSafeId(lock.projectionId, "baselineLock.projectionId"),
+  };
+  if (lock.schemaVersion === V1_9_LEGACY_BASELINE_LOCK_VERSION) return normalized;
+  return {
+    ...normalized,
+    verificationManifestSha256: requiredDigest(
+      lock.verificationManifestSha256,
+      "baselineLock.verificationManifestSha256",
+    ),
+    workingTreeDigest: requiredDigest(lock.workingTreeDigest, "baselineLock.workingTreeDigest"),
+    policySha256: requiredDigest(lock.policySha256, "baselineLock.policySha256"),
+    stageSha256: requiredDigest(lock.stageSha256, "baselineLock.stageSha256"),
+    providerContinuityManifestSha256: requiredDigest(
+      lock.providerContinuityManifestSha256,
+      "baselineLock.providerContinuityManifestSha256",
+    ),
+    providerContinuityReceiptSha256: requiredDigest(
+      lock.providerContinuityReceiptSha256,
+      "baselineLock.providerContinuityReceiptSha256",
+    ),
+    providerContinuityEvidenceRootDigest: requiredDigest(
+      lock.providerContinuityEvidenceRootDigest,
+      "baselineLock.providerContinuityEvidenceRootDigest",
+    ),
+    providerContinuitySubjectDigest: requiredDigest(
+      lock.providerContinuitySubjectDigest,
+      "baselineLock.providerContinuitySubjectDigest",
+    ),
   };
 }
 
@@ -1184,6 +1245,7 @@ function normalizeProviderRuntimeLocks(value) {
 }
 
 function normalizePredecessor(value) {
+  if (value === null) return null;
   const predecessor = requiredRecord(value, "predecessor");
   assertOnlyFields(predecessor, ["runId", "relativeRunRoot", "manifestSha256", "disposition"], "predecessor");
   const runId = requiredRunId(predecessor.runId, "predecessor.runId");
@@ -1196,25 +1258,6 @@ function normalizePredecessor(value) {
     relativeRunRoot,
     manifestSha256: requiredDigest(predecessor.manifestSha256, "predecessor.manifestSha256"),
     disposition,
-  };
-}
-
-function normalizeDigestFileRef(value, label) {
-  const reference = requiredRecord(value, label);
-  assertOnlyFields(reference, ["path", "digest"], label);
-  return {
-    path: requiredRepositoryPath(reference.path, `${label}.path`),
-    digest: requiredDigest(reference.digest, `${label}.digest`),
-  };
-}
-
-function normalizeRuntimeProjection(value) {
-  const projection = requiredRecord(value, "runtime_projection");
-  assertOnlyFields(projection, ["id", "path", "digest"], "runtime_projection");
-  return {
-    id: requiredSafeId(projection.id, "runtimeProjection.id"),
-    path: requiredRepositoryPath(projection.path, "runtimeProjection.path"),
-    digest: requiredDigest(projection.digest, "runtimeProjection.digest"),
   };
 }
 
@@ -1677,17 +1720,6 @@ function requiredSafeId(value, field) {
 function requiredGitCommit(value, field) {
   const normalized = requiredText(value, field).toLowerCase();
   if (!/^[a-f0-9]{40}$/.test(normalized)) throw new Error(`v1_9_${field}_invalid`);
-  return normalized;
-}
-
-function requiredRepositoryPath(value, field) {
-  const normalized = requiredText(value, field).replaceAll("\\", "/");
-  const segments = normalized.split("/");
-  if (normalized.startsWith("/") || normalized.endsWith("/") || normalized.includes(":") ||
-      /[<>"|?*\u0000-\u001f]/.test(normalized) ||
-      segments.some((segment) => !segment || segment === "." || segment === "..")) {
-    throw new Error("v1_9_repository_path_invalid");
-  }
   return normalized;
 }
 

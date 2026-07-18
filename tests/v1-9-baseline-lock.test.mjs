@@ -13,21 +13,18 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
-  V1_9BaselineLockDriftError,
-  assertCurrentV1_9BaselineLock,
+  collectV1_9BaselineStaticInputs,
   compareV1_9BaselineLock,
-  createV1_9BaselineLock,
 } from "../scripts/lib/v1-9-baseline-lock.mjs";
 
 test("creates a deterministic, non-sensitive baseline lock from main and the configured projection", (t) => {
   const fixture = makeFixture(t);
 
-  const first = createV1_9BaselineLock(fixture.input);
-  const second = createV1_9BaselineLock(fixture.input);
+  const first = collectV1_9BaselineStaticInputs(fixture.input);
+  const second = collectV1_9BaselineStaticInputs(fixture.input);
 
   assert.deepEqual(second, first);
   assert.deepEqual(Object.keys(first), [
-    "schemaVersion",
     "branch",
     "gitHead",
     "generationIntensity",
@@ -38,7 +35,6 @@ test("creates a deterministic, non-sensitive baseline lock from main and the con
     "providerLedgerManifestDigest",
     "projectionId",
   ]);
-  assert.equal(first.schemaVersion, "v1-9-baseline-lock.v1");
   assert.equal(first.branch, "main");
   assert.equal(first.generationIntensity, "standard");
   assert.match(first.gitHead, /^[a-f0-9]{40}$/);
@@ -57,22 +53,22 @@ test("creates a deterministic, non-sensitive baseline lock from main and the con
 
 test("runtime source digest includes modified, untracked, and relative-path changes", (t) => {
   const fixture = makeFixture(t);
-  const original = createV1_9BaselineLock(fixture.input);
+  const original = collectV1_9BaselineStaticInputs(fixture.input);
 
   writeFixtureFile(fixture.repoRoot, "src/app.ts", "export const value = 'modified';\n");
-  const modified = createV1_9BaselineLock(fixture.input);
+  const modified = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(modified.runtimeSourceDigest, original.runtimeSourceDigest);
   assert.equal(modified.gitHead, original.gitHead);
 
   writeFixtureFile(fixture.repoRoot, "scripts/untracked-runtime.mjs", "export const untracked = true;\n");
-  const untracked = createV1_9BaselineLock(fixture.input);
+  const untracked = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(untracked.runtimeSourceDigest, modified.runtimeSourceDigest);
   assert.equal(untracked.gitHead, original.gitHead);
 
   const oldPath = path.join(fixture.repoRoot, "scripts", "untracked-runtime.mjs");
   const newPath = path.join(fixture.repoRoot, "scripts", "renamed-runtime.mjs");
   renameSync(oldPath, newPath);
-  const renamed = createV1_9BaselineLock(fixture.input);
+  const renamed = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(renamed.runtimeSourceDigest, untracked.runtimeSourceDigest);
 });
 
@@ -85,11 +81,11 @@ test("runtime source digest freezes root fixtures, config, package manifests, an
     "package-lock.json",
     "tests/e2e/v1-9-unique-real-product.spec.ts",
   ];
-  let previous = createV1_9BaselineLock(fixture.input);
+  let previous = collectV1_9BaselineStaticInputs(fixture.input);
 
   for (const [index, relativePath] of runtimeFiles.entries()) {
     writeFixtureFile(fixture.repoRoot, relativePath, `changed-runtime-input-${index}\n`);
-    const current = createV1_9BaselineLock(fixture.input);
+    const current = collectV1_9BaselineStaticInputs(fixture.input);
     assert.notEqual(current.runtimeSourceDigest, previous.runtimeSourceDigest, relativePath);
     previous = current;
   }
@@ -97,7 +93,7 @@ test("runtime source digest freezes root fixtures, config, package manifests, an
 
 test("runtime source digest excludes secrets, private ledgers, dependencies, results, temp, build, and graph output", (t) => {
   const fixture = makeFixture(t);
-  const original = createV1_9BaselineLock(fixture.input);
+  const original = collectV1_9BaselineStaticInputs(fixture.input);
 
   const excludedFiles = [
     [".env", "API_TOKEN=secret-root\n"],
@@ -117,21 +113,21 @@ test("runtime source digest excludes secrets, private ledgers, dependencies, res
     writeFixtureFile(fixture.repoRoot, relativePath, content);
   }
 
-  const afterExcludedChanges = createV1_9BaselineLock(fixture.input);
+  const afterExcludedChanges = collectV1_9BaselineStaticInputs(fixture.input);
   assert.equal(afterExcludedChanges.runtimeSourceDigest, original.runtimeSourceDigest);
   assert.deepEqual(afterExcludedChanges, original);
 });
 
 test("requirements, source Registry, projection Registry, and Provider ledger are independently frozen", (t) => {
   const fixture = makeFixture(t);
-  const original = createV1_9BaselineLock(fixture.input);
+  const original = collectV1_9BaselineStaticInputs(fixture.input);
 
   writeFixtureFile(
     fixture.repoRoot,
     "docs/product/current-requirements-baseline.md",
     "# Updated requirements baseline\n",
   );
-  const requirementsChanged = createV1_9BaselineLock(fixture.input);
+  const requirementsChanged = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(requirementsChanged.requirementsBaselineDigest, original.requirementsBaselineDigest);
   assert.equal(requirementsChanged.runtimeSourceDigest, original.runtimeSourceDigest);
   assert.equal(requirementsChanged.registryDigest, original.registryDigest);
@@ -139,7 +135,7 @@ test("requirements, source Registry, projection Registry, and Provider ledger ar
   const updatedRegistry = "schemaVersion: registry.v2\nsecret: must-not-leak\n";
   writeFixtureFile(fixture.sourceSkillsRoot, "shanhai-suite/assets/registry.yaml", updatedRegistry);
   writeFixtureFile(fixture.projectionRoot, "shanhai-suite/assets/registry.yaml", updatedRegistry);
-  const registryChanged = createV1_9BaselineLock(fixture.input);
+  const registryChanged = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(registryChanged.registryDigest, requirementsChanged.registryDigest);
   assert.notEqual(registryChanged.projectionRegistryDigest, requirementsChanged.projectionRegistryDigest);
   assert.equal(registryChanged.projectionRegistryDigest, registryChanged.registryDigest);
@@ -150,13 +146,13 @@ test("requirements, source Registry, projection Registry, and Provider ledger ar
 
   writeFixtureFile(fixture.sourceSkillsRoot, "shanhai-suite/assets/registry.yaml", "schemaVersion: registry.v3\n");
   assert.throws(
-    () => createV1_9BaselineLock(fixture.input),
+    () => collectV1_9BaselineStaticInputs(fixture.input),
     (error) => error?.reasonCode === "v1_9_baseline_registry_projection_mismatch",
   );
 
   writeFixtureFile(fixture.sourceSkillsRoot, "shanhai-suite/assets/registry.yaml", updatedRegistry);
   writeFixtureFile(fixture.repoRoot, "API台账系统/manifest.json", "{\"version\":2}\n");
-  const providerLedgerChanged = createV1_9BaselineLock(fixture.input);
+  const providerLedgerChanged = collectV1_9BaselineStaticInputs(fixture.input);
   assert.notEqual(providerLedgerChanged.providerLedgerManifestDigest, registryChanged.providerLedgerManifestDigest);
   assert.equal(providerLedgerChanged.runtimeSourceDigest, registryChanged.runtimeSourceDigest);
   assert.equal(providerLedgerChanged.registryDigest, registryChanged.registryDigest);
@@ -166,7 +162,7 @@ test("rejects a projection alias or a projection not owned by the configured sou
   const fixture = makeFixture(t);
 
   assert.throws(
-    () => createV1_9BaselineLock({
+    () => collectV1_9BaselineStaticInputs({
       cwd: fixture.repoRoot,
       env: {
         SHANHAI_SKILLS_SOURCE_ROOT: fixture.projectionRoot,
@@ -183,7 +179,7 @@ test("rejects a projection alias or a projection not owned by the configured sou
     "schemaVersion: registry.v1\nname: fixture\n",
   );
   assert.throws(
-    () => createV1_9BaselineLock({
+    () => collectV1_9BaselineStaticInputs({
       cwd: fixture.repoRoot,
       env: {
         SHANHAI_SKILLS_SOURCE_ROOT: fixture.sourceSkillsRoot,
@@ -205,7 +201,7 @@ test("rejects a runtime source symlink, junction, or reparse redirect", (t) => {
   );
 
   assert.throws(
-    () => createV1_9BaselineLock(fixture.input),
+    () => collectV1_9BaselineStaticInputs(fixture.input),
     (error) => {
       assert.equal(error?.message, "v1_9_baseline_runtime_source_invalid");
       assert.equal(error?.reasonCode, "v1_9_baseline_runtime_source_invalid");
@@ -220,7 +216,7 @@ test("rejects any branch other than main with a stable, sanitized error", (t) =>
   git(fixture.repoRoot, "switch", "-c", "feature/private-branch");
 
   assert.throws(
-    () => createV1_9BaselineLock(fixture.input),
+    () => collectV1_9BaselineStaticInputs(fixture.input),
     (error) => {
       assert.equal(error?.message, "v1_9_baseline_branch_invalid");
       assert.equal(error?.reasonCode, "v1_9_baseline_branch_invalid");
@@ -232,32 +228,62 @@ test("rejects any branch other than main with a stable, sanitized error", (t) =>
 
 test("compares a frozen lock and fails closed on current baseline drift", (t) => {
   const fixture = makeFixture(t);
-  const frozen = createV1_9BaselineLock(fixture.input);
+  const staticInputs = collectV1_9BaselineStaticInputs(fixture.input);
+  const frozen = currentLock(staticInputs);
 
   assert.deepEqual(compareV1_9BaselineLock(frozen, frozen), {
     isCurrent: true,
     driftedFields: [],
   });
-  assert.deepEqual(assertCurrentV1_9BaselineLock(frozen, fixture.input), frozen);
+  const legacy = { schemaVersion: "v1-9-baseline-lock.v1", ...staticInputs };
+  const legacyComparison = compareV1_9BaselineLock(legacy, frozen);
+  assert.equal(legacyComparison.isCurrent, false);
+  assert.ok(legacyComparison.driftedFields.includes("schemaVersion"));
+  assert.ok(legacyComparison.driftedFields.includes("verificationManifestSha256"));
 
   writeFixtureFile(fixture.repoRoot, "src/new-runtime.ts", "export const newRuntime = true;\n");
-  const current = createV1_9BaselineLock(fixture.input);
+  const current = currentLock(collectV1_9BaselineStaticInputs(fixture.input));
   assert.deepEqual(compareV1_9BaselineLock(frozen, current), {
     isCurrent: false,
     driftedFields: ["runtimeSourceDigest"],
   });
-  assert.throws(
-    () => assertCurrentV1_9BaselineLock(frozen, fixture.input),
-    (error) => {
-      assert.ok(error instanceof V1_9BaselineLockDriftError);
-      assert.equal(error.message, "v1_9_baseline_lock_drift");
-      assert.equal(error.reasonCode, "v1_9_baseline_lock_drift");
-      assert.deepEqual(error.driftedFields, ["runtimeSourceDigest"]);
-      assert.doesNotMatch(String(error), /new-runtime|private|secret|token/i);
-      return true;
-    },
-  );
 });
+
+test("reports each v2 candidate evidence drift field exactly", (t) => {
+  const fixture = makeFixture(t);
+  const frozen = currentLock(collectV1_9BaselineStaticInputs(fixture.input));
+  for (const field of [
+    "verificationManifestSha256",
+    "workingTreeDigest",
+    "policySha256",
+    "stageSha256",
+    "providerContinuityManifestSha256",
+    "providerContinuityReceiptSha256",
+    "providerContinuityEvidenceRootDigest",
+    "providerContinuitySubjectDigest",
+  ]) {
+    const current = { ...frozen, [field]: "f".repeat(64) };
+    assert.deepEqual(compareV1_9BaselineLock(frozen, current), {
+      isCurrent: false,
+      driftedFields: [field],
+    });
+  }
+});
+
+function currentLock(staticInputs) {
+  return {
+    schemaVersion: "v1-9-baseline-lock.v2",
+    ...staticInputs,
+    verificationManifestSha256: "1".repeat(64),
+    workingTreeDigest: "2".repeat(64),
+    policySha256: "3".repeat(64),
+    stageSha256: "4".repeat(64),
+    providerContinuityManifestSha256: "7".repeat(64),
+    providerContinuityReceiptSha256: "5".repeat(64),
+    providerContinuityEvidenceRootDigest: "8".repeat(64),
+    providerContinuitySubjectDigest: "6".repeat(64),
+  };
+}
 
 function makeFixture(t) {
   const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "shanhai-v1-9-baseline-"));

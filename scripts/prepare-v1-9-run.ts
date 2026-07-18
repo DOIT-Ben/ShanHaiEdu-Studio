@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -11,16 +11,25 @@ import {
   normalizeV1_9RunState,
   type V1_9RunPredecessor,
 } from "./lib/v1-9-e2e-contract.mjs";
-import { createV1_9BaselineLock, type V1_9BaselineLock } from "./lib/v1-9-baseline-lock.mjs";
+import {
+  V1_9BaselineLockDriftError,
+  assertCurrentV1_9BaselineLock,
+  compareV1_9BaselineLock,
+  createV1_9BaselineLock,
+  type V1_9BaselineLock,
+} from "./lib/v1-9-baseline-lock.mjs";
 import {
   assertV1_9PredecessorBytesUnchanged,
   readV1_9PredecessorContext,
   readV1_9V2RunContext,
 } from "./lib/v1-9-run-predecessor";
 import {
+  assertV1_9PreparePath,
   commitV1_9PrepareTransaction,
+  ensureV1_9PrepareResultsRoot,
   recoverV1_9PrepareTransaction,
   withV1_9PrepareLock,
+  writeV1_9RunStateCooperativeCas,
   type V1_9PrepareHookPhase,
   type V1_9PrepareTransaction,
   type V1_9PreparedRun,
@@ -36,26 +45,21 @@ const MANIFEST_FILE = "run-manifest.json";
 const STATE_FILE = "run-state.json";
 const JOURNAL_FILE = ".v1-9-prepare-transaction.json";
 
-export const V1_9_HISTORICAL_PREDECESSOR_MANIFEST_SHA256 =
-  "a7bae74ce472f9826dae9e85ab096b787f77527a153df4defc73bce0d2db698c";
-
-export const V1_9_FROZEN_PROMPT = [
-  "请为五年级数学《百分数》完成一套可直接备课验收的公开课材料包，",
-  "包括结构化教案、约10页可编辑PPTX、课堂视觉图、30至90秒独立创意导入视频、",
-  "唯一最小课程锚点、ClassroomRunSpec和版本一致ZIP。",
-  "视频创意脱离教材仍成立，不固定儿童、教师、教室或课堂活动；标准范围内自主推进，失败只返修受影响页面、镜头或版本。",
-].join("");
-
 type PrepareEnvironment = Readonly<Record<string, string | undefined>>;
 
 export type PreparedV1_9Run = V1_9PreparedRun;
 
 export type PrepareV1_9RunDependencies = {
   createBaselineLock(input: { cwd: string; env: PrepareEnvironment }): V1_9BaselineLock;
+  assertCurrentBaselineLock(
+    expected: V1_9BaselineLock,
+    input: { cwd: string; env: PrepareEnvironment },
+  ): V1_9BaselineLock;
   resolveExecutionLocks(input: { env: PrepareEnvironment }): Promise<V1_9ResolvedExecutionLocks>;
   now(): Date;
   randomBytes(size: number): Buffer;
   afterTransactionPhase(phase: V1_9PrepareHookPhase): void | Promise<void>;
+  afterLockTakeoverClaimed(): void | Promise<void>;
 };
 
 export type PrepareV1_9RunInput = {
@@ -82,25 +86,44 @@ export type TerminateV1_9RunForContractUpgradeInput = {
 
 const defaults: PrepareV1_9RunDependencies = {
   createBaselineLock: (input) => createV1_9BaselineLock(input),
+  assertCurrentBaselineLock: (expected, input) => assertCurrentV1_9BaselineLock(expected, input),
   resolveExecutionLocks: (input) => resolveV1_9ExecutionLocks(input),
   now: () => new Date(),
   randomBytes,
   afterTransactionPhase: async () => undefined,
+  afterLockTakeoverClaimed: async () => undefined,
 };
 
 export async function prepareV1_9Run(input: PrepareV1_9RunInput = {}): Promise<PreparedV1_9Run> {
   const rootDir = path.resolve(input.rootDir ?? process.cwd());
   const env = input.env ?? process.env;
   const dependencies = { ...defaults, ...input.dependencies };
+  if (input.dependencies?.createBaselineLock && !input.dependencies.assertCurrentBaselineLock) {
+    dependencies.assertCurrentBaselineLock = (expected, context) => {
+      const current = dependencies.createBaselineLock(context);
+      const comparison = compareV1_9BaselineLock(expected, current);
+      if (!comparison.isCurrent) throw new V1_9BaselineLockDriftError(comparison.driftedFields);
+      return current;
+    };
+  }
   validateEnvironment(env);
-  const resultsRoot = path.join(rootDir, "test-results");
-  await mkdir(resultsRoot, { recursive: true });
   const requestedValue = input.runId ?? env.V1_9_SUCCESSOR_RUN_ID?.trim();
   const requestedRunId = requestedValue ? requiredRunId(requestedValue, "v1_9_run_id_invalid") : null;
-  const expectedPredecessorRunId = requiredRunId(env.V1_9_PREDECESSOR_RUN_ID, "v1_9_predecessor_invalid");
-  const expectedManifestDigest = input.expectedPredecessorManifestSha256
-    ?? env.V1_9_PREDECESSOR_MANIFEST_SHA256?.trim()
-    ?? null;
+  const predecessorRunIdValue = env.V1_9_PREDECESSOR_RUN_ID?.trim() || null;
+  const predecessorManifestValue = input.expectedPredecessorManifestSha256?.trim()
+    || env.V1_9_PREDECESSOR_MANIFEST_SHA256?.trim()
+    || null;
+  if ((predecessorRunIdValue === null) !== (predecessorManifestValue === null)) {
+    fail("v1_9_predecessor_pair_invalid");
+  }
+  const expectedPredecessorRunId = predecessorRunIdValue
+    ? requiredRunId(predecessorRunIdValue, "v1_9_predecessor_invalid")
+    : null;
+  const expectedManifestDigest = predecessorManifestValue
+    ? requiredDigest(predecessorManifestValue, "v1_9_predecessor_manifest_digest_invalid")
+    : null;
+  const resultsRoot = path.join(rootDir, "test-results");
+  await ensureV1_9PrepareResultsRoot(rootDir, resultsRoot);
 
   return withV1_9PrepareLock(resultsRoot, dependencies, async () => {
     const recovered = await recoverV1_9PrepareTransaction({
@@ -110,49 +133,73 @@ export async function prepareV1_9Run(input: PrepareV1_9RunInput = {}): Promise<P
       expectedPredecessorManifestSha256: expectedManifestDigest,
       requestedRunId,
       randomBytes: dependencies.randomBytes,
+      assertBaselineLockCurrent: (expected) => {
+        dependencies.assertCurrentBaselineLock(expected, { cwd: rootDir, env });
+      },
     });
     if (recovered) return recovered;
 
     const pointerPath = path.join(resultsRoot, POINTER_FILE);
-    const pointerBytes = await readFile(pointerPath).catch(() => fail("v1_9_active_pointer_missing"));
+    assertV1_9PreparePath(resultsRoot, pointerPath, { allowMissing: true });
+    const pointerBytes = await readOptional(pointerPath);
+    if (!expectedPredecessorRunId && pointerBytes) fail("v1_9_fresh_active_pointer_conflict");
+    const historyPath = path.join(resultsRoot, HISTORY_FILE);
+    assertV1_9PreparePath(resultsRoot, historyPath, { allowMissing: true });
+    const historyBytes = await readOptional(historyPath);
     const createdAt = timestamp(input.createdAt ?? dependencies.now().toISOString());
     const runId = requestedRunId ?? createRunId(createdAt, dependencies.randomBytes);
-    const predecessorContext = await readV1_9PredecessorContext({
-      rootDir,
-      pointerBytes,
-      expectedPredecessorRunId,
-      successorRunId: runId,
-    });
-    const expected = requiredDigest(
-      expectedManifestDigest ?? (predecessorContext.disposition === "historical_failed"
-        ? V1_9_HISTORICAL_PREDECESSOR_MANIFEST_SHA256
-        : fail("v1_9_predecessor_manifest_digest_required")),
-      "v1_9_predecessor_manifest_digest_invalid",
-    );
-    if (predecessorContext.manifestSha256 !== expected) fail("v1_9_predecessor_manifest_digest_mismatch");
-
-    const historyPath = path.join(resultsRoot, HISTORY_FILE);
-    const historyBytes = await readOptional(historyPath);
-    const history = parseHistory(historyBytes);
-    if (history.entries.some((entry) => entry.runId === predecessorContext.pointerRunId)) {
-      fail("v1_9_run_history_predecessor_duplicate");
+    let predecessorContext: Awaited<ReturnType<typeof readV1_9PredecessorContext>> | null = null;
+    let predecessor: V1_9RunPredecessor | null = null;
+    let historyEvidence: V1_9PredecessorHistoryEvidence | null = null;
+    let nextHistory: V1_9RunHistoryIndex | null = null;
+    if (expectedPredecessorRunId && expectedManifestDigest) {
+      if (!pointerBytes) fail("v1_9_active_pointer_missing");
+      const context = await readV1_9PredecessorContext({
+        rootDir,
+        pointerBytes,
+        expectedPredecessorRunId,
+        successorRunId: runId,
+      });
+      predecessorContext = context;
+      if (context.manifestSha256 !== expectedManifestDigest) {
+        fail("v1_9_predecessor_manifest_digest_mismatch");
+      }
+      const history = parseHistory(historyBytes);
+      if (history.entries.some((entry) => entry.runId === context.pointerRunId)) {
+        fail("v1_9_run_history_predecessor_duplicate");
+      }
+      if (runId === context.pointerRunId) fail("v1_9_run_id_invalid");
+      predecessor = {
+        runId: context.pointerRunId,
+        relativeRunRoot: context.relativeRunRoot,
+        manifestSha256: context.manifestSha256,
+        disposition: context.disposition,
+      };
+      historyEvidence = {
+        schemaVersion: "v1-9-predecessor-history-evidence.v1",
+        predecessor,
+        predecessorPointerSha256: sha256(pointerBytes),
+        successorRunId: runId,
+        verifiedAt: createdAt,
+      };
+      nextHistory = {
+        schemaVersion: "v1-9-run-history.v1",
+        entries: [...history.entries, {
+          ...predecessor,
+          manifestPath: `${predecessor.relativeRunRoot}/${MANIFEST_FILE}`,
+          successorRunId: runId,
+          recordedAt: createdAt,
+        }],
+      };
     }
-    if (runId === predecessorContext.pointerRunId) fail("v1_9_run_id_invalid");
     const relativeRunRoot = `test-results/${runId}`;
     if (await exists(resolveRunRoot(rootDir, relativeRunRoot))) fail("v1_9_run_root_exists");
 
     const baselineLock = dependencies.createBaselineLock({ cwd: rootDir, env });
     const executionLocks = await dependencies.resolveExecutionLocks({ env });
-    const predecessor: V1_9RunPredecessor = {
-      runId: predecessorContext.pointerRunId,
-      relativeRunRoot: predecessorContext.relativeRunRoot,
-      manifestSha256: predecessorContext.manifestSha256,
-      disposition: predecessorContext.disposition,
-    };
     const manifest = createV1_9RunManifestV2({
       runId,
       relativeRunRoot,
-      prompt: V1_9_FROZEN_PROMPT,
       createdAt,
       baselineLock,
       skillLock: executionLocks.skillLock,
@@ -169,30 +216,15 @@ export async function prepareV1_9Run(input: PrepareV1_9RunInput = {}): Promise<P
       manifestSha256,
       statePath: `${relativeRunRoot}/${STATE_FILE}`,
     };
-    const historyEvidence: V1_9PredecessorHistoryEvidence = {
-      schemaVersion: "v1-9-predecessor-history-evidence.v1",
-      predecessor,
-      predecessorPointerSha256: sha256(pointerBytes),
-      successorRunId: runId,
-      verifiedAt: createdAt,
-    };
-    const nextHistory: V1_9RunHistoryIndex = {
-      schemaVersion: "v1-9-run-history.v1",
-      entries: [...history.entries, {
-        ...predecessor,
-        manifestPath: `${predecessor.relativeRunRoot}/${MANIFEST_FILE}`,
-        successorRunId: runId,
-        recordedAt: createdAt,
-      }],
-    };
     const temporaryRunDirectoryName = `.v1-9-prepare-${runId}-${dependencies.randomBytes(4).toString("hex")}`;
     const transaction: V1_9PrepareTransaction = {
-      schemaVersion: "v1-9-prepare-transaction.v1",
+      schemaVersion: "v1-9-prepare-transaction.v2",
+      mode: predecessor ? "successor" : "fresh",
       phase: "staged",
-      predecessorRunId: predecessor.runId,
-      predecessorPointerSha256: sha256(pointerBytes),
-      predecessorManifestSha256: predecessor.manifestSha256,
-      predecessorStateSha256: predecessorContext.stateBytes ? sha256(predecessorContext.stateBytes) : null,
+      predecessorRunId: predecessor?.runId ?? null,
+      previousPointerSha256: pointerBytes ? sha256(pointerBytes) : null,
+      predecessorManifestSha256: predecessor?.manifestSha256 ?? null,
+      predecessorStateSha256: predecessorContext?.stateBytes ? sha256(predecessorContext.stateBytes) : null,
       previousHistorySha256: historyBytes ? sha256(historyBytes) : null,
       temporaryRunDirectoryName,
       prepared,
@@ -207,10 +239,29 @@ export async function prepareV1_9Run(input: PrepareV1_9RunInput = {}): Promise<P
       testResultsRoot: resultsRoot,
       transaction,
       dependencies,
-      assertPredecessorUnchanged: () => assertV1_9PredecessorBytesUnchanged({
-        pointerPath,
-        context: predecessorContext,
-      }),
+      assertSourceUnchanged: async ({ historyPublished, pointerPublished }) => {
+        dependencies.assertCurrentBaselineLock(baselineLock, { cwd: rootDir, env });
+        if (predecessorContext) {
+          await assertV1_9PredecessorBytesUnchanged({
+            pointerPath,
+            context: predecessorContext,
+            checkPointer: !pointerPublished,
+          });
+        } else if (!pointerPublished) {
+          await assertOptionalBytesUnchanged(pointerPath, pointerBytes, "v1_9_active_pointer_drift");
+        }
+        if (pointerPublished) {
+          const expectedPointerBytes = Buffer.from(`${JSON.stringify({
+            schemaVersion: "v1-9-active-run.v2",
+            ...prepared,
+          }, null, 2)}\n`, "utf8");
+          await assertOptionalBytesUnchanged(pointerPath, expectedPointerBytes, "v1_9_active_pointer_drift");
+        }
+        const expectedHistoryBytes = historyPublished && nextHistory
+          ? Buffer.from(`${JSON.stringify(nextHistory, null, 2)}\n`, "utf8")
+          : historyBytes;
+        await assertOptionalBytesUnchanged(historyPath, expectedHistoryBytes, "v1_9_run_history_drift");
+      },
     });
   });
 }
@@ -219,7 +270,7 @@ export async function terminateV1_9RunForContractUpgrade(input: TerminateV1_9Run
   const rootDir = path.resolve(input.rootDir ?? process.cwd());
   const dependencies = { ...defaults, ...input.dependencies };
   const resultsRoot = path.join(rootDir, "test-results");
-  await mkdir(resultsRoot, { recursive: true });
+  await ensureV1_9PrepareResultsRoot(rootDir, resultsRoot);
   const predecessorRunId = requiredRunId(input.predecessorRunId, "v1_9_predecessor_invalid");
   const expectedManifest = requiredDigest(input.expectedPredecessorManifestSha256, "v1_9_predecessor_manifest_digest_invalid");
   const successorRunId = requiredRunId(input.successorRunId, "v1_9_run_id_invalid");
@@ -227,6 +278,7 @@ export async function terminateV1_9RunForContractUpgrade(input: TerminateV1_9Run
   return withV1_9PrepareLock(resultsRoot, dependencies, async () => {
     if (await exists(path.join(resultsRoot, JOURNAL_FILE))) fail("v1_9_prepare_transaction_active");
     const pointerPath = path.join(resultsRoot, POINTER_FILE);
+    assertV1_9PreparePath(resultsRoot, pointerPath, { kind: "file" });
     const pointerBytes = await readFile(pointerPath).catch(() => fail("v1_9_active_pointer_missing"));
     const context = await readV1_9V2RunContext({ rootDir, pointerBytes, expectedRunId: predecessorRunId });
     if (context.manifestSha256 !== expectedManifest) fail("v1_9_predecessor_manifest_digest_mismatch");
@@ -239,11 +291,16 @@ export async function terminateV1_9RunForContractUpgrade(input: TerminateV1_9Run
       terminatedAt: timestamp(input.terminatedAt ?? dependencies.now().toISOString()),
     });
     if (context.state.status !== "terminated_contract_upgrade") {
-      await input.dependencies?.beforeTerminationCommit?.();
-      if (!context.stateBytes || !(await readFile(context.statePath)).equals(context.stateBytes)) {
-        fail("v1_9_predecessor_state_drift");
-      }
-      await writeJsonAtomic(context.statePath, nextState, dependencies.randomBytes);
+      if (!context.stateBytes) fail("v1_9_predecessor_state_drift");
+      await writeV1_9RunStateCooperativeCas({
+        testResultsRoot: resultsRoot,
+        statePath: context.statePath,
+        expectedBytes: context.stateBytes,
+        nextState,
+        randomBytes: dependencies.randomBytes,
+        prepareLockHeld: true,
+        beforeCommit: input.dependencies?.beforeTerminationCommit,
+      });
     }
     await assertV1_9PredecessorBytesUnchanged({
       pointerPath,
@@ -299,20 +356,8 @@ function parseHistory(bytes: Buffer | null): V1_9RunHistoryIndex {
 
 function validateEnvironment(env: PrepareEnvironment) {
   if (env.V1_9_RUN_MODE?.trim() !== "start-new") fail("v1_9_run_mode_invalid");
-  requiredRunId(env.V1_9_PREDECESSOR_RUN_ID, "v1_9_predecessor_invalid");
   requiredText(env.SHANHAI_SKILLS_SOURCE_ROOT, "v1_9_skills_source_root_required");
   requiredText(env.SHANHAI_SKILLS_RUNTIME_ROOT, "v1_9_skills_runtime_root_required");
-}
-
-async function writeJsonAtomic(filePath: string, value: unknown, createRandomBytes: (size: number) => Buffer) {
-  const temporary = `${filePath}.tmp-${process.pid}-${createRandomBytes(6).toString("hex")}`;
-  try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    await rename(temporary, filePath);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
 }
 
 async function readOptional(filePath: string) {
@@ -320,6 +365,10 @@ async function readOptional(filePath: string) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
     throw error;
   }
+}
+async function assertOptionalBytesUnchanged(filePath: string, expected: Buffer | null, reason: string) {
+  const current = await readOptional(filePath);
+  if ((expected === null) !== (current === null) || (expected && current && !expected.equals(current))) fail(reason);
 }
 async function exists(filePath: string) { try { await access(filePath); return true; } catch { return false; } }
 function resolveRunRoot(rootDir: string, relativeRunRoot: string) {

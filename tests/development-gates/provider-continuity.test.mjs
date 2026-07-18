@@ -17,6 +17,7 @@ import {
   detectProviderImpact,
   verifyProviderContinuityEvidence,
 } from "../../scripts/development-gates/provider-continuity.mjs";
+import { createVitestShardPlans, removeTestDatabaseFamily } from "../../scripts/run-tests.mjs";
 
 const NOW = new Date("2026-07-17T08:00:00.000Z");
 const BOOTSTRAP_BASELINE = "63b9bd3866195b8062756f2b7016faf44e22208f";
@@ -57,6 +58,31 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "tests/agent-tools/openai-agent-tool-executor.test.ts",
   "tests/provider-call-trace.test.ts",
 ];
+
+test("test database initialization removes stale WAL and shared-memory sidecars", () => {
+  const removed = [];
+  removeTestDatabaseFamily("C:\\repo\\.tmp\\vitest.db", {
+    fileSystem: {
+      rmSync: (candidate, options) => removed.push([candidate, options]),
+    },
+  });
+  assert.deepEqual(removed, [
+    ["C:\\repo\\.tmp\\vitest.db-wal", { force: true }],
+    ["C:\\repo\\.tmp\\vitest.db-shm", { force: true }],
+    ["C:\\repo\\.tmp\\vitest.db", { force: true }],
+  ]);
+  const plans = createVitestShardPlans({
+    root: "C:\\repo",
+    base: {},
+    providerLedgerRoot: null,
+    shardCount: 2,
+    runToken: "1234-run",
+  });
+  assert.deepEqual(plans.map((plan) => path.basename(plan.databasePath)), [
+    "test-workbench-1234-run-vitest-shard-1.db",
+    "test-workbench-1234-run-vitest-shard-2.db",
+  ]);
+});
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -150,7 +176,7 @@ function writeReadinessStage(root, overrides = {}) {
     schemaVersion: "shanhai-active-stage.v1",
     stageId: "p0-05a-provider-continuity-readiness",
     status: "active",
-    baselineSha: "336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee",
+    baselineSha: "9a936ad870d036cff746002b4f4a25d61515c088",
     plan: "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
     testPlan: "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
     providerContinuity: {

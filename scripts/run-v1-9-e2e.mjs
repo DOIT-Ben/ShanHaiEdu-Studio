@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  V1_9_FROZEN_PROMPT,
   assertV1_9InterruptedRunningResumeState,
   createV1_9RunManifestV2Digest,
   normalizeV1_9RunManifestV2,
@@ -18,12 +19,6 @@ import { createRunnerShutdownAuthority } from "./lib/runner-shutdown-authority.m
 const currentFilePath = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(currentFilePath), "..");
 const activePointerFileName = "v1-9-product-e2e-active.json";
-export const V1_9_FROZEN_PROMPT = [
-  "请为五年级数学《百分数》完成一套可直接备课验收的公开课材料包，",
-  "包括结构化教案、约10页可编辑PPTX、课堂视觉图、30至90秒独立创意导入视频、",
-  "唯一最小课程锚点、ClassroomRunSpec和版本一致ZIP。",
-  "视频创意脱离教材仍成立，不固定儿童、教师、教室或课堂活动；标准范围内自主推进，失败只返修受影响页面、镜头或版本。",
-].join("");
 
 export async function mainV1_9E2E({
   rootDir = root,

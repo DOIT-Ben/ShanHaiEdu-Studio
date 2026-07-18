@@ -19,6 +19,7 @@ import {
 import {
   assertCurrentV1_9BaselineLock,
   type V1_9BaselineLock,
+  type V1_9LegacyBaselineLock,
 } from "./lib/v1-9-baseline-lock.mjs";
 import {
   probeV1_9InstalledTree,
@@ -157,7 +158,7 @@ export type V1_9ProductPreflightDependencies = {
   readJson(filePath: string): unknown | Promise<unknown>;
   readBytes(filePath: string): Buffer | Promise<Buffer>;
   assertCurrentBaselineLock(
-    expected: V1_9BaselineLock,
+    expected: V1_9BaselineLock | V1_9LegacyBaselineLock,
     input: { cwd: string; env: V1_9ProductPreflightEnv },
   ): unknown | Promise<unknown>;
   readProviderHealthEvidence(input: {

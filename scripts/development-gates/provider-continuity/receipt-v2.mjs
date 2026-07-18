@@ -52,6 +52,11 @@ export function verifyProviderContinuityReceiptV2({
   const current = normalizeNow(now);
   const exactManifestBytes = copyBytes(manifestBytes, "Provider manifest bytes");
   const exactReceiptBytes = copyBytes(receiptBytes, "Provider receipt bytes");
+  const evidenceRootDigest = createHash("sha256")
+    .update("shanhai-provider-continuity-evidence-root.v1\0", "utf8")
+    .update(exactManifestBytes)
+    .update("\0receipt\0", "utf8")
+    .update(exactReceiptBytes);
   const manifest = parseJson(exactManifestBytes, "Provider manifest");
   const receipt = parseJson(exactReceiptBytes, "Provider receipt");
   requireExactKeys(manifest, MANIFEST_KEYS, "Provider manifest");
@@ -90,6 +95,7 @@ export function verifyProviderContinuityReceiptV2({
   let serverInstanceId = null;
   let previousCompletedAt = null;
   const authorityNonces = new Set();
+  const oldestAllowedCampaignTime = current.getTime() - maxAgeHours * 60 * 60 * 1000;
   for (let index = 0; index < receiptRuns.length; index += 1) {
     const run = receiptRuns[index];
     if (run.sequence !== index + 1) {
@@ -109,6 +115,7 @@ export function verifyProviderContinuityReceiptV2({
       trustedCaptureKeys,
       now: current,
     });
+    evidenceRootDigest.update(`\0source-index-${run.sequence}\0`, "utf8").update(verified.indexBytes);
     if (verified.index.campaignId !== run.campaignId || verified.index.runSequence !== run.sequence) {
       throw new Error("Signed source index campaign identity or sequence does not match its receipt run.");
     }
@@ -134,6 +141,9 @@ export function verifyProviderContinuityReceiptV2({
     }
     const startedAt = requireTimestamp(verified.index.startedAt, "Provider campaign startedAt");
     const completedAt = requireTimestamp(verified.index.completedAt, "Provider campaign completedAt");
+    if (Date.parse(completedAt) < oldestAllowedCampaignTime) {
+      throw new Error("Provider signed campaign has expired and cannot be repackaged in a newer receipt.");
+    }
     if (Date.parse(completedAt) > Date.parse(manifestTime) ||
         (previousCompletedAt !== null && Date.parse(startedAt) < Date.parse(previousCompletedAt))) {
       throw new Error("Provider continuity campaign time sequence is invalid.");
@@ -151,7 +161,10 @@ export function verifyProviderContinuityReceiptV2({
     status: "passed",
     consecutiveRuns: receiptRuns.length,
     serverInstanceId,
+    binding: Object.freeze({ ...binding }),
+    manifestSha256: sha256(exactManifestBytes),
     receiptSha256: sha256(exactReceiptBytes),
+    evidenceRootDigest: evidenceRootDigest.digest("hex"),
     subject: Object.freeze({ ...subject }),
   });
 }

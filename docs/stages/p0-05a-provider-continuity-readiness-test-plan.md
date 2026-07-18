@@ -15,7 +15,9 @@
 
 ## 2. 离线合同测试
 
-首批离线readiness提交`b013a96`已完成本地`verify:local`和远端clean `quality-gates`，五项检查退出码均为0；远端manifest的HEAD、tree、workingTreeDigest、policy和stage全部匹配。该证据不包含真实Provider。当前signer/v2切片的Provider Node合同为`52 pass / 0 fail / 1 skip`，GPT adapter为`19/19`，Provider trace与adapter联合为`23/23`，本地`verify:local`五项退出码全部为0；唯一skip是当前Windows普通文件symlink权限限制，junction攻击测试已实际执行通过。最终结果仍必须绑定clean新候选，不能沿用`b013a96`证据。
+首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。最终并发修复后的observer Node合同`5/5`、prepare/closeout Vitest `71/71`、TypeScript、定向ESLint和development gate均通过；原生全量`npm test`为Node `389/389`、Vitest shard 1 `770/770`、shard 2 `834/834`。当前最终定向组合无skip；此前唯一skip来自Windows普通文件symlink权限限制，junction攻击测试实际执行通过。最终结果仍必须绑定本切片clean新候选，不能沿用旧提交证据。
+
+全量本地测试只使用`run-tests.mjs`内生的单worker约束，不从外层覆盖`VITEST_MAX_WORKERS`。每次运行使用同一`test-workbench`族下带run token和角色后缀的独立Node/Vitest SQLite文件，初始化前和退出后清理`.db`、`-wal`、`-shm`；整个测试进程树通过唯一空dotenv文件阻止仓库`.env`回灌Provider凭据，成功或失败退出均清理该文件和数据库族。
 
 测试运行器恢复事实：原单分片长寿worker连续两次在末段异常退出，其中一次表面落在`external-audit-evidence-ingress`初始化，但该文件隔离复跑`16/16`通过；后续Node全量在完整流程中一次失败而同命令隔离复跑`384/384`。不得把这类基础设施异常记作业务断言失败，也不得通过减少测试集合处理；当前Node固定单并发，Vitest分片策略保留完整测试集合并在分片间重启worker。
 
@@ -80,7 +82,7 @@
 
 | ID | 关注点 | Go条件 |
 |---|---|---|
-| VR-A01 | fresh run创建 | 不要求旧runId或硬编码历史manifest SHA |
+| VR-A01 | fresh run创建 | 不要求旧runId或硬编码历史manifest SHA；active pointer必须不存在且最终发布为create-if-absent |
 | VR-A02 | 历史证据 | 只读、字节不变，不复制为新run事实 |
 | VR-A03 | Main Agent控制权 | runner/observer不选Tool、不强制下一步、不外部编排 |
 | VR-A04 | TaskBrief/Intent | 当前digest、epoch、revision和ExecutionEnvelope全绑定 |
@@ -90,11 +92,12 @@
 | VR-A08 | package边界 | 最终包只认正式当前package asset，不现场拼装 |
 | VR-A09 | 合同升级 | 终止旧run并建立显式后继，禁止同run静默升级 |
 | VR-A10 | M67兼容入口 | 只保留受控启停/隔离能力，不恢复旧阶段控制口径 |
-| VR-A11 | 连续性证据绑定 | baseline lock绑定clean manifest、policy/stage SHA和有效receipt |
+| VR-A11 | 连续性证据绑定 | baseline lock交叉绑定clean verification、policy/stage、Provider manifest/receipt同字节SHA、签名evidence root摘要和有效subject；facts/trace由source-index SHA传递绑定 |
 | VR-A12 | 唯一冻结目标 | prompt只有一个权威合同源，不在prepare/runner重复定义 |
 | VR-A13 | 产品编排audit | 外部写attempt和Tool authority由服务端持久事实派生；缺失、断序或非Main Agent authority失败 |
 | VR-A14 | 产品恢复权 | startup动作只由精确SQLite状态和typed evidence决定，runner/env不能选择恢复 |
-| VR-A15 | 恢复身份 | checkpoint、TurnJob、task、epoch、message任一跨任务或缺失绑定均失败，不取项目全局latest |
+| VR-A15 | prepare事务安全 | 正常提交和恢复均重验baseline；successor history/pointer对遵守共享prepare锁的仓内writer执行协作式CAS；所有I/O拒绝junction/reparse路径逃逸 |
+| VR-A16 | 恢复身份 | checkpoint、TurnJob、task、epoch、message任一跨任务或缺失绑定均失败，不取项目全局latest |
 
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 
@@ -120,7 +123,7 @@ npm run gate:provider:live -- --mode development --preflight-only
 npm run gate:provider:verify -- --mode development
 ```
 
-当前没有真实执行命令。只有活动阶段写入完整且未过期的授权合同、trusted capture key、公钥摘要和ledger摘要，并接入受保护环境及ledger权威验证器后，才允许文档化真实命令。P0-05A不运行`gate:release`，不运行完整V1-9 runner，不运行390px，不调用媒体或整包Provider。
+当前没有获授权的真实Provider调用命令。只有活动阶段写入完整且未过期的授权合同、trusted capture key、公钥摘要和ledger摘要，并接入受保护环境及ledger权威验证器后，才允许文档化真实命令。P0-05A不运行`gate:release`，不运行完整V1-9 runner，不运行390px，不调用媒体或整包Provider。
 
 ## 7. Go/No-Go
 

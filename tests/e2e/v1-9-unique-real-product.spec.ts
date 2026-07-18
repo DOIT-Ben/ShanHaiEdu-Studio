@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -26,6 +26,7 @@ import {
   assertV1_9FinalPackageDownloadPath,
   selectLatestV1_9FinalPackage,
 } from "../../scripts/lib/v1-9-final-package-selection.mjs";
+import { writeV1_9RunStateCooperativeCas } from "../../scripts/lib/v1-9-run-preparation-transaction";
 import { loginThroughUi, teacherCredentials } from "./support/feedback";
 
 const activeJobStatuses = new Set(["queued", "running"]);
@@ -55,13 +56,21 @@ test.describe("V1-9 unique real product observer", () => {
     const manifestContractDigest = createV1_9RunManifestV2Digest(manifest);
     expect(manifest.promptDigest).toBe(sha256Text(frozenPrompt));
 
-    let state = normalizeV1_9RunState(JSON.parse(fs.readFileSync(statePath, "utf8")));
+    let stateBytes = fs.readFileSync(statePath); let state = normalizeV1_9RunState(JSON.parse(stateBytes.toString("utf8")));
     assertStateMatchesManifest(state, manifest, manifestContractDigest);
-    const persist = (next: V1_9RunState) => {
-      const normalized = normalizeV1_9RunState(next);
-      assertStateMatchesManifest(normalized, manifest, manifestContractDigest);
-      writeJsonAtomic(statePath, normalized);
-      state = normalized;
+    const resultsRoot = path.dirname(path.dirname(statePath));
+    let stateWriteQueue = Promise.resolve();
+    const persist = (next: V1_9RunState | ((current: V1_9RunState) => V1_9RunState)) => {
+      const operation = stateWriteQueue.then(async () => {
+        const normalized = normalizeV1_9RunState(typeof next === "function" ? next(state) : next);
+        assertStateMatchesManifest(normalized, manifest, manifestContractDigest);
+        stateBytes = await writeV1_9RunStateCooperativeCas({
+          testResultsRoot: resultsRoot, statePath, expectedBytes: stateBytes,
+          nextState: normalized, randomBytes,
+        });
+        state = normalized;
+      });
+      return (stateWriteQueue = operation);
     };
     installUiLedger(page, () => state, persist);
 
@@ -87,10 +96,10 @@ test.describe("V1-9 unique real product observer", () => {
         });
         await page.getByRole("button", { name: "新建项目", exact: true }).click();
         const body = await (await projectResponse).json() as { project?: { id?: unknown } };
-        persist(bindV1_9RunStateProjectIdentity(state, {
+        await persist((latest) => bindV1_9RunStateProjectIdentity(latest, {
           actorUserId,
           projectId: requiredText(body.project?.id, "project.id"),
-          boundAt: stateTransitionTime(state),
+          boundAt: stateTransitionTime(latest),
         }));
       } else {
         expect(state.identity.actorUserId).toBe(actorUserId);
@@ -110,18 +119,19 @@ test.describe("V1-9 unique real product observer", () => {
         await page.getByRole("button", { name: /发送|加入队列/ }).click();
         await accepted;
       }
+      await stateWriteQueue;
       expect(state.ledger.taskSubmissionCount).toBe(1);
 
       const deadline = Date.now() + 20_700_000;
       let terminalFailureSince: number | null = null;
       while (Date.now() < deadline) {
-        const snapshot = await readSnapshot(page, projectId);
+        await stateWriteQueue; const snapshot = await readSnapshot(page, projectId);
         const taskContract = taskContractFromSnapshot(snapshot, actorUserId, projectId);
         if (taskContract) {
-          persist(bindV1_9TaskContractLock(state, {
+          await persist((latest) => bindV1_9TaskContractLock(latest, {
             ...taskContract,
             initialPlanRevision: 0,
-            boundAt: stateTransitionTime(state),
+            boundAt: stateTransitionTime(latest),
           }));
         }
 
@@ -132,11 +142,11 @@ test.describe("V1-9 unique real product observer", () => {
             || state.checkpoint.planRevision !== checkpoint.planRevision
             || JSON.stringify(state.checkpoint.observationRefs) !== JSON.stringify(checkpoint.observationRefs);
           if (checkpoint.planRevision >= currentRevision && checkpointChanged) {
-            persist(updateV1_9RunStateCheckpoint(state, {
-              checkpointId: checkpoint.checkpointId,
-              planRevision: checkpoint.planRevision,
+            await persist((latest) => updateV1_9RunStateCheckpoint(latest, {
+              checkpointId: checkpoint.checkpointId!,
+              planRevision: checkpoint.planRevision!,
               observationRefs: checkpoint.observationRefs,
-              recordedAt: stateTransitionTime(state),
+              recordedAt: stateTransitionTime(latest),
             }));
           }
         }
@@ -150,9 +160,9 @@ test.describe("V1-9 unique real product observer", () => {
 
         const pendingDecision = latestPendingDecision(snapshot, state);
         if (pendingDecision && state.taskContractLock) {
-          persist(markV1_9RunStatePendingDecision(state, {
+          await persist((latest) => markV1_9RunStatePendingDecision(latest, {
             ...pendingDecision,
-            stoppedAt: stateTransitionTime(state),
+            stoppedAt: stateTransitionTime(latest),
           }));
           writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
           throw new Error(`v1_9_pending_decision:${pendingDecision.reasonCode}`);
@@ -178,32 +188,32 @@ test.describe("V1-9 unique real product observer", () => {
           try {
             downloadedPackage = await downloadFinalPackage(page, projectId, finalPackage.id);
           } catch (error) {
-            persist(markV1_9RunStateRecoveryStop(state, {
+            await persist((latest) => markV1_9RunStateRecoveryStop(latest, {
               reasonCode: "final_package_download_failed",
               checkpointId: checkpoint.checkpointId,
               observationRefs: checkpoint.observationRefs,
-              stoppedAt: stateTransitionTime(state),
+              stoppedAt: stateTransitionTime(latest),
             }));
             writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
             throw new Error("v1_9_recovery_stop:final_package_download_failed", { cause: error });
           }
           try {
             await expect.poll(() => state.ledger.finalDownloadCount, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
-            persist(markV1_9RunStatePackageReady(state, {
+            await persist((latest) => markV1_9RunStatePackageReady(latest, {
               packageArtifactId: finalPackage.id,
               packageArtifactVersion: requiredPositiveInteger(finalPackage.version, "finalPackage.version"),
               packageVersion: requiredText(finalPackage.structuredContent.courseVersionId, "finalPackage.courseVersionId"),
               packageSha256: downloadedPackage.packageSha256,
-              turnJobId: requiredText(state.taskContractLock?.turnJobId, "taskContract.turnJobId"),
-              teacherMessageId: requiredText(state.taskContractLock?.teacherMessageId, "taskContract.teacherMessageId"),
+              turnJobId: requiredText(latest.taskContractLock?.turnJobId, "taskContract.turnJobId"),
+              teacherMessageId: requiredText(latest.taskContractLock?.teacherMessageId, "taskContract.teacherMessageId"),
               downloadedAt: downloadedPackage.downloadedAt,
             }));
           } catch (error) {
-            persist(markV1_9RunStateRecoveryStop(state, {
+            await persist((latest) => markV1_9RunStateRecoveryStop(latest, {
               reasonCode: "final_package_state_commit_failed",
               checkpointId: checkpoint.checkpointId,
               observationRefs: checkpoint.observationRefs,
-              stoppedAt: stateTransitionTime(state),
+              stoppedAt: stateTransitionTime(latest),
             }));
             writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
             throw new Error("v1_9_recovery_stop:final_package_state_commit_failed", { cause: error });
@@ -213,11 +223,11 @@ test.describe("V1-9 unique real product observer", () => {
           return;
         }
         if (!finalPackage && finalDeliveryArtifacts.length > 0 && activeJobs.length === 0 && state.taskContractLock) {
-          persist(markV1_9RunStateRecoveryStop(state, {
+          await persist((latest) => markV1_9RunStateRecoveryStop(latest, {
             reasonCode: "final_package_not_eligible",
             checkpointId: checkpoint.checkpointId,
             observationRefs: checkpoint.observationRefs,
-            stoppedAt: stateTransitionTime(state),
+            stoppedAt: stateTransitionTime(latest),
           }));
           writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
           throw new Error("v1_9_recovery_stop:final_package_not_eligible");
@@ -228,9 +238,9 @@ test.describe("V1-9 unique real product observer", () => {
           terminalFailureSince ??= Date.now();
           if (Date.now() - terminalFailureSince >= 30_000) {
             if (!state.taskContractLock) throw new Error("v1_9_task_contract_missing_before_recovery_stop");
-            persist(markV1_9RunStateRecoveryStop(state, {
+            await persist((latest) => markV1_9RunStateRecoveryStop(latest, {
               ...stopped,
-              stoppedAt: stateTransitionTime(state),
+              stoppedAt: stateTransitionTime(latest),
             }));
             writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
             throw new Error(`v1_9_recovery_stop:${stopped.reasonCode}`);
@@ -245,16 +255,16 @@ test.describe("V1-9 unique real product observer", () => {
       const snapshot = await readSnapshot(page, projectId);
       const checkpoint = latestCheckpoint(snapshot);
       if (!state.taskContractLock) throw new Error("v1_9_task_contract_missing_before_timeout");
-      persist(markV1_9RunStateRecoveryStop(state, {
+      await persist((latest) => markV1_9RunStateRecoveryStop(latest, {
         reasonCode: "observer_timeout",
         checkpointId: checkpoint.checkpointId,
         observationRefs: checkpoint.observationRefs,
-        stoppedAt: stateTransitionTime(state),
+        stoppedAt: stateTransitionTime(latest),
       }));
       writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
       throw new Error("v1_9_observer_timeout");
     } finally {
-      assertManifestBytesUnchanged(manifestBytesAtStart, manifestFileSha256);
+      await stateWriteQueue; assertManifestBytesUnchanged(manifestBytesAtStart, manifestFileSha256);
     }
   });
 });
@@ -262,7 +272,7 @@ test.describe("V1-9 unique real product observer", () => {
 function installUiLedger(
   page: Page,
   current: () => V1_9RunState,
-  persist: (state: V1_9RunState) => void,
+  persist: (update: (current: V1_9RunState) => V1_9RunState) => Promise<void>,
 ) {
   page.on("request", (request: Request) => {
     const url = new URL(request.url());
@@ -271,12 +281,12 @@ function installUiLedger(
     const isFinalDownload = method === "GET"
       && /^\/api\/workbench\/projects\/[^/]+\/artifacts\/[^/]+\/package$/.test(url.pathname);
     if (!isApiWrite && !isFinalDownload) return;
-    persist(recordV1_9RunStateMutation(current(), {
+    void persist((latest) => recordV1_9RunStateMutation(latest, {
       method,
       pathname: url.pathname,
       source: "ui",
-      recordedAt: stateTransitionTime(current()),
-    }));
+      recordedAt: stateTransitionTime(latest),
+    })).catch(() => undefined);
   });
 }
 

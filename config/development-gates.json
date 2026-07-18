@@ -291,7 +291,6 @@
       { "path": "tests/ppt-asset-image-generation-run.test.ts", "occurrences": 2 },
       { "path": "tests/production-preflight.test.mjs", "occurrences": 6 },
       { "path": "tests/stage41-delivery-demo-script.test.mjs", "occurrences": 8 },
-      { "path": "tests/test-runner-isolation.test.mjs", "occurrences": 5 },
       { "path": "tests/v1-9-e2e-runner.test.mjs", "occurrences": 107 },
       { "path": "tests/v1-9-unique-real-product-observer-contract.test.mjs", "occurrences": 37 },
       { "path": "tests/v1-9r-intensity-conflict.test.mjs", "occurrences": 2 },

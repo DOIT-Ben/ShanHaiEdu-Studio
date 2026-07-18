@@ -1,9 +1,12 @@
 export const V1_9_RUN_MANIFEST_VERSION: "v1-9-run-manifest.v1";
 export const V1_9_RUN_MANIFEST_V2_VERSION: "v1-9-run-manifest.v2";
-export const V1_9_BASELINE_LOCK_VERSION: "v1-9-baseline-lock.v1";
+export const V1_9_BASELINE_LOCK_VERSION: "v1-9-baseline-lock.v2";
+export const V1_9_LEGACY_BASELINE_LOCK_VERSION: "v1-9-baseline-lock.v1";
 export const V1_9_RUN_STATE_VERSION: "v1-9-run-state.v2";
 export const V1_9_RUN_LEDGER_VERSION: "v1-9-run-ledger.v1";
 export const V1_9_TASK_CONTRACT_LOCK_VERSION: "v1-9-task-contract-lock.v1";
+export const V1_9_FROZEN_PROMPT: string;
+export const V1_9_FROZEN_PROMPT_DIGEST: string;
 
 export type V1_9Mutation = {
   method: string;
@@ -74,7 +77,7 @@ export type V1_9ProviderLock = {
 
 export type V1_9GenerationIntensity = "standard" | "enhanced" | "deep" | "extreme";
 
-export type V1_9BaselineLock = {
+export type V1_9LegacyBaselineLock = {
   schemaVersion: "v1-9-baseline-lock.v1";
   branch: "main";
   gitHead: string;
@@ -86,6 +89,20 @@ export type V1_9BaselineLock = {
   providerLedgerManifestDigest: string;
   projectionId: string;
 };
+
+export type V1_9BaselineLockV2 = Omit<V1_9LegacyBaselineLock, "schemaVersion"> & {
+  schemaVersion: "v1-9-baseline-lock.v2";
+  verificationManifestSha256: string;
+  workingTreeDigest: string;
+  policySha256: string;
+  stageSha256: string;
+  providerContinuityManifestSha256: string;
+  providerContinuityReceiptSha256: string;
+  providerContinuityEvidenceRootDigest: string;
+  providerContinuitySubjectDigest: string;
+};
+
+export type V1_9BaselineLock = V1_9LegacyBaselineLock | V1_9BaselineLockV2;
 
 export type V1_9ProviderRuntimeCapability =
   | "agent_brain"
@@ -114,11 +131,15 @@ export type V1_9RunManifestV2 = {
   relativeRunRoot: string;
   createdAt: string;
   promptDigest: string;
-  baselineLock: V1_9BaselineLock;
+  baselineLock: V1_9BaselineLockV2;
   skillLock: V1_9SkillLock;
   agentBrain: { providerLock: V1_9ProviderLock };
   providerRuntimeLocks: V1_9ProviderRuntimeLock[];
-  predecessor: V1_9RunPredecessor;
+  predecessor: V1_9RunPredecessor | null;
+};
+
+export type V1_9ReadOnlyRunManifestV2 = Omit<V1_9RunManifestV2, "baselineLock"> & {
+  baselineLock: V1_9BaselineLock;
 };
 
 export type V1_9TaskContractLock = {
@@ -272,16 +293,17 @@ export function createV1_9RunManifest(input: {
 export function createV1_9RunManifestV2(input: {
   runId: string;
   relativeRunRoot: string;
-  prompt: string;
   createdAt: string;
-  baselineLock: V1_9BaselineLock;
+  baselineLock: V1_9BaselineLockV2;
   skillLock: V1_9SkillLock;
   agentBrain: { providerLock: V1_9ProviderLock };
   providerRuntimeLocks: V1_9ProviderRuntimeLock[];
-  predecessor: V1_9RunPredecessor;
+  predecessor: V1_9RunPredecessor | null;
 }): V1_9RunManifestV2;
 
 export function normalizeV1_9RunManifestV2(value: unknown): V1_9RunManifestV2;
+
+export function normalizeV1_9RunManifestV2ReadOnly(value: unknown): V1_9ReadOnlyRunManifestV2;
 
 export function normalizeV1_9BaselineLock(value: unknown): V1_9BaselineLock;
 

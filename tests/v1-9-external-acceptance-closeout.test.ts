@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -21,6 +21,10 @@ import {
   formatV1_9CloseoutCliResult,
   normalizeV1_9ExternalAcceptanceReport,
 } from "../scripts/close-v1-9-run";
+import {
+  withV1_9PrepareLock,
+  writeV1_9RunStateCooperativeCas,
+} from "../scripts/lib/v1-9-run-preparation-transaction";
 
 const temporaryRoots: string[] = [];
 
@@ -133,6 +137,99 @@ describe("V1-9 versioned external acceptance closeout", () => {
     });
     expect(await readFile(fixture.manifestPath)).toEqual(manifestBefore);
     await expect(readFile(fixture.pointerPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("serializes closeout pointer rename against preparation pointer publication", async () => {
+    const fixture = await createFixture();
+    const report = acceptedReport(fixture);
+    let releaseRename!: () => void;
+    let enteredRename!: () => void;
+    const renameGate = new Promise<void>((resolve) => { releaseRename = resolve; });
+    const renameEntered = new Promise<void>((resolve) => { enteredRename = resolve; });
+    const closing = closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report,
+      dependencies: {
+        beforeActivePointerRename: async () => {
+          enteredRename();
+          await renameGate;
+        },
+      },
+    });
+    await renameEntered;
+
+    await expect(withV1_9PrepareLock(
+      path.join(fixture.rootDir, "test-results"),
+      { now: () => new Date(), randomBytes: (size) => Buffer.alloc(size, 0xab) },
+      async () => { throw new Error("prepare_pointer_publish_must_not_run"); },
+    )).rejects.toThrow(/v1_9_prepare_locked/);
+
+    releaseRename();
+    await expect(closing).resolves.toMatchObject({ outcome: "completed", runId: fixture.runId });
+    await expect(readFile(fixture.pointerPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(fixture.closedPointerPath)).toBeTruthy();
+  });
+
+  it("does not move an active pointer changed in the final closeout hook", async () => {
+    const fixture = await createFixture();
+    const changedPointer = Buffer.from('{"schemaVersion":"external-writer","runId":"other"}\n', "utf8");
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: {
+        beforeActivePointerRename: async () => { await writeFile(fixture.pointerPath, changedPointer); },
+      },
+    })).rejects.toThrow(/v1_9_active_run_pointer_mutated/);
+
+    expect(await readFile(fixture.pointerPath)).toEqual(changedPointer);
+    await expect(readFile(fixture.closedPointerPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves a competing closed pointer created in the final closeout hook", async () => {
+    const fixture = await createFixture();
+    const activeBefore = await readFile(fixture.pointerPath);
+    const competingClosed = Buffer.from('{"schemaVersion":"external-writer","runId":"closed-other"}\n', "utf8");
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: {
+        beforeActivePointerRename: async () => {
+          await writeFile(fixture.closedPointerPath, competingClosed, { flag: "wx" });
+        },
+      },
+    })).rejects.toThrow(/v1_9_closed_pointer_already_exists/);
+
+    expect(await readFile(fixture.pointerPath)).toEqual(activeBefore);
+    expect(await readFile(fixture.closedPointerPath)).toEqual(competingClosed);
+  });
+
+  it("serializes closeout state commits with every cooperative run-state writer", async () => {
+    const fixture = await createFixture();
+    let competingWriterRejected = false;
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: {
+        beforeStateCommit: async () => {
+          const expectedBytes = await readFile(fixture.statePath);
+          const currentState = normalizeV1_9RunState(JSON.parse(expectedBytes.toString("utf8")));
+          await expect(writeV1_9RunStateCooperativeCas({
+            testResultsRoot: path.join(fixture.rootDir, "test-results"),
+            statePath: fixture.statePath,
+            expectedBytes,
+            nextState: currentState,
+            randomBytes: (size) => Buffer.alloc(size, 0xcd),
+          })).rejects.toThrow(/v1_9_prepare_locked/);
+          competingWriterRejected = true;
+        },
+      },
+    })).resolves.toMatchObject({ outcome: "completed", runId: fixture.runId });
+
+    expect(competingWriterRejected).toBe(true);
+    expect(normalizeV1_9RunState(JSON.parse(await readFile(fixture.statePath, "utf8"))).status).toBe("completed");
   });
 
   it("persists a P0 round and repair handoff, invokes the product ingress, and keeps the active pointer", async () => {
@@ -287,7 +384,7 @@ describe("V1-9 versioned external acceptance closeout", () => {
     await expect(closeV1_9RunAfterExternalAcceptance({
       rootDir: fixture.rootDir,
       report,
-      dependencies: { renameActivePointer: async () => { throw new Error("injected_pointer_rename_failure"); } },
+      dependencies: { beforeActivePointerRename: async () => { throw new Error("injected_pointer_rename_failure"); } },
     })).rejects.toThrow(/injected_pointer_rename_failure/);
 
     expect(normalizeV1_9RunState(JSON.parse(await readFile(fixture.statePath, "utf8"))).status).toBe("completed");
@@ -300,6 +397,29 @@ describe("V1-9 versioned external acceptance closeout", () => {
 
     const idempotent = await closeV1_9RunAfterExternalAcceptance({ rootDir: fixture.rootDir, report });
     expect(idempotent).toMatchObject({ outcome: "completed", reportSha256: sha256(reportBytes) });
+  });
+
+  it("rolls forward after crashing between the closed hard-link and active pointer removal", async () => {
+    const fixture = await createFixture();
+    const report = acceptedReport(fixture);
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report,
+      dependencies: {
+        afterClosedPointerLink: async () => { throw new Error("simulated_crash_after_closed_pointer_link"); },
+      },
+    })).rejects.toThrow(/simulated_crash_after_closed_pointer_link/);
+
+    expect(await readFile(fixture.pointerPath)).toEqual(await readFile(fixture.closedPointerPath));
+
+    const recovered = await closeV1_9RunAfterExternalAcceptance({ rootDir: fixture.rootDir, report });
+    expect(recovered).toMatchObject({ outcome: "completed", runId: fixture.runId });
+    await expect(readFile(fixture.pointerPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readFile(fixture.closedPointerPath)).length).toBeGreaterThan(0);
+
+    await expect(closeV1_9RunAfterExternalAcceptance({ rootDir: fixture.rootDir, report }))
+      .resolves.toMatchObject({ outcome: "completed", runId: fixture.runId });
   });
 
   it("rolls forward after external-audit ingress commits but its response is lost", async () => {
@@ -374,56 +494,69 @@ describe("V1-9 versioned external acceptance closeout", () => {
     expect(await readFile(fixture.pointerPath)).toBeTruthy();
   });
 
-  it("rejects a live lock and takes over a dead lock", async () => {
-    const live = await createFixture();
-    await writeFile(live.lockPath, `${JSON.stringify({
-      pid: process.pid, token: "live-token", createdAt: new Date().toISOString(),
-    })}\n`, "utf8");
-    await expect(closeV1_9RunAfterExternalAcceptance({
-      rootDir: live.rootDir,
-      report: acceptedReport(live),
-    })).rejects.toThrow(/v1_9_external_acceptance_closeout_locked/);
-    await expect(readFile(live.roundReportPath(1))).rejects.toMatchObject({ code: "ENOENT" });
+  for (const kind of ["external-acceptance", "evidence"] as const) {
+    it(`rejects a ${kind} junction without reading or writing outside the run`, async (testContext) => {
+      const fixture = await createFixture();
+      const outside = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-closeout-outside-"));
+      temporaryRoots.push(outside);
+      const sentinelPath = path.join(outside, "sentinel.txt");
+      await writeFile(sentinelPath, "keep", "utf8");
+      let linkPath: string;
+      if (kind === "evidence") {
+        const packageBytes = await readFile(fixture.packagePath("package-1"));
+        await rm(path.join(fixture.runRoot, "evidence"), { recursive: true });
+        await writeFile(path.join(outside, "v1-9-final-package-package-1.zip"), packageBytes);
+        linkPath = path.join(fixture.runRoot, "evidence");
+      } else {
+        linkPath = path.join(fixture.runRoot, "external-acceptance");
+      }
+      try {
+        await symlink(outside, linkPath, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        testContext.skip(`directory link unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+        return;
+      }
 
-    const dead = await createFixture();
-    await writeFile(dead.lockPath, `${JSON.stringify({
-      pid: 2147483647, token: "dead-token", createdAt: new Date().toISOString(),
-    })}\n`, "utf8");
-    const result = await closeV1_9RunAfterExternalAcceptance({
-      rootDir: dead.rootDir,
-      report: acceptedReport(dead),
+      await expect(closeV1_9RunAfterExternalAcceptance({
+        rootDir: fixture.rootDir,
+        report: acceptedReport(fixture),
+      })).rejects.toThrow(/v1_9_prepare_path_unsafe/);
+
+      expect(await readFile(sentinelPath, "utf8")).toBe("keep");
+      expect((await readFile(fixture.pointerPath)).length).toBeGreaterThan(0);
     });
-    expect(result).toMatchObject({ outcome: "completed" });
-    await expect(readFile(dead.lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  }
+
+  it("rechecks the run root after the final rename hook", async (testContext) => {
+    const fixture = await createFixture();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-closeout-rename-outside-"));
+    temporaryRoots.push(outside);
+    const sentinelPath = path.join(outside, "sentinel.txt");
+    await writeFile(sentinelPath, "keep", "utf8");
+    const probe = path.join(fixture.rootDir, "junction-probe");
+    try {
+      await symlink(outside, probe, process.platform === "win32" ? "junction" : "dir");
+      await rm(probe);
+    } catch (error) {
+      testContext.skip(`directory link unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+      return;
+    }
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: {
+        beforeActivePointerRename: async () => {
+          await rm(fixture.runRoot, { recursive: true });
+          await symlink(outside, fixture.runRoot, process.platform === "win32" ? "junction" : "dir");
+        },
+      },
+    })).rejects.toThrow(/v1_9_prepare_path_unsafe/);
+
+    expect(await readFile(sentinelPath, "utf8")).toBe("keep");
+    expect((await readFile(fixture.pointerPath)).length).toBeGreaterThan(0);
   });
 
-  it("takes over only stale malformed or PID-reused locks", async () => {
-    const malformed = await createFixture();
-    const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1_000);
-    await writeFile(malformed.lockPath, "{", "utf8");
-    await utimes(malformed.lockPath, staleAt, staleAt);
-    await expect(closeV1_9RunAfterExternalAcceptance({
-      rootDir: malformed.rootDir,
-      report: acceptedReport(malformed),
-    })).resolves.toMatchObject({ outcome: "completed" });
-
-    const reusedPid = await createFixture();
-    await writeFile(reusedPid.lockPath, `${JSON.stringify({
-      pid: process.pid, token: "stale-live-pid", createdAt: staleAt.toISOString(),
-    })}\n`, "utf8");
-    await utimes(reusedPid.lockPath, staleAt, staleAt);
-    await expect(closeV1_9RunAfterExternalAcceptance({
-      rootDir: reusedPid.rootDir,
-      report: acceptedReport(reusedPid),
-    })).resolves.toMatchObject({ outcome: "completed" });
-
-    const freshMalformed = await createFixture();
-    await writeFile(freshMalformed.lockPath, "{", "utf8");
-    await expect(closeV1_9RunAfterExternalAcceptance({
-      rootDir: freshMalformed.rootDir,
-      report: acceptedReport(freshMalformed),
-    })).rejects.toThrow(/v1_9_external_acceptance_lock_invalid/);
-  });
 });
 
 async function createFixture() {
@@ -495,7 +628,6 @@ async function createFixture() {
   return {
     rootDir, runId, runRoot, relativeRunRoot, manifestPath, manifestSha256, statePath, pointerPath,
     closedPointerPath, finalReportPath, packageSha256,
-    lockPath: path.join(runRoot, ".external-acceptance-closeout.lock"),
     packagePath: (artifactId: string) => path.join(runRoot, "evidence", `v1-9-final-package-${artifactId}.zip`),
     roundReportPath: (round: number) => path.join(runRoot, "external-acceptance", `round-${String(round).padStart(4, "0")}`, "report.json"),
     repairHandoffPath: (round: number) => path.join(runRoot, "external-acceptance", `round-${String(round).padStart(4, "0")}`, "repair-handoff.json"),
@@ -608,14 +740,17 @@ function createManifest(runId: string, relativeRunRoot: string) {
   return createV1_9RunManifestV2({
     runId,
     relativeRunRoot,
-    prompt: "完成一套公开课材料包。",
     createdAt: "2026-07-15T13:00:00.000Z",
     baselineLock: {
-      schemaVersion: "v1-9-baseline-lock.v1", branch: "main", gitHead: "a".repeat(40),
+      schemaVersion: "v1-9-baseline-lock.v2", branch: "main", gitHead: "a".repeat(40),
       generationIntensity: "standard", runtimeSourceDigest: "4".repeat(64),
       requirementsBaselineDigest: "5".repeat(64), registryDigest: "6".repeat(64),
       projectionRegistryDigest: "6".repeat(64), providerLedgerManifestDigest: "7".repeat(64),
       projectionId: "runtime-projection-a23",
+      verificationManifestSha256: "1".repeat(64), workingTreeDigest: "2".repeat(64),
+      policySha256: "3".repeat(64), stageSha256: "4".repeat(64),
+      providerContinuityManifestSha256: "4".repeat(64), providerContinuityReceiptSha256: "5".repeat(64),
+      providerContinuityEvidenceRootDigest: "e".repeat(64), providerContinuitySubjectDigest: "f".repeat(64),
     },
     skillLock: {
       schemaVersion: "v1-9-skill-lock.v1", projectionLockDigest: "8".repeat(64),

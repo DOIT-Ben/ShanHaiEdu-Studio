@@ -3,7 +3,7 @@
 日期：2026-07-17
 状态：active / offline-readiness-only / live-campaign-not-authorized
 
-本阶段以阶段切换提交 `336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee` 为基线；此前门禁阶段归档已退出活动例外，archive重新不可修改。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`且`liveAuthorization=null`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并完成受保护环境与ledger权威验证器前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
+本阶段当前机器基线为已通过远端clean CI的 `9a936ad870d036cff746002b4f4a25d61515c088`；此前门禁阶段归档已退出活动例外，archive重新不可修改。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`且`liveAuthorization=null`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并完成受保护环境与ledger权威验证器前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
 
 安全审查确认旧v1 receipt只能证明JSON自洽，不能证明真实来源。活动阶段已改为只接受未来的v2签名来源合同，并保持`trustedCaptureKeyIds=[]`；因此本轮离线实现不可能签发passed receipt。可信key必须由受保护环境持有私钥，活动阶段只预绑定非敏感key ID和公钥摘要。
 
@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：二次只读审查确认NO-GO，并发现原四文件估计不足。fresh-run还依赖preparation transaction；baseline必须升级v2并原子消费Provider verifier结果；恢复权必须由产品SQLite事实派生；observer必须消费产品服务端持久audit，而不是浏览器自证。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已完成合同实现和定向验证，机器基线重锚到已通过远端clean CI的`9a936ad`，不把已完成signer切片重复计入当前预算。fresh只允许active pointer不存在并以no-replace hard link发布；successor对history和共享prepare锁内的仓内pointer writer执行协作式CAS；baseline新建只接受v2，交叉绑定verification与receipt，并冻结Provider manifest/receipt和签名evidence root摘要，facts与trace由source-index SHA传递绑定，在正常提交与崩溃恢复发布点重验。冻结prompt已收敛到合同单源。产品audit和DB recovery继续保持后续阻塞，不在本切片并行修改。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -103,6 +103,10 @@
 1. fresh/baseline：`prepare-v1-9-run`、preparation transaction、单一prompt合同、可空predecessor和baseline lock v2；
 2. 产品audit：服务端持久记录项目写attempt与Main Agent编排authority，observer只消费权威摘要；
 3. DB recovery：产品启动从精确绑定的TurnJob、task、epoch、message和checkpoint派生恢复动作，runner不再传恢复布尔。
+
+fresh/baseline切片只修改`v1-9-e2e-contract`、`v1-9-baseline-lock`及其候选证据模块、`v1-9-run-preparation-transaction`、prepare/runner入口及行为测试。当前验收事实：fresh输入不含旧run身份且active pointer不存在时可准备；opaque history保持原字节，任何既有active pointer都失败关闭，新manifest写`predecessor: null`；部分predecessor输入在任何写入前失败；fresh事务覆盖journal、manifest、state、staged、run publish、最终pointer窗口和pointer publish故障恢复；successor不覆盖并发history，也不覆盖遵守共享prepare锁的仓内pointer writer；closeout同字节双pointer可前滚、异字节失败关闭，活PID不因TTL接管，termination与closeout共用run-state cooperative CAS；所有I/O拒绝仓外junction/reparse；新baseline只产生`v1-9-baseline-lock.v2`并绑定clean verification、policy/stage、Provider manifest/receipt、签名evidence root摘要和同一候选subject，facts与trace由source-index SHA传递绑定，正常提交与崩溃恢复均在pointer发布前后重验；旧v1只读解析且活动入口拒绝执行，签名campaign自身受TTL约束；prepare和runner不再保存prompt全文。
+
+独立提交前审查发现事务崩溃窗口、锁接管、测试失败清理、SQLite双族和真实observer绕过共享状态锁的问题，整改范围因此从30个文件显式修订为34个文件；新增范围仅为既有`tests/test-runner-isolation.test.mjs`的行为化改写、删除其已清零的源码字符串债务基线，以及让真实V1-9 observer和合同测试接入唯一prepare lock。行数预算仍保持`+2500/-800`，不得继续扩张或以提高阈值代替缺陷修复。
 
 必须回答：
 
@@ -121,7 +125,7 @@
 
 ## 7. 阶段5：完整离线验证与冻结
 
-状态：首批离线readiness提交`b013a96`及GitHub Actions run`29630858178`已通过，远端manifest为`dirty=false`且HEAD/tree/workingTreeDigest/policy/stage与五项退出码全部匹配。signer/v2切片本地`verify:local`五项退出码已全部为0，clean提交与独立CI证据待生成。
+状态：首批离线readiness提交`b013a96`及GitHub Actions run`29630858178`已通过。signer/v2切片提交`9a936ad`及GitHub Actions run`29634821620`也已通过，远端manifest为`dirty=false`且SHA-bound verification完整成功；两次证据均不包含真实Provider调用或passed receipt。
 
 目标：在真实费用发生前冻结唯一候选。
 

@@ -1149,7 +1149,7 @@ function fixturePointerPath() {
 
 function readyBaselineLock() {
   return {
-    schemaVersion: "v1-9-baseline-lock.v1" as const,
+    schemaVersion: "v1-9-baseline-lock.v2" as const,
     branch: "main" as const,
     gitHead: "c".repeat(40),
     generationIntensity: "standard" as const,
@@ -1159,6 +1159,14 @@ function readyBaselineLock() {
     projectionRegistryDigest: "3".repeat(64),
     providerLedgerManifestDigest: "4".repeat(64),
     projectionId: "runtime-projection-a23-20260715-2040",
+    verificationManifestSha256: "5".repeat(64),
+    workingTreeDigest: "6".repeat(64),
+    policySha256: "7".repeat(64),
+    stageSha256: "8".repeat(64),
+    providerContinuityManifestSha256: "b".repeat(64),
+    providerContinuityReceiptSha256: "9".repeat(64),
+    providerContinuityEvidenceRootDigest: "c".repeat(64),
+    providerContinuitySubjectDigest: "a".repeat(64),
   };
 }
 
@@ -1175,7 +1183,6 @@ function readyManifest() {
   return createV1_9RunManifestV2({
     runId,
     relativeRunRoot,
-    prompt: "fixture full material package",
     createdAt: "2026-07-15T01:00:00.000Z",
     baselineLock: readyBaselineLock(),
     skillLock: readySkillLock(),

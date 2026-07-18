@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -6,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  V1_9_FROZEN_PROMPT,
   advanceV1_9PlanRevision,
   assertV1_9BaselineLockDigest,
   assertV1_9RunManifestV2Digest,
@@ -29,13 +31,13 @@ import {
   markV1_9RunStatePackageReady,
   markV1_9RunStateRecoveryStop,
   normalizeV1_9RunManifestV2,
+  normalizeV1_9RunManifestV2ReadOnly,
   normalizeV1_9RunState,
   recordV1_9ExternalAcceptanceRound,
   recordV1_9RunStateMutation,
   recordV1_9UiMutation,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
 import {
-  V1_9_FROZEN_PROMPT,
   assertManifestBytesUnchanged,
   assertV1_9ResumeRunStorage,
   createV1_9ChildEnvironment,
@@ -47,14 +49,23 @@ import {
 
 const digest = (character) => character.repeat(64);
 
+function expectContractError(operation, pattern) {
+  try {
+    operation();
+  } catch (error) {
+    if (pattern.test(String(error instanceof Error ? error.message : error))) return;
+    throw error;
+  }
+  throw new Error(`expected contract error: ${pattern}`);
+}
+
 function createV2ManifestInput(overrides = {}) {
   return {
     runId: "v1-9-20260715-a23-contract",
     relativeRunRoot: "test-results\\v1-9-20260715-a23-contract",
-    prompt: "请完成一套百分数公开课材料包。",
     createdAt: "2026-07-15T01:00:00.000Z",
     baselineLock: {
-      schemaVersion: "v1-9-baseline-lock.v1",
+      schemaVersion: "v1-9-baseline-lock.v2",
       branch: "main",
       gitHead: "a".repeat(40),
       generationIntensity: "standard",
@@ -64,6 +75,14 @@ function createV2ManifestInput(overrides = {}) {
       projectionRegistryDigest: digest("3"),
       providerLedgerManifestDigest: digest("4"),
       projectionId: "a23-runtime-projection",
+      verificationManifestSha256: digest("5"),
+      workingTreeDigest: digest("6"),
+      policySha256: digest("7"),
+      stageSha256: digest("8"),
+      providerContinuityManifestSha256: digest("b"),
+      providerContinuityReceiptSha256: digest("9"),
+      providerContinuityEvidenceRootDigest: digest("c"),
+      providerContinuitySubjectDigest: digest("a"),
     },
     skillLock: {
       schemaVersion: "v1-9-skill-lock.v1",
@@ -128,7 +147,6 @@ async function createRunnerFixture(t, { stateStatus = "prepared", pointerVersion
   const input = createV2ManifestInput({
     runId: "v1-9-20260715-runner-fixture",
     relativeRunRoot: "test-results/v1-9-20260715-runner-fixture",
-    prompt: V1_9_FROZEN_PROMPT,
   });
   const manifest = createV1_9RunManifestV2(input);
   const state = createRunnerState(manifest, stateStatus);
@@ -525,6 +543,9 @@ test("V1-9 v2 manifest freezes the complete A23 baseline without mutable run sta
     assert.equal(Object.hasOwn(manifest, forbidden), false, `${forbidden} must live in run-state`);
   }
   assert.match(manifest.promptDigest, /^[a-f0-9]{64}$/);
+  if (manifest.promptDigest !== createHash("sha256").update(V1_9_FROZEN_PROMPT).digest("hex")) {
+    throw new Error("frozen prompt digest did not use the contract authority");
+  }
   assert.match(manifest.baselineLock.runtimeSourceDigest, /^[a-f0-9]{64}$/);
   assert.match(manifest.agentBrain.providerLock.configDigest, /^[a-f0-9]{64}$/);
   for (const lock of manifest.providerRuntimeLocks) {
@@ -546,6 +567,40 @@ test("V1-9 v2 manifest normalizes deterministically and rejects digest, field, e
   assert.throws(() => assertV1_9BaselineLockDigest(manifest.baselineLock, digest("e")), /baseline_lock_digest_mismatch/);
   assert.throws(() => assertV1_9RunManifestV2Digest(manifest, digest("e")), /run_manifest_digest_mismatch/);
   assert.throws(() => normalizeV1_9RunManifestV2({ ...manifest, status: "running" }), /run_manifest_unknown_field:status/);
+  expectContractError(() => createV1_9RunManifestV2({
+    ...createV2ManifestInput(),
+    prompt: V1_9_FROZEN_PROMPT,
+  }), /run_manifest_input_unknown_field:prompt/);
+  if (createV1_9RunManifestV2(createV2ManifestInput({ predecessor: null })).predecessor !== null) {
+    throw new Error("fresh run predecessor must remain null");
+  }
+  const currentBaseline = createV2ManifestInput().baselineLock;
+  const legacyBaseline = {
+    branch: currentBaseline.branch,
+    gitHead: currentBaseline.gitHead,
+    generationIntensity: currentBaseline.generationIntensity,
+    runtimeSourceDigest: currentBaseline.runtimeSourceDigest,
+    requirementsBaselineDigest: currentBaseline.requirementsBaselineDigest,
+    registryDigest: currentBaseline.registryDigest,
+    projectionRegistryDigest: currentBaseline.projectionRegistryDigest,
+    providerLedgerManifestDigest: currentBaseline.providerLedgerManifestDigest,
+    projectionId: currentBaseline.projectionId,
+  };
+  expectContractError(() => createV1_9RunManifestV2(createV2ManifestInput({
+    baselineLock: { schemaVersion: "v1-9-baseline-lock.v1", ...legacyBaseline },
+  })), /baseline_lock_upgrade_required/);
+  const legacyManifest = {
+    ...manifest,
+    baselineLock: { schemaVersion: "v1-9-baseline-lock.v1", ...legacyBaseline },
+  };
+  if (normalizeV1_9RunManifestV2ReadOnly(legacyManifest).baselineLock.schemaVersion !== "v1-9-baseline-lock.v1") {
+    throw new Error("legacy baseline must remain read-only parseable");
+  }
+  expectContractError(() => normalizeV1_9RunManifestV2(legacyManifest), /baseline_lock_upgrade_required/);
+  expectContractError(() => createV1_9RunState({
+    manifest: legacyManifest,
+    createdAt: "2026-07-15T01:01:00.000Z",
+  }), /baseline_lock_upgrade_required/);
   assert.throws(() => createV1_9RunManifestV2(createV2ManifestInput({
     baselineLock: { ...createV2ManifestInput().baselineLock, projectionId: "../a23" },
   })), /projectionId_invalid/);

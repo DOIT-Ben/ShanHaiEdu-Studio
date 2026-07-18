@@ -26,6 +26,10 @@ import {
 } from "../../scripts/development-gates/provider-continuity/trust-store.mjs";
 import { verifyProviderContinuityEvidence } from "../../scripts/development-gates/provider-continuity.mjs";
 import { collectGitVerificationSubject } from "../../scripts/development-gates/verification-subject.mjs";
+import {
+  assertCurrentV1_9BaselineLock,
+  createV1_9BaselineLock,
+} from "../../scripts/lib/v1-9-baseline-lock.mjs";
 
 test("live preflight fails before startup when explicit Provider authorization is incomplete", () => {
   let started = false;
@@ -510,6 +514,18 @@ test("v2 receipt verifier rebuilds signed campaigns and requires exact one-to-N 
     }), /expired/i);
   });
 
+  await t.test("stale signed campaigns cannot be repackaged behind fresh wrapper timestamps", () => {
+    const repackaged = mutateManifestAndReceiptInput(fixture, (manifest, receipt) => {
+      manifest.generatedAt = "2026-07-18T11:58:00.000Z";
+      receipt.verifiedAt = "2026-07-18T11:59:00.000Z";
+    });
+    assert.throws(() => verifyProviderContinuityReceiptV2({
+      ...repackaged,
+      now: new Date("2026-07-18T12:00:00.000Z"),
+      maxAgeHours: 1,
+    }), /campaign.*expired|repackaged/i);
+  });
+
   await t.test("authority attestation blocks mutated product scenario facts before capture signing", (subtest) => {
     const invalid = createV2Fixture(subtest, { runCount: 3 });
     const campaign = invalid.campaigns[0];
@@ -560,8 +576,72 @@ test("main Provider verifier consumes the exact v2 receipt bytes and current Git
   assert.equal(verified.ok, true);
   assert.equal(verified.passed, true);
   assert.equal(verified.consecutiveRuns, 3);
+  assert.equal(verified.manifestSha256, sha256(fixture.manifestBytes));
   assert.equal(verified.receiptSha256, sha256(exactReceiptBytes));
+  assert.match(verified.evidenceRootDigest, /^[a-f0-9]{64}$/u);
+  assert.equal(verified.binding.verificationManifestSha256, sha256(readBytes(fixture.verificationManifestPath)));
   assert.deepEqual(verified.subject, collectGitVerificationSubject(fixture.repositoryRoot));
+
+  const baseline = createV1_9BaselineLock({
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  });
+  assert.equal(baseline.schemaVersion, "v1-9-baseline-lock.v2");
+  assert.equal(baseline.verificationManifestSha256, sha256(readBytes(fixture.verificationManifestPath)));
+  assert.equal(baseline.providerContinuityManifestSha256, sha256(fixture.manifestBytes));
+  assert.equal(baseline.providerContinuityReceiptSha256, sha256(exactReceiptBytes));
+  assert.equal(baseline.providerContinuityEvidenceRootDigest, verified.evidenceRootDigest);
+  assert.equal(baseline.workingTreeDigest, fixture.subject.workingTreeDigest);
+  assert.equal(baseline.policySha256, fixture.subject.policySha256);
+  assert.equal(baseline.stageSha256, fixture.subject.stageSha256);
+  const originalVerificationBytes = readBytes(fixture.verificationManifestPath);
+  writeBytes(fixture.verificationManifestPath, Buffer.concat([originalVerificationBytes, Buffer.from(" \n")]));
+  assert.throws(() => createV1_9BaselineLock({
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), /v1_9_baseline_candidate_evidence_invalid/);
+  writeBytes(fixture.verificationManifestPath, originalVerificationBytes);
+  const receiptPath = path.join(fixture.repositoryRoot, ".tmp/provider-continuity/provider-continuity.receipt.json");
+  writeBytes(receiptPath, Buffer.concat([exactReceiptBytes, Buffer.from(" ")]));
+  assert.throws(() => assertCurrentV1_9BaselineLock(baseline, {
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), /v1_9_baseline_lock_drift/);
+  writeBytes(receiptPath, exactReceiptBytes);
+  assert.throws(() => createV1_9BaselineLock({
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-26T00:12:00.000Z"),
+  }), /v1_9_baseline_candidate_evidence_invalid/);
+  rmSync(receiptPath);
+  assert.throws(() => createV1_9BaselineLock({
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), /v1_9_baseline_candidate_evidence_invalid/);
+  writeBytes(receiptPath, exactReceiptBytes);
+  const verificationBytes = readBytes(fixture.verificationManifestPath);
+  mutateJson(fixture.verificationManifestPath, (manifest) => { manifest.checks[0].exitCode = 1; });
+  assert.throws(() => createV1_9BaselineLock({
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), /v1_9_baseline_candidate_evidence_invalid/);
+  writeBytes(fixture.verificationManifestPath, verificationBytes);
+  assert.deepEqual(assertCurrentV1_9BaselineLock(baseline, {
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), baseline);
+  writeBytes(path.join(fixture.repositoryRoot, "src", "candidate-drift.ts"), Buffer.from("export const drift = true;\n", "utf8"));
+  assert.throws(() => assertCurrentV1_9BaselineLock(baseline, {
+    cwd: fixture.repositoryRoot,
+    env: fixture.baselineEnv,
+    now: new Date("2026-07-18T00:12:00.000Z"),
+  }), /v1_9_baseline_worktree_dirty/);
 });
 
 test("capture trust store rejects unsafe paths, private material, unknown keys, and linked parents", (t) => {
@@ -902,8 +982,15 @@ function finalizeV2ReceiptFixture(fixture) {
 }
 
 function prepareGitBackedV2Fixture(fixture) {
+  const registryBytes = Buffer.from("schemaVersion: shanhai-skill-registry.v1\nrevision: fixture\n", "utf8");
+  const sourceSkillsRoot = path.join(fixture.repositoryRoot, "skill-authority");
+  const projectionRoot = path.join(sourceSkillsRoot, "dist", "runtime-projection-fixture");
+  writeBytes(path.join(fixture.repositoryRoot, "docs", "product", "current-requirements-baseline.md"), Buffer.from("# Fixture requirements\n", "utf8"));
+  writeBytes(path.join(sourceSkillsRoot, "shanhai-suite", "assets", "registry.yaml"), registryBytes);
+  writeBytes(path.join(projectionRoot, "shanhai-suite", "assets", "registry.yaml"), registryBytes);
   writeBytes(path.join(fixture.repositoryRoot, ".gitignore"), Buffer.from(".tmp/\n", "utf8"));
   git(fixture.repositoryRoot, "init", "--quiet");
+  git(fixture.repositoryRoot, "branch", "-M", "main");
   git(fixture.repositoryRoot, "config", "user.email", "provider-v2@example.invalid");
   git(fixture.repositoryRoot, "config", "user.name", "Provider V2 Test");
   git(fixture.repositoryRoot, "add", ".");
@@ -915,6 +1002,10 @@ function prepareGitBackedV2Fixture(fixture) {
     writeBytes(path.join(campaign.campaignRoot, campaign.signed.sourceIndex.path), campaign.signed.indexBytes);
   }
   finalizeV2ReceiptFixture(fixture);
+  fixture.baselineEnv = {
+    SHANHAI_SKILLS_SOURCE_ROOT: sourceSkillsRoot,
+    SHANHAI_SKILLS_RUNTIME_ROOT: projectionRoot,
+  };
 }
 
 function providerTrace({ campaignId, scenario, ordinal, phase, taskId, eventId, index }) {

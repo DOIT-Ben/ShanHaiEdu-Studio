@@ -9,6 +9,7 @@ import {
   type V1_9RunPredecessor,
   type V1_9RunState,
 } from "./v1-9-e2e-contract.mjs";
+import { assertV1_9PreparePath } from "./v1-9-run-preparation-transaction";
 
 const V1_POINTER_FIELDS = ["schemaVersion", "runId", "relativeRunRoot", "status"];
 const V2_POINTER_FIELDS = ["schemaVersion", "runId", "relativeRunRoot", "manifestPath", "manifestSha256", "statePath"];
@@ -40,6 +41,7 @@ export async function readV1_9PredecessorContext(input: {
     if (runId !== input.expectedPredecessorRunId) fail("v1_9_predecessor_invalid");
     if (path.posix.basename(relativeRunRoot) !== runId) fail("v1_9_legacy_active_pointer_invalid");
     const manifestPath = path.join(resolveRunRoot(input.rootDir, relativeRunRoot), "run-manifest.json");
+    assertV1_9PreparePath(path.join(input.rootDir, "test-results"), manifestPath, { kind: "file" });
     const manifestBytes = await readFile(manifestPath).catch(() => fail("v1_9_predecessor_manifest_missing"));
     const manifest = parse(manifestBytes, "v1_9_predecessor_manifest_invalid");
     if (manifest.schemaVersion !== "v1-9-run-manifest.v1" || manifest.runId !== runId ||
@@ -92,6 +94,10 @@ export async function readV1_9V2RunContext(input: {
   if (manifestPath !== path.join(runRoot, "run-manifest.json") || statePath !== path.join(runRoot, "run-state.json")) {
     fail("v1_9_active_pointer_invalid");
   }
+  const resultsRoot = path.join(input.rootDir, "test-results");
+  assertV1_9PreparePath(resultsRoot, runRoot, { kind: "directory" });
+  assertV1_9PreparePath(resultsRoot, manifestPath, { kind: "file" });
+  assertV1_9PreparePath(resultsRoot, statePath, { kind: "file" });
   const [manifestBytes, stateBytes] = await Promise.all([
     readFile(manifestPath).catch(() => fail("v1_9_predecessor_manifest_missing")),
     readFile(statePath).catch(() => fail("v1_9_predecessor_state_missing")),
@@ -124,13 +130,18 @@ export async function readV1_9V2RunContext(input: {
 export async function assertV1_9PredecessorBytesUnchanged(input: {
   pointerPath: string;
   context: V1_9PredecessorContext;
+  checkPointer?: boolean;
 }) {
+  const resultsRoot = path.dirname(input.pointerPath);
+  assertV1_9PreparePath(resultsRoot, input.pointerPath, { kind: "file" });
+  assertV1_9PreparePath(resultsRoot, input.context.manifestPath, { kind: "file" });
+  if (input.context.statePath) assertV1_9PreparePath(resultsRoot, input.context.statePath, { kind: "file" });
   const [pointer, manifest, state] = await Promise.all([
     readFile(input.pointerPath),
     readFile(input.context.manifestPath),
     input.context.statePath ? readFile(input.context.statePath) : Promise.resolve(null),
   ]);
-  if (!pointer.equals(input.context.pointerBytes)) fail("v1_9_active_pointer_drift");
+  if (input.checkPointer !== false && !pointer.equals(input.context.pointerBytes)) fail("v1_9_active_pointer_drift");
   if (!manifest.equals(input.context.manifestBytes)) fail("v1_9_predecessor_manifest_drift");
   if (input.context.stateBytes && !state?.equals(input.context.stateBytes)) fail("v1_9_predecessor_state_drift");
 }

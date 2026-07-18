@@ -24,7 +24,7 @@ test("V1-9 observer keeps the v2 manifest immutable and persists only run-state 
   }
 
   assert.match(source, /V1_9_E2E_STATE_PATH/);
-  assert.match(source, /writeJsonAtomic\(statePath,/);
+  assert.match(source, /writeV1_9RunStateCooperativeCas\(\{/);
   assert.match(source, /assertManifestBytesUnchanged/);
   assert.match(source, /manifestFileSha256/);
   assert.doesNotMatch(source, /writeJsonAtomic\(manifestPath,/);

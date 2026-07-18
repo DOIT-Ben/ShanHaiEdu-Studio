@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  V1_9_FROZEN_PROMPT,
   prepareV1_9Run,
   terminateV1_9RunForContractUpgrade,
 } from "../scripts/prepare-v1-9-run";
 import {
+  V1_9_FROZEN_PROMPT,
   bindV1_9RunStateProjectIdentity,
   bindV1_9TaskContractLock,
   createV1_9RunManifestV2,
@@ -33,6 +33,248 @@ afterEach(async () => {
 });
 
 describe("V1-9 v2 run preparer", () => {
+  it("creates a fresh run without a predecessor pointer, history, or predecessor environment", async () => {
+    const rootDir = await createEmptyFixture();
+    const result = await prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    });
+
+    const runRoot = path.join(rootDir, "test-results", NEW_RUN_ID);
+    const manifest = await readJson(path.join(runRoot, "run-manifest.json"));
+    expect(manifest.predecessor).toBeNull();
+    expect(manifest.promptDigest).toBe(sha256(Buffer.from(V1_9_FROZEN_PROMPT, "utf8")));
+    await expect(access(path.join(runRoot, "predecessor-history-evidence.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(rootDir, "test-results", "v1-9-product-e2e-history.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readJson(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json"))).toEqual({
+      schemaVersion: "v1-9-active-run.v2",
+      ...result,
+    });
+  });
+
+  it("creates a fresh run with opaque history only when no active pointer exists", async () => {
+    const fixture = await createFreshHistoryFixture();
+    const historyBytes = Buffer.from('{"legacy":"opaque-history"}\n', "utf8");
+    await writeFile(fixture.historyPath, historyBytes);
+    const oldManifestBytes = await readFile(fixture.oldManifestPath);
+
+    await prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    });
+
+    expect(await readFile(fixture.oldManifestPath)).toEqual(oldManifestBytes);
+    expect(await readFile(fixture.historyPath)).toEqual(historyBytes);
+    expect((await readJson(path.join(fixture.rootDir, "test-results", NEW_RUN_ID, "run-manifest.json"))).predecessor).toBeNull();
+    await expect(access(path.join(fixture.rootDir, "test-results", NEW_RUN_ID, "predecessor-history-evidence.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each(["legacy", "v2-running", "v2-completed"] as const)(
+    "refuses fresh mode when a %s active pointer already exists",
+    async (kind) => {
+      const fixture = kind === "legacy"
+        ? await createFixture()
+        : await createV2Fixture(kind === "v2-running" ? "running" : "completed");
+      const before = await snapshotTree(fixture.rootDir);
+      const createBaselineLock = vi.fn(() => baselineLock());
+      const resolveExecutionLocks = vi.fn(async () => executionLocks());
+
+      await expect(prepareV1_9Run({
+        rootDir: fixture.rootDir,
+        env: prepareEnv({
+          V1_9_PREDECESSOR_RUN_ID: undefined,
+          V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+        }),
+        runId: NEW_RUN_ID,
+        createdAt: CREATED_AT,
+        dependencies: { createBaselineLock, resolveExecutionLocks },
+      })).rejects.toThrow(/v1_9_fresh_active_pointer_conflict/);
+
+      expect(createBaselineLock).not.toHaveBeenCalled();
+      expect(resolveExecutionLocks).not.toHaveBeenCalled();
+      expect(await snapshotTree(fixture.rootDir)).toEqual(before);
+    },
+  );
+
+  it("preserves a competing pointer created in the final fresh publish window", async () => {
+    const rootDir = await createEmptyFixture();
+    const pointerPath = path.join(rootDir, "test-results", "v1-9-product-e2e-active.json");
+    const competingPointer = Buffer.from('{"schemaVersion":"external-writer","runId":"other"}\n', "utf8");
+
+    await expect(prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "before_pointer_publish") await writeFile(pointerPath, competingPointer, { flag: "wx" });
+        },
+      },
+    })).rejects.toThrow(/v1_9_active_pointer_drift/);
+
+    expect(await readFile(pointerPath)).toEqual(competingPointer);
+  });
+
+  it("rejects a recovered fresh journal that claims a previous active pointer", async () => {
+    const rootDir = await createEmptyFixture();
+    const input = {
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: vi.fn(async (phase: string) => {
+          if (phase === "journal_written") throw new Error("simulated_journal_fault");
+        }),
+      },
+    };
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/simulated_journal_fault/);
+    const journalPath = path.join(rootDir, "test-results", ".v1-9-prepare-transaction.json");
+    const journal = await readJson(journalPath);
+    journal.previousPointerSha256 = "a".repeat(64);
+    await writeFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`, "utf8");
+    input.dependencies.afterTransactionPhase.mockImplementation(async () => undefined);
+
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/v1_9_prepare_transaction_invalid/);
+    await expect(access(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  for (const kind of ["test-results", "repository-alias"] as const) {
+    it(`refuses the ${kind} junction before writing outside the repository`, async (testContext) => {
+      const rootDir = await createEmptyFixture();
+      const outside = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-path-outside-"));
+      temporaryRoots.push(outside);
+      const sentinelPath = path.join(outside, "sentinel.txt");
+      await writeFile(sentinelPath, "keep", "utf8");
+      let configuredRoot = rootDir;
+      const linkPath = kind === "test-results"
+        ? path.join(rootDir, "test-results")
+        : path.join(path.dirname(rootDir), `${path.basename(rootDir)}-alias`);
+      try {
+        await symlink(kind === "test-results" ? outside : rootDir, linkPath, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        testContext.skip(`directory link unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+        return;
+      }
+      if (kind === "repository-alias") {
+        configuredRoot = linkPath;
+        temporaryRoots.push(linkPath);
+      }
+
+      await expect(prepareV1_9Run({
+        rootDir: configuredRoot,
+        env: prepareEnv({
+          V1_9_PREDECESSOR_RUN_ID: undefined,
+          V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+        }),
+        runId: NEW_RUN_ID,
+        createdAt: CREATED_AT,
+        dependencies: {
+          createBaselineLock: vi.fn(() => baselineLock()),
+          resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        },
+      })).rejects.toThrow(/v1_9_prepare_path_unsafe/);
+
+      expect(await readFile(sentinelPath, "utf8")).toBe("keep");
+      expect((await readdir(outside)).sort()).toEqual(["sentinel.txt"]);
+    });
+  }
+
+  it("rechecks the staged root after a phase hook replaces it with a junction", async (testContext) => {
+    const rootDir = await createEmptyFixture();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-stage-outside-"));
+    temporaryRoots.push(outside);
+    const sentinelPath = path.join(outside, "sentinel.txt");
+    await writeFile(sentinelPath, "keep", "utf8");
+    const probe = path.join(rootDir, "junction-probe");
+    try {
+      await symlink(outside, probe, process.platform === "win32" ? "junction" : "dir");
+      await rm(probe);
+    } catch (error) {
+      testContext.skip(`directory link unavailable: ${error instanceof Error ? error.message : "unknown"}`);
+      return;
+    }
+
+    await expect(prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase !== "manifest_staged") return;
+          const resultsRoot = path.join(rootDir, "test-results");
+          const temporaryName = (await readdir(resultsRoot)).find((name) => name.startsWith(".v1-9-prepare-v1-9-"));
+          if (!temporaryName) throw new Error("temporary_root_missing");
+          const temporaryRoot = path.join(resultsRoot, temporaryName);
+          await rm(temporaryRoot, { recursive: true });
+          await symlink(outside, temporaryRoot, process.platform === "win32" ? "junction" : "dir");
+        },
+      },
+    })).rejects.toThrow(/v1_9_prepare_path_unsafe/);
+
+    expect(await readFile(sentinelPath, "utf8")).toBe("keep");
+    expect((await readdir(outside)).sort()).toEqual(["sentinel.txt"]);
+  });
+
+  it.each([
+    [OLD_RUN_ID, undefined],
+    [undefined, "f".repeat(64)],
+  ])("rejects partial predecessor identity before any write", async (predecessorRunId, predecessorManifestSha256) => {
+    const rootDir = await createEmptyFixture();
+    const before = await snapshotTree(rootDir);
+    await expect(prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: predecessorRunId,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: predecessorManifestSha256,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_predecessor_pair_invalid/);
+    expect(await snapshotTree(rootDir)).toEqual(before);
+  });
+
   it.each([
     [undefined, OLD_RUN_ID],
     ["resume", OLD_RUN_ID],
@@ -128,7 +370,9 @@ describe("V1-9 v2 run preparer", () => {
     const fixture = await createFixture();
     const oldManifestBytes = await readFile(fixture.oldManifestPath);
     const oldPointerBytes = await readFile(fixture.pointerPath);
-    const createBaselineLock = vi.fn(() => baselineLock());
+    const frozenBaseline = baselineLock();
+    const createBaselineLock = vi.fn(() => frozenBaseline);
+    const assertCurrentBaselineLock = vi.fn(() => frozenBaseline);
     const resolveExecutionLocks = vi.fn(async () => executionLocks());
 
     const result = await prepareV1_9Run({
@@ -137,7 +381,7 @@ describe("V1-9 v2 run preparer", () => {
       runId: NEW_RUN_ID,
       createdAt: CREATED_AT,
       expectedPredecessorManifestSha256: fixture.oldManifestSha256,
-      dependencies: { createBaselineLock, resolveExecutionLocks },
+      dependencies: { createBaselineLock, assertCurrentBaselineLock, resolveExecutionLocks },
     });
 
     expect(createBaselineLock).toHaveBeenCalledOnce();
@@ -147,6 +391,7 @@ describe("V1-9 v2 run preparer", () => {
         SHANHAI_SKILLS_SOURCE_ROOT: "E:\\authority\\shanhaiedu-skills",
       }),
     });
+    expect(assertCurrentBaselineLock).toHaveBeenCalledTimes(6);
     expect(resolveExecutionLocks).toHaveBeenCalledOnce();
     expect(await readFile(fixture.oldManifestPath)).toEqual(oldManifestBytes);
     expect(oldPointerBytes.toString("utf8")).toContain('"schemaVersion": "v1-9-active-run.v1"');
@@ -221,9 +466,6 @@ describe("V1-9 v2 run preparer", () => {
       expect.stringMatching(/^\.v1-9-prepare-/),
     );
 
-    const runnerModulePath = "../scripts/run-v1-9-e2e.mjs";
-    const runner = await import(runnerModulePath);
-    expect(V1_9_FROZEN_PROMPT).toBe(runner.V1_9_FROZEN_PROMPT);
     expect(manifest.promptDigest).toBe(sha256(Buffer.from(V1_9_FROZEN_PROMPT, "utf8")));
   });
 
@@ -327,6 +569,73 @@ describe("V1-9 v2 run preparer", () => {
     "journal_written",
     "manifest_staged",
     "state_staged",
+    "staged",
+    "run_published",
+    "before_pointer_publish",
+    "pointer_published",
+  ] as const)(
+    "recovers the same fresh run after a %s transaction fault",
+    async (phase) => {
+      const fixture = await createFreshHistoryFixture();
+      const rootDir = fixture.rootDir;
+      const historyBytes = Buffer.from('{"legacy":"opaque-history"}\n', "utf8");
+      await writeFile(fixture.historyPath, historyBytes);
+      const oldManifestBytes = await readFile(fixture.oldManifestPath);
+      const env = prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      });
+      const dependencies = {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: vi.fn(async (currentPhase: string) => {
+          if (currentPhase === phase) throw new Error(`simulated_fresh_${phase}_fault`);
+        }),
+      };
+
+      await expect(prepareV1_9Run({
+        rootDir,
+        env,
+        runId: NEW_RUN_ID,
+        createdAt: CREATED_AT,
+        dependencies,
+      })).rejects.toThrow(new RegExp(`simulated_fresh_${phase}_fault`));
+
+      expect(await readFile(fixture.oldManifestPath)).toEqual(oldManifestBytes);
+      expect(await readFile(fixture.historyPath)).toEqual(historyBytes);
+      const pointerAfterFault = await readFile(fixture.pointerPath).catch(() => null);
+      if (phase === "pointer_published") {
+        expect(JSON.parse(pointerAfterFault!.toString("utf8"))).toMatchObject({ runId: NEW_RUN_ID });
+      } else {
+        expect(pointerAfterFault).toBeNull();
+      }
+
+      dependencies.afterTransactionPhase.mockImplementation(async () => undefined);
+      const recovered = await prepareV1_9Run({
+        rootDir,
+        env,
+        runId: NEW_RUN_ID,
+        createdAt: CREATED_AT,
+        dependencies,
+      });
+      expect(recovered.runId).toBe(NEW_RUN_ID);
+      expect((await readJson(path.join(rootDir, recovered.manifestPath))).predecessor).toBeNull();
+      expect(await readFile(fixture.oldManifestPath)).toEqual(oldManifestBytes);
+      expect(await readFile(fixture.historyPath)).toEqual(historyBytes);
+      expect(await readJson(fixture.pointerPath)).toMatchObject({ runId: NEW_RUN_ID });
+      await expect(access(path.join(rootDir, recovered.relativeRunRoot, "predecessor-history-evidence.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      const names = await readdir(path.join(rootDir, "test-results"));
+      expect(names).not.toContain(expect.stringMatching(/^\.v1-9-prepare-/));
+      expect(names).not.toContain(".v1-9-prepare.lock");
+      expect(names).not.toContain(".v1-9-prepare-transaction.json");
+    },
+  );
+
+  it.each([
+    "journal_written",
+    "manifest_staged",
+    "state_staged",
     "evidence_staged",
     "run_published",
     "history_published",
@@ -371,6 +680,76 @@ describe("V1-9 v2 run preparer", () => {
     },
   );
 
+  it("rejects recovery when published successor evidence no longer matches the journal", async () => {
+    const fixture = await createFixture();
+    const pointerBefore = await readFile(fixture.pointerPath);
+    const dependencies = {
+      createBaselineLock: vi.fn(() => baselineLock()),
+      resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      afterTransactionPhase: vi.fn(async (phase: string) => {
+        if (phase !== "run_published") return;
+        await writeFile(
+          path.join(fixture.rootDir, "test-results", NEW_RUN_ID, "predecessor-history-evidence.json"),
+          '{"schemaVersion":"tampered"}\n',
+          "utf8",
+        );
+        throw new Error("simulated_successor_evidence_crash");
+      }),
+    };
+    const input = {
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies,
+    };
+
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/simulated_successor_evidence_crash/);
+    dependencies.afterTransactionPhase.mockImplementation(async () => undefined);
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/v1_9_prepare_transaction_evidence_invalid/);
+
+    expect(await readFile(fixture.pointerPath)).toEqual(pointerBefore);
+    expect(await existsPath(path.join(
+      fixture.rootDir,
+      "test-results",
+      ".v1-9-prepare-transaction.json",
+    ))).toBe(true);
+  });
+
+  it("rejects recovery when a published fresh run gains predecessor evidence", async () => {
+    const rootDir = await createEmptyFixture();
+    const dependencies = {
+      createBaselineLock: vi.fn(() => baselineLock()),
+      resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      afterTransactionPhase: vi.fn(async (phase: string) => {
+        if (phase !== "run_published") return;
+        await writeFile(
+          path.join(rootDir, "test-results", NEW_RUN_ID, "predecessor-history-evidence.json"),
+          '{}\n',
+          "utf8",
+        );
+        throw new Error("simulated_fresh_evidence_crash");
+      }),
+    };
+    const input = {
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies,
+    };
+
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/simulated_fresh_evidence_crash/);
+    dependencies.afterTransactionPhase.mockImplementation(async () => undefined);
+    await expect(prepareV1_9Run(input)).rejects.toThrow(/v1_9_prepare_transaction_evidence_invalid/);
+
+    expect(await existsPath(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json"))).toBe(false);
+  });
+
   it("allows only one concurrent prepare transaction", async () => {
     const fixture = await createFixture();
     let release!: () => void;
@@ -410,6 +789,323 @@ describe("V1-9 v2 run preparer", () => {
     release();
     expect((await first).runId).toBe(NEW_RUN_ID);
     expect(await existsPath(path.join(fixture.rootDir, "test-results", "v1-9-20260715-concurrent"))).toBe(false);
+  });
+
+  it("selects one dead-owner takeover claimant before quarantining the lock", async () => {
+    const fixture = await createFixture();
+    const lockRoot = path.join(fixture.rootDir, "test-results", ".v1-9-prepare.lock");
+    await mkdir(lockRoot);
+    await writeFile(path.join(lockRoot, "owner.json"), `${JSON.stringify({
+      schemaVersion: "v1-9-prepare-lock.v1",
+      pid: 2_147_483_647,
+      token: "a".repeat(24),
+      createdAt: CREATED_AT,
+    }, null, 2)}\n`, "utf8");
+    let releaseClaim!: () => void;
+    let markClaimed!: () => void;
+    const claimGate = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    const claimed = new Promise<void>((resolve) => { markClaimed = resolve; });
+    const first = prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterLockTakeoverClaimed: async () => {
+          markClaimed();
+          await claimGate;
+        },
+      },
+    });
+    await claimed;
+
+    expect((await readJson(path.join(lockRoot, "owner.json"))).token).toBe("a".repeat(24));
+    expect(await existsPath(path.join(lockRoot, "takeover-claim.json"))).toBe(true);
+    await expect(prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: "v1-9-20260715-second-claimant",
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_prepare_locked/);
+    expect((await readJson(path.join(lockRoot, "owner.json"))).token).toBe("a".repeat(24));
+
+    releaseClaim();
+    expect((await first).runId).toBe(NEW_RUN_ID);
+    expect(await existsPath(lockRoot)).toBe(false);
+  });
+
+  it("recovers a takeover claim abandoned by a dead claimant", async () => {
+    const fixture = await createFixture();
+    const lockRoot = path.join(fixture.rootDir, "test-results", ".v1-9-prepare.lock");
+    await mkdir(lockRoot);
+    await writeFile(path.join(lockRoot, "owner.json"), `${JSON.stringify({ schemaVersion: "v1-9-prepare-lock.v1",
+      pid: 2_147_483_647, token: "a".repeat(24), createdAt: CREATED_AT }, null, 2)}\n`, "utf8");
+    await writeFile(path.join(lockRoot, "takeover-claim.json"), `${JSON.stringify({ schemaVersion: "v1-9-prepare-lock-takeover-claim.v1", claimantPid: 2_147_483_646, claimantToken: "b".repeat(24), expectedOwnerToken: "a".repeat(24), createdAt: CREATED_AT }, null, 2)}\n`, "utf8");
+
+    await expect(prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).resolves.toMatchObject({ runId: NEW_RUN_ID });
+    expect(await existsPath(lockRoot)).toBe(false);
+  });
+
+  it("preserves a concurrent history update and recovers only after the original bytes return", async () => {
+    const fixture = await createFixture();
+    const pointerBefore = await readFile(fixture.pointerPath);
+    const concurrentHistory = Buffer.from('{"schemaVersion":"v1-9-run-history.v1","entries":[]}\n', "utf8");
+
+    await expect(prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "run_published") await writeFile(fixture.historyPath, concurrentHistory, { flag: "wx" });
+        },
+      },
+    })).rejects.toThrow(/v1_9_run_history_drift/);
+
+    expect(await readFile(fixture.historyPath)).toEqual(concurrentHistory);
+    expect(await readFile(fixture.pointerPath)).toEqual(pointerBefore);
+    await expect(prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_prepare_transaction_conflict/);
+
+    await rm(fixture.historyPath);
+    const recovered = await prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    });
+    expect(recovered.runId).toBe(NEW_RUN_ID);
+  });
+
+  it("preserves a competing successor pointer written in the final cooperative CAS window", async () => {
+    const fixture = await createFixture();
+    const competingPointer = Buffer.from('{"schemaVersion":"external-writer","runId":"other"}\n', "utf8");
+
+    await expect(prepareV1_9Run({
+      rootDir: fixture.rootDir,
+      env: prepareEnv(),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      expectedPredecessorManifestSha256: fixture.oldManifestSha256,
+      dependencies: {
+        createBaselineLock: vi.fn(() => baselineLock()),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "before_pointer_publish") await writeFile(fixture.pointerPath, competingPointer);
+        },
+      },
+    })).rejects.toThrow(/v1_9_active_pointer_drift/);
+
+    expect(await readFile(fixture.pointerPath)).toEqual(competingPointer);
+  });
+
+  it("revalidates the baseline after run publication before publishing an active pointer", async () => {
+    const rootDir = await createEmptyFixture();
+    let checks = 0;
+    const expected = baselineLock();
+
+    await expect(prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => {
+          checks += 1;
+          if (checks === 2) throw new Error("v1_9_baseline_lock_drift");
+          return expected;
+        }),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_baseline_lock_drift/);
+
+    expect(checks).toBe(2);
+    await expect(access(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("revalidates the baseline after the final pointer hook", async () => {
+    const rootDir = await createEmptyFixture();
+    const expected = baselineLock();
+    let drifted = false;
+
+    await expect(prepareV1_9Run({
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => {
+          if (drifted) throw new Error("v1_9_baseline_lock_drift");
+          return expected;
+        }),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "before_pointer_publish") drifted = true;
+        },
+      },
+    })).rejects.toThrow(/v1_9_baseline_lock_drift/);
+
+    await expect(access(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("revalidates the baseline before a crashed fresh transaction can publish its pointer", async () => {
+    const rootDir = await createEmptyFixture();
+    const expected = baselineLock();
+    const firstDependencies = {
+      createBaselineLock: vi.fn(() => expected),
+      assertCurrentBaselineLock: vi.fn(() => expected),
+      resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      afterTransactionPhase: vi.fn(async (phase: string) => {
+        if (phase === "run_published") throw new Error("simulated_crash_before_pointer");
+      }),
+    };
+    const input = {
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+    };
+    await expect(prepareV1_9Run({ ...input, dependencies: firstDependencies }))
+      .rejects.toThrow(/simulated_crash_before_pointer/);
+
+    await expect(prepareV1_9Run({
+      ...input,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => { throw new Error("v1_9_baseline_lock_drift"); }),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_baseline_lock_drift/);
+    await expect(access(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not finalize recovery after a pointer-published crash when baseline evidence drifts", async () => {
+    const rootDir = await createEmptyFixture();
+    const expected = baselineLock();
+    const input = {
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+    };
+    await expect(prepareV1_9Run({
+      ...input,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => expected),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "pointer_published") throw new Error("simulated_pointer_published_crash");
+        },
+      },
+    })).rejects.toThrow(/simulated_pointer_published_crash/);
+
+    const journalPath = path.join(rootDir, "test-results", ".v1-9-prepare-transaction.json");
+    expect((await readJson(path.join(rootDir, "test-results", "v1-9-product-e2e-active.json"))).runId).toBe(NEW_RUN_ID);
+    await expect(prepareV1_9Run({
+      ...input,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => { throw new Error("v1_9_baseline_lock_drift"); }),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_baseline_lock_drift/);
+    expect(await access(journalPath).then(() => true)).toBe(true);
+  });
+
+  it("rejects recovery when the published pointer is semantically equal but byte-different", async () => {
+    const rootDir = await createEmptyFixture();
+    const expected = baselineLock();
+    const input = {
+      rootDir,
+      env: prepareEnv({
+        V1_9_PREDECESSOR_RUN_ID: undefined,
+        V1_9_PREDECESSOR_MANIFEST_SHA256: undefined,
+      }),
+      runId: NEW_RUN_ID,
+      createdAt: CREATED_AT,
+    };
+    await expect(prepareV1_9Run({
+      ...input,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => expected),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+        afterTransactionPhase: async (phase) => {
+          if (phase === "pointer_published") throw new Error("simulated_pointer_published_crash");
+        },
+      },
+    })).rejects.toThrow(/simulated_pointer_published_crash/);
+
+    const pointerPath = path.join(rootDir, "test-results", "v1-9-product-e2e-active.json");
+    const journalPath = path.join(rootDir, "test-results", ".v1-9-prepare-transaction.json");
+    const semanticPointer = await readJson(pointerPath);
+    const byteDifferentPointer = Buffer.from(`${JSON.stringify(semanticPointer)}\n`, "utf8");
+    await writeFile(pointerPath, byteDifferentPointer);
+
+    await expect(prepareV1_9Run({
+      ...input,
+      dependencies: {
+        createBaselineLock: vi.fn(() => expected),
+        assertCurrentBaselineLock: vi.fn(() => expected),
+        resolveExecutionLocks: vi.fn(async () => executionLocks()),
+      },
+    })).rejects.toThrow(/v1_9_prepare_transaction_conflict/);
+    expect(await readFile(pointerPath)).toEqual(byteDifferentPointer);
+    expect(await access(journalPath).then(() => true)).toBe(true);
   });
 
   it("atomically takes over a dead-owner lock and recovers its valid journal", async () => {
@@ -473,6 +1169,11 @@ describe("V1-9 v2 run preparer", () => {
       terminatedAt: "2026-07-15T12:59:00.000Z",
       dependencies: {
         beforeTerminationCommit: async () => {
+          expect(await existsPath(path.join(
+            fixture.rootDir,
+            "test-results",
+            ".v1-9-prepare.lock",
+          ))).toBe(true);
           const current = await readFile(fixture.statePath);
           await writeFile(fixture.statePath, Buffer.concat([current, Buffer.from("\n")]));
         },
@@ -482,6 +1183,11 @@ describe("V1-9 v2 run preparer", () => {
     expect(await readFile(fixture.pointerPath)).toEqual(pointerBefore);
     expect(await readFile(fixture.oldManifestPath)).toEqual(manifestBefore);
     expect((await readJson(fixture.statePath)).status).toBe("running");
+    expect(await existsPath(path.join(
+      fixture.rootDir,
+      "test-results",
+      ".v1-9-prepare.lock",
+    ))).toBe(false);
   });
 
   it("rejects completed v2 termination and raw manifest drift without writes", async () => {
@@ -530,7 +1236,7 @@ function prepareEnv(overrides: Record<string, string | undefined> = {}): Record<
 
 function baselineLock() {
   return {
-    schemaVersion: "v1-9-baseline-lock.v1" as const,
+    schemaVersion: "v1-9-baseline-lock.v2" as const,
     branch: "main" as const,
     gitHead: "a".repeat(40),
     generationIntensity: "standard" as const,
@@ -540,6 +1246,14 @@ function baselineLock() {
     projectionRegistryDigest: "3".repeat(64),
     providerLedgerManifestDigest: "4".repeat(64),
     projectionId: "runtime-projection-a23-fixture",
+    verificationManifestSha256: "5".repeat(64),
+    workingTreeDigest: "6".repeat(64),
+    policySha256: "7".repeat(64),
+    stageSha256: "8".repeat(64),
+    providerContinuityManifestSha256: "b".repeat(64),
+    providerContinuityReceiptSha256: "9".repeat(64),
+    providerContinuityEvidenceRootDigest: "c".repeat(64),
+    providerContinuitySubjectDigest: "a".repeat(64),
   };
 }
 
@@ -603,6 +1317,28 @@ async function createFixture() {
   };
 }
 
+async function createEmptyFixture() {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-fresh-preparer-"));
+  temporaryRoots.push(rootDir);
+  return rootDir;
+}
+
+async function createFreshHistoryFixture() {
+  const rootDir = await createEmptyFixture();
+  const runRoot = path.join(rootDir, "test-results", OLD_RUN_ID);
+  const oldManifestPath = path.join(runRoot, "run-manifest.json");
+  const pointerPath = path.join(rootDir, "test-results", "v1-9-product-e2e-active.json");
+  const historyPath = path.join(rootDir, "test-results", "v1-9-product-e2e-history.json");
+  await mkdir(runRoot, { recursive: true });
+  await writeFile(oldManifestPath, `${JSON.stringify({
+    schemaVersion: "v1-9-run-manifest.v1",
+    runId: OLD_RUN_ID,
+    relativeRunRoot: `test-results/${OLD_RUN_ID}`,
+    status: "failed",
+  }, null, 2)}\n`, "utf8");
+  return { rootDir, oldManifestPath, pointerPath, historyPath };
+}
+
 async function createV2Fixture(status: "running" | "completed") {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "shanhai-v1-9-v2-predecessor-"));
   temporaryRoots.push(rootDir);
@@ -615,7 +1351,6 @@ async function createV2Fixture(status: "running" | "completed") {
   const manifest = createV1_9RunManifestV2({
     runId: V2_RUN_ID,
     relativeRunRoot,
-    prompt: V1_9_FROZEN_PROMPT,
     createdAt: "2026-07-15T12:00:00.000Z",
     baselineLock: baselineLock(),
     skillLock: executionLocks().skillLock,
