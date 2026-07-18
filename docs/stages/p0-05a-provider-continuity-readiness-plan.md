@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。远端artifact经仓内verifier复核为`dirty=false`，HEAD、tree、policy SHA、stage SHA和5项退出码全部匹配。第2个串行切片VR-A13产品服务端持久编排audit现为active / offline-only；DB recovery仍保持后续阻塞，不与本切片并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门，本地定向验证及development gate通过；该提交尚待远端clean CI复核。当前唯一活动代码切片是VR-A13B Tool authority、服务端摘要、observer与closeout，仍为offline-only；DB recovery保持后续阻塞，不与本切片并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -118,7 +118,7 @@ VR-A13采用唯一事实链，不复用普通`AuditLog`：
 
 fresh/baseline切片只修改`v1-9-e2e-contract`、`v1-9-baseline-lock`及其候选证据模块、`v1-9-run-preparation-transaction`、prepare/runner入口及行为测试。当前验收事实：fresh输入不含旧run身份且active pointer不存在时可准备；opaque history保持原字节，任何既有active pointer都失败关闭，新manifest写`predecessor: null`；部分predecessor输入在任何写入前失败；fresh事务覆盖journal、manifest、state、staged、run publish、最终pointer窗口和pointer publish故障恢复；successor不覆盖并发history，也不覆盖遵守共享prepare锁的仓内pointer writer；closeout同字节双pointer可前滚、异字节失败关闭，活PID不因TTL接管，termination与closeout共用run-state cooperative CAS；所有I/O拒绝仓外junction/reparse；新baseline只产生`v1-9-baseline-lock.v2`并绑定clean verification、policy/stage、Provider manifest/receipt、签名evidence root摘要和同一候选subject，facts与trace由source-index SHA传递绑定，正常提交与崩溃恢复均在pointer发布前后重验；旧v1只读解析且活动入口拒绝执行，签名campaign自身受TTL约束；prepare和runner不再保存prompt全文。
 
-fresh/baseline切片的`34 / +2500 / -800`预算已随`9160694`关闭，不结转到本切片。VR-A13从该clean HEAD重新计算，预算为最多32个实际变更文件、`+2400/-700`、零二进制；超出时拆分后续切片，不以提高阈值代替范围控制。
+fresh/baseline切片的`34 / +2500 / -800`预算已随`9160694`关闭，VR-A13A的预算也已随`b2772a7`关闭，均不结转。VR-A13B从`b2772a7`重新计算，预算为最多32个实际变更文件、`+2400/-700`、零二进制；超出时继续拆分后续切片，不以提高阈值代替范围控制。
 
 必须回答：
 

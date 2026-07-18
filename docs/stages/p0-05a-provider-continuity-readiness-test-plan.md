@@ -15,7 +15,7 @@
 
 ## 2. 离线合同测试
 
-首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。最终并发修复后的observer Node合同`5/5`、prepare/closeout Vitest `71/71`、TypeScript、定向ESLint和development gate均通过；原生全量`npm test`为Node `389/389`、Vitest shard 1 `770/770`、shard 2 `834/834`。当前最终定向组合无skip；此前唯一skip来自Windows普通文件symlink权限限制，junction攻击测试实际执行通过。最终结果仍必须绑定本切片clean新候选，不能沿用旧提交证据。
+首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过；该提交尚待远端clean CI复核。VR-A13B必须重新生成自己的定向、全量与clean CI证据，不能沿用A阶段结果。
 
 全量本地测试只使用`run-tests.mjs`内生的单worker约束，不从外层覆盖`VITEST_MAX_WORKERS`。每次运行使用同一`test-workbench`族下带run token和角色后缀的独立Node/Vitest SQLite文件，初始化前和退出后清理`.db`、`-wal`、`-shm`；整个测试进程树通过唯一空dotenv文件阻止仓库`.env`回灌Provider凭据，成功或失败退出均清理该文件和数据库族。
 
