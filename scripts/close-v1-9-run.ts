@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   createV1_9RunManifestV2Digest,
+  assertV1_9RunStateOrchestrationAuthority,
   normalizeV1_9RunManifestV2,
   normalizeV1_9RunState,
+  projectV1_9OrchestrationAuthoritySummary,
   recordV1_9ExternalAcceptanceRound,
   type V1_9ExternalAcceptanceRoundState,
   type V1_9RunManifestV2,
@@ -31,6 +33,7 @@ import {
   withV1_9PrepareLock,
   writeV1_9RunStateCooperativeCas,
 } from "./lib/v1-9-run-preparation-transaction";
+import { readV1_9OrchestrationAuthoritySummaryFromSqlite } from "./lib/v1-9-orchestration-authority-sqlite";
 
 export {
   createV1_9ExternalAcceptanceReportDigest,
@@ -72,6 +75,7 @@ type CloseoutContext = {
   stateBytes: Buffer;
   state: V1_9RunState;
   finalReportPath: string;
+  databasePath: string;
 };
 
 type RepairCommitInput = {
@@ -85,6 +89,7 @@ type CloseoutDependencies = {
   afterClosedPointerLink?: () => void | Promise<void>;
   beforeStateCommit?: () => void | Promise<void>;
   commitRepairHandoff?: (input: RepairCommitInput) => Promise<unknown>;
+  readAuthoritySummary?: typeof readV1_9OrchestrationAuthoritySummaryFromSqlite;
 };
 
 export async function closeV1_9RunAfterExternalAcceptance(input: {
@@ -106,6 +111,12 @@ export async function closeV1_9RunAfterExternalAcceptance(input: {
     const context = await resolveCloseoutContext(rootDir, report.runId);
     assertReportBinding(context, report);
     await assertPackageFileBinding(context, report);
+    const readAuthoritySummary = input.dependencies?.readAuthoritySummary
+      ?? readV1_9OrchestrationAuthoritySummaryFromSqlite;
+    let authorityState = await reconcileCloseoutAuthorityState(
+      context.state,
+      await readAuthoritySummary(authorityReadInput(context)),
+    );
 
     const reportBytes = serializeJson(report);
     const reportSha256 = sha256(reportBytes);
@@ -126,7 +137,7 @@ export async function closeV1_9RunAfterExternalAcceptance(input: {
     let handoff: ExternalAuditRepairHandoff | null = null;
     let handoffFileSha256: string | null = null;
     if (evaluation.outcome === "repair_required") {
-      const taskBinding = createRepairTaskBinding(context.state, report);
+      const taskBinding = createRepairTaskBinding(authorityState, report);
       handoff = createExternalAuditRepairHandoff({ report, reportDigest: reportSha256, binding: taskBinding });
       const handoffBytes = serializeJson(handoff);
       handoffFileSha256 = sha256(handoffBytes);
@@ -138,10 +149,15 @@ export async function closeV1_9RunAfterExternalAcceptance(input: {
       );
       const commitRepairHandoff = input.dependencies?.commitRepairHandoff ?? commitRepairHandoffToProduct;
       await commitRepairHandoff({
-        runStateBinding: createRunStateBinding(context.state, report),
+        runStateBinding: createRunStateBinding(authorityState, report),
         handoff,
       });
     }
+
+    authorityState = await reconcileCloseoutAuthorityState(
+      authorityState,
+      await readAuthoritySummary(authorityReadInput(context)),
+    );
 
     const roundCommit = createRoundCommit({
       report,
@@ -152,8 +168,8 @@ export async function closeV1_9RunAfterExternalAcceptance(input: {
       repairHandoffDigest: handoffFileSha256,
     });
     const nextState = loaded.currentRound
-      ? assertExistingRoundReplay(context.state, loaded.currentRound, roundCommit)
-      : recordV1_9ExternalAcceptanceRound(context.state, roundCommit);
+      ? assertExistingRoundReplay(authorityState, loaded.currentRound, roundCommit)
+      : recordV1_9ExternalAcceptanceRound(authorityState, roundCommit);
 
     await assertBytesUnchanged(resultsRoot, context.manifestPath, context.manifestBytes, "v1_9_run_manifest_mutated");
     await assertBytesUnchanged(resultsRoot, context.pointerSourcePath, context.pointerBytes, "v1_9_active_run_pointer_mutated");
@@ -249,6 +265,8 @@ async function resolveCloseoutContext(rootDir: string, expectedRunId: string): P
   if (pointerRunRoot !== runRoot) throw new Error("v1_9_active_run_identity_mismatch");
   const manifestPath = resolveOwnedRunFile(rootDir, runRoot, pointer.manifestPath, "run-manifest.json");
   const statePath = resolveOwnedRunFile(rootDir, runRoot, pointer.statePath, "run-state.json");
+  const databasePath = resolveRunRelativeFile(runRoot, "m67.sqlite");
+  assertV1_9PreparePath(resultsRoot, databasePath, { kind: "file" });
   const [manifestBytes, stateBytes] = await Promise.all([
     readCloseoutFile(resultsRoot, manifestPath),
     readCloseoutFile(resultsRoot, statePath),
@@ -289,7 +307,26 @@ async function resolveCloseoutContext(rootDir: string, expectedRunId: string): P
     stateBytes,
     state,
     finalReportPath: path.join(runRoot, FINAL_REPORT_FILE_NAME),
+    databasePath,
   };
+}
+
+function authorityReadInput(context: CloseoutContext) {
+  const { actorUserId, projectId } = context.state.identity;
+  if (!actorUserId || !projectId) throw new Error("v1_9_external_acceptance_task_binding_missing");
+  return { databasePath: context.databasePath, projectId, actorUserId };
+}
+
+async function reconcileCloseoutAuthorityState(state: V1_9RunState, actual: unknown) {
+  if (state.status === "completed") {
+    assertV1_9RunStateOrchestrationAuthority(state, actual, true);
+    return state;
+  }
+  return projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: actual,
+    projectedAt: state.updatedAt,
+    requireReady: true,
+  });
 }
 
 async function loadRoundHistory(context: CloseoutContext, currentRound: number, currentDigest: string) {

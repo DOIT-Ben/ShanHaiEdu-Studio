@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   V1_9_FROZEN_PROMPT,
+  assertV1_9RunStateOrchestrationAuthority,
   assertV1_9InterruptedRunningResumeState,
   createV1_9RunManifestV2Digest,
   normalizeV1_9RunManifestV2,
@@ -120,11 +122,12 @@ export async function runV1_9SupervisedM67Command({
   }
 }
 
-export function verifyV1_9RunAfterM67Stop(runContext, {
+export async function verifyV1_9RunAfterM67Stop(runContext, {
   childEnv,
   rootDir = runContext.rootDir,
   runMode,
   shutdownReason = "completed",
+  readAuthoritySummary = readV1_9OrchestrationAuthoritySummaryAfterStop,
 } = {}) {
   assertManifestBytesUnchanged(runContext);
   assertPointerBytesUnchanged(runContext);
@@ -157,7 +160,48 @@ export function verifyV1_9RunAfterM67Stop(runContext, {
   }
   const expectedStatus = shutdownReason === "completed" ? "passed" : "failed";
   if (summary?.status !== expectedStatus) throw new Error("v1_9_post_stop_summary_invalid");
+  const authoritySummary = await readAuthoritySummary(refreshed);
+  assertV1_9RunStateOrchestrationAuthority(
+    refreshed.runState,
+    authoritySummary,
+    shutdownReason === "completed",
+  );
   return refreshed;
+}
+
+export async function readV1_9OrchestrationAuthoritySummaryAfterStop(runContext, {
+  spawnBridge = spawnSync,
+} = {}) {
+  const state = normalizeV1_9RunState(runContext.runState);
+  const projectId = state.identity.projectId;
+  const actorUserId = state.identity.actorUserId;
+  if (!projectId || !actorUserId || !state.taskContractLock || !state.orchestrationAuthoritySummary) {
+    throw new Error("v1_9_orchestration_authority_summary_missing");
+  }
+  const databasePath = path.join(runContext.runRoot, "m67.sqlite");
+  assertOwnedFile(runContext.runRoot, databasePath, "m67.sqlite");
+  assertRegularFile(databasePath, "v1_9_orchestration_authority_database_invalid");
+  const result = spawnBridge(
+    process.execPath,
+    [
+      "node_modules/tsx/dist/cli.mjs",
+      "scripts/lib/v1-9-orchestration-authority-sqlite.ts",
+      databasePath,
+      projectId,
+      actorUserId,
+    ],
+    {
+      cwd: runContext.rootDir,
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+      timeout: 120_000,
+    },
+  );
+  if (result.error || result.status !== 0 || typeof result.stdout !== "string" || !result.stdout.trim()) {
+    throw new Error("v1_9_orchestration_authority_sqlite_read_failed");
+  }
+  return parseJson(Buffer.from(result.stdout.trim(), "utf8"), "v1_9_orchestration_authority_sqlite_read_invalid");
 }
 
 export function resolveV1_9RunContext({

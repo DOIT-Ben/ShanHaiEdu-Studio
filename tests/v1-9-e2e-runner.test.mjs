@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import Database from "better-sqlite3";
 
 import {
   V1_9_FROZEN_PROMPT,
@@ -33,6 +34,7 @@ import {
   normalizeV1_9RunManifestV2,
   normalizeV1_9RunManifestV2ReadOnly,
   normalizeV1_9RunState,
+  projectV1_9OrchestrationAuthoritySummary,
   recordV1_9ExternalAcceptanceRound,
   recordV1_9RunStateMutation,
   recordV1_9UiMutation,
@@ -42,6 +44,7 @@ import {
   assertV1_9ResumeRunStorage,
   createV1_9ChildEnvironment,
   mainV1_9E2E,
+  readV1_9OrchestrationAuthoritySummaryAfterStop,
   runV1_9SupervisedM67Command,
   resolveV1_9RunContext,
   resolveV1_9RunMode,
@@ -158,7 +161,7 @@ async function createRunnerFixture(t, { stateStatus = "prepared", pointerVersion
   if (stateStatus === "running") {
     await mkdir(path.join(runRoot, "artifact-storage"), { recursive: true });
     await mkdir(path.join(runRoot, "next-app-frozen"), { recursive: true });
-    await writeFile(path.join(runRoot, "m67.sqlite"), "sqlite-fixture", "utf8");
+    initializeSqliteFixture(path.join(runRoot, "m67.sqlite"));
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
@@ -210,7 +213,7 @@ function createRunnerState(manifest, stateStatus) {
       source: "ui",
       recordedAt: "2026-07-15T01:00:04.000Z",
     });
-    const packageReady = markV1_9RunStatePackageReady(downloaded, {
+    const packageReady = markV1_9RunStatePackageReady(projectReadyAuthority(downloaded), {
       packageArtifactId: "package-1",
       packageArtifactVersion: 1,
       packageVersion: "course-v1",
@@ -294,6 +297,69 @@ function bindRunnerTaskContract(state, {
     initialPlanRevision: 0,
     boundAt: taskBoundAt,
   });
+}
+
+function projectReadyAuthority(state, summary = authoritySummary({
+  subject: { ...authoritySummary().subject, planRevision: state.ledger.currentPlanRevision },
+})) {
+  return projectV1_9OrchestrationAuthoritySummary(state, {
+    summary,
+    projectedAt: new Date(Math.max(Date.parse(state.updatedAt), Date.parse("2026-07-15T01:00:03.500Z"))).toISOString(),
+    requireReady: true,
+  });
+}
+
+function authoritySummary(overrides = {}) {
+  const publicSummary = {
+    schemaVersion: "orchestration-authority-summary.v1",
+    subject: {
+      projectId: "project-1",
+      actorUserId: "teacher-1",
+      taskId: "task-1",
+      taskBriefDigest: digest("1"),
+      intentEpoch: 0,
+      teacherMessageId: "teacher-message-1",
+      turnJobId: "turn-job-1",
+      planId: "plan-1",
+      planRevision: 0,
+    },
+    windowStartSequence: 1,
+    watermark: 4,
+    eventCount: 4,
+    attemptCount: 2,
+    resolvedCount: 2,
+    openAttemptCount: 0,
+    toolClaimCount: 0,
+    toolTerminalCount: 0,
+    mainAgentToolCount: 0,
+    nonMainAgentToolCount: 0,
+    firstToolOrdinal: null,
+    lastToolOrdinal: null,
+    toolOrdinalsContiguous: true,
+    authorities: ["teacher_http"],
+    violationReasonCodes: [],
+    factsDigest: digest("4"),
+    complete: true,
+    readyEligible: true,
+    ...overrides,
+  };
+  return {
+    ...publicSummary,
+    summaryDigest: createHash("sha256")
+      .update("shanhai-orchestration-authority-summary.v1\0", "utf8")
+      .update(canonicalJson(publicSummary), "utf8")
+      .digest("hex"),
+  };
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
+
+function initializeSqliteFixture(databasePath) {
+  new Database(databasePath).close();
 }
 
 test("V1-9 recovery keeps checkpoint refs and falls back to persisted message observations", () => {
@@ -649,7 +715,7 @@ test("V1-9 run-state binds one task contract and only advances plan revision mon
     boundAt: "2026-07-15T01:00:02.000Z",
   };
 
-  assert.equal(state.schemaVersion, "v1-9-run-state.v2");
+  assert.equal(state.schemaVersion, "v1-9-run-state.v3");
   assert.equal(state.manifestSha256, createV1_9RunManifestV2Digest(manifest));
   assert.equal(state.status, "prepared");
   assert.equal(state.taskContractLock, null);
@@ -725,7 +791,6 @@ test("V1-9 runner is desktop-only, deterministic-off and bound to a reusable run
   assert.match(source, /SHANHAI_V1_9_REPOSITORY_ROOT:\s*runContext\.rootDir/);
   assert.match(source, /M67_E2E_RUN_ROOT/);
   assert.match(source, /tests\/e2e\/v1-9-unique-real-product\.spec\.ts/);
-  assert.match(source, /package_ready_for_external_acceptance/);
   assert.match(source, /assertManifestBytesUnchanged\(runContext\)/);
   assert.doesNotMatch(source, /closeActiveRun\s*\(/);
   assert.doesNotMatch(source, /createV1_9RunManifest\s*\(/);
@@ -785,6 +850,26 @@ test("V1-9 fresh runner consumes prepared v2 state without reusing recovery evid
   assert.equal(childEnv.V1_9_E2E_MANIFEST_PATH, fixture.manifestPath);
   assert.equal(childEnv.V1_9_E2E_STATE_PATH, fixture.statePath);
   assert.equal(childEnv.M67_E2E_FROZEN_APP_ROOT, path.join(fixture.runRoot, "next-app-frozen"));
+});
+
+test("V1-9 stopped runner reads authority from the owned SQLite bridge", async (t) => {
+  const fixture = await createRunnerFixture(t, { stateStatus: "running" });
+  let state = normalizeV1_9RunState(JSON.parse(await readFile(fixture.statePath, "utf8")));
+  state = projectReadyAuthority(state);
+  await writeFile(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const runContext = resolveV1_9RunContext({ rootDir: fixture.rootDir });
+  const calls = [];
+  const actual = await readV1_9OrchestrationAuthoritySummaryAfterStop(runContext, {
+    spawnBridge(command, args, options) {
+      calls.push({ command, args, options });
+      return { status: 0, stdout: `${JSON.stringify(state.orchestrationAuthoritySummary)}\n` };
+    },
+  });
+
+  assert.deepEqual(actual, state.orchestrationAuthoritySummary);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.at(-3), path.join(fixture.runRoot, "m67.sqlite"));
+  assert.deepEqual(calls[0].args.slice(-2), ["project-1", "teacher-1"]);
 });
 
 test("V1-9 recovery runner requires an evidence id only for paused or failed state", async (t) => {
@@ -859,7 +944,7 @@ test("V1-9 interrupted running runner resumes the same frozen task without reusi
         source: "ui",
         recordedAt: "2026-07-15T01:00:06.000Z",
       });
-      const packageReady = markV1_9RunStatePackageReady(downloaded, {
+      const packageReady = markV1_9RunStatePackageReady(projectReadyAuthority(downloaded), {
         packageArtifactId: "package-1",
         packageArtifactVersion: 1,
         packageVersion: "course-v1",
@@ -1043,7 +1128,7 @@ test("V1-9 outer verify-only failure prevents external acceptance", async (t) =>
           recordedAt: "2026-07-15T01:00:05.000Z",
         });
         const packageReady = markV1_9RunStatePackageReady(
-          downloaded,
+          projectReadyAuthority(downloaded),
           {
             packageArtifactId: "package-1",
             packageArtifactVersion: 1,
@@ -1091,7 +1176,7 @@ test("V1-9 runner keeps frozen files immutable and stops at external acceptance"
         source: "ui",
         recordedAt: "2026-07-15T01:00:05.000Z",
       });
-      const packageReady = markV1_9RunStatePackageReady(downloaded, {
+      const packageReady = markV1_9RunStatePackageReady(projectReadyAuthority(downloaded), {
         packageArtifactId: "package-1",
         packageArtifactVersion: 1,
         packageVersion: "course-v1",

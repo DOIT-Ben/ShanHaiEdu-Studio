@@ -15,7 +15,7 @@
 
 ## 2. 离线合同测试
 
-首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1已由`a1c170c`本地提交：Tool authority与服务端summary隔离SQLite交叉回归`105/105`，authority verifier `4/4`，门禁Node `35 pass / 1 Windows symlink skip`，TypeScript、定向ESLint和development gate通过；新增负例覆盖Observation/Invocation/Event状态漂移，正例覆盖Observation-only成功。B1尚待clean CI；B2还必须生成自己的observer/closeout证据，不能沿用A阶段或B1结果。
+首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1已由`a1c170c`本地提交。B2本地证据包括run-state/authority Node `12/12`、runner Node `29/29`、SQLite summary Vitest `11/11`、closeout Vitest `23/23`、v3兼容回归`136/136`；全量Node `392/392`、Vitest `783/783 + 850/850`，总计`2025/2025`；TypeScript、Lint `0 error / 148 warnings`、生产构建和development gate通过。提交与clean CI仍待执行。
 
 全量本地测试只使用`run-tests.mjs`内生的单worker约束，不从外层覆盖`VITEST_MAX_WORKERS`。每次运行使用同一`test-workbench`族下带run token和角色后缀的独立Node/Vitest SQLite文件，初始化前和退出后清理`.db`、`-wal`、`-shm`；整个测试进程树通过唯一空dotenv文件阻止仓库`.env`回灌Provider凭据，成功或失败退出均清理该文件和数据库族。
 
@@ -113,7 +113,7 @@ VR-A13细分为以下行为门，全部通过前保持blocked：
 | VR-A13-08 | 重入与closeout | ready重入仍复验新鲜摘要；缺摘要、watermark回退、同水位digest变化或任一violation拒绝完成 |
 | VR-A13-09 | SQLite readiness | 专用表、唯一约束、索引和append-only trigger缺一即health失败，不使用旧库fallback |
 
-VR-A13B1通过只表示产品服务端已持久记录并可按冻结身份生成编排summary；VR-A13-08仍由B2关闭。完整VR-A13 contract-go也不表示恢复权、真实Provider连续性、V1-9、媒体链路或release通过。
+VR-A13B1通过只表示产品服务端已持久记录并可按冻结身份生成编排summary；B2已在本地实现消费侧07与08，仍需完整门禁、提交和clean CI才能关闭。完整VR-A13 contract-go也不表示恢复权、真实Provider连续性、V1-9、媒体链路或release通过。
 
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 

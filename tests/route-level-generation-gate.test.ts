@@ -5,6 +5,7 @@ import { POST as postVideo } from "@/app/api/workbench/projects/[projectId]/arti
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { prisma } from "@/server/db/client";
 import {
   assertRouteLevelGenerationConfirmation,
   readConfirmedActionId,
@@ -321,5 +322,14 @@ async function activateOfflineTask(project: Awaited<ReturnType<ReturnType<typeof
     intentGrant: grant,
     plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
     checkpoint: null,
+  });
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: project.id,
+      teacherMessageId: brief.sourceMessageId,
+      status: "running",
+      actorUserId: "local-test-user",
+      actorAuthMode: "local",
+    },
   });
 }

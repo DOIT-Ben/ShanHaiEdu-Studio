@@ -23,6 +23,7 @@ import {
   recordV1_9ExternalAcceptanceRound,
   recordV1_9RunStateMutation,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
+import { projectReadyV1_9Authority } from "./support/v1-9-authority-summary";
 
 const roots: string[] = [];
 
@@ -158,7 +159,7 @@ async function createFixture() {
     method: "GET", pathname: "/api/workbench/projects/project-1/artifacts/package-1/package", source: "ui",
     recordedAt: "2026-07-15T13:05:00.000Z",
   });
-  state = markV1_9RunStatePackageReady(state, {
+  state = markV1_9RunStatePackageReady(projectReadyV1_9Authority(state), {
     packageArtifactId: "package-1",
     packageArtifactVersion: 1,
     packageVersion: "course-v1",

@@ -50,6 +50,10 @@ test("package exposes the single Provider live preflight and seal entrypoints", 
   assert.equal(pkg.scripts["gate:provider:seal"], "node scripts/development-gates/provider-continuity/receipt-writer.mjs");
   assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/development-gates/provider-continuity/**"));
   assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/development-gates/run-development-gates.mjs"));
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/close-v1-9-run.ts"));
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/run-v1-9-e2e.mjs"));
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/lib/v1-9-e2e-contract*"));
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/lib/v1-9-orchestration-authority*"));
 });
 
 test("the active stage starts after archival and exposes no archive mutation exception", () => {

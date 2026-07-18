@@ -1,8 +1,10 @@
+import type { V1_9OrchestrationAuthoritySummary } from "./v1-9-orchestration-authority.mjs";
+
 export const V1_9_RUN_MANIFEST_VERSION: "v1-9-run-manifest.v1";
 export const V1_9_RUN_MANIFEST_V2_VERSION: "v1-9-run-manifest.v2";
 export const V1_9_BASELINE_LOCK_VERSION: "v1-9-baseline-lock.v2";
 export const V1_9_LEGACY_BASELINE_LOCK_VERSION: "v1-9-baseline-lock.v1";
-export const V1_9_RUN_STATE_VERSION: "v1-9-run-state.v2";
+export const V1_9_RUN_STATE_VERSION: "v1-9-run-state.v3";
 export const V1_9_RUN_LEDGER_VERSION: "v1-9-run-ledger.v1";
 export const V1_9_TASK_CONTRACT_LOCK_VERSION: "v1-9-task-contract-lock.v1";
 export const V1_9_FROZEN_PROMPT: string;
@@ -258,7 +260,7 @@ export type V1_9RunLedger = {
 };
 
 export type V1_9RunState = {
-  schemaVersion: "v1-9-run-state.v2";
+  schemaVersion: "v1-9-run-state.v3";
   runId: string;
   manifestSha256: string;
   status:
@@ -278,6 +280,7 @@ export type V1_9RunState = {
   recovery: V1_9RunRecovery | null;
   termination: V1_9RunTermination | null;
   packageAcceptance: V1_9PackageAcceptance | null;
+  orchestrationAuthoritySummary: V1_9OrchestrationAuthoritySummary | null;
   ledger: V1_9RunLedger;
   createdAt: string;
   updatedAt: string;
@@ -329,6 +332,18 @@ export function createV1_9RunState(input: {
 export function assertV1_9InterruptedRunningResumeState(value: unknown): V1_9RunState;
 
 export function normalizeV1_9RunState(value: unknown): V1_9RunState;
+
+export function projectV1_9OrchestrationAuthoritySummary(state: V1_9RunState, input: {
+  summary: unknown;
+  projectedAt: string;
+  requireReady: boolean;
+}): V1_9RunState;
+
+export function assertV1_9RunStateOrchestrationAuthority(
+  state: V1_9RunState,
+  actual: unknown,
+  requireReady?: boolean,
+): V1_9OrchestrationAuthoritySummary;
 
 export function bindV1_9RunStateProjectIdentity(state: V1_9RunState, input: {
   actorUserId: string;

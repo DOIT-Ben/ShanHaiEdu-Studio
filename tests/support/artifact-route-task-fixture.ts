@@ -1,5 +1,6 @@
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { prisma } from "@/server/db/client";
 import type { ProjectRecord } from "@/server/workbench/types";
 
 export async function seedArtifactRouteTask(
@@ -36,6 +37,15 @@ export async function seedArtifactRouteTask(
     intentGrant,
     plan: { planId: `plan:artifact-route:${project.id}`, revision: 0, status: "active" },
     checkpoint: null,
+  });
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: project.id,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId: "local-test-user",
+      actorAuthMode: "local",
+    },
   });
   return { taskBrief, intentGrant };
 }

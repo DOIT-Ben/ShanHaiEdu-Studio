@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,10 +14,11 @@ import {
   createV1_9RunState,
   markV1_9RunStatePackageReady,
   normalizeV1_9RunState,
+  projectV1_9OrchestrationAuthoritySummary,
   recordV1_9RunStateMutation,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
 import {
-  closeV1_9RunAfterExternalAcceptance,
+  closeV1_9RunAfterExternalAcceptance as closeV1_9RunAfterExternalAcceptanceImpl,
   createV1_9ExternalAcceptanceReportDigest,
   formatV1_9CloseoutCliResult,
   normalizeV1_9ExternalAcceptanceReport,
@@ -25,8 +27,25 @@ import {
   withV1_9PrepareLock,
   writeV1_9RunStateCooperativeCas,
 } from "../scripts/lib/v1-9-run-preparation-transaction";
+import { normalizeV1_9OrchestrationAuthoritySummary } from "../scripts/lib/v1-9-orchestration-authority.mjs";
 
 const temporaryRoots: string[] = [];
+
+async function closeV1_9RunAfterExternalAcceptance(
+  input: Parameters<typeof closeV1_9RunAfterExternalAcceptanceImpl>[0],
+) {
+  const readAuthoritySummary = input.dependencies?.readAuthoritySummary ?? (async () => {
+    const report = normalizeV1_9ExternalAcceptanceReport(input.report);
+    const statePath = path.join(path.resolve(input.rootDir!), "test-results", report.runId, "run-state.json");
+    const state = normalizeV1_9RunState(JSON.parse(await readFile(statePath, "utf8")));
+    if (!state.orchestrationAuthoritySummary) throw new Error("authority_summary_fixture_missing");
+    return state.orchestrationAuthoritySummary;
+  });
+  return closeV1_9RunAfterExternalAcceptanceImpl({
+    ...input,
+    dependencies: { ...input.dependencies, readAuthoritySummary },
+  });
+}
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -311,7 +330,7 @@ describe("V1-9 versioned external acceptance closeout", () => {
       source: "ui",
       recordedAt: "2026-07-15T13:35:00.000Z",
     });
-    state = markV1_9RunStatePackageReady(state, {
+    state = markV1_9RunStatePackageReady(projectReadyAuthority(state), {
       packageArtifactId: "package-2",
       packageArtifactVersion: 2,
       packageVersion: "course-v2",
@@ -376,6 +395,83 @@ describe("V1-9 versioned external acceptance closeout", () => {
 
     expect(await contractSnapshot(fixture)).toEqual(before);
     await expect(readFile(fixture.roundReportPath(1))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails before immutable report writes when the first SQLite authority read is not ready", async () => {
+    const fixture = await createFixture();
+    const stateBefore = await readFile(fixture.statePath);
+    const readAuthoritySummary = vi.fn(async () => nonReadyAuthoritySummary(8));
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: { readAuthoritySummary },
+    })).rejects.toThrow(/v1_9_orchestration_authority_not_ready/);
+
+    expect(readAuthoritySummary).toHaveBeenCalledTimes(1);
+    expect(await readFile(fixture.statePath)).toEqual(stateBefore);
+    await expect(readFile(fixture.roundReportPath(1))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not commit state or pointer when the second SQLite authority read detects a new violation", async () => {
+    const fixture = await createFixture();
+    const stateBefore = await readFile(fixture.statePath);
+    const readAuthoritySummary = vi.fn()
+      .mockResolvedValueOnce(authoritySummary(8))
+      .mockResolvedValueOnce(nonReadyAuthoritySummary(8));
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture),
+      dependencies: { readAuthoritySummary },
+    })).rejects.toThrow(/v1_9_orchestration_authority_not_ready/);
+
+    expect(readAuthoritySummary).toHaveBeenCalledTimes(2);
+    expect(await readFile(fixture.statePath)).toEqual(stateBefore);
+    expect(await readFile(fixture.pointerPath)).toBeTruthy();
+    expect(await readFile(fixture.roundReportPath(1))).toBeTruthy();
+  });
+
+  it("persists a legal authority watermark advance created by repair handoff ingress", async () => {
+    const fixture = await createFixture();
+    const advanced = authoritySummary(8, {
+      watermark: 6,
+      eventCount: 6,
+      attemptCount: 3,
+      resolvedCount: 3,
+      factsDigest: "6".repeat(64),
+    });
+    const readAuthoritySummary = vi.fn()
+      .mockResolvedValueOnce(authoritySummary(8))
+      .mockResolvedValueOnce(advanced);
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report: acceptedReport(fixture, { findings: [finding({ severity: "P0" })] }),
+      dependencies: {
+        readAuthoritySummary,
+        commitRepairHandoff: async () => ({ status: "committed" as const }),
+      },
+    })).resolves.toMatchObject({ outcome: "repair_required" });
+
+    const state = normalizeV1_9RunState(JSON.parse(await readFile(fixture.statePath, "utf8")));
+    expect(state.orchestrationAuthoritySummary).toEqual(advanced);
+    expect(readAuthoritySummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("recomputes SQLite authority on completed idempotent replay", async () => {
+    const fixture = await createFixture();
+    const report = acceptedReport(fixture);
+    await closeV1_9RunAfterExternalAcceptance({ rootDir: fixture.rootDir, report });
+    const readAuthoritySummary = vi.fn(async () => authoritySummary(8));
+
+    await expect(closeV1_9RunAfterExternalAcceptance({
+      rootDir: fixture.rootDir,
+      report,
+      dependencies: { readAuthoritySummary },
+    })).resolves.toMatchObject({ outcome: "completed" });
+
+    expect(readAuthoritySummary).toHaveBeenCalledTimes(2);
   });
 
   it("rolls forward after state commit when the final pointer move fails", async () => {
@@ -577,6 +673,7 @@ async function createFixture() {
   const manifestSha256 = createV1_9RunManifestV2Digest(manifest);
 
   await mkdir(path.join(runRoot, "evidence"), { recursive: true });
+  new Database(path.join(runRoot, "m67.sqlite")).close();
   await writeFile(manifestPath, manifestBytes);
   await writeFile(path.join(runRoot, "evidence", "v1-9-final-package-package-1.zip"), packageBytes);
   let state = createV1_9RunState({ manifest, createdAt: "2026-07-15T13:00:01.000Z" });
@@ -606,7 +703,7 @@ async function createFixture() {
     method: "GET", pathname: "/api/workbench/projects/project-1/artifacts/package-1/package", source: "ui",
     recordedAt: "2026-07-15T13:20:00.000Z",
   });
-  state = markV1_9RunStatePackageReady(state, {
+  state = markV1_9RunStatePackageReady(projectReadyAuthority(state), {
     packageArtifactId: "package-1",
     packageArtifactVersion: 1,
     packageVersion: "course-v1",
@@ -653,7 +750,7 @@ async function prepareTargetedSecondRound(fixture: Awaited<ReturnType<typeof cre
     source: "ui",
     recordedAt: "2026-07-15T13:35:00.000Z",
   });
-  state = markV1_9RunStatePackageReady(state, {
+  state = markV1_9RunStatePackageReady(projectReadyAuthority(state), {
     packageArtifactId: "package-2",
     packageArtifactVersion: 2,
     packageVersion: "course-v2",
@@ -691,6 +788,78 @@ async function prepareTargetedSecondRound(fixture: Awaited<ReturnType<typeof cre
       generatedAt: "2026-07-15T13:40:00.000Z",
     }),
   };
+}
+
+function projectReadyAuthority(state: ReturnType<typeof normalizeV1_9RunState>) {
+  return projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: authoritySummary(state.ledger.currentPlanRevision ?? 0),
+    projectedAt: state.updatedAt,
+    requireReady: true,
+  });
+}
+
+function authoritySummary(planRevision: number, overrides: Record<string, unknown> = {}) {
+  const publicSummary = {
+    schemaVersion: "orchestration-authority-summary.v1",
+    subject: {
+      projectId: "project-1",
+      actorUserId: "teacher-1",
+      taskId: "task-1",
+      taskBriefDigest: "1".repeat(64),
+      intentEpoch: 0,
+      teacherMessageId: "teacher-message-1",
+      turnJobId: "turn-job-1",
+      planId: "plan-1",
+      planRevision,
+    },
+    windowStartSequence: 1,
+    watermark: 4,
+    eventCount: 4,
+    attemptCount: 2,
+    resolvedCount: 2,
+    openAttemptCount: 0,
+    toolClaimCount: 0,
+    toolTerminalCount: 0,
+    mainAgentToolCount: 0,
+    nonMainAgentToolCount: 0,
+    firstToolOrdinal: null,
+    lastToolOrdinal: null,
+    toolOrdinalsContiguous: true,
+    authorities: ["teacher_http"],
+    violationReasonCodes: [],
+    factsDigest: "4".repeat(64),
+    complete: true,
+    readyEligible: true,
+    ...overrides,
+  };
+  return normalizeV1_9OrchestrationAuthoritySummary({
+    ...publicSummary,
+    summaryDigest: createHash("sha256")
+      .update("shanhai-orchestration-authority-summary.v1\0", "utf8")
+      .update(canonicalJson(publicSummary), "utf8")
+      .digest("hex"),
+  });
+}
+
+function nonReadyAuthoritySummary(planRevision: number) {
+  return authoritySummary(planRevision, {
+    watermark: 5,
+    eventCount: 5,
+    attemptCount: 3,
+    resolvedCount: 2,
+    openAttemptCount: 1,
+    violationReasonCodes: ["open_attempt"],
+    factsDigest: "5".repeat(64),
+    complete: false,
+    readyEligible: false,
+  });
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const source = value as Record<string, unknown>;
+  return `{${Object.keys(source).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(source[key])}`).join(",")}}`;
 }
 
 function acceptedReport(fixture: Awaited<ReturnType<typeof createFixture>>, overrides: Record<string, unknown> = {}) {

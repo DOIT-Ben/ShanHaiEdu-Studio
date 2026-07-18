@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   bindV1_9RunStateProjectIdentity,
   bindV1_9TaskContractLock,
+  assertV1_9RunStateOrchestrationAuthority,
   createV1_9RunManifestV2Digest,
   deriveV1_9RecoveryStop,
   markV1_9RunStatePackageReady,
@@ -13,6 +14,7 @@ import {
   markV1_9RunStateRecoveryStop,
   normalizeV1_9RunManifestV2,
   normalizeV1_9RunState,
+  projectV1_9OrchestrationAuthoritySummary,
   recordV1_9RunStateMutation,
   updateV1_9RunStateCheckpoint,
   type V1_9RunManifestV2,
@@ -75,11 +77,6 @@ test.describe("V1-9 unique real product observer", () => {
     installUiLedger(page, () => state, persist);
 
     try {
-      if (state.status === "package_ready_for_external_acceptance" || state.status === "completed") {
-        expect(state.ledger.finalDownloadCount).toBeGreaterThanOrEqual(1);
-        expect(state.ledger.externalCodexOrchestrationCount).toBe(0);
-        return;
-      }
       if (state.status === "paused_pending_decision") {
         throw new Error(`v1_9_pending_decision:${state.pendingDecision?.reasonCode ?? "pending_decision"}`);
       }
@@ -107,6 +104,20 @@ test.describe("V1-9 unique real product observer", () => {
       }
 
       const projectId = requiredText(state.identity.projectId, "state.projectId");
+      if (state.status === "package_ready_for_external_acceptance" || state.status === "completed") {
+        const snapshot = await readSnapshot(page, projectId);
+        if (state.status === "completed") {
+          assertV1_9RunStateOrchestrationAuthority(state, snapshot.orchestrationAuthoritySummary, true);
+        } else {
+          await persist((latest) => projectV1_9OrchestrationAuthoritySummary(latest, {
+            summary: snapshot.orchestrationAuthoritySummary,
+            projectedAt: stateTransitionTime(latest),
+            requireReady: true,
+          }));
+        }
+        writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
+        return;
+      }
       if (state.ledger.taskSubmissionCount === 0) {
         const accepted = page.waitForResponse((response) => {
           const url = new URL(response.url());
@@ -149,6 +160,13 @@ test.describe("V1-9 unique real product observer", () => {
               recordedAt: stateTransitionTime(latest),
             }));
           }
+        }
+        if (state.taskContractLock) {
+          await persist((latest) => projectV1_9OrchestrationAuthoritySummary(latest, {
+            summary: snapshot.orchestrationAuthoritySummary,
+            projectedAt: stateTransitionTime(latest),
+            requireReady: false,
+          }));
         }
         writeObserverEvidence({
           manifest,
@@ -199,6 +217,12 @@ test.describe("V1-9 unique real product observer", () => {
           }
           try {
             await expect.poll(() => state.ledger.finalDownloadCount, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
+            const finalSnapshot = await readSnapshot(page, projectId);
+            await persist((latest) => projectV1_9OrchestrationAuthoritySummary(latest, {
+              summary: finalSnapshot.orchestrationAuthoritySummary,
+              projectedAt: stateTransitionTime(latest),
+              requireReady: true,
+            }));
             await persist((latest) => markV1_9RunStatePackageReady(latest, {
               packageArtifactId: finalPackage.id,
               packageArtifactVersion: requiredPositiveInteger(finalPackage.version, "finalPackage.version"),
@@ -218,7 +242,8 @@ test.describe("V1-9 unique real product observer", () => {
             writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
             throw new Error("v1_9_recovery_stop:final_package_state_commit_failed", { cause: error });
           }
-          writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot });
+          const finalSnapshot = await readSnapshot(page, projectId);
+          writeObserverEvidence({ manifest, manifestContractDigest, manifestFileSha256, state, snapshot: finalSnapshot });
           expect(state.status).toBe("package_ready_for_external_acceptance");
           return;
         }
@@ -480,6 +505,7 @@ function writeObserverEvidence(input: {
       pendingDecision: input.state.pendingDecision,
       recovery: input.state.recovery,
       packageAcceptance: input.state.packageAcceptance,
+      orchestrationAuthoritySummary: input.state.orchestrationAuthoritySummary,
       ledger: {
         currentPlanRevision: input.state.ledger.currentPlanRevision,
         planRevisionHistory: input.state.ledger.planRevisionHistory,
@@ -667,6 +693,7 @@ type ObserverCheckpoint = {
 
 type ObserverSnapshot = {
   project: { id: string; intentEpoch: number };
+  orchestrationAuthoritySummary: unknown;
   messages: Array<{
     id: string;
     role: string;

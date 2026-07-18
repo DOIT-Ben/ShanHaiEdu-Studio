@@ -79,6 +79,7 @@ test("V1-9 requires monotonic authority watermarks and stable digests at the sam
   }), /v1_9_orchestration_authority_digest_drift/);
 
   const advanced = authoritySummary({
+    subject: { ...projected.subject, planRevision: 1 },
     watermark: 9,
     eventCount: 6,
     attemptCount: 3,
@@ -88,9 +89,14 @@ test("V1-9 requires monotonic authority watermarks and stable digests at the sam
   assert.deepEqual(assertV1_9OrchestrationAuthorityProjection({
     actual: advanced,
     projected,
-    expectedSubject: projected.subject,
+    expectedSubject: advanced.subject,
     requireReady: true,
   }), advanced);
+  assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+    actual: projected,
+    projected: advanced,
+    expectedSubject: projected.subject,
+  }), /v1_9_orchestration_authority_subject_mismatch/);
 });
 
 test("V1-9 normalization rejects unknown fields and inconsistent aggregate counts", () => {
@@ -142,7 +148,8 @@ test("V1-9 normalization rejects unknown fields and inconsistent aggregate count
 });
 
 function authoritySummary(overrides = {}) {
-  const { summaryDigest: _ignoredSummaryDigest, ...publicOverrides } = overrides;
+  const publicOverrides = { ...overrides };
+  delete publicOverrides.summaryDigest;
   const publicSummary = {
     schemaVersion: "orchestration-authority-summary.v1",
     subject: {
@@ -178,7 +185,7 @@ function authoritySummary(overrides = {}) {
   };
   return {
     ...publicSummary,
-    summaryDigest: digestDomain("orchestration-authority-summary.v1", publicSummary),
+    summaryDigest: digestDomain("shanhai-orchestration-authority-summary.v1", publicSummary),
   };
 }
 

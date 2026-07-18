@@ -946,7 +946,7 @@ test("reads the V1-9 orchestration ledger from run-state before the legacy manif
 
   try {
     writeFileSync(statePath, JSON.stringify({
-      schemaVersion: "v1-9-run-state.v2",
+      schemaVersion: "v1-9-run-state.v3",
       ledger: {
         externalCodexOrchestrationCount: 1,
         violations: [

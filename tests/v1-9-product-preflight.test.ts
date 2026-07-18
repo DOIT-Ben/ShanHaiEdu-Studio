@@ -27,6 +27,7 @@ import {
   type V1_9RunManifestV2,
   type V1_9RunState,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
+import { projectReadyV1_9Authority } from "./support/v1-9-authority-summary";
 import {
   runV1_9ProductPreflight,
   serializeV1_9ProductPreflight,
@@ -1257,7 +1258,7 @@ function externalAcceptanceRepairState() {
     source: "ui",
     recordedAt: "2026-07-15T01:00:01.000Z",
   });
-  state = markV1_9RunStatePackageReady(state, {
+  state = markV1_9RunStatePackageReady(projectReadyV1_9Authority(state), {
     packageArtifactId: "package-fixture",
     packageArtifactVersion: 1,
     packageVersion: "course-v1",

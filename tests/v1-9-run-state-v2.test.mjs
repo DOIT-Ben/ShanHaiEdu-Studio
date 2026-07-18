@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import {
   advanceV1_9PlanRevision,
   assertV1_9InterruptedRunningResumeState,
+  assertV1_9RunStateOrchestrationAuthority,
   bindV1_9RunStateProjectIdentity,
   bindV1_9TaskContractLock,
   createV1_9RunManifestV2,
@@ -13,6 +15,7 @@ import {
   markV1_9RunStatePendingDecision,
   markV1_9RunStateRecoveryStop,
   normalizeV1_9RunState,
+  projectV1_9OrchestrationAuthoritySummary,
   recordV1_9ExternalAcceptanceRound,
   recordV1_9RunStateMutation,
   updateV1_9RunStateCheckpoint,
@@ -29,6 +32,7 @@ test("run-state persists project identity before binding one immutable task cont
   assert.equal(state.pendingDecision, null);
   assert.equal(state.recovery, null);
   assert.equal(state.packageAcceptance, null);
+  assert.equal(state.orchestrationAuthoritySummary, null);
 
   state = bindV1_9RunStateProjectIdentity(state, {
     actorUserId: "teacher-1",
@@ -153,6 +157,55 @@ test("checkpoint, plan revision, pending decision, and recovery remain monotonic
   assert.equal(state.recovery.healthEvidenceNotBefore, "2026-07-15T10:06:00.000Z");
 });
 
+test("run-state v3 freezes authority identity while allowing monotonic product progress", () => {
+  let state = bindTask(bindProject(createV1_9RunState({
+    manifest: createManifest(), createdAt: "2026-07-15T10:00:00.000Z",
+  })));
+  const first = authoritySummary();
+  state = projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: first,
+    projectedAt: "2026-07-15T10:03:00.000Z",
+    requireReady: false,
+  });
+  assert.equal(state.orchestrationAuthoritySummary.summaryDigest, first.summaryDigest);
+  assert.deepEqual(assertV1_9RunStateOrchestrationAuthority(state, first), first);
+
+  state = advanceV1_9PlanRevision(state, {
+    nextPlanRevision: 2,
+    advancedAt: "2026-07-15T10:04:00.000Z",
+  });
+  const advanced = authoritySummary({
+    subject: { ...first.subject, planRevision: 2 },
+    watermark: 6,
+    eventCount: 6,
+    attemptCount: 3,
+    resolvedCount: 3,
+    factsDigest: digest("6"),
+  });
+  state = projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: advanced,
+    projectedAt: "2026-07-15T10:05:00.000Z",
+    requireReady: true,
+  });
+  assert.equal(state.orchestrationAuthoritySummary.summaryDigest, advanced.summaryDigest);
+
+  assert.throws(() => projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: authoritySummary({ subject: { ...advanced.subject, planId: "other-plan" } }),
+    projectedAt: "2026-07-15T10:06:00.000Z",
+    requireReady: false,
+  }), /v1_9_orchestration_authority_subject_mismatch/);
+  assert.throws(() => assertV1_9RunStateOrchestrationAuthority(state, first),
+    /v1_9_orchestration_authority_(subject_mismatch|watermark_regression)/);
+  assert.throws(() => assertV1_9RunStateOrchestrationAuthority(state, authoritySummary({
+    subject: advanced.subject,
+    watermark: advanced.watermark,
+    eventCount: advanced.eventCount,
+    attemptCount: advanced.attemptCount,
+    resolvedCount: advanced.resolvedCount,
+    factsDigest: digest("7"),
+  })), /v1_9_orchestration_authority_digest_drift/);
+});
+
 test("contract upgrades terminate one v2 run with typed immutable successor evidence", () => {
   let state = bindTask(bindProject(createV1_9RunState({
     manifest: createManifest(), createdAt: "2026-07-15T10:00:00.000Z",
@@ -228,6 +281,16 @@ test("external acceptance rounds preserve P0 evidence and only complete after a 
     source: "ui",
     recordedAt: "2026-07-15T10:10:00.000Z",
   });
+  assert.throws(() => markV1_9RunStatePackageReady(state, {
+    packageArtifactId: "package-1",
+    packageArtifactVersion: 1,
+    packageVersion: "course-v1",
+    packageSha256: digest("a"),
+    turnJobId: "turn-job-1",
+    teacherMessageId: "teacher-message-1",
+    downloadedAt: "2026-07-15T10:10:01.000Z",
+  }), /v1_9_orchestration_authority_summary_missing/);
+  state = projectReadyAuthority(state, "2026-07-15T10:10:00.500Z");
   state = markV1_9RunStatePackageReady(state, {
     packageArtifactId: "package-1",
     packageArtifactVersion: 1,
@@ -391,6 +454,7 @@ function createRepairRequiredState() {
     source: "ui",
     recordedAt: "2026-07-15T10:10:00.000Z",
   });
+  state = projectReadyAuthority(state, "2026-07-15T10:10:00.500Z");
   state = markV1_9RunStatePackageReady(state, {
     packageArtifactId: "package-1",
     packageArtifactVersion: 1,
@@ -449,4 +513,70 @@ function acceptedRound() {
     repairHandoffDigest: null,
     generatedAt: "2026-07-15T10:30:00.000Z",
   };
+}
+
+function projectReadyAuthority(state, projectedAt) {
+  return projectV1_9OrchestrationAuthoritySummary(state, {
+    summary: authoritySummary({
+      subject: {
+        ...authoritySummary().subject,
+        planRevision: state.ledger.currentPlanRevision,
+      },
+    }),
+    projectedAt,
+    requireReady: true,
+  });
+}
+
+function authoritySummary(overrides = {}) {
+  const publicSummary = {
+    schemaVersion: "orchestration-authority-summary.v1",
+    subject: {
+      projectId: "project-1",
+      actorUserId: "teacher-1",
+      taskId: "task-1",
+      taskBriefDigest: digest("1"),
+      intentEpoch: 0,
+      teacherMessageId: "teacher-message-1",
+      turnJobId: "turn-job-1",
+      planId: "plan-1",
+      planRevision: 0,
+    },
+    windowStartSequence: 1,
+    watermark: 4,
+    eventCount: 4,
+    attemptCount: 2,
+    resolvedCount: 2,
+    openAttemptCount: 0,
+    toolClaimCount: 1,
+    toolTerminalCount: 1,
+    mainAgentToolCount: 1,
+    nonMainAgentToolCount: 0,
+    firstToolOrdinal: 1,
+    lastToolOrdinal: 1,
+    toolOrdinalsContiguous: true,
+    authorities: ["main_agent", "teacher_http"],
+    violationReasonCodes: [],
+    factsDigest: digest("5"),
+    complete: true,
+    readyEligible: true,
+    ...overrides,
+  };
+  return {
+    ...publicSummary,
+    summaryDigest: digestDomain("shanhai-orchestration-authority-summary.v1", publicSummary),
+  };
+}
+
+function digestDomain(domain, value) {
+  return createHash("sha256")
+    .update(`${domain}\0`, "utf8")
+    .update(canonicalJson(value), "utf8")
+    .digest("hex");
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }

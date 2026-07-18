@@ -16,6 +16,8 @@ import {
 } from "@/server/workbench/orchestration-ingress-audit";
 import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
+import { normalizeV1_9OrchestrationAuthoritySummary } from "../scripts/lib/v1-9-orchestration-authority.mjs";
+import { readV1_9OrchestrationAuthoritySummaryFromSqlite } from "../scripts/lib/v1-9-orchestration-authority-sqlite";
 
 const root = process.cwd();
 const stageRoot = path.join(root, ".tmp", "orchestration-authority-summary-tests");
@@ -59,6 +61,11 @@ describe("VR-A13B product orchestration authority summary", () => {
     await appendIngressPair(fixture.projectId, "teacher_message_submit");
     const first = await read(fixture.projectId);
     const repeated = await read(fixture.projectId);
+    const readonlyBridge = await readV1_9OrchestrationAuthoritySummaryFromSqlite({
+      databasePath,
+      projectId: fixture.projectId,
+      actorUserId,
+    });
 
     expect(first.subject).toEqual({
       projectId: fixture.projectId,
@@ -93,7 +100,9 @@ describe("VR-A13B product orchestration authority summary", () => {
     expect(first.watermark).toBeGreaterThan(beforeSubmission.watermark);
     expect(first.factsDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(first.summaryDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(normalizeV1_9OrchestrationAuthoritySummary(first)).toEqual(first);
     expect(repeated).toEqual(first);
+    expect(readonlyBridge).toEqual(first);
     expect(first.factsDigest).not.toBe(beforeSubmission.factsDigest);
     expect(first.summaryDigest).not.toBe(beforeSubmission.summaryDigest);
     expect(JSON.stringify(first)).not.toMatch(/auth-session-secret|request-secret|private-error|payloadJson|requestJson/);

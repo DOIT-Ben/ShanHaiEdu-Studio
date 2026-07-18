@@ -10,11 +10,11 @@
 | `scripts/prepare-v1-9-run.ts` | adapted / contract-go | fresh与显式合同升级后继已分支；无predecessor环境可创建fresh，部分输入写前失败，旧history不进入新事实 | 仍不得实际创建V1-9 run；等待其余入口阻塞关闭后再冻结真实候选 |
 | `scripts/lib/v1-9-e2e-contract.mjs` | adapted / contract-go | `predecessor`可显式为`null`；新manifest只接受baseline v2；旧baseline v1只读解析；prompt只有一个合同源 | 继续保持旧v1不能成为当前baseline |
 | `scripts/lib/v1-9-baseline-lock.mjs` | adapted / contract-go | baseline v2绑定clean verification原始字节SHA、working tree、policy、stage、Provider manifest/receipt、签名evidence root摘要和subject digest；facts/trace由source-index SHA传递绑定，verification原始字节与receipt binding交叉校验 | 当前仓库没有真实passed receipt，因此真实baseline创建仍按设计失败关闭 |
-| `scripts/run-v1-9-e2e.mjs` | partial / adapt | 冻结prompt重复已关闭，隔离生命周期可复用；但整段仍委托M67兼容入口，并由env决定启动时恢复重试 | 只保留监督和启停壳；恢复决策改为读取产品持久状态，不由runner取得第二编排权 |
+| `scripts/run-v1-9-e2e.mjs` | partial / adapt | 冻结prompt重复已关闭；B2已让runner在M67完全停机后只读复算SQLite authority并与run-state投影比对；但启动时恢复重试仍由env决定 | 只保留监督和启停壳；恢复决策改为读取产品持久状态，不由runner取得第二编排权 |
 | `scripts/run-m67-e2e.mjs` | reuse lifecycle / retire control entry | 隔离server、SQLite、Artifact、Playwright、IPC停机和失败后核验可复用；M67命名与兼容入口不应继续成为V1-9控制面 | 抽取受控生命周期能力，由唯一V1-9入口调用；不得决定Tool、下一步、重试或恢复 |
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
-| `tests/e2e/v1-9-unique-real-product.spec.ts` | blocked / active adaptation | 只提交一次完整目标且不固定Tool顺序的观察方式可保留；浏览器请求监听、本地ledger自报和ready早退均不能证明无第二编排者 | 删除authority自报与早退旁路；每次判断前验证产品服务端新鲜摘要和单调watermark |
-| 产品服务端持久编排audit | partial / VR-A13B1 committed locally | VR-A13A已由`b2772a7`建立专用append-only事实、统一18个写入口、严格handler边界和schema/health语义检查；B1已由`a1c170c`实现Main Agent/artifact route固定authority入口、实际action反向绑定、连续ordinal、强终态矩阵和完整服务端summary，隔离SQLite交叉回归`105/105` | B2只接run-state、observer、runner和closeout的新鲜读取与SQLite复算，关闭VR-A13-08，不重写Tool authority；B1/B2随下一clean CI一起复核 |
+| `tests/e2e/v1-9-unique-real-product.spec.ts` | local implementation complete / CI pending | ready/completed重入已先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | 完成完整门禁和clean CI；不得据此运行真实V1-9 |
+| 产品服务端持久编排audit | local implementation complete / CI pending | VR-A13A已由`b2772a7`建立专用append-only事实，B1已由`a1c170c`实现Tool authority与完整服务端summary；B2已实现run-state v3投影、observer fresh snapshot、runner停机复算和closeout双重复算 | 完成B2完整门禁、提交和clean CI；未通过前不标记VR-A13关闭 |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
 | checkpoint与失败恢复 | blocked / adapt | observer按项目全局读取latest checkpoint/failed turn，未证明属于冻结task、message、job和epoch | 恢复查询与冻结身份精确绑定；不匹配即失败，不跨任务拼接 |
@@ -39,14 +39,14 @@
 
 ## 当前阻塞
 
-P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A已提交，VR-A13B1已由`a1c170c`本地提交但尚待clean CI。下一代码子阶段只能是VR-A13B2的run-state、observer、runner和closeout新鲜复验；B2完成后才处理恢复权归位与恢复身份精确绑定。不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
+P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A已提交，VR-A13B1已由`a1c170c`本地提交。VR-A13B2已完成本地实现并进入完整门禁、提交和clean CI验收；通过后才处理恢复权归位与恢复身份精确绑定。不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
 
-第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A已关闭VR-A13-01、02、06、09及HTTP侧03出口；VR-A13B1由`a1c170c`关闭Tool侧03、04、05和服务端07，VR-A13B2继续关闭消费侧07与08。恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
+第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A已关闭VR-A13-01、02、06、09及HTTP侧03出口；VR-A13B1由`a1c170c`关闭Tool侧03、04、05和服务端07，VR-A13B2已在本地实现消费侧07与08并等待完整验收。恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
 
 ## 二次审查增补
 
 - 历史发现：fresh曾被transaction的journal、history和predecessor evidence强制绑定，closeout与接管还存在崩溃/竞争窗口。现已拆成fresh与显式合同升级后继两条分支，不伪造genesis predecessor；fresh不得覆盖任何active pointer；prepare/closeout使用共享锁、no-replace发布、双pointer前滚和统一run-state cooperative CAS，并在恢复/提交时复验evidence。
 - 历史发现：baseline曾缺少候选证据绑定且legacy v1仍可进入活动执行。现已升级为v2，绑定clean verification、policy/stage、Provider manifest/receipt和签名evidence root摘要，facts/trace由source-index SHA传递绑定；receipt SHA只来自verifier实际验签的同一原始字节，旧v1仅保留只读解析，签名campaign不能用新wrapper重封装规避TTL。
-- `externalCodexOrchestrationCount=0`当前由observer监听自身浏览器后自报，不能发现其他进程直接写API。进入P0-05B前必须由产品服务端持久mutation audit和Tool/ExecutionEnvelope authority派生。
+- 浏览器ledger仅保留本页操作轨迹，不再证明authority或零违规；B2由产品服务端持久mutation audit、Tool authority和完整SQLite summary派生完成资格，并在observer、runner与closeout分别复验。
 - runner当前通过`V1_9_RUN_MODE`和`SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START`取得恢复决策权。恢复必须改为产品启动读取精确SQLite身份后决定drain、requeue或停止；mock改run-state不构成恢复证据。
 - checkpoint与failed TurnJob不得从项目全局latest拼接，必须绑定冻结project/task/epoch/teacherMessageId/turnJobId，缺失或冲突即失败关闭。

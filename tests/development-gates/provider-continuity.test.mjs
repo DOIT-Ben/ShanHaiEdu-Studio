@@ -40,6 +40,7 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "docs/stages/p0-05a-v1-9-readiness-matrix.md",
   "prisma/schema.prisma",
   "scripts/close-v1-9-run.ts",
+  "scripts/run-v1-9-e2e.mjs",
   "scripts/development-gates/orchestration-audit.mjs",
   "scripts/development-gates/provider-continuity.mjs",
   "scripts/development-gates/run-development-gates.mjs",
@@ -47,6 +48,7 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "scripts/init-sqlite-schema.mjs",
   "scripts/lib/v1-9-e2e-contract.d.mts",
   "scripts/lib/v1-9-e2e-contract.mjs",
+  "scripts/lib/v1-9-orchestration-authority-sqlite.ts",
   "scripts/lib/v1-9-orchestration-authority.d.mts",
   "scripts/lib/v1-9-orchestration-authority.mjs",
   "scripts/production-preflight.mjs",
@@ -72,19 +74,29 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "tests/development-gates/stage-paths.test.mjs",
   "tests/development-gates/wiring.test.mjs",
   "tests/e2e/v1-9-unique-real-product.spec.ts",
+  "tests/external-audit-startup-recovery-authority.test.ts",
   "tests/health-readiness.test.ts",
   "tests/main-agent-skill-contract-commit.test.ts",
   "tests/main-agent-skill-tool-execution.test.ts",
+  "tests/m67-e2e-runner.test.mjs",
   "tests/orchestration-authority-summary.test.ts",
   "tests/orchestration-ingress-audit.test.ts",
   "tests/production-preflight.test.mjs",
   "tests/project-member-routes.test.mjs",
   "tests/public-auth-workbench-csrf.test.mjs",
+  "tests/route-level-generation-gate.test.ts",
   "tests/single-orchestrator-production.test.ts",
+  "tests/support/artifact-route-task-fixture.ts",
+  "tests/support/v1-9-authority-summary.ts",
   "tests/validation-report-invocation-binding.test.ts",
   "src/server/workbench/__tests__/stage60-conversation-turn-queue.test.ts",
+  "src/server/workbench/__tests__/stage30-generation-job-queue.test.ts",
+  "tests/conversation-turn-service.test.ts",
   "tests/v1-9-e2e-runner.test.mjs",
   "tests/v1-9-external-acceptance-closeout.test.ts",
+  "tests/v1-9-product-preflight.test.ts",
+  "tests/v1-9-run-preparer.test.ts",
+  "tests/v1-9-run-state-v2.test.mjs",
   "tests/v1-9-unique-real-product-observer-contract.test.mjs",
 ];
 
@@ -138,6 +150,7 @@ function makeConfig() {
         "src/server/conversation/**",
         "src/server/gpt-protocol/**",
         "src/server/provider-ledger/**",
+        "scripts/lib/v1-9-e2e-contract*",
         "scripts/development-gates/provider-continuity.mjs",
         "config/development-gates.json",
         "config/provider-capture-trust.json",
@@ -421,6 +434,14 @@ test("detectProviderImpact identifies sensitive files and rejects unsafe paths",
   });
   assert.equal(trustImpact.impacted, true);
   assert.deepEqual(trustImpact.matchedPaths, ["config/provider-capture-trust.json", "docs/stages/active-stage.json"]);
+  const authorityContractImpact = detectProviderImpact({
+    root,
+    changedPaths: ["scripts/lib/v1-9-e2e-contract.mjs"],
+    now: NOW,
+  });
+  assert.equal(authorityContractImpact.impacted, true);
+  assert.deepEqual(authorityContractImpact.matchedPaths, ["scripts/lib/v1-9-e2e-contract.mjs"]);
+  assert.deepEqual(authorityContractImpact.productionProviderPaths, ["scripts/lib/v1-9-e2e-contract.mjs"]);
   assert.throws(
     () => detectProviderImpact({ root, changedPaths: ["../outside.ts"], now: NOW }),
     /unsafe changed path/i,

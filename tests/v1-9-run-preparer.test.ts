@@ -21,6 +21,7 @@ import {
   recordV1_9RunStateMutation,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
 import type { V1_9ResolvedExecutionLocks } from "../scripts/v1-9-product-preflight";
+import { projectReadyV1_9Authority } from "./support/v1-9-authority-summary";
 
 const OLD_RUN_ID = "v1-9-20260714212914-a036beb9";
 const NEW_RUN_ID = "v1-9-20260715-a23-preparer";
@@ -432,7 +433,7 @@ describe("V1-9 v2 run preparer", () => {
     });
     expect(manifest).not.toHaveProperty("status");
     expect(state).toMatchObject({
-      schemaVersion: "v1-9-run-state.v2",
+      schemaVersion: "v1-9-run-state.v3",
       runId: NEW_RUN_ID,
       manifestSha256: result.manifestSha256,
       status: "prepared",
@@ -1392,7 +1393,7 @@ async function createV2Fixture(status: "running" | "completed") {
       source: "ui",
       recordedAt: "2026-07-15T12:10:00.000Z",
     });
-    state = markV1_9RunStatePackageReady(state, {
+    state = markV1_9RunStatePackageReady(projectReadyV1_9Authority(state), {
       packageArtifactId: "package-1",
       packageArtifactVersion: 1,
       packageVersion: "course-v1",

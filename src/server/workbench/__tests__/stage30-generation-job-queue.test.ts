@@ -5,6 +5,7 @@ import { createWorkbenchActor } from "@/server/auth/actor";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { prisma } from "@/server/db/client";
 import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
 import { createWorkbenchService } from "../service";
@@ -278,5 +279,14 @@ async function activateRouteTask(
     intentGrant,
     plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
     checkpoint: null,
+  });
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: project.id,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId: "local-test-user",
+      actorAuthMode: "local",
+    },
   });
 }

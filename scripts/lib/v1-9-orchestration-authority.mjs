@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 const SUMMARY_VERSION = "orchestration-authority-summary.v1";
+const SUMMARY_DIGEST_DOMAIN = "shanhai-orchestration-authority-summary.v1";
 
 const summaryFields = [
   "schemaVersion",
@@ -98,7 +99,7 @@ export function normalizeV1_9OrchestrationAuthoritySummary(value) {
       readyEligible,
     };
     const summaryDigest = requiredDigest(summary.summaryDigest);
-    if (summaryDigest !== digestDomain(SUMMARY_VERSION, publicSummary)) throw new Error("summaryDigest");
+    if (summaryDigest !== digestDomain(SUMMARY_DIGEST_DOMAIN, publicSummary)) throw new Error("summaryDigest");
     return Object.freeze({ ...publicSummary, summaryDigest });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("v1_9_")) throw error;
@@ -130,7 +131,7 @@ export function assertV1_9OrchestrationAuthorityProjection({
   }
   if (projected !== null && projected !== undefined) {
     const previous = normalizeV1_9OrchestrationAuthoritySummary(projected);
-    if (JSON.stringify(previous.subject) !== JSON.stringify(subject)) {
+    if (!sameFrozenSubject(previous.subject, subject) || previous.subject.planRevision > normalized.subject.planRevision) {
       throw new Error("v1_9_orchestration_authority_subject_mismatch");
     }
     if (normalized.windowStartSequence !== previous.windowStartSequence) {
@@ -149,6 +150,10 @@ export function assertV1_9OrchestrationAuthorityProjection({
     throw new Error("v1_9_orchestration_authority_not_ready");
   }
   return normalized;
+}
+
+function sameFrozenSubject(left, right) {
+  return subjectFields.every((field) => field === "planRevision" || left[field] === right[field]);
 }
 
 function normalizeSubject(value, { requireTask }) {

@@ -20,6 +20,7 @@ import { withPassedValidationReport } from "./support/validation-report";
 import { validPptDesignPackage } from "./support/ppt-quality-fixture";
 import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
 import { readProviderCallTraceContext } from "@/server/provider-ledger/provider-call-trace";
+import { prisma } from "@/server/db/client";
 
 function createWorkbenchService(...args: Parameters<typeof createWorkbenchServiceBase>) {
   if (args.length > 0) return createWorkbenchServiceBase(...args);
@@ -382,6 +383,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         async respond(input: MainConversationAgentInput) {
           respondCount += 1;
           if (respondCount === 1) {
+            await seedRunningToolTurn(input, actor.userId);
             frozenTaskId = input.taskBrief!.taskId;
             frozenTaskBriefDigest = input.taskBrief!.digest;
             frozenIntentEpoch = input.taskBrief!.intentEpoch;
@@ -520,6 +522,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
         return pptTaskProposal(input.userMessage);
       },
       async respond(input: MainConversationAgentInput) {
+        await seedRunningToolTurn(input, actor.userId);
         const result = await input.agentToolLoop!.dispatch({
           callId: "create-ppt-outline",
           toolName: "create_ppt_outline",
@@ -700,6 +703,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       async respond(input: MainConversationAgentInput) {
         agentCalls += 1;
         if (agentCalls === 1) {
+          await seedRunningToolTurn(input, actor.userId);
           await input.agentToolLoop!.dispatch({
             callId: "director-before-design",
             toolName: "ppt_director_plan_or_repair",
@@ -765,6 +769,19 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       await service.releaseProjectExecutionLease(fence);
     }
   });
+
+  async function seedRunningToolTurn(input: MainConversationAgentInput, actorUserId: string) {
+    if (!input.taskBrief) throw new Error("tool_turn_fixture_task_missing");
+    await prisma.conversationTurnJob.create({
+      data: {
+        projectId: input.taskBrief.projectId,
+        teacherMessageId: input.taskBrief.sourceMessageId,
+        status: "running",
+        actorUserId,
+        actorAuthMode: "local",
+      },
+    });
+  }
 
   it("starts a complete one-sentence PPT task without a routine confirmation", async () => {
     const service = createWorkbenchService();

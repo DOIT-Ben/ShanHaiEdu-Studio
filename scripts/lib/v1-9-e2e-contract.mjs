@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 
+import {
+  assertV1_9OrchestrationAuthorityProjection,
+  normalizeV1_9OrchestrationAuthoritySummary,
+} from "./v1-9-orchestration-authority.mjs";
+
 export const V1_9_RUN_MANIFEST_VERSION = "v1-9-run-manifest.v1";
 export const V1_9_RUN_MANIFEST_V2_VERSION = "v1-9-run-manifest.v2";
 export const V1_9_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v2";
 export const V1_9_LEGACY_BASELINE_LOCK_VERSION = "v1-9-baseline-lock.v1";
-export const V1_9_RUN_STATE_VERSION = "v1-9-run-state.v2";
+export const V1_9_RUN_STATE_VERSION = "v1-9-run-state.v3";
 export const V1_9_RUN_LEDGER_VERSION = "v1-9-run-ledger.v1";
 export const V1_9_TASK_CONTRACT_LOCK_VERSION = "v1-9-task-contract-lock.v1";
 export const V1_9_FROZEN_PROMPT = [
@@ -312,6 +317,7 @@ export function createV1_9RunState(input) {
     recovery: null,
     termination: null,
     packageAcceptance: null,
+    orchestrationAuthoritySummary: null,
     ledger: {
       schemaVersion: V1_9_RUN_LEDGER_VERSION,
       currentPlanRevision: null,
@@ -369,6 +375,7 @@ export function normalizeV1_9RunState(value) {
     "recovery",
     "termination",
     "packageAcceptance",
+    "orchestrationAuthoritySummary",
     "ledger",
     "createdAt",
     "updatedAt",
@@ -387,6 +394,9 @@ export function normalizeV1_9RunState(value) {
   const packageAcceptance = state.packageAcceptance === null
     ? null
     : normalizePackageAcceptance(state.packageAcceptance);
+  const orchestrationAuthoritySummary = state.orchestrationAuthoritySummary === null
+    ? null
+    : normalizeV1_9OrchestrationAuthoritySummary(state.orchestrationAuthoritySummary);
   const ledger = normalizeRunLedger(state.ledger, taskContractLock);
   const hasTaskIdentity = identity.taskId !== null;
   if (hasTaskIdentity !== Boolean(taskContractLock)) throw new Error("v1_9_run_state_task_binding_invalid");
@@ -414,6 +424,18 @@ export function normalizeV1_9RunState(value) {
     throw new Error("v1_9_run_state_status_without_task_contract");
   }
   if (!taskContractLock && checkpoint !== null) throw new Error("v1_9_run_state_checkpoint_without_task_contract");
+  if (!taskContractLock && orchestrationAuthoritySummary !== null) {
+    throw new Error("v1_9_orchestration_authority_without_task_contract");
+  }
+  if (taskContractLock && orchestrationAuthoritySummary) {
+    assertRunStateAuthorityProjection(
+      { identity, taskContractLock, ledger },
+      orchestrationAuthoritySummary,
+      false,
+      null,
+      false,
+    );
+  }
   if ((status === "paused_pending_decision") !== Boolean(pendingDecision)) {
     throw new Error("v1_9_run_state_pending_decision_status_mismatch");
   }
@@ -430,6 +452,12 @@ export function normalizeV1_9RunState(value) {
   ].includes(status);
   if (packageStatus !== Boolean(packageAcceptance)) {
     throw new Error("v1_9_run_state_package_status_mismatch");
+  }
+  if (packageStatus && !orchestrationAuthoritySummary) {
+    throw new Error("v1_9_orchestration_authority_summary_missing");
+  }
+  if (packageStatus) {
+    assertRunStateAuthorityProjection({ identity, taskContractLock, ledger }, orchestrationAuthoritySummary, true);
   }
   if (status === "package_ready_for_external_acceptance" && packageAcceptance?.acceptedAt !== null) {
     throw new Error("v1_9_external_acceptance_report_premature");
@@ -463,10 +491,75 @@ export function normalizeV1_9RunState(value) {
     recovery,
     termination,
     packageAcceptance,
+    orchestrationAuthoritySummary,
     ledger,
     createdAt,
     updatedAt,
   };
+}
+
+export function projectV1_9OrchestrationAuthoritySummary(stateValue, input) {
+  let state = normalizeV1_9RunState(stateValue);
+  const source = requiredRecord(input, "orchestration_authority_projection_input");
+  assertOnlyFields(source, ["summary", "projectedAt", "requireReady"], "orchestration_authority_projection_input");
+  if (!state.taskContractLock) throw new Error("v1_9_task_contract_lock_required");
+  const projectedAt = transitionTimestamp(state, source.projectedAt, "orchestrationAuthority.projectedAt");
+  const candidate = normalizeV1_9OrchestrationAuthoritySummary(source.summary);
+  if (candidate.subject.planRevision > state.ledger.currentPlanRevision) {
+    state = advanceV1_9PlanRevision(state, {
+      nextPlanRevision: candidate.subject.planRevision,
+      advancedAt: projectedAt,
+    });
+  }
+  const summary = assertRunStateAuthorityProjection(
+    state,
+    candidate,
+    source.requireReady === true,
+    state.orchestrationAuthoritySummary,
+  );
+  if (state.orchestrationAuthoritySummary?.summaryDigest === summary.summaryDigest) return state;
+  assertV1_9RunStateMutable(state);
+  return normalizeV1_9RunState({ ...state, orchestrationAuthoritySummary: summary, updatedAt: projectedAt });
+}
+
+export function assertV1_9RunStateOrchestrationAuthority(stateValue, actual, requireReady = false) {
+  const state = normalizeV1_9RunState(stateValue);
+  if (!state.taskContractLock || !state.orchestrationAuthoritySummary) {
+    throw new Error("v1_9_orchestration_authority_summary_missing");
+  }
+  return assertRunStateAuthorityProjection(state, actual, requireReady, state.orchestrationAuthoritySummary);
+}
+
+function assertRunStateAuthorityProjection(
+  state,
+  actual,
+  requireReady,
+  projected = null,
+  requireCurrentPlanRevision = true,
+) {
+  if (!state.taskContractLock) throw new Error("v1_9_task_contract_lock_required");
+  const normalized = normalizeV1_9OrchestrationAuthoritySummary(actual);
+  if (normalized.subject.planRevision > state.ledger.currentPlanRevision) {
+    throw new Error("v1_9_orchestration_authority_subject_mismatch");
+  }
+  return assertV1_9OrchestrationAuthorityProjection({
+    actual: normalized,
+    projected,
+    expectedSubject: {
+      projectId: state.identity.projectId,
+      actorUserId: state.identity.actorUserId,
+      taskId: state.identity.taskId,
+      taskBriefDigest: state.taskContractLock.taskBriefDigest,
+      intentEpoch: state.identity.intentEpoch,
+      teacherMessageId: state.taskContractLock.teacherMessageId,
+      turnJobId: state.taskContractLock.turnJobId,
+      planId: normalized.subject.planId,
+      planRevision: requireCurrentPlanRevision
+        ? state.ledger.currentPlanRevision
+        : normalized.subject.planRevision,
+    },
+    requireReady,
+  });
 }
 
 export function bindV1_9RunStateProjectIdentity(stateValue, input) {
