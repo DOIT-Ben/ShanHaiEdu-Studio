@@ -15,7 +15,7 @@
 
 ## 2. 离线合同测试
 
-首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1当前本地候选的Tool authority与服务端summary隔离SQLite交叉回归为`105/105`，TypeScript和development gate通过；新增负例覆盖Observation/Invocation/Event状态漂移，正例覆盖Observation-only成功。B1仍须独立提交和clean CI，B2还必须生成自己的observer/closeout证据，均不能沿用A阶段结果。
+首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1已由`a1c170c`本地提交：Tool authority与服务端summary隔离SQLite交叉回归`105/105`，authority verifier `4/4`，门禁Node `35 pass / 1 Windows symlink skip`，TypeScript、定向ESLint和development gate通过；新增负例覆盖Observation/Invocation/Event状态漂移，正例覆盖Observation-only成功。B1尚待clean CI；B2还必须生成自己的observer/closeout证据，不能沿用A阶段或B1结果。
 
 全量本地测试只使用`run-tests.mjs`内生的单worker约束，不从外层覆盖`VITEST_MAX_WORKERS`。每次运行使用同一`test-workbench`族下带run token和角色后缀的独立Node/Vitest SQLite文件，初始化前和退出后清理`.db`、`-wal`、`-shm`；整个测试进程树通过唯一空dotenv文件阻止仓库`.env`回灌Provider凭据，成功或失败退出均清理该文件和数据库族。
 

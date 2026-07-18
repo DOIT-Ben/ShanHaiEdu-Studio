@@ -63,7 +63,7 @@ const CAPTURE_BOOTSTRAP_ALLOWED_PATHS = [
   ...CAPTURE_BOOTSTRAP_TEST_PATHS,
 ];
 const READINESS_STAGE_ID = "p0-05a-provider-continuity-readiness";
-const READINESS_BASELINE = "855e9246f85057aa4c5fe69ed7747206b1e0acc8";
+const READINESS_BASELINE = "a1c170ca18f3346fbcdc9d0bff0212128bd20071";
 const READINESS_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-plan.md";
 const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md";
 const READINESS_EXPIRES_ON = "2026-07-24";

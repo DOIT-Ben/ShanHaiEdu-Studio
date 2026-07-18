@@ -54,7 +54,7 @@ test("package exposes the single Provider live preflight and seal entrypoints", 
 
 test("the active stage starts after archival and exposes no archive mutation exception", () => {
   const stage = JSON.parse(readFileSync(path.join(process.cwd(), "docs", "stages", "active-stage.json"), "utf8"));
-  assert.equal(stage.baselineSha, "855e9246f85057aa4c5fe69ed7747206b1e0acc8");
+  assert.equal(stage.baselineSha, "a1c170ca18f3346fbcdc9d0bff0212128bd20071");
   assert.deepEqual(stage.protectedPathExceptions, []);
   assert.equal(stage.allowedPaths.some((entry) => entry.startsWith("docs/archive/")), false);
   assert.equal(stage.allowedPaths.includes("docs/stages/project-development-gates-plan.md"), false);

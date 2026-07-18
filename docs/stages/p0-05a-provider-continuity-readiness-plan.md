@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门。VR-A13B拆成严格串行的B1与B2：B1的Tool authority和产品服务端summary已完成本地候选验证；B2的run-state投影、observer新鲜读取、runner停机复算和closeout SQLite复算尚未开始。当前仍为offline-only；DB recovery保持后续阻塞，不与VR-A13B并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门。VR-A13B拆成严格串行的B1与B2：B1的Tool authority和产品服务端summary已由`a1c170c`完成本地提交与验证；B2的run-state投影、observer新鲜读取、runner停机复算和closeout SQLite复算是当前唯一代码路线。当前仍为offline-only；DB recovery保持后续阻塞，不与VR-A13B并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
