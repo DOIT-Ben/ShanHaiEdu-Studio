@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import {
+  createV1_9RunManifestV2Digest,
+  normalizeV1_9RunManifestV2,
+  normalizeV1_9RunState,
+} from "../../../scripts/lib/v1-9-e2e-contract.mjs";
+
 const SCHEMA_VERSION = "v1-9-contract-repair-evidence.v2" as const;
 const REPAIR_SCOPE = "v1_9_incomplete_task_recovery_contract" as const;
 const INVALID = "v1_9_contract_repair_evidence_invalid";
@@ -246,42 +252,61 @@ export function verifyContractRepairRecoveryEvidence(input: {
   cwd: string;
   env: Partial<ContractRepairRecoveryEnv>;
   manifestPath: string;
+  statePath?: string;
   manifest?: unknown;
+  runState?: unknown;
   requiredRepairFiles?: readonly string[];
 }): ContractRepairRecoveryConfig | null {
   const request = resolveContractRepairRecoveryConfig(input.env);
   if (!hasContractRepairRecoveryInput(input.env)) return null;
   if (!request) throw invalid();
-  const manifest = input.manifest ?? readV1_9ContractRepairEvidence(input.manifestPath);
-  if (!isRecord(manifest)) throw invalid();
-  const runId = requiredText(manifest.runId);
-  const projectId = requiredText(manifest.projectId);
-  const taskId = requiredText(manifest.taskId);
-  const intentEpoch = nonNegativeInteger(manifest.intentEpoch);
-  if (manifest.schemaVersion !== "v1-9-run-manifest.v1" || manifest.status !== "paused_recovery") throw invalid();
-  const evidencePath = contractRepairEvidencePath(input.manifestPath, request.repairEvidenceDigest);
-  const evidence = validateV1_9ContractRepairEvidence({
-    cwd: input.cwd,
-    evidence: readV1_9ContractRepairEvidence(evidencePath),
-    expectedEvidenceDigest: request.repairEvidenceDigest,
-    expectedRunId: runId,
-    expectedProjectId: projectId,
-    expectedTaskId: taskId,
-    expectedIntentEpoch: intentEpoch,
-    requiredRepairFiles: input.requiredRepairFiles,
-  });
-  return {
-    repairEvidenceDigest: evidence.evidenceDigest,
-    projectId: evidence.projectId,
-    jobId: evidence.jobId,
-    teacherMessageId: evidence.teacherMessageId,
-    taskId: evidence.taskId,
-    intentEpoch: evidence.intentEpoch,
-    taskBriefDigest: evidence.taskBriefDigest,
-    idempotencyKey: evidence.idempotencyKey,
-    failureObservationId: evidence.failureObservationId,
-    expectedFailureSignature: evidence.failureSignature,
-  };
+  try {
+    const manifest = normalizeV1_9RunManifestV2(
+      input.manifest ?? readV1_9ContractRepairEvidence(input.manifestPath),
+    );
+    const statePath = input.statePath ?? path.join(path.dirname(path.resolve(input.manifestPath)), "run-state.json");
+    const state = normalizeV1_9RunState(input.runState ?? readV1_9ContractRepairEvidence(statePath));
+    const runId = manifest.runId;
+    const projectId = state.identity.projectId;
+    const taskId = state.identity.taskId;
+    const intentEpoch = state.identity.intentEpoch;
+    const lock = state.taskContractLock;
+    if (!projectId || !taskId || intentEpoch === null || !lock ||
+        !["paused_recovery", "failed"].includes(state.status) ||
+        state.runId !== runId || state.manifestSha256 !== createV1_9RunManifestV2Digest(manifest) ||
+        state.recovery?.turnJobId !== lock.turnJobId || state.recovery.teacherMessageId !== lock.teacherMessageId) {
+      throw invalid();
+    }
+    const evidencePath = contractRepairEvidencePath(input.manifestPath, request.repairEvidenceDigest);
+    const evidence = validateV1_9ContractRepairEvidence({
+      cwd: input.cwd,
+      evidence: readV1_9ContractRepairEvidence(evidencePath),
+      expectedEvidenceDigest: request.repairEvidenceDigest,
+      expectedRunId: runId,
+      expectedProjectId: projectId,
+      expectedJobId: lock.turnJobId,
+      expectedTeacherMessageId: lock.teacherMessageId,
+      expectedTaskId: taskId,
+      expectedIntentEpoch: intentEpoch,
+      expectedTaskBriefDigest: lock.taskBriefDigest,
+      requiredRepairFiles: input.requiredRepairFiles,
+    });
+    return {
+      repairEvidenceDigest: evidence.evidenceDigest,
+      projectId: evidence.projectId,
+      jobId: evidence.jobId,
+      teacherMessageId: evidence.teacherMessageId,
+      taskId: evidence.taskId,
+      intentEpoch: evidence.intentEpoch,
+      taskBriefDigest: evidence.taskBriefDigest,
+      idempotencyKey: evidence.idempotencyKey,
+      failureObservationId: evidence.failureObservationId,
+      expectedFailureSignature: evidence.failureSignature,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === INVALID) throw error;
+    throw invalid();
+  }
 }
 
 export function contractRepairEvidencePath(manifestPath: string, evidenceDigest: string) {

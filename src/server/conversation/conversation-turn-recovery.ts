@@ -45,6 +45,7 @@ export function scheduleRetryableConversationTurnRecovery(env: RecoveryEnv = pro
       cwd: repositoryRoot,
       env,
       manifestPath: env.V1_9_E2E_MANIFEST_PATH,
+      statePath: env.V1_9_E2E_STATE_PATH,
     });
     if (!contractRepair) {
       externalAuditAuthority = resolveV1_9ExternalAuditRecoveryAuthority({ cwd: repositoryRoot, env });

@@ -144,7 +144,7 @@ VR-A13采用唯一事实链，不复用普通`AuditLog`：
 
 fresh/baseline切片只修改`v1-9-e2e-contract`、`v1-9-baseline-lock`及其候选证据模块、`v1-9-run-preparation-transaction`、prepare/runner入口及行为测试。当前验收事实：fresh输入不含旧run身份且active pointer不存在时可准备；opaque history保持原字节，任何既有active pointer都失败关闭，新manifest写`predecessor: null`；部分predecessor输入在任何写入前失败；fresh事务覆盖journal、manifest、state、staged、run publish、最终pointer窗口和pointer publish故障恢复；successor不覆盖并发history，也不覆盖遵守共享prepare锁的仓内pointer writer；closeout同字节双pointer可前滚、异字节失败关闭，活PID不因TTL接管，termination与closeout共用run-state cooperative CAS；所有I/O拒绝仓外junction/reparse；新baseline只产生`v1-9-baseline-lock.v2`并绑定clean verification、policy/stage、Provider manifest/receipt、签名evidence root摘要和同一候选subject，facts与trace由source-index SHA传递绑定，正常提交与崩溃恢复均在pointer发布前后重验；旧v1只读解析且活动入口拒绝执行，签名campaign自身受TTL约束；prepare和runner不再保存prompt全文。
 
-fresh/baseline与VR-A13预算均已关闭且不结转。VR-A14/A16从`781af1f`重新计算，预算为最多24个实际变更文件、`+2200/-800`、零二进制；活动路径已收窄为31个恢复相关文件。超出时拆分后续切片，不提高阈值、不恢复旧audit路径。
+fresh/baseline与VR-A13预算均已关闭且不结转。VR-A14/A16从`781af1f`重新计算，预算为最多24个实际变更文件、`+2200/-800`、零二进制；活动路径已收窄为32个恢复相关文件。超出时拆分后续切片，不提高阈值、不恢复旧audit路径。
 
 必须回答：
 

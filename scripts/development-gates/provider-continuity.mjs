@@ -96,6 +96,7 @@ const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
   "tests/development-gates/wiring.test.mjs",
   "tests/external-audit-startup-recovery-authority.test.ts",
   "tests/m67-e2e-runner.test.mjs",
+  "tests/v1-9-contract-repair-evidence.test.ts",
   "tests/v1-9-e2e-runner.test.mjs",
   "tests/v1-9-run-state-v2.test.mjs",
   "tests/v1-9-startup-recovery-authority.test.ts",
