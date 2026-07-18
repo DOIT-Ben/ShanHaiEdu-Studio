@@ -116,6 +116,8 @@ VR-A14/A16细分为以下行为门：
 
 R1本地证据：runner Node `29/29`、Provider recovery Vitest `9/9`、TypeScript和development gate通过。该证据只关闭VR-R01的恢复布尔出口；VR-R02至R09仍未实现。
 
+R2核心本地证据：DB disposition独立SQLite `6/6`；与Provider-health、contract-repair、external-audit、checkpoint及TurnJob queue隔离合跑`51/51`；TypeScript和development gate通过。该证据关闭VR-R02核心读取与VR-R03零恢复合同，但尚未证明startup接线、typed evidence选择、原子requeue/claim或fail-ready。
+
 VR-A13细分为以下行为门，全部通过前保持blocked：
 
 | ID | 场景 | Go条件 |

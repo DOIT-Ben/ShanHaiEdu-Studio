@@ -15,7 +15,7 @@
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
 | `tests/e2e/v1-9-unique-real-product.spec.ts` | reuse | ready/completed重入先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | DB recovery阶段不改Tool顺序或observer产品职责 |
 | 产品服务端持久编排audit | go | VR-A13A由`b2772a7`建立专用append-only事实，B1由`a1c170c`实现Tool authority与完整服务端summary，B2由`db5af68`实现消费与复算并由`781af1f` clean CI关闭 | 不把VR-A13 contract-go上推为恢复、V1-9或Provider连续性Go |
-| 产品DB startup recovery | blocked / active | 仓内已有Provider-health、contract-repair、external-audit和expired-running局部能力，但入口由runner/env开关，contract-repair仍含legacy v1绑定，checkpoint可缺Turn身份，非法恢复只记日志 | SQLite先派生唯一typed disposition；精确身份与证据验证后原子requeue/claim并获取新lease/fence，失败阻止ready |
+| 产品DB startup recovery | partial / active | R1已移除runner恢复布尔；R2核心已按精确SQLite身份派生六类typed disposition并拒绝错绑/歧义，但尚未接入instrumentation；contract-repair仍含legacy v1绑定，非法恢复仍只记日志 | 接入对应typed evidence，原子requeue/claim并获取新lease/fence；任一失败阻止ready |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
 | checkpoint与失败恢复 | blocked / adapt | observer按项目全局读取latest checkpoint/failed turn，未证明属于冻结task、message、job和epoch | 恢复查询与冻结身份精确绑定；不匹配即失败，不跨任务拼接 |
