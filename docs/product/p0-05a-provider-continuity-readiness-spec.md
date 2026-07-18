@@ -134,6 +134,19 @@ npm run gate:provider:seal -- --mode development
 
 ## 8. 边界
 
+### VR-A13数据库与公共接口变更
+
+本规格批准仅用于产品服务端持久编排audit的最小schema和只读摘要接口变化：
+
+- 新增专用append-only编排审计事实，不复用普通认证与生命周期`AuditLog`。
+- 认证项目写请求在业务handler前持久attempt；完成、拒绝和失败追加唯一终态，open attempt直接构成No-Go。
+- Tool selector authority与实际Tool action digest、TaskAggregate、TurnJob、Invocation和连续ordinal同事务绑定；Main Agent以外来源不能晋升为`main_agent`。
+- SQLite初始化和health必须校验表、字段、唯一约束、索引及禁止update/delete的trigger；缺失时失败关闭，不使用旧schema fallback。
+- 产品只向observer提供脱敏摘要、watermark和digest，不提供body、header、Cookie、原始session、凭据、完整Tool arguments、完整ExecutionEnvelope或原始错误。
+- Schema和接口变化不包含DB recovery、Provider调用、媒体生成、package重建、教师签收或release能力。
+
+该变更由VR-A13-01至VR-A13-09行为门验收；完成只提升contract/executor层的编排事实可信度。
+
 ### 始终执行
 
 - 先写失败测试，再实现最小harness或适配。

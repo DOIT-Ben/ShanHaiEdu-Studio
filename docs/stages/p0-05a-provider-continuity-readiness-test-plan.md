@@ -99,6 +99,22 @@
 | VR-A15 | prepare事务安全 | 正常提交和恢复均重验baseline；successor history/pointer对遵守共享prepare锁的仓内writer执行协作式CAS；所有I/O拒绝junction/reparse路径逃逸 |
 | VR-A16 | 恢复身份 | checkpoint、TurnJob、task、epoch、message任一跨任务或缺失绑定均失败，不取项目全局latest |
 
+VR-A13细分为以下行为门，全部通过前保持blocked：
+
+| ID | 场景 | Go条件 |
+|---|---|---|
+| VR-A13-01 | 认证写入attempt | handler前已追加attempt；审计写失败时业务零写入 |
+| VR-A13-02 | attempt终态 | committed、rejected、failed分别追加唯一终态；open attempt、中断、重复终态均失败 |
+| VR-A13-03 | 完整性与身份 | 序号、digest、actor、project、task、epoch、message、TurnJob、plan任一缺失、断序、篡改或跨域均失败 |
+| VR-A13-04 | Tool selector authority | Main Agent claim与Invocation、实际action digest、连续ordinal和started事实同事务；非Main Agent selector失败 |
+| VR-A13-05 | Tool终态 | terminal与Invocation、Observation、Artifact/Event和plan revision交叉绑定；缺失、提前或错绑失败 |
+| VR-A13-06 | 入口覆盖 | 所有认证项目写route经统一边界；第二次message、approve、generate、regenerate、成员写或未知入口形成violation |
+| VR-A13-07 | 产品摘要 | 服务端按完整窗口生成脱敏摘要与digest；observer只验证和投影，不得自报零值或裁剪窗口 |
+| VR-A13-08 | 重入与closeout | ready重入仍复验新鲜摘要；缺摘要、watermark回退、同水位digest变化或任一violation拒绝完成 |
+| VR-A13-09 | SQLite readiness | 专用表、唯一约束、索引和append-only trigger缺一即health失败，不使用旧库fallback |
+
+VR-A13 contract-go只表示产品服务端已持久记录并可按冻结身份验证编排事实；不表示恢复权、真实Provider连续性、V1-9、媒体链路或release通过。
+
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 
 ## 6. 实际验证命令

@@ -13,7 +13,8 @@
 | `scripts/run-v1-9-e2e.mjs` | partial / adapt | 冻结prompt重复已关闭，隔离生命周期可复用；但整段仍委托M67兼容入口，并由env决定启动时恢复重试 | 只保留监督和启停壳；恢复决策改为读取产品持久状态，不由runner取得第二编排权 |
 | `scripts/run-m67-e2e.mjs` | reuse lifecycle / retire control entry | 隔离server、SQLite、Artifact、Playwright、IPC停机和失败后核验可复用；M67命名与兼容入口不应继续成为V1-9控制面 | 抽取受控生命周期能力，由唯一V1-9入口调用；不得决定Tool、下一步、重试或恢复 |
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
-| `tests/e2e/v1-9-unique-real-product.spec.ts` | reuse observer / adapt authority | 只提交一次完整目标，后续以轮询观察，不固定Tool顺序；但external Codex计数仍依赖浏览器请求监听和本地ledger，未绑定产品侧权威持久事件 | 保留观察方式；把无第二编排者证明改为产品持久事件/状态合同 |
+| `tests/e2e/v1-9-unique-real-product.spec.ts` | blocked / active adaptation | 只提交一次完整目标且不固定Tool顺序的观察方式可保留；浏览器请求监听、本地ledger自报和ready早退均不能证明无第二编排者 | 删除authority自报与早退旁路；每次判断前验证产品服务端新鲜摘要和单调watermark |
+| 产品服务端持久编排audit | blocked / active | 普通`AuditLog`只记录部分成功结果；认证写attempt、selector authority、实际action反向绑定、连续Tool ordinal和observer权威摘要均不存在 | 新增专用append-only事实、统一写入口、Main Agent selector绑定和服务端摘要；VR-A13-01至09全部行为化通过 |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
 | checkpoint与失败恢复 | blocked / adapt | observer按项目全局读取latest checkpoint/failed turn，未证明属于冻结task、message、job和epoch | 恢复查询与冻结身份精确绑定；不匹配即失败，不跨任务拼接 |
@@ -38,9 +39,9 @@
 
 ## 当前阻塞
 
-P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已完成；下一代码子阶段严格串行处理产品持久编排audit，再处理恢复权归位与恢复身份精确绑定。每项先写行为红测试，并且不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
+P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；当前唯一代码子阶段是VR-A13产品服务端持久编排audit，完成后才处理恢复权归位与恢复身份精确绑定。每项先写行为红测试，并且不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
 
-第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；产品audit、恢复权归位、恢复身份和真实receipt继续保持blocked。该切片通过只表示入口合同适配完成，不提升P0-05A Go；下一串行切片是产品服务端持久编排audit，不是PPT或真实V1-9运行。
+第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13现为active但仍blocked，恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
 
 ## 二次审查增补
 

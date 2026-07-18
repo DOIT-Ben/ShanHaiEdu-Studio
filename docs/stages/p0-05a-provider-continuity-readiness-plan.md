@@ -3,7 +3,7 @@
 日期：2026-07-17
 状态：active / offline-readiness-only / live-campaign-not-authorized
 
-本阶段当前机器基线为已通过远端clean CI的 `9a936ad870d036cff746002b4f4a25d61515c088`；此前门禁阶段归档已退出活动例外，archive重新不可修改。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`且`liveAuthorization=null`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并完成受保护环境与ledger权威验证器前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
+本阶段当前机器基线为已通过远端clean CI并由仓内verifier复核的 `916069497031519bff7cd530ea9c0743f0d9f2e3`；此前门禁阶段归档已退出活动例外，archive重新不可修改。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`且`liveAuthorization=null`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并完成受保护环境与ledger权威验证器前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
 
 安全审查确认旧v1 receipt只能证明JSON自洽，不能证明真实来源。活动阶段已改为只接受未来的v2签名来源合同，并保持`trustedCaptureKeyIds=[]`；因此本轮离线实现不可能签发passed receipt。可信key必须由受保护环境持有私钥，活动阶段只预绑定非敏感key ID和公钥摘要。
 
@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已完成合同实现和定向验证，机器基线重锚到已通过远端clean CI的`9a936ad`，不把已完成signer切片重复计入当前预算。fresh只允许active pointer不存在并以no-replace hard link发布；successor对history和共享prepare锁内的仓内pointer writer执行协作式CAS；baseline新建只接受v2，交叉绑定verification与receipt，并冻结Provider manifest/receipt和签名evidence root摘要，facts与trace由source-index SHA传递绑定，在正常提交与崩溃恢复发布点重验。冻结prompt已收敛到合同单源。产品audit和DB recovery继续保持后续阻塞，不在本切片并行修改。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。远端artifact经仓内verifier复核为`dirty=false`，HEAD、tree、policy SHA、stage SHA和5项退出码全部匹配。第2个串行切片VR-A13产品服务端持久编排audit现为active / offline-only；DB recovery仍保持后续阻塞，不与本切片并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -104,9 +104,21 @@
 2. 产品audit：服务端持久记录项目写attempt与Main Agent编排authority，observer只消费权威摘要；
 3. DB recovery：产品启动从精确绑定的TurnJob、task、epoch、message和checkpoint派生恢复动作，runner不再传恢复布尔。
 
+VR-A13采用唯一事实链，不复用普通`AuditLog`：
+
+- 认证与CSRF通过后、业务handler执行前，服务端先追加写attempt；attempt写入失败则不得执行业务写。
+- 业务返回、拒绝或失败分别追加不可覆盖终态；只有attempt没有终态视为中断异常，不能被解释为成功或零违规。
+- 审计只保存服务端操作枚举、路由模板、身份快照和必要digest，不保存body、query、header、Cookie、原始session、凭据、完整ExecutionEnvelope或错误原文。
+- Main Agent Tool claim与持久`ToolInvocation`、冻结TaskAggregate/TurnJob身份和selector authority同事务；artifact route、runner、Skill、Director、Critic或兼容层不能声明`main_agent`。
+- `actionDigest`必须由服务端从实际`toolName + request`重算；Tool ordinal、started/terminal事实和plan身份必须连续并交叉绑定。
+- 产品侧从完整SQLite事实生成脱敏摘要和摘要digest；observer不得传入可裁剪窗口，不得从浏览器监听或run-state自造count、authority或零值。
+- 成员管理等绕过统一workbench wrapper的现存写入口必须并入同一审计边界；新增写route由机器门禁扫描并失败关闭。
+
+本切片明确排除DB recovery、checkpoint选择、真实Provider、真实V1-9、PPT、图片、视频、PPTX、ZIP和390px验证。新增SQLite结构只承载VR-A13审计事实，不表示恢复权已经实现。
+
 fresh/baseline切片只修改`v1-9-e2e-contract`、`v1-9-baseline-lock`及其候选证据模块、`v1-9-run-preparation-transaction`、prepare/runner入口及行为测试。当前验收事实：fresh输入不含旧run身份且active pointer不存在时可准备；opaque history保持原字节，任何既有active pointer都失败关闭，新manifest写`predecessor: null`；部分predecessor输入在任何写入前失败；fresh事务覆盖journal、manifest、state、staged、run publish、最终pointer窗口和pointer publish故障恢复；successor不覆盖并发history，也不覆盖遵守共享prepare锁的仓内pointer writer；closeout同字节双pointer可前滚、异字节失败关闭，活PID不因TTL接管，termination与closeout共用run-state cooperative CAS；所有I/O拒绝仓外junction/reparse；新baseline只产生`v1-9-baseline-lock.v2`并绑定clean verification、policy/stage、Provider manifest/receipt、签名evidence root摘要和同一候选subject，facts与trace由source-index SHA传递绑定，正常提交与崩溃恢复均在pointer发布前后重验；旧v1只读解析且活动入口拒绝执行，签名campaign自身受TTL约束；prepare和runner不再保存prompt全文。
 
-独立提交前审查发现事务崩溃窗口、锁接管、测试失败清理、SQLite双族和真实observer绕过共享状态锁的问题，整改范围因此从30个文件显式修订为34个文件；新增范围仅为既有`tests/test-runner-isolation.test.mjs`的行为化改写、删除其已清零的源码字符串债务基线，以及让真实V1-9 observer和合同测试接入唯一prepare lock。行数预算仍保持`+2500/-800`，不得继续扩张或以提高阈值代替缺陷修复。
+fresh/baseline切片的`34 / +2500 / -800`预算已随`9160694`关闭，不结转到本切片。VR-A13从该clean HEAD重新计算，预算为最多32个实际变更文件、`+2400/-700`、零二进制；超出时拆分后续切片，不以提高阈值代替范围控制。
 
 必须回答：
 
