@@ -15,10 +15,10 @@
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
 | `tests/e2e/v1-9-unique-real-product.spec.ts` | reuse | ready/completed重入先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | DB recovery阶段不改Tool顺序或observer产品职责 |
 | 产品服务端持久编排audit | go | VR-A13A由`b2772a7`建立专用append-only事实，B1由`a1c170c`实现Tool authority与完整服务端summary，B2由`db5af68`实现消费与复算并由`781af1f` clean CI关闭 | 不把VR-A13 contract-go上推为恢复、V1-9或Provider连续性Go |
-| 产品DB startup recovery | adapted / local candidate | R3b已把同run v2 pointer/manifest、v3 run-state读取、DB typed disposition、对应evidence和执行接入instrumentation；半套路径、身份、证据、requeue或claim错误阻止ready；single-flight共享结果，同digest queued/过期running可续，legacy v1不能进入活动恢复 | 提交并取得绑定当前SHA的clean CI artifact |
+| 产品DB startup recovery | adapted / contract-go | R3b已把同run v2 pointer/manifest、v3 run-state读取、DB typed disposition、对应evidence和执行接入instrumentation；半套路径、身份、证据、requeue或claim错误阻止ready；single-flight共享结果，同digest queued/过期running可续，legacy v1不能进入活动恢复；`1d527ae`及clean CI artifact已通过仓内verifier | 保持runner不取得恢复选择权；真实运行另受Provider连续性门约束 |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
-| checkpoint与失败恢复 | adapted / local candidate | checkpoint按完整冻结身份在同一事务只requeue exact TurnJob；interrupted-running及其他恢复只claim `expectedJobId`一次，拒绝其他active job并获取新lease/fence；崩溃后按同digest继续且expired exact reclaim不重复消耗attempt | 取得clean CI后关闭离线恢复切片，不上推为真实Provider或V1-9 Go |
+| checkpoint与失败恢复 | adapted / contract-go | checkpoint按完整冻结身份在同一事务只requeue exact TurnJob；interrupted-running及其他恢复只claim `expectedJobId`一次，拒绝其他active job并获取新lease/fence；崩溃后按同digest继续且expired exact reclaim不重复消耗attempt | 离线恢复切片已关闭；不得上推为真实Provider或V1-9 Go |
 | package验真 | blocked / adapt | 合同主要信任调用者传入的id/version/SHA/turn绑定；observer对ZIP仍存在扩展名和非零字节层验证 | 回到正式package asset、当前project/task/epoch、文件结构与内容manifest验真 |
 | 直接合同测试 | adapt | 多项测试通过读取实现源码和正则匹配证明接线，属于已登记源码字符串债务 | 新适配必须写行为测试；既存债务只能收缩，不新增命中 |
 
@@ -40,9 +40,9 @@
 
 ## 当前阻塞
 
-P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A/B已由`781af1f`对应clean CI关闭。当前唯一实现切片是VR-A14/A16 DB recovery与恢复身份精确绑定。不得运行真实V1-9或媒体Provider；v2签名Provider receipt与可信capture key仍是后续独立阻塞，不能由本矩阵替代。
+P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A/B已由`781af1f`对应clean CI关闭；VR-A14/A16 DB recovery已由`1d527ae`及clean CI关闭。当前唯一后续门是经单独授权的真实文本/Main Agent连续3组；不得运行真实V1-9或媒体Provider，v2签名Provider receipt与可信capture/ledger-authority key仍是独立阻塞，不能由本矩阵替代。
 
-第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A关闭VR-A13-01、02、06、09及HTTP侧03出口，VR-A13B关闭Tool侧03、04、05和服务端/消费侧07、08。当前VR-A14/A16只处理产品DB恢复权与精确身份，不是PPT、真实Provider或真实V1-9运行。
+第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A关闭VR-A13-01、02、06、09及HTTP侧03出口，VR-A13B关闭Tool侧03、04、05和服务端/消费侧07、08；VR-A14/A16关闭产品DB恢复权与精确身份出口。上述均不是PPT、真实Provider或真实V1-9运行。
 
 ## 二次审查增补
 

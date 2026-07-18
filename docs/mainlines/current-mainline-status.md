@@ -11,7 +11,7 @@
 - GitHub `main` 已将`quality-gates`设为required check；未要求PR review，`enforce_admins=false`，普通受保护写入禁止force-push和删除。管理员仍可绕过，不能表述为绝对不可绕过。
 - 当前唯一活动阶段是P0-05A“真实Provider连续性与V1-9就绪”。本轮只实施离线readiness，`liveCallsAuthorized=false`，真实Provider receipt仍未取得。
 - P0-05A离线readiness首批出口已落地：精确延期门、零请求授权preflight、物理隔离campaign目录、四场景顺序合同、来源绑定evidence builder、不可覆盖写入和失败关闭seal入口。旧v1 receipt已在活动阶段被禁止晋升。
-- P0-05A本地`verify:local`只作为提交前dirty候选证据；最新候选仍须由同一工作树manifest、clean提交和远端`quality-gates`共同形成阶段证据，不能据此提升真实Provider、V1-9或release状态。
+- P0-05A的VR-A14/A16离线DB recovery切片已由`1d527ae`和GitHub Actions run `29655993023`关闭；远端artifact经仓内verifier复核为`dirty=false / checkCount=5`，HEAD、tree、policy/stage SHA和五项退出码全部匹配。该证据不包含真实Provider、V1-9、PPTX或媒体调用。
 - P0-05A的fresh/baseline入口切片已由`9160694`完成并通过GitHub Actions run `29642751018`；远端artifact经仓内verifier复核为`dirty=false / checkCount=5`，HEAD `9160694`、tree `4cb8f70`、policy/stage SHA和五项退出码全部匹配。该证据不包含真实Provider、V1-9或媒体调用。
 - VR-A13产品服务端持久编排audit已关闭。A阶段由`b2772a7`建立append-only schema/health、18个统一写入口、成员路由接入和AST门，B1由`a1c170c`完成，B2由`db5af68`提交run-state v3 summary投影、observer fresh snapshot重入、runner停机后只读SQLite复算和closeout双重复算；最终重锚`781af1f`已通过GitHub Actions run `29651142001`。仓内verifier复核artifact为`dirty=false / checkCount=5`，HEAD、tree、policy/stage SHA与5项退出码全部匹配。
 - 仓库为公开状态；当前权威文档和生产媒体解析中的本机绝对路径已清理。历史仍含非密钥旧本机路径，未获历史重写授权，不影响当前树口径。
@@ -100,11 +100,11 @@ P0-05A全量验证曾连续两次在单个长寿Vitest worker末段出现`Worker
 
 V1-9入口二次只读审查及提交前并发审查确认fresh/baseline合同出口已经关闭：fresh只允许active pointer不存在并使用no-replace hard-link发布；successor保护history并对遵守共享prepare锁的仓内pointer writer执行协作式CAS；closeout在同字节双pointer时幂等前滚、异字节失败关闭，活PID不因TTL被接管；termination与closeout共用exact-byte run-state cooperative CAS；legacy v1仅可只读解析，不能进入活动执行；签名campaign自身受TTL约束。baseline v2绑定clean verification、policy/stage、Provider manifest/receipt及签名evidence root摘要。B2消费与复算层已由clean CI关闭。P0-05A仍为NO-GO，当前进入VR-A14/A16 DB recovery与恢复身份精确绑定；真实receipt仍是后续独立阻塞。完整媒体preflight退出P0-05A，只保留给P0-05B。
 
-VR-A14/A16 R3b本地候选已把startup固定为`run context -> DB disposition -> typed evidence -> execute`，只接受同一active v2 pointer、v2 manifest和v3 run-state；manifest字节、pointer路径、runId或半套环境路径漂移均失败。checkpoint在同一事务按冻结project/task/epoch/message/TurnJob/checkpoint/actor/session/plan原子requeue；interrupted-running与所有requeue分支都通过`expectedJobId`只claim一次并取得新project lease/fence；external-audit执行前重验冻结session。requeue后的同证据queued和过期running可在崩溃后继续，exact expired reclaim不重复消耗attempt；不同digest拒绝。instrumentation用single-flight Promise让并发调用共享同一成功/失败，解析、证据、requeue、claim或执行错误都会阻止ready。runner与M67 Node `57/57`、扩展隔离SQLite恢复组合`78/78`、TypeScript和development gate通过；源码字符串债务从24个文件收缩到23个文件，复杂度债务未增长。完整`verify:local`通过development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200个文件）和生产构建；Lint保留150条既存warning，构建保留13条既存tracing warning，SHA-bound dirty manifest经仓内verifier复核5项退出码均为0。该证据尚未提交或取得clean CI，不能据此关闭阶段或提升真实Provider状态。
+VR-A14/A16 R3b已把startup固定为`run context -> DB disposition -> typed evidence -> execute`，只接受同一active v2 pointer、v2 manifest和v3 run-state；manifest字节、pointer路径、runId或半套环境路径漂移均失败。checkpoint在同一事务按冻结project/task/epoch/message/TurnJob/checkpoint/actor/session/plan原子requeue；interrupted-running与所有requeue分支都通过`expectedJobId`只claim一次并取得新project lease/fence；external-audit执行前重验冻结session。requeue后的同证据queued和过期running可在崩溃后继续，exact expired reclaim不重复消耗attempt；不同digest拒绝。instrumentation用single-flight Promise让并发调用共享同一成功/失败，解析、证据、requeue、claim或执行错误都会阻止ready。完整本地`verify:local`通过development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200个文件）和生产构建；`1d527ae`对应clean `quality-gates #29655993023`及artifact已由仓内verifier复核通过。该证据只关闭离线DB recovery，不提升真实Provider、V1-9或release状态。
 
 ## 6. 唯一下一动作
 
-当前唯一动作是对VR-A14/A16本地候选执行完整测试、Lint、构建和verification manifest，提交后等待远端clean `quality-gates`并用仓内verifier复核artifact。只有clean CI绑定当前提交后才能关闭离线DB recovery切片；真实Provider连续3组仍等待用户另行批准，且不与本轮验证混跑。
+当前唯一后续门是阶段6真实文本/Main Agent连续3组。启动前必须由用户另行批准Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并由受保护环境提供活动阶段预绑定的capture与ledger-authority可信key；在这些条件写入合同前保持零Provider请求失败关闭。该门不包含PPTX、图片、视频、ZIP或390px验证，也不得与V1-9真实运行混跑。
 
 ## 7. 恢复入口
 

@@ -120,7 +120,7 @@ R2核心本地证据：DB disposition独立SQLite `6/6`；与Provider-health、c
 
 R3a本地证据：contract-repair evidence与DB recovery `5/5`、TypeScript和development gate通过。活动恢复已拒绝legacy v1 manifest，并把evidence绑定当前v2 manifest、v3 run-state及exact TurnJob/message/task/epoch/TaskBrief；startup接线仍未完成。
 
-R3b本地候选证据：runner与M67 Node `57/57`；临时独立SQLite初始化后，startup authority、Provider-health、contract-repair、external-audit authority/ingress、checkpoint与TurnJob queue组合`78/78`；TypeScript和development gate通过。startup按context、DB disposition、typed evidence、execute顺序运行，pointer路径、manifest字节、run-state runId和半套环境路径漂移失败；checkpoint只原子requeue冻结TurnJob，所有恢复只claim `expectedJobId`一次并取得新lease/fence，external-audit重验冻结session。single-flight并发调用共享同一结果；同digest queued/过期running在requeue、lease或claim中断后可续，不同digest失败，exact expired reclaim不重复消耗attempt。两项过期源码字符串合同已删除并把债务基线从24个文件收缩到23个文件；24文件与行数预算通过，复杂度债务未增长。完整`verify:local`的development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200文件）和生产构建全部通过，dirty manifest经仓内verifier复核5项退出码均为0。该候选尚待提交和clean CI。
+R3b最终证据：runner与M67 Node `57/57`；临时独立SQLite初始化后，startup authority、Provider-health、contract-repair、external-audit authority/ingress、checkpoint与TurnJob queue组合`78/78`；TypeScript和development gate通过。startup按context、DB disposition、typed evidence、execute顺序运行，pointer路径、manifest字节、run-state runId和半套环境路径漂移失败；checkpoint只原子requeue冻结TurnJob，所有恢复只claim `expectedJobId`一次并取得新lease/fence，external-audit重验冻结session。single-flight并发调用共享同一结果；同digest queued/过期running在requeue、lease或claim中断后可续，不同digest失败，exact expired reclaim不重复消耗attempt。两项过期源码字符串合同已删除并把债务基线从24个文件收缩到23个文件；24文件与行数预算通过，复杂度债务未增长。完整`verify:local`的development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200文件）和生产构建全部通过。提交`1d527ae`对应`quality-gates #29655993023`及clean artifact经仓内verifier复核为`dirty=false / checkCount=5`，HEAD、tree、policy/stage SHA和五项退出码全部匹配。
 
 VR-A13细分为以下行为门，全部通过前保持blocked：
 
@@ -136,7 +136,7 @@ VR-A13细分为以下行为门，全部通过前保持blocked：
 | VR-A13-08 | 重入与closeout | ready重入仍复验新鲜摘要；缺摘要、watermark回退、同水位digest变化或任一violation拒绝完成 |
 | VR-A13-09 | SQLite readiness | 专用表、唯一约束、索引和append-only trigger缺一即health失败，不使用旧库fallback |
 
-VR-A13已由`781af1f`对应clean CI关闭，但只表示产品持久编排authority合同通过。VR-A14/A16、真实Provider连续性、V1-9、媒体链路和release仍各自独立；不得用VR-A13证据替代恢复测试。
+VR-A13已由`781af1f`对应clean CI关闭，VR-A14/A16已由`1d527ae`对应clean CI关闭；二者只表示产品持久编排authority和离线DB recovery合同通过。真实Provider连续性、V1-9、媒体链路和release仍各自独立，不得用这些证据替代真实运行。
 
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 
