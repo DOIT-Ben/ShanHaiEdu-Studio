@@ -13,7 +13,7 @@
 - P0-05A离线readiness首批出口已落地：精确延期门、零请求授权preflight、物理隔离campaign目录、四场景顺序合同、来源绑定evidence builder、不可覆盖写入和失败关闭seal入口。旧v1 receipt已在活动阶段被禁止晋升。
 - P0-05A本地`verify:local`只作为提交前dirty候选证据；最新候选仍须由同一工作树manifest、clean提交和远端`quality-gates`共同形成阶段证据，不能据此提升真实Provider、V1-9或release状态。
 - P0-05A的fresh/baseline入口切片已由`9160694`完成并通过GitHub Actions run `29642751018`；远端artifact经仓内verifier复核为`dirty=false / checkCount=5`，HEAD `9160694`、tree `4cb8f70`、policy/stage SHA和五项退出码全部匹配。该证据不包含真实Provider、V1-9或媒体调用。
-- 当前第2个串行切片是VR-A13产品服务端持久编排audit。A阶段已由`b2772a7`建立append-only schema/health、18个统一写入口、成员路由接入和AST门，B1已由`a1c170c`完成本地提交。B2已在当前工作树实现run-state v3 summary投影、observer fresh snapshot重入、runner停机后只读SQLite复算和closeout双重复算；全量离线测试`2025/2025`、TypeScript、Lint、生产构建和development gate均通过，当前仍待提交和clean CI，不能标记VR-A13B关闭。
+- 当前第2个串行切片是VR-A13产品服务端持久编排audit。A阶段已由`b2772a7`建立append-only schema/health、18个统一写入口、成员路由接入和AST门，B1已由`a1c170c`完成本地提交。B2已由`db5af68`提交run-state v3 summary投影、observer fresh snapshot重入、runner停机后只读SQLite复算和closeout双重复算；全量离线测试`2025/2025`、TypeScript、Lint、生产构建、development gate与生产health smoke均通过，当前只待clean CI，不能提前标记VR-A13B关闭。
 - 仓库为公开状态；当前权威文档和生产媒体解析中的本机绝对路径已清理。历史仍含非密钥旧本机路径，未获历史重写授权，不影响当前树口径。
 - 整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`，分支`main`；该提交现已进入`origin/main`历史。
 - 目标架构仍是`..\architecture\V1.0 重构设计.md`；当前代码已通过本轮审查问题对应的本地合同与执行验证，但不能据此宣称完整产品E2E或release完成。
@@ -98,11 +98,11 @@ P0-05A全量验证曾连续两次在单个长寿Vitest worker末段出现`Worker
 
 提交前独立安全复核还发现verification runner会在完成物理路径检查前删除配置目标。当前只允许仓库相对`.tmp/verification/**`输出，并在任何删除前逐段拒绝绝对路径、反斜杠、路径逃逸、junction/reparse/symlink、非目录父级和非普通文件目标；manifest写入后重新采集subject，若输出导致候选漂移则删除manifest并失败。对应合同为`PC-A26`。
 
-V1-9入口二次只读审查及提交前并发审查确认fresh/baseline合同出口已经关闭：fresh只允许active pointer不存在并使用no-replace hard-link发布；successor保护history并对遵守共享prepare锁的仓内pointer writer执行协作式CAS；closeout在同字节双pointer时幂等前滚、异字节失败关闭，活PID不因TTL被接管；termination与closeout共用exact-byte run-state cooperative CAS；legacy v1仅可只读解析，不能进入活动执行；签名campaign自身受TTL约束。baseline v2绑定clean verification、policy/stage、Provider manifest/receipt及签名evidence root摘要。B2消费与复算层已完成本地实现并通过定向回归，但尚未完成完整门禁、提交和clean CI。P0-05A仍为NO-GO，后续阻塞是runner恢复权、恢复身份精确绑定和真实receipt。完整媒体preflight退出P0-05A，只保留给P0-05B。
+V1-9入口二次只读审查及提交前并发审查确认fresh/baseline合同出口已经关闭：fresh只允许active pointer不存在并使用no-replace hard-link发布；successor保护history并对遵守共享prepare锁的仓内pointer writer执行协作式CAS；closeout在同字节双pointer时幂等前滚、异字节失败关闭，活PID不因TTL被接管；termination与closeout共用exact-byte run-state cooperative CAS；legacy v1仅可只读解析，不能进入活动执行；签名campaign自身受TTL约束。baseline v2绑定clean verification、policy/stage、Provider manifest/receipt及签名evidence root摘要。B2消费与复算层已提交并通过本地门禁，当前仅待clean CI。P0-05A仍为NO-GO，后续阻塞是runner恢复权、恢复身份精确绑定和真实receipt。完整媒体preflight退出P0-05A，只保留给P0-05B。
 
 ## 6. 唯一下一动作
 
-当前唯一动作是完成B2完整离线门禁、独立审查、提交和clean CI；通过后才进入DB recovery与恢复身份精确绑定。缺摘要、水位回退、同水位digest变化、新violation或open attempt均已在消费出口失败关闭。真实Provider连续3组仍等待用户另行批准。
+当前唯一动作是取得`db5af68`及本重锚提交的clean CI；通过后立即进入DB recovery与恢复身份精确绑定，runner不再通过环境变量取得恢复决定权。缺摘要、水位回退、同水位digest变化、新violation或open attempt均已在消费出口失败关闭。真实Provider连续3组仍等待用户另行批准。
 
 ## 7. 恢复入口
 

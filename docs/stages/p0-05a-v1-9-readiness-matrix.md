@@ -13,8 +13,8 @@
 | `scripts/run-v1-9-e2e.mjs` | partial / adapt | 冻结prompt重复已关闭；B2已让runner在M67完全停机后只读复算SQLite authority并与run-state投影比对；但启动时恢复重试仍由env决定 | 只保留监督和启停壳；恢复决策改为读取产品持久状态，不由runner取得第二编排权 |
 | `scripts/run-m67-e2e.mjs` | reuse lifecycle / retire control entry | 隔离server、SQLite、Artifact、Playwright、IPC停机和失败后核验可复用；M67命名与兼容入口不应继续成为V1-9控制面 | 抽取受控生命周期能力，由唯一V1-9入口调用；不得决定Tool、下一步、重试或恢复 |
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
-| `tests/e2e/v1-9-unique-real-product.spec.ts` | local implementation complete / CI pending | ready/completed重入已先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | 完成完整门禁和clean CI；不得据此运行真实V1-9 |
-| 产品服务端持久编排audit | local implementation complete / CI pending | VR-A13A已由`b2772a7`建立专用append-only事实，B1已由`a1c170c`实现Tool authority与完整服务端summary；B2已实现run-state v3投影、observer fresh snapshot、runner停机复算和closeout双重复算 | 完成B2完整门禁、提交和clean CI；未通过前不标记VR-A13关闭 |
+| `tests/e2e/v1-9-unique-real-product.spec.ts` | committed / CI pending | ready/completed重入已先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | 完成clean CI；不得据此运行真实V1-9 |
+| 产品服务端持久编排audit | committed / CI pending | VR-A13A已由`b2772a7`建立专用append-only事实，B1已由`a1c170c`实现Tool authority与完整服务端summary；B2已由`db5af68`提交run-state v3投影、observer fresh snapshot、runner停机复算和closeout双重复算 | 完成B2 clean CI；未通过前不标记VR-A13关闭 |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
 | checkpoint与失败恢复 | blocked / adapt | observer按项目全局读取latest checkpoint/failed turn，未证明属于冻结task、message、job和epoch | 恢复查询与冻结身份精确绑定；不匹配即失败，不跨任务拼接 |
@@ -39,9 +39,9 @@
 
 ## 当前阻塞
 
-P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A已提交，VR-A13B1已由`a1c170c`本地提交。VR-A13B2已完成本地实现并进入完整门禁、提交和clean CI验收；通过后才处理恢复权归位与恢复身份精确绑定。不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
+P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A已提交，VR-A13B1已由`a1c170c`本地提交。VR-A13B2已由`db5af68`提交并进入clean CI验收；通过后才处理恢复权归位与恢复身份精确绑定。不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
 
-第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A已关闭VR-A13-01、02、06、09及HTTP侧03出口；VR-A13B1由`a1c170c`关闭Tool侧03、04、05和服务端07，VR-A13B2已在本地实现消费侧07与08并等待完整验收。恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
+第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A已关闭VR-A13-01、02、06、09及HTTP侧03出口；VR-A13B1由`a1c170c`关闭Tool侧03、04、05和服务端07，VR-A13B2由`db5af68`提交消费侧07与08并等待clean CI。恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
 
 ## 二次审查增补
 

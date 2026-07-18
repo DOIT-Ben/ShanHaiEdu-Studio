@@ -2,7 +2,7 @@
   "schemaVersion": "shanhai-active-stage.v1",
   "stageId": "p0-05a-provider-continuity-readiness",
   "status": "active",
-  "baselineSha": "a1c170ca18f3346fbcdc9d0bff0212128bd20071",
+  "baselineSha": "db5af68813e57ba3a39a478425e86f63435cb906",
   "plan": "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
   "testPlan": "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
   "allowedPaths": [
