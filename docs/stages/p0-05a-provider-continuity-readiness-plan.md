@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门，本地定向验证及development gate通过；该提交尚待远端clean CI复核。当前唯一活动代码切片是VR-A13B Tool authority、服务端摘要、observer与closeout，仍为offline-only；DB recovery保持后续阻塞，不与本切片并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门。VR-A13B拆成严格串行的B1与B2：B1的Tool authority和产品服务端summary已完成本地候选验证；B2的run-state投影、observer新鲜读取、runner停机复算和closeout SQLite复算尚未开始。当前仍为offline-only；DB recovery保持后续阻塞，不与VR-A13B并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -104,6 +104,8 @@
 2. 产品audit：服务端持久记录项目写attempt与Main Agent编排authority，observer只消费权威摘要；
 3. DB recovery：产品启动从精确绑定的TurnJob、task、epoch、message和checkpoint派生恢复动作，runner不再传恢复布尔。
 
+产品audit内部只走一条路线：VR-A13A关闭HTTP ingress与SQLite边界；VR-A13B1关闭Tool selector、实际action、连续ordinal、强终态与完整服务端summary；VR-A13B2再让run-state、observer、runner和closeout消费并独立复算该summary。B2不得复制摘要算法或信任浏览器自报值。
+
 VR-A13采用唯一事实链，不复用普通`AuditLog`：
 
 - 认证与CSRF通过后、业务handler执行前，服务端先追加写attempt；attempt写入失败则不得执行业务写。
@@ -111,6 +113,8 @@ VR-A13采用唯一事实链，不复用普通`AuditLog`：
 - 审计只保存服务端操作枚举、路由模板、身份快照和必要digest，不保存body、query、header、Cookie、原始session、凭据、完整ExecutionEnvelope或错误原文。
 - Main Agent Tool claim与持久`ToolInvocation`、冻结TaskAggregate/TurnJob身份和selector authority同事务；artifact route、runner、Skill、Director、Critic或兼容层不能声明`main_agent`。
 - `actionDigest`必须由服务端从实际`toolName + request`重算；Tool ordinal、started/terminal事实和plan身份必须连续并交叉绑定。
+- Invocation、Observation、AgentEvent与resolved audit必须按同一终态矩阵绑定；状态冲突在写事务和summary复算两层失败关闭。只有`needs_input + decision_pending`表示Tool执行成功但业务等待教师；被策略阻断写`blocked/rejected`，执行或验证失败写`failed`。
+- Artifact要求由真实终态事件和持久引用决定；合法Observation-only成功不得被伪判为缺Artifact，`artifact_committed`也不得逃避Artifact交叉绑定。
 - 产品侧从完整SQLite事实生成脱敏摘要和摘要digest；observer不得传入可裁剪窗口，不得从浏览器监听或run-state自造count、authority或零值。
 - 成员管理等绕过统一workbench wrapper的现存写入口必须并入同一审计边界；新增写route由机器门禁扫描并失败关闭。
 

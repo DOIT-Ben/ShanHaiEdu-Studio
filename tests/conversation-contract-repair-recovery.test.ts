@@ -113,6 +113,8 @@ describe("conversation contract repair recovery", () => {
       action: { toolName: "generate_video_storyboard", arguments: { source: "video-script" } },
     });
     const invocationId = crypto.randomUUID();
+    const running = await service.startNextConversationTurnJob(project.id, { lockedBy: "contract-worker" });
+    if (!running) throw new Error("Contract repair fixture requires a running TurnJob.");
     await store.startToolInvocation({
       invocationId,
       envelope,
@@ -152,11 +154,10 @@ describe("conversation contract repair recovery", () => {
         payload: { observationId: failure.observationId, status: "failed" },
       },
     });
-    const running = await service.startNextConversationTurnJob(project.id, { lockedBy: "contract-worker" });
     if (outcome === "succeeded") {
-      await service.finishConversationTurnJob(project.id, running!.id, { status: "succeeded" });
+      await service.finishConversationTurnJob(project.id, running.id, { status: "succeeded" });
     } else {
-      await service.failConversationTurnJob(project.id, running!.id, {
+      await service.failConversationTurnJob(project.id, running.id, {
         errorCode: errorCode!,
         errorMessage: "当前进度已保存。",
         failureCategory: "control_plane",

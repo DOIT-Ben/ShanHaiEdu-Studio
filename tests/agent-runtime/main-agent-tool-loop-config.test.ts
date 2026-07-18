@@ -45,7 +45,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -132,7 +132,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -204,7 +204,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const deniedGrant = { ...standardIntentGrant(taskBrief), standardWorkAuthorized: false };
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -330,7 +330,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     try {
       const config = createMainAgentToolLoopOptions({
         service,
@@ -446,7 +446,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
 
     try {
       const config = createMainAgentToolLoopOptions({
@@ -537,7 +537,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
 
     try {
       const config = createMainAgentToolLoopOptions({
@@ -612,7 +612,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const deniedGrant = { ...standardIntentGrant(taskBrief), standardWorkAuthorized: false };
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, deniedGrant, actor.userId);
     const executor = vi.fn(async () => { throw new Error("agent executor must not be called"); });
     try {
       const config = createMainAgentToolLoopOptions({
@@ -725,7 +725,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       requiredCheckpoints: [],
       expiresAt: null,
     };
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -936,7 +936,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       standardWorkAuthorized: true, intensity: "standard" as const, budgetPolicyVersion: "v1-standard", maxCostCredits: 10, maxExternalProviderCalls: null,
       requiredCheckpoints: [], expiresAt: null,
     };
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, 5);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId, 5);
     const businessToolRouter = vi.fn(async (input) => ({
       status: "succeeded" as const,
       toolId: "assemble_ppt_key_samples",
@@ -1009,7 +1009,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 1 });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -1160,7 +1160,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 5 });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -1214,7 +1214,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -1278,7 +1278,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -1367,7 +1367,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief, { maxExternalProviderCalls: 2 });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
@@ -1508,7 +1508,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       goal: message.content, requestedOutputs: ["ppt"], constraints: [], excludedOutputs: [],
       generationIntensity: "standard", sourceMessageId: message.id,
     });
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     try {
       const firstConfig = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts,
@@ -1743,7 +1743,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant);
+    const controlPlaneStore = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
 
     try {
       const artifacts = [concept];
@@ -1816,7 +1816,7 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       generationIntensity: "standard", sourceMessageId: message.id,
     });
     const intentGrant = standardIntentGrant(taskBrief);
-    const store = await persistTaskAggregate(taskBrief, intentGrant);
+    const store = await persistTaskAggregate(taskBrief, intentGrant, actor.userId);
     const injectedFailure = new Error("injected_critic_atomic_commit_failure");
     const controlPlaneStore = {
       ...store,
@@ -1868,7 +1868,7 @@ function standardIntentGrant(
   };
 }
 
-async function persistTaskAggregate(taskBrief: TaskBrief, intentGrant: IntentGrant, revision = 0) {
+async function persistTaskAggregate(taskBrief: TaskBrief, intentGrant: IntentGrant, actorUserId: string, revision = 0) {
   const store = createControlPlaneStore();
   await store.upsertTaskAggregate({
     taskBrief,
@@ -1876,6 +1876,15 @@ async function persistTaskAggregate(taskBrief: TaskBrief, intentGrant: IntentGra
     plan: { planId: `plan:${taskBrief.taskId}`, revision, status: "active" },
     status: "active",
     checkpoint: null,
+  });
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: taskBrief.projectId,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId,
+      actorAuthMode: "local",
+    },
   });
   return store;
 }

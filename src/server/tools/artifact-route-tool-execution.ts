@@ -116,7 +116,7 @@ export async function claimArtifactRouteToolExecution(input: {
       taskBriefDigest: aggregate.taskBrief.digest,
     },
     executionEnvelope,
-    execute: () => controlPlaneStore.startToolInvocation({
+    execute: () => controlPlaneStore.startArtifactRouteToolInvocation({
       invocationId,
       envelope: executionEnvelope,
       toolName: input.toolName,

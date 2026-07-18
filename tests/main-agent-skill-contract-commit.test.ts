@@ -427,6 +427,15 @@ async function createFixture(input: {
     status: "active",
     checkpoint: null,
   });
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: taskBrief.projectId,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId: actor.userId,
+      actorAuthMode: "local",
+    },
+  });
   const sourceDraft = await service.saveArtifact(project.id, {
     nodeKey: input.source.nodeKey,
     kind: input.source.kind,

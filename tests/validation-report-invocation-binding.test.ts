@@ -86,7 +86,7 @@ describe("ValidationReport Invocation and IntentEpoch binding", () => {
         kind: "artifact_committed",
         visibility: "internal",
         occurredAt: "2026-07-15T00:00:00.000Z",
-        payload: {},
+        payload: { observationId: fixture.observationId },
       },
     })).rejects.toThrow(/Validation report rejected during atomic Tool result commit/);
 
@@ -171,6 +171,15 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     action,
   });
   const invocationId = randomUUID();
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: project.id,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId: "offline-contract-teacher",
+      actorAuthMode: "local",
+    },
+  });
   await store.startToolInvocation({
     invocationId,
     envelope,

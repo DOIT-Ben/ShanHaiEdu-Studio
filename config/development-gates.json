@@ -122,10 +122,10 @@
       },
       {
         "path": "src/server/conversation/control-plane-store.ts",
-        "lines": 1158,
+        "lines": 1066,
         "violatingFunctions": 1,
-        "maxFunctionLines": 573,
-        "totalFunctionLines": 573
+        "maxFunctionLines": 504,
+        "totalFunctionLines": 504
       },
       {
         "path": "src/server/conversation/conversation-control-resolver.ts",

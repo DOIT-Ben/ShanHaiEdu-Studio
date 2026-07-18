@@ -150,6 +150,15 @@ describe("A17 artifact route ExecutionEnvelope", () => {
       plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
       checkpoint: null,
     });
+    const turn = await prisma.conversationTurnJob.create({
+      data: {
+        projectId: project.id,
+        teacherMessageId: brief.sourceMessageId,
+        status: "running",
+        actorUserId: "local-test-user",
+        actorAuthMode: "local",
+      },
+    });
     const source = await service.saveArtifact(project.id, {
       nodeKey: "ppt_draft",
       kind: "ppt_draft",
@@ -168,12 +177,16 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     const response = await postImage(routeRequest({ confirmedActionId }), routeContext(project.id, source.id));
     expect(response.status).toBe(200);
 
-    const [snapshot, invocations, observations, events, jobs] = await Promise.all([
+    const [snapshot, invocations, observations, events, jobs, toolAudits] = await Promise.all([
       service.getProjectSnapshot(project.id),
       prisma.toolInvocationRecord.findMany({ where: { projectId: project.id } }),
       prisma.observationRecord.findMany({ where: { projectId: project.id } }),
       prisma.agentEventRecord.findMany({ where: { projectId: project.id } }),
       service.getGenerationJobs(project.id),
+      prisma.orchestrationAuditEvent.findMany({
+        where: { resolvedProjectId: project.id, operationKind: "tool_invocation" },
+        orderBy: { sequence: "asc" },
+      }),
     ]);
     const generated = snapshot.artifacts.find((artifact) => artifact.id !== source.id);
 
@@ -191,6 +204,37 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     expect(events[0]).toMatchObject({ kind: "artifact_committed", taskId: brief.taskId });
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ status: "succeeded", resultArtifactId: generated?.id });
+    expect(toolAudits).toHaveLength(2);
+    expect(toolAudits).toEqual([
+      expect.objectContaining({
+        recordType: "attempted",
+        authority: "artifact_route",
+        turnJobId: turn.id,
+        teacherMessageId: brief.sourceMessageId,
+        toolInvocationId: invocations[0].invocationId,
+        toolOrdinal: 1,
+        planId: `plan:${project.id}`,
+        planRevision: 0,
+        invocationStatus: "running",
+        observationId: null,
+      }),
+      expect.objectContaining({
+        recordType: "resolved",
+        authority: "artifact_route",
+        turnJobId: turn.id,
+        teacherMessageId: brief.sourceMessageId,
+        toolInvocationId: invocations[0].invocationId,
+        toolOrdinal: 1,
+        planId: `plan:${project.id}`,
+        planRevision: 0,
+        invocationStatus: "succeeded",
+        observationId: observations[0].observationId,
+      }),
+    ]);
+    expect(toolAudits[1].actionDigest).toBe(toolAudits[0].actionDigest);
+    expect(toolAudits[1].requestDigest).toBe(toolAudits[0].requestDigest);
+    expect(JSON.stringify(toolAudits)).not.toContain(source.id);
+    expect(JSON.stringify(toolAudits)).not.toContain(validPngBase64());
   });
 
   it("keeps all three artifact routes on the shared gateway and atomic result boundary", () => {
@@ -211,7 +255,7 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     const boundary = readFileSync(path.join(root, "src/server/tools/artifact-route-tool-execution.ts"), "utf8");
     expect(boundary).toContain("executeThroughToolGateway");
     expect(boundary).toContain("createExecutionEnvelope");
-    expect(boundary).toContain("startToolInvocation");
+    expect(boundary).toContain("startArtifactRouteToolInvocation");
     expect(boundary).toContain("commitToolResult");
   });
 });

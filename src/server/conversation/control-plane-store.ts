@@ -4,7 +4,6 @@ import type { PrismaClient, ToolInvocationRecord } from "@/generated/prisma/clie
 import { prisma } from "@/server/db/client";
 import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
-import { canonicalizeRunInput } from "@/server/execution/run-input-snapshot";
 import { commitToolResultAtomically } from "@/server/execution/tool-result-commit";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import { getToolDefinition } from "@/server/tools/tool-registry";
@@ -24,6 +23,15 @@ import {
   type SemanticContextSnapshot,
 } from "./context-semantic-snapshot";
 import { restoreMainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
+import {
+  appendResolvedToolInvocationAudit,
+  assertToolTerminalEventBinding,
+  claimArtifactRouteToolInvocationAuthority,
+  claimMainAgentToolInvocationAuthority,
+  requireActiveToolInvocationAuthority,
+  type RawToolInvocationClaim,
+  type StartToolInvocationInput,
+} from "./orchestration-tool-authority";
 import {
   hasValidExecutionEnvelope,
   hasValidTaskBrief,
@@ -56,6 +64,15 @@ export type ToolResultObservationInput = {
   status: string;
   reasonCodes: string[];
   payload: Record<string, unknown>;
+};
+
+type CommitToolObservationInput = {
+  invocationId: string;
+  generationJob?: { jobId: string; status: "failed" | "submission_unknown"; errorMessage: string };
+  observation: ToolResultObservationInput;
+  event: AgentEventInput;
+  validationReport?: ValidationReport;
+  advancePlanRevision?: boolean;
 };
 
 export type PersistedToolObservation = {
@@ -401,61 +418,12 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       });
     },
 
-    async startToolInvocation(input: {
-      invocationId: string;
-      envelope: ExecutionEnvelope;
-      toolName: string;
-      request: Record<string, unknown>;
-    }) {
-      if (!hasValidExecutionEnvelope(input.envelope)) {
-        throw new Error("Tool invocation requires a valid ExecutionEnvelope.");
-      }
-      if (!input.toolName.trim()) throw new Error("Tool invocation toolName is required.");
-      const requestJson = JSON.stringify(input.request);
-      const executionEnvelopeJson = JSON.stringify(input.envelope);
-      return client.$transaction(async (tx) => {
-        const idempotencyWhere = {
-          projectId_idempotencyKey: {
-            projectId: input.envelope.projectId,
-            idempotencyKey: input.envelope.idempotencyKey,
-          },
-        };
-        const existing = await tx.toolInvocationRecord.findUnique({ where: idempotencyWhere });
-        if (existing) return classifyExistingInvocation(tx, existing, input.toolName, executionEnvelopeJson, requestJson);
+    async startToolInvocation(input: StartToolInvocationInput) {
+      return mapRawToolInvocationClaim(await claimMainAgentToolInvocationAuthority(client, input));
+    },
 
-        const aggregate = await tx.taskAggregate.findUnique({
-          where: {
-            projectId_intentEpoch: {
-              projectId: input.envelope.projectId,
-              intentEpoch: input.envelope.intentEpoch,
-            },
-          },
-          select: { taskId: true, planRevision: true, taskBriefJson: true, intentGrantJson: true },
-        });
-        if (
-          !aggregate ||
-          aggregate.taskId !== input.envelope.taskId ||
-          aggregate.planRevision !== input.envelope.planRevision ||
-          parseJson<TaskBrief>(aggregate.taskBriefJson).digest !== input.envelope.taskBriefDigest ||
-          canonicalizeRunInput(parseJson<IntentGrant>(aggregate.intentGrantJson)) !== canonicalizeRunInput(input.envelope.intentGrant)
-        ) {
-          throw new Error("Tool invocation ExecutionEnvelope is stale.");
-        }
-        const invocation = await tx.toolInvocationRecord.create({
-          data: {
-            invocationId: input.invocationId,
-            projectId: input.envelope.projectId,
-            taskId: input.envelope.taskId,
-            intentEpoch: input.envelope.intentEpoch,
-            planRevision: input.envelope.planRevision,
-            toolName: input.toolName,
-            executionEnvelopeJson,
-            requestJson,
-            idempotencyKey: input.envelope.idempotencyKey,
-          },
-        });
-        return { kind: "claimed" as const, invocation };
-      });
+    async startArtifactRouteToolInvocation(input: StartToolInvocationInput) {
+      return mapRawToolInvocationClaim(await claimArtifactRouteToolInvocationAuthority(client, input));
     },
 
     async getToolInvocation(invocationId: string) {
@@ -474,25 +442,11 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       observation: ToolResultObservationInput;
       event: AgentEventInput;
     }) {
-      const invocation = await client.toolInvocationRecord.findUnique({ where: { invocationId: input.invocationId } });
-      if (!invocation || invocation.status !== "running") {
-        throw new Error("Tool invocation is not active.");
-      }
-      assertEventMatchesInvocation(input.event, invocation);
-
       return commitToolResultAtomically({
         transaction: (commit) => client.$transaction(async (tx) => {
-          const [project, aggregate] = await Promise.all([
-            tx.project.findUnique({ where: { id: invocation.projectId }, select: { intentEpoch: true } }),
-            tx.taskAggregate.findUnique({
-              where: { projectId_intentEpoch: { projectId: invocation.projectId, intentEpoch: invocation.intentEpoch } },
-              select: { taskId: true, planRevision: true, status: true },
-            }),
-          ]);
-          if (!project || project.intentEpoch !== invocation.intentEpoch || !aggregate ||
-              aggregate.taskId !== invocation.taskId || aggregate.planRevision !== invocation.planRevision || aggregate.status !== "active") {
-            throw new Error("Tool invocation is stale and cannot promote a result.");
-          }
+          const { invocation, attempted } = await requireActiveToolInvocationAuthority(tx, input.invocationId);
+          assertToolTerminalEventBinding(input.event, invocation, input.observation.observationId, input.observation.status, "succeeded");
+          if (input.event.kind !== "artifact_committed") throw new Error("Tool result event kind is invalid.");
           let committedArtifactId: string | undefined;
           let committedObservationId: string | undefined;
           return commit({
@@ -533,15 +487,17 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
                 throw new Error("Atomic result is missing its Observation.");
               }
               const created = await appendEventInTransaction(tx, event);
-              await tx.toolInvocationRecord.update({
-                where: { invocationId: invocation.invocationId },
+              const finishedAt = new Date();
+              const terminal = await tx.toolInvocationRecord.updateMany({
+                where: { invocationId: invocation.invocationId, status: "running" },
                 data: {
                   status: "succeeded",
                   artifactId: committedArtifactId,
                   observationId: committedObservationId,
-                  finishedAt: new Date(),
+                  finishedAt,
                 },
               });
+              if (terminal.count !== 1) throw new Error("Tool invocation is not active.");
               if (input.generationJobId) {
                 const generationJob = await tx.generationJob.updateMany({
                   where: {
@@ -562,6 +518,12 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
                   throw new Error("GenerationJob cannot be completed from the current Tool invocation.");
                 }
               }
+              await appendResolvedToolInvocationAudit(tx, {
+                attempted,
+                observationId: committedObservationId,
+                invocationStatus: "succeeded",
+                occurredAt: finishedAt,
+              });
               await advanceTaskPlanRevision(tx, invocation);
               return created;
             },
@@ -573,25 +535,11 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       });
     },
 
-    async commitToolFailure(input: {
-      invocationId: string;
-      generationJob?: {
-        jobId: string;
-        status: "failed" | "submission_unknown";
-        errorMessage: string;
-      };
-      observation: ToolResultObservationInput;
-      event: AgentEventInput;
-      validationReport?: ValidationReport;
-      advancePlanRevision?: boolean;
-    }) {
+    async commitToolFailure(input: CommitToolObservationInput) {
       return commitObservationOnly(client, input, "failed");
     },
 
-    async commitToolObservation(input: {
-      invocationId: string;
-      observation: ToolResultObservationInput;
-      event: AgentEventInput;
+    async commitToolObservation(input: CommitToolObservationInput & {
       invocationStatus: "succeeded" | "failed" | "blocked";
     }) {
       return commitObservationOnly(client, input, input.invocationStatus);
@@ -649,55 +597,20 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
   };
 }
 
-async function classifyExistingInvocation(
-  tx: TransactionClient,
-  invocation: ToolInvocationRecord,
-  toolName: string,
-  executionEnvelopeJson: string,
-  requestJson: string,
-): Promise<ToolInvocationClaim> {
-  if (
-    invocation.toolName !== toolName ||
-    invocation.executionEnvelopeJson !== executionEnvelopeJson ||
-    invocation.requestJson !== requestJson
-  ) {
-    throw new Error("Tool invocation idempotency key conflicts with a different request.");
-  }
-  if (invocation.status === "running") {
-    return { kind: "in_progress" as const, invocation };
-  }
-  if (!invocation.observationId) {
-    throw new Error("Terminal Tool invocation is missing its Observation.");
-  }
-  const observation = await tx.observationRecord.findUnique({
-    where: { observationId: invocation.observationId },
-  });
-  if (!observation) throw new Error("Terminal Tool invocation Observation is missing.");
-  return { kind: "terminal_replay" as const, invocation, observation: mapObservation(observation) };
+function mapRawToolInvocationClaim(claim: RawToolInvocationClaim): ToolInvocationClaim {
+  return claim.kind === "terminal_replay"
+    ? { ...claim, observation: mapObservation(claim.observation) }
+    : claim;
 }
 
 async function commitObservationOnly(
   client: PrismaClient,
-  input: {
-    invocationId: string;
-    generationJob?: {
-      jobId: string;
-      status: "failed" | "submission_unknown";
-      errorMessage: string;
-    };
-    observation: ToolResultObservationInput;
-    event: AgentEventInput;
-    validationReport?: ValidationReport;
-    advancePlanRevision?: boolean;
-  },
+  input: CommitToolObservationInput,
   invocationStatus: "succeeded" | "failed" | "blocked",
 ) {
-  const invocation = await client.toolInvocationRecord.findUnique({ where: { invocationId: input.invocationId } });
-  if (!invocation || invocation.status !== "running") {
-    throw new Error("Tool invocation is not active.");
-  }
-  assertEventMatchesInvocation(input.event, invocation);
   return client.$transaction(async (tx) => {
+    const { invocation, attempted } = await requireActiveToolInvocationAuthority(tx, input.invocationId);
+    assertToolTerminalEventBinding(input.event, invocation, input.observation.observationId, input.observation.status, invocationStatus);
     if (input.validationReport) {
       await saveToolInvocationValidationReportInTransaction(tx, invocation, input.validationReport);
     }
@@ -714,14 +627,16 @@ async function commitObservationOnly(
       },
     });
     const event = await appendEventInTransaction(tx, input.event);
-    await tx.toolInvocationRecord.update({
-      where: { invocationId: invocation.invocationId },
+    const finishedAt = new Date();
+    const terminal = await tx.toolInvocationRecord.updateMany({
+      where: { invocationId: invocation.invocationId, status: "running" },
       data: {
         status: invocationStatus,
         observationId: observation.observationId,
-        finishedAt: new Date(),
+        finishedAt,
       },
     });
+    if (terminal.count !== 1) throw new Error("Tool invocation is not active.");
     if (input.generationJob) {
       const generationJob = await tx.generationJob.updateMany({
         where: {
@@ -741,6 +656,12 @@ async function commitObservationOnly(
         throw new Error("GenerationJob cannot be failed from the current Tool invocation.");
       }
     }
+    await appendResolvedToolInvocationAudit(tx, {
+      attempted,
+      observationId: observation.observationId,
+      invocationStatus,
+      occurredAt: finishedAt,
+    });
     if (input.advancePlanRevision !== false) await advanceTaskPlanRevision(tx, invocation);
     return { observation, event };
   });
@@ -1071,19 +992,6 @@ function assertCheckpointSnapshot(
     state.plan.status !== plan.status
   ) {
     throw new Error("Run checkpoint semantic snapshot does not match the task plan.");
-  }
-}
-
-function assertEventMatchesInvocation(
-  event: AgentEventInput,
-  invocation: { projectId: string; taskId: string; intentEpoch: number },
-) {
-  if (
-    event.projectId !== invocation.projectId ||
-    event.taskId !== invocation.taskId ||
-    event.intentEpoch !== invocation.intentEpoch
-  ) {
-    throw new Error("Tool result event does not match invocation scope.");
   }
 }
 

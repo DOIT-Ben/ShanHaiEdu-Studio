@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createMainAgentToolLoopOptions } from "@/server/conversation/main-agent-tool-loop-config";
-import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { createTaskBrief, type IntentGrant, type TaskBrief } from "@/server/conversation/task-contract";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { prisma } from "@/server/db/client";
@@ -27,6 +27,7 @@ describe("Main Agent business Tool Skill execution", () => {
     await controlPlaneStore.upsertTaskAggregate({
       taskBrief, intentGrant, plan: { planId: `plan:${taskBrief.taskId}`, revision: 0, status: "active" }, status: "active", checkpoint: null,
     });
+    await createRunningTurn(taskBrief, actor.userId);
     const assetBriefDraft = await service.saveArtifact(project.id, {
       nodeKey: "asset_brief_generate", kind: "asset_brief_generate", title: "可信视频资产说明", status: "needs_review",
       summary: "灯塔角色、场景和关键帧说明。", markdownContent: "# 视频资产说明",
@@ -64,7 +65,7 @@ describe("Main Agent business Tool Skill execution", () => {
       })).toMatchObject({ overallStatus: "failed" });
       expect(await prisma.observationRecord.findFirst({
         where: { projectId: project.id, invocationId: missingRuntimeInvocation!.invocationId },
-      })).toMatchObject({ status: "blocked", artifactId: null });
+      })).toMatchObject({ status: "failed", artifactId: null });
       expect(await controlPlaneStore.listEvents(project.id)).toContainEqual(expect.objectContaining({
         kind: "tool_observed",
         payload: expect.objectContaining({ status: "failed" }),
@@ -164,6 +165,7 @@ describe("Main Agent business Tool Skill execution", () => {
       status: "active",
       checkpoint: null,
     });
+    await createRunningTurn(taskBrief, actor.userId);
     const assetBriefDraft = await service.saveArtifact(project.id, {
       nodeKey: "asset_brief_generate",
       kind: "asset_brief_generate",
@@ -283,3 +285,15 @@ describe("Main Agent business Tool Skill execution", () => {
     }
   });
 });
+
+async function createRunningTurn(taskBrief: TaskBrief, actorUserId: string) {
+  await prisma.conversationTurnJob.create({
+    data: {
+      projectId: taskBrief.projectId,
+      teacherMessageId: taskBrief.sourceMessageId,
+      status: "running",
+      actorUserId,
+      actorAuthMode: "local",
+    },
+  });
+}

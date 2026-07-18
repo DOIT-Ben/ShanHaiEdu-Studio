@@ -1013,8 +1013,8 @@ export function createMainAgentToolLoopOptions(
             minimalNextAction: "repair_upstream",
             teacherSafeSummary: dispatch.result.observation.teacherSafeSummary,
           });
-          await controlPlaneStore.commitToolFailure({
-            invocationId,
+          await controlPlaneStore.commitToolObservation({
+            invocationId, invocationStatus: "blocked",
             ...(providerGeneration ? {
               generationJob: {
                 jobId: providerGeneration.active.job.id,
@@ -2059,7 +2059,7 @@ async function persistBusinessSkillRuntimeFailure(input: {
   const observation = createAgentObservation({
     projectId: input.executionEnvelope.projectId,
     source: "validation",
-    status: "blocked",
+    status: "failed",
     actionKey: input.toolName,
     inputHash: input.executionEnvelope.idempotencyKey,
     reasonCodes: [input.reasonCode],
@@ -2239,7 +2239,7 @@ async function persistAgentToolObservation(input: {
     invocationId: input.invocationId,
     invocationStatus: input.observation.status === "succeeded"
       ? "succeeded"
-      : input.observation.status === "blocked" ? "blocked" : "failed",
+      : input.observation.status === "blocked" || input.observation.status === "needs_input" ? "blocked" : "failed",
     observation: {
       observationId: input.observation.observationId,
       status: input.observation.status,

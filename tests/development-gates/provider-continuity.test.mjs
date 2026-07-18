@@ -205,7 +205,7 @@ function writeReadinessStage(root, overrides = {}) {
     schemaVersion: "shanhai-active-stage.v1",
     stageId: "p0-05a-provider-continuity-readiness",
     status: "active",
-    baselineSha: "b2772a7bc39eb4306e27666ee79cfb40a3045ee0",
+    baselineSha: "855e9246f85057aa4c5fe69ed7747206b1e0acc8",
     plan: "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
     testPlan: "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
     providerContinuity: {

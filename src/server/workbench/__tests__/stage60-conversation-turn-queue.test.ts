@@ -572,6 +572,8 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       action: { toolName: "create_requirement_spec", arguments: {} },
     });
     const invocationId = `invocation:${source.id}`;
+    await service.enqueueConversationTurn(project.id, { teacherMessageId: source.id });
+    await service.startNextConversationTurnJob(project.id, { lockedBy: "in-flight-tool-test" });
     await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request: {} });
 
     const result = await service.enqueueMessageAndConversationTurn(project.id, {

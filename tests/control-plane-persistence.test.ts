@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { buildSemanticContextSnapshot } from "@/server/conversation/context-semantic-snapshot";
@@ -152,6 +154,7 @@ describe("control-plane persistence", () => {
     const invocationId = `${project.id}-invocation-rollback`;
     const duplicateEventId = `${project.id}-event-duplicate`;
     const observationId = `${project.id}-observation-rollback`;
+    await createRunningTurn(brief);
     await store.startToolInvocation({
       invocationId,
       envelope,
@@ -169,7 +172,7 @@ describe("control-plane persistence", () => {
         reasonCodes: ["tool_succeeded"],
         payload: { summary: "不应保留" },
       },
-      event: eventInput(project.id, brief.taskId, duplicateEventId, "artifact_committed"),
+      event: eventInput(project.id, brief.taskId, duplicateEventId, "artifact_committed", { observationId }),
     })).rejects.toThrow();
 
     expect((await service.getArtifacts(project.id)).some((artifact) => artifact.title === "不应保留的成果")).toBe(false);
@@ -321,6 +324,7 @@ describe("control-plane persistence", () => {
       action: { toolName: "create_requirement_spec", arguments: { goal: brief.goal } },
     });
     const invocationId = `${project.id}-invocation-replay`;
+    await createRunningTurn(brief);
     const firstClaim = await store.startToolInvocation({
       invocationId,
       envelope,
@@ -337,7 +341,7 @@ describe("control-plane persistence", () => {
         reasonCodes: ["validation_failed"],
         payload: { summary: "输入需要修正" },
       },
-      event: eventInput(project.id, brief.taskId, `${project.id}-event-replay`, "tool_observed"),
+      event: eventInput(project.id, brief.taskId, `${project.id}-event-replay`, "tool_observed", { observationId }),
     });
 
     const replay = await store.startToolInvocation({
@@ -381,6 +385,7 @@ describe("control-plane persistence", () => {
       messageId: message.id,
       messageMetadata: { taskBrief: brief, intentGrant: revokedGrant },
     });
+    await createRunningTurn(brief);
 
     await expect(store.startToolInvocation({
       invocationId: `${project.id}-stale-grant`,
@@ -411,6 +416,7 @@ describe("control-plane persistence", () => {
       action: { toolName: "create_requirement_spec", arguments: { goal: brief.goal } },
     });
     const invocationId = `${project.id}-late-result`;
+    await createRunningTurn(brief);
     await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request: { goal: brief.goal } });
     await service.advanceProjectIntentEpoch(project.id, 0);
 
@@ -423,9 +429,303 @@ describe("control-plane persistence", () => {
         reasonCodes: ["tool_succeeded"],
         payload: { summary: "迟到结果" },
       },
-      event: eventInput(project.id, brief.taskId, `${project.id}-late-event`, "artifact_committed"),
+      event: eventInput(project.id, brief.taskId, `${project.id}-late-event`, "artifact_committed", {
+        observationId: `${project.id}-late-observation`,
+      }),
     })).rejects.toThrow("Tool invocation is stale");
     expect((await service.getArtifacts(project.id)).some((artifact) => artifact.title === "不应提升的迟到成果")).toBe(false);
+  });
+
+  it("atomically binds a Main Agent claim to the actual action, TurnJob identity and attempted audit", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool authority claim" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-tool-authority", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const turn = await createRunningTurn(brief, {
+      actorUserId: "teacher-1",
+      actorAuthMode: "password",
+      authSessionId: "session-secret-value",
+    });
+    const request = { goal: brief.goal, privatePrompt: "SENSITIVE_TOOL_ARGUMENT" };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: request },
+    });
+    const invocationId = `${project.id}-authority-claim`;
+
+    await expect(store.startToolInvocation({
+      invocationId: `${invocationId}-wrong-tool`,
+      envelope,
+      toolName: "create_lesson_plan",
+      request,
+    })).rejects.toThrow("action");
+    await expect(store.startToolInvocation({
+      invocationId: `${invocationId}-wrong-request`,
+      envelope,
+      toolName: "create_requirement_spec",
+      request: { ...request, goal: "tampered" },
+    })).rejects.toThrow("action");
+    expect(await prisma.toolInvocationRecord.count({ where: { projectId: project.id } })).toBe(0);
+    expect(await prisma.orchestrationAuditEvent.count({ where: { resolvedProjectId: project.id } })).toBe(0);
+
+    const claim = await store.startToolInvocation({
+      invocationId,
+      envelope,
+      toolName: "create_requirement_spec",
+      request,
+    });
+    const audit = await prisma.orchestrationAuditEvent.findFirstOrThrow({
+      where: { toolInvocationId: invocationId, recordType: "attempted" },
+    });
+
+    expect(claim).toMatchObject({ kind: "claimed", invocation: { invocationId, status: "running" } });
+    expect(audit).toMatchObject({
+      attemptId: invocationId,
+      operationKind: "tool_invocation",
+      authority: "main_agent",
+      resolvedProjectId: project.id,
+      actorUserId: "teacher-1",
+      actorAuthMode: "password",
+      taskId: brief.taskId,
+      turnJobId: turn.id,
+      teacherMessageId: brief.sourceMessageId,
+      toolInvocationId: invocationId,
+      intentEpoch: 0,
+      planId: "plan-tool-authority",
+      planRevision: 0,
+      toolOrdinal: 1,
+      toolName: "create_requirement_spec",
+      actionDigest: envelope.actionDigest,
+      idempotencyKey: envelope.idempotencyKey,
+      invocationStatus: "running",
+      observationId: null,
+    });
+    expect(audit.authSessionDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(audit.eventDigest).toBe(orchestrationAuditDigest(audit));
+    expect(JSON.stringify(audit)).not.toContain("SENSITIVE_TOOL_ARGUMENT");
+    expect(JSON.stringify(audit)).not.toContain("session-secret-value");
+  });
+
+  it("fails closed when the frozen running TurnJob is missing, ambiguous or bound to another actor", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool authority TurnJob" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-turn-job", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: {} },
+    });
+    const claim = (suffix: string) => store.startToolInvocation({
+      invocationId: `${project.id}-${suffix}`,
+      envelope,
+      toolName: "create_requirement_spec",
+      request: {},
+    });
+
+    await expect(claim("missing")).rejects.toThrow("TurnJob");
+    const first = await createRunningTurn(brief, { actorUserId: "teacher-1" });
+    await createRunningTurn(brief, { actorUserId: "teacher-1" });
+    await expect(claim("ambiguous")).rejects.toThrow("TurnJob");
+    await prisma.conversationTurnJob.deleteMany({ where: { projectId: project.id, id: { not: first.id } } });
+    await prisma.conversationTurnJob.update({ where: { id: first.id }, data: { actorUserId: "another-teacher" } });
+    await expect(claim("wrong-actor")).rejects.toThrow("actor");
+
+    expect(await prisma.toolInvocationRecord.count({ where: { projectId: project.id } })).toBe(0);
+    expect(await prisma.orchestrationAuditEvent.count({ where: { resolvedProjectId: project.id } })).toBe(0);
+  });
+
+  it("preserves authority across idempotent replay and rejects the artifact route from reusing a Main Agent claim", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool authority replay" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-authority-replay", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: {} },
+    });
+    await store.startToolInvocation({
+      invocationId: `${project.id}-main-claim`, envelope, toolName: "create_requirement_spec", request: {},
+    });
+
+    await expect(store.startArtifactRouteToolInvocation({
+      invocationId: `${project.id}-artifact-replay`, envelope, toolName: "create_requirement_spec", request: {},
+    })).rejects.toThrow("authority");
+    const replay = await store.startToolInvocation({
+      invocationId: `${project.id}-main-replay`, envelope, toolName: "create_requirement_spec", request: {},
+    });
+
+    expect(replay).toMatchObject({ kind: "in_progress", invocation: { invocationId: `${project.id}-main-claim` } });
+    expect(await prisma.orchestrationAuditEvent.count({
+      where: { resolvedProjectId: project.id, recordType: "attempted" },
+    })).toBe(1);
+  });
+
+  it("atomically writes one resolved audit and rejects duplicate or mismatched terminal commits", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool authority terminal" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-terminal", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const firstEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: {} },
+    });
+    const firstInvocationId = `${project.id}-terminal-1`;
+    await store.startToolInvocation({
+      invocationId: firstInvocationId, envelope: firstEnvelope, toolName: "create_requirement_spec", request: {},
+    });
+    const firstObservationId = `${project.id}-terminal-observation-1`;
+    const terminalInput = {
+      invocationId: firstInvocationId,
+      observation: {
+        observationId: firstObservationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: { summary: "failed fixture", providerResponse: "SENSITIVE_PROVIDER_RESPONSE" },
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-terminal-event-1`, "tool_observed", {
+        observationId: firstObservationId,
+        status: "failed",
+      }),
+    };
+    await store.commitToolFailure(terminalInput);
+    const resolved = await prisma.orchestrationAuditEvent.findFirstOrThrow({
+      where: { toolInvocationId: firstInvocationId, recordType: "resolved" },
+    });
+    expect(resolved).toMatchObject({
+      authority: "main_agent",
+      outcome: "failed",
+      invocationStatus: "failed",
+      observationId: firstObservationId,
+      planId: "plan-terminal",
+      planRevision: 0,
+      toolOrdinal: 1,
+      actionDigest: firstEnvelope.actionDigest,
+    });
+    expect(resolved.eventDigest).toBe(orchestrationAuditDigest(resolved));
+    expect(JSON.stringify(resolved)).not.toContain("SENSITIVE_PROVIDER_RESPONSE");
+    await expect(store.commitToolFailure({
+      ...terminalInput,
+      event: { ...terminalInput.event, eventId: `${project.id}-terminal-event-duplicate` },
+    })).rejects.toThrow("not active");
+    expect(await prisma.orchestrationAuditEvent.count({
+      where: { toolInvocationId: firstInvocationId, recordType: "resolved" },
+    })).toBe(1);
+
+    const secondEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 1, intensity: "standard", intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: { revision: 1 } },
+    });
+    const secondInvocationId = `${project.id}-terminal-2`;
+    await store.startToolInvocation({
+      invocationId: secondInvocationId,
+      envelope: secondEnvelope,
+      toolName: "create_requirement_spec",
+      request: { revision: 1 },
+    });
+    const secondObservationId = `${project.id}-terminal-observation-2`;
+    await expect(store.commitToolResult({
+      invocationId: secondInvocationId,
+      artifact: artifactInput("不应接受状态冲突的成果"),
+      observation: {
+        observationId: secondObservationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-terminal-event-success-mismatch`, "artifact_committed", {
+        observationId: secondObservationId,
+        status: "failed",
+      }),
+    })).rejects.toThrow("terminal status");
+    await expect(store.commitToolFailure({
+      invocationId: secondInvocationId,
+      observation: {
+        observationId: secondObservationId,
+        status: "succeeded",
+        reasonCodes: ["tool_succeeded"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-terminal-event-failure-mismatch`, "tool_observed", {
+        observationId: secondObservationId,
+        status: "succeeded",
+      }),
+    })).rejects.toThrow("terminal status");
+    await expect(store.commitToolFailure({
+      invocationId: secondInvocationId,
+      observation: {
+        observationId: secondObservationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-terminal-event-status-mismatch`, "tool_observed", {
+        observationId: secondObservationId,
+        status: "succeeded",
+      }),
+    })).rejects.toThrow("event status");
+    await expect(store.commitToolFailure({
+      invocationId: secondInvocationId,
+      observation: {
+        observationId: secondObservationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-terminal-event-2`, "tool_observed", {
+        observationId: "cross-bound-observation",
+        status: "failed",
+      }),
+    })).rejects.toThrow("Observation");
+    expect(await store.getToolInvocation(secondInvocationId)).toMatchObject({ status: "running" });
+    expect(await store.getObservation(secondObservationId)).toBeNull();
+    expect((await service.getArtifacts(project.id)).some(
+      (artifact) => artifact.title === "不应接受状态冲突的成果",
+    )).toBe(false);
+    expect(await prisma.orchestrationAuditEvent.count({
+      where: { toolInvocationId: secondInvocationId, recordType: "resolved" },
+    })).toBe(0);
   });
 
   it("atomically persists a run failure Observation while pausing the latest TaskAggregate", async () => {
@@ -505,7 +805,13 @@ function snapshotScope(brief: ReturnType<typeof taskBrief>, maxPlanRevision: num
   };
 }
 
-function eventInput(projectId: string, taskId: string, eventId: string, kind: "task_created" | "task_updated" | "tool_started" | "tool_observed" | "artifact_committed" | "run_failed") {
+function eventInput(
+  projectId: string,
+  taskId: string,
+  eventId: string,
+  kind: "task_created" | "task_updated" | "tool_started" | "tool_observed" | "artifact_committed" | "run_failed",
+  payload: Record<string, unknown> = {},
+) {
   return {
     eventId,
     projectId,
@@ -515,8 +821,40 @@ function eventInput(projectId: string, taskId: string, eventId: string, kind: "t
     kind,
     visibility: "internal" as const,
     occurredAt: "2026-07-14T00:00:00.000Z",
-    payload: {},
+    payload,
   };
+}
+
+async function createRunningTurn(
+  brief: ReturnType<typeof taskBrief>,
+  overrides: { actorUserId?: string; actorAuthMode?: string; authSessionId?: string | null } = {},
+) {
+  return prisma.conversationTurnJob.create({
+    data: {
+      projectId: brief.projectId,
+      teacherMessageId: brief.sourceMessageId,
+      status: "running",
+      actorUserId: overrides.actorUserId ?? "teacher-1",
+      actorAuthMode: overrides.actorAuthMode ?? "local",
+      authSessionId: overrides.authSessionId ?? null,
+    },
+  });
+}
+
+function orchestrationAuditDigest(event: Record<string, unknown>) {
+  const payload = Object.fromEntries(Object.entries(event).filter(([key]) => !["sequence", "eventDigest", "createdAt"].includes(key)));
+  if (payload.occurredAt instanceof Date) payload.occurredAt = payload.occurredAt.toISOString();
+  return createHash("sha256")
+    .update("shanhai-orchestration-audit-event.v1\0", "utf8")
+    .update(canonicalJson(payload), "utf8")
+    .digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const source = value as Record<string, unknown>;
+  return `{${Object.keys(source).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(source[key])}`).join(",")}}`;
 }
 
 function artifactInput(title: string) {
