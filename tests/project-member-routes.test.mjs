@@ -22,40 +22,40 @@ test("project member routes require login and let project actors read members", 
 test("project member mutation routes require csrf and call member management service", async () => {
   const calls = [];
   const blocked = createRoutes({ actor: ownerActor(), csrfValid: false, calls });
-  const missingCsrf = await blocked.collection.POST(jsonRequest("/api/workbench/projects/project_1/members", { email: "viewer@example.test", role: "viewer" }), projectParams());
+  const missingCsrf = await blocked.collection.POST(jsonRequest("POST", "/api/workbench/projects/project_1/members", { email: "viewer@example.test", role: "viewer" }), projectParams());
   assert.equal(missingCsrf.status, 403);
+  assert.deepEqual(calls.at(-1), ["boundary", "POST"]);
 
   const routes = createRoutes({ actor: ownerActor(), csrfValid: true, calls });
-  const added = await routes.collection.POST(jsonRequest("/api/workbench/projects/project_1/members", { email: "viewer@example.test", role: "viewer" }), projectParams());
+  const added = await routes.collection.POST(jsonRequest("POST", "/api/workbench/projects/project_1/members", { email: "viewer@example.test", role: "viewer" }), projectParams());
   assert.equal(added.status, 201);
   assert.equal((await added.json()).role, "viewer");
   assert.deepEqual(calls.at(-1), ["add", { projectId: "project_1", email: "viewer@example.test", role: "viewer", actor: ownerActor() }]);
 
-  const patched = await routes.member.PATCH(jsonRequest("/api/workbench/projects/project_1/members/viewer_1", { role: "editor" }), memberParams("viewer_1"));
+  const patched = await routes.member.PATCH(jsonRequest("PATCH", "/api/workbench/projects/project_1/members/viewer_1", { role: "editor" }), memberParams("viewer_1"));
   assert.equal(patched.status, 200);
   assert.equal((await patched.json()).role, "editor");
 
   const removed = await routes.member.DELETE(new Request("https://localhost/api/workbench/projects/project_1/members/viewer_1", { method: "DELETE", headers: { "x-shanhai-csrf": "ok" } }), memberParams("viewer_1"));
   assert.equal(removed.status, 200);
   assert.deepEqual(await removed.json(), { userId: "viewer_1", status: "removed" });
+  assert.equal(calls.filter(([kind]) => kind === "boundary").length, 4);
+  assert.deepEqual(calls.filter(([kind]) => kind === "boundary").map(([, method]) => method), ["POST", "POST", "PATCH", "DELETE"]);
 });
 
 function createRoutes({ actor, csrfValid = true, calls }) {
-  const session = {
-    async resolveWorkbenchSession() {
-      if (!actor) return { actor: null, authMode: "password", isNewSession: false, reason: "missing_public_session" };
-      return {
+  const workbenchRoute = {
+    async withLocalWorkbenchActor(request, handler) {
+      calls.push(["boundary", request.method]);
+      if (!actor) return Response.json({ error: "请先登录。" }, { status: 401 });
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method) && !csrfValid) {
+        return Response.json({ error: "请求校验失败。" }, { status: 403 });
+      }
+      return handler({
         actor,
-        authMode: "password",
-        isNewSession: false,
-        publicSession: { id: "session_owner", userId: actor.userId, expiresAt: new Date("2026-07-12T00:00:00.000Z") },
-      };
-    },
-  };
-  const csrf = {
-    publicCsrfHeaderName: "x-shanhai-csrf",
-    async validateCsrfToken() {
-      return csrfValid;
+        executionIdentity: { actorUserId: actor.userId, actorAuthMode: actor.authMode, authSessionId: "session_owner" },
+        service: {},
+      });
     },
   };
   const management = {
@@ -82,17 +82,16 @@ function createRoutes({ actor, csrfValid = true, calls }) {
       return { userId: input.userId, status: "removed" };
     },
   };
-  const imports = routeImports({ session, csrf, management });
+  const imports = routeImports({ workbenchRoute, management });
   return {
     collection: loadRoute("src/app/api/workbench/projects/[projectId]/members/route.ts", imports),
     member: loadRoute("src/app/api/workbench/projects/[projectId]/members/[userId]/route.ts", imports),
   };
 }
 
-function routeImports({ session, csrf, management }) {
+function routeImports({ workbenchRoute, management }) {
   return {
-    "@/server/auth/session": session,
-    "@/server/auth/csrf": csrf,
+    "@/server/auth/workbench-route": workbenchRoute,
     "@/server/auth/project-member-management": management,
     "next/server": {
       NextResponse: {
@@ -110,9 +109,9 @@ function ownerActor() {
   return { userId: "owner_1", displayName: "项目拥有者", role: "teacher", authMode: "password", isAdmin: false, projectRoles: { project_1: "owner" } };
 }
 
-function jsonRequest(pathname, body) {
+function jsonRequest(method, pathname, body) {
   return new Request(`https://localhost${pathname}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json", "x-shanhai-csrf": "ok" },
     body: JSON.stringify(body),
   });

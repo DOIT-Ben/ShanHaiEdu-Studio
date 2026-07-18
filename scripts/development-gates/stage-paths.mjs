@@ -276,7 +276,7 @@ function requireSafePath(value, label, { allowGlob }) {
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     fail("stage_path_unsafe", `unsafe ${label}`);
   }
-  if (!allowGlob && /[*?\[\]{}]/.test(value)) fail("stage_path_unsafe", `unsafe ${label}`);
+  if (!allowGlob && /[*?]/.test(value)) fail("stage_path_unsafe", `unsafe ${label}`);
   if (allowGlob && /[\[\]{}]/.test(value)) fail("stage_path_unsafe", `unsupported glob in ${label}`);
   return value;
 }

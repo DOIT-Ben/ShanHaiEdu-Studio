@@ -165,7 +165,7 @@ function checkDatabaseSchemaReadiness(cwd, env) {
     : { ready: false, reasons: [{ code: "database_configuration_invalid" }] };
   return buildCheck("database-schema-readiness", readiness.ready, {
     message: readiness.ready
-      ? "SQLite schema contains the required control-plane tables and columns."
+      ? "SQLite schema contains the required control-plane tables, columns, indexes, and triggers."
       : "Initialize or upgrade SQLite before starting the application.",
     missing: readiness.reasons.map(formatSchemaReason),
     reasons: readiness.reasons,
@@ -338,6 +338,10 @@ function buildCheck(id, ok, detail) {
 function formatSchemaReason(reason) {
   if (reason.code === "database_schema_missing_table") return `table:${reason.table}`;
   if (reason.code === "database_schema_missing_column") return `column:${reason.table}.${reason.column}`;
+  if (reason.code === "database_schema_missing_index") return `index:${reason.table}.${reason.index}`;
+  if (reason.code === "database_schema_invalid_index") return `index-invalid:${reason.table}.${reason.index}`;
+  if (reason.code === "database_schema_missing_trigger") return `trigger:${reason.table}.${reason.trigger}`;
+  if (reason.code === "database_schema_invalid_trigger") return `trigger-invalid:${reason.table}.${reason.trigger}`;
   return reason.code;
 }
 

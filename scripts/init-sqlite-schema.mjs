@@ -437,6 +437,83 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
   CONSTRAINT "AuditLog_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS "OrchestrationAuditEvent" (
+  "sequence" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "eventId" TEXT NOT NULL,
+  "attemptId" TEXT,
+  "recordType" TEXT NOT NULL,
+  "outcome" TEXT,
+  "operationKind" TEXT NOT NULL,
+  "authority" TEXT NOT NULL,
+  "claimedProjectId" TEXT,
+  "resolvedProjectId" TEXT,
+  "actorUserId" TEXT NOT NULL,
+  "actorAuthMode" TEXT NOT NULL,
+  "authSessionDigest" TEXT,
+  "taskId" TEXT,
+  "turnJobId" TEXT,
+  "teacherMessageId" TEXT,
+  "toolInvocationId" TEXT,
+  "intentEpoch" INTEGER,
+  "planRevision" INTEGER,
+  "planId" TEXT,
+  "toolOrdinal" INTEGER,
+  "toolName" TEXT,
+  "actionDigest" TEXT,
+  "idempotencyKey" TEXT,
+  "observationId" TEXT,
+  "invocationStatus" TEXT,
+  "executionEnvelopeDigest" TEXT,
+  "requestDigest" TEXT,
+  "reasonCode" TEXT,
+  "payloadJson" TEXT NOT NULL DEFAULT '{}',
+  "eventDigest" TEXT NOT NULL,
+  "occurredAt" DATETIME NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "OrchestrationAuditEvent_recordType_outcome_check" CHECK (
+    ("recordType" = 'attempted' AND "outcome" IS NULL) OR
+    ("recordType" = 'resolved' AND "outcome" IS NOT NULL AND "outcome" IN ('committed', 'rejected', 'failed'))
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_operationKind_check" CHECK (
+    "operationKind" IN ('external_mutation', 'tool_invocation')
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_authority_check" CHECK (
+    "authority" IN (
+      'teacher_http', 'teacher_task_submission', 'legacy_external_orchestration', 'unclassified_external',
+      'main_agent', 'artifact_route', 'system'
+    )
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_nonempty_identity_check" CHECK (
+    length(trim("eventId")) > 0 AND length(trim("actorUserId")) > 0 AND length(trim("actorAuthMode")) > 0
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_eventDigest_check" CHECK (
+    length("eventDigest") = 64 AND "eventDigest" NOT GLOB '*[^0-9a-f]*'
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_optional_digest_check" CHECK (
+    ("authSessionDigest" IS NULL OR (length("authSessionDigest") = 64 AND "authSessionDigest" NOT GLOB '*[^0-9a-f]*')) AND
+    ("actionDigest" IS NULL OR (length("actionDigest") = 64 AND "actionDigest" NOT GLOB '*[^0-9a-f]*')) AND
+    ("executionEnvelopeDigest" IS NULL OR (length("executionEnvelopeDigest") = 64 AND "executionEnvelopeDigest" NOT GLOB '*[^0-9a-f]*')) AND
+    ("requestDigest" IS NULL OR (length("requestDigest") = 64 AND "requestDigest" NOT GLOB '*[^0-9a-f]*'))
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_ordinal_check" CHECK (
+    ("intentEpoch" IS NULL OR "intentEpoch" >= 0) AND
+    ("planRevision" IS NULL OR "planRevision" >= 0) AND
+    ("toolOrdinal" IS NULL OR "toolOrdinal" >= 1)
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_tool_commit_authority_check" CHECK (
+    "operationKind" <> 'tool_invocation' OR "outcome" <> 'committed' OR
+    ("authority" IN ('main_agent', 'artifact_route') AND "toolInvocationId" IS NOT NULL AND
+      "actionDigest" IS NOT NULL AND "executionEnvelopeDigest" IS NOT NULL AND "requestDigest" IS NOT NULL)
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_tool_attempt_binding_check" CHECK (
+    "operationKind" <> 'tool_invocation' OR
+    ("attemptId" IS NOT NULL AND "toolInvocationId" IS NOT NULL AND "attemptId" = "toolInvocationId")
+  ),
+  CONSTRAINT "OrchestrationAuditEvent_invocationStatus_check" CHECK (
+    "invocationStatus" IS NULL OR "invocationStatus" IN ('running', 'succeeded', 'failed', 'blocked', 'rejected')
+  )
+);
+
 CREATE TABLE IF NOT EXISTS "CsrfToken" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "sessionId" TEXT NOT NULL,
@@ -612,6 +689,29 @@ CREATE INDEX IF NOT EXISTS "ProjectMembership_userId_role_idx" ON "ProjectMember
 CREATE INDEX IF NOT EXISTS "AuditLog_actorUserId_createdAt_idx" ON "AuditLog"("actorUserId", "createdAt");
 CREATE INDEX IF NOT EXISTS "AuditLog_projectId_createdAt_idx" ON "AuditLog"("projectId", "createdAt");
 CREATE INDEX IF NOT EXISTS "AuditLog_action_createdAt_idx" ON "AuditLog"("action", "createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrchestrationAuditEvent_eventId_key" ON "OrchestrationAuditEvent"("eventId");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrchestrationAuditEvent_eventDigest_key" ON "OrchestrationAuditEvent"("eventDigest");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrchestrationAuditEvent_attemptId_recordType_key" ON "OrchestrationAuditEvent"("attemptId", "recordType");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrchestrationAuditEvent_resolvedProjectId_taskId_intentEpoch_toolOrdinal_recordType_key" ON "OrchestrationAuditEvent"("resolvedProjectId", "taskId", "intentEpoch", "toolOrdinal", "recordType");
+CREATE UNIQUE INDEX IF NOT EXISTS "OrchestrationAuditEvent_toolInvocationId_recordType_key" ON "OrchestrationAuditEvent"("toolInvocationId", "recordType");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_claimedProjectId_sequence_idx" ON "OrchestrationAuditEvent"("claimedProjectId", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_resolvedProjectId_sequence_idx" ON "OrchestrationAuditEvent"("resolvedProjectId", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_taskId_intentEpoch_sequence_idx" ON "OrchestrationAuditEvent"("taskId", "intentEpoch", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_turnJobId_sequence_idx" ON "OrchestrationAuditEvent"("turnJobId", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_toolInvocationId_sequence_idx" ON "OrchestrationAuditEvent"("toolInvocationId", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_observationId_sequence_idx" ON "OrchestrationAuditEvent"("observationId", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_idempotencyKey_sequence_idx" ON "OrchestrationAuditEvent"("idempotencyKey", "sequence");
+CREATE INDEX IF NOT EXISTS "OrchestrationAuditEvent_authority_operationKind_sequence_idx" ON "OrchestrationAuditEvent"("authority", "operationKind", "sequence");
+CREATE TRIGGER IF NOT EXISTS "OrchestrationAuditEvent_reject_update"
+BEFORE UPDATE ON "OrchestrationAuditEvent"
+BEGIN
+  SELECT RAISE(ABORT, 'OrchestrationAuditEvent is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS "OrchestrationAuditEvent_reject_delete"
+BEFORE DELETE ON "OrchestrationAuditEvent"
+BEGIN
+  SELECT RAISE(ABORT, 'OrchestrationAuditEvent is append-only');
+END;
 CREATE UNIQUE INDEX IF NOT EXISTS "CsrfToken_tokenHash_key" ON "CsrfToken"("tokenHash");
 CREATE INDEX IF NOT EXISTS "CsrfToken_sessionId_expiresAt_idx" ON "CsrfToken"("sessionId", "expiresAt");
 CREATE INDEX IF NOT EXISTS "CsrfToken_userId_expiresAt_idx" ON "CsrfToken"("userId", "expiresAt");

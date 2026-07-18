@@ -42,6 +42,23 @@ test("stage path gate accepts only allowlisted changes inside every budget", () 
   });
 });
 
+test("stage path gate treats Next.js dynamic route brackets as literal Git path characters", () => {
+  const stage = stageContract();
+  stage.allowedPaths.push("src/app/api/projects/*/route.ts");
+  const result = verifyStagePaths({
+    stage,
+    changes: [{
+      path: "src/app/api/projects/[projectId]/route.ts",
+      addedLines: 4,
+      deletedLines: 1,
+      binary: false,
+    }],
+    isBaselineAncestor: () => true,
+    isPathSymlink: () => false,
+  });
+  assert.equal(result.ok, true);
+});
+
 test("stage path gate fails closed on paths outside the allowlist and budget growth", () => {
   const stage = stageContract();
   assert.throws(() => verifyStagePaths({

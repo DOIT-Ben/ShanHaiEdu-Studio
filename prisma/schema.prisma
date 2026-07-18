@@ -219,6 +219,53 @@ model AuditLog {
   @@index([action, createdAt])
 }
 
+model OrchestrationAuditEvent {
+  sequence                Int      @id @default(autoincrement())
+  eventId                 String   @unique
+  attemptId               String?
+  recordType              String
+  outcome                 String?
+  operationKind           String
+  authority               String
+  claimedProjectId        String?
+  resolvedProjectId       String?
+  actorUserId             String
+  actorAuthMode           String
+  authSessionDigest       String?
+  taskId                   String?
+  turnJobId                String?
+  teacherMessageId         String?
+  toolInvocationId         String?
+  intentEpoch             Int?
+  planRevision            Int?
+  planId                  String?
+  toolOrdinal             Int?
+  toolName                String?
+  actionDigest            String?
+  idempotencyKey          String?
+  observationId           String?
+  invocationStatus        String?
+  executionEnvelopeDigest String?
+  requestDigest           String?
+  reasonCode              String?
+  payloadJson             String   @default("{}")
+  eventDigest             String   @unique
+  occurredAt              DateTime
+  createdAt               DateTime @default(now())
+
+  @@unique([attemptId, recordType])
+  @@unique([resolvedProjectId, taskId, intentEpoch, toolOrdinal, recordType])
+  @@unique([toolInvocationId, recordType])
+  @@index([claimedProjectId, sequence])
+  @@index([resolvedProjectId, sequence])
+  @@index([taskId, intentEpoch, sequence])
+  @@index([turnJobId, sequence])
+  @@index([toolInvocationId, sequence])
+  @@index([observationId, sequence])
+  @@index([idempotencyKey, sequence])
+  @@index([authority, operationKind, sequence])
+}
+
 model CsrfToken {
   id         String      @id @default(cuid())
   sessionId  String

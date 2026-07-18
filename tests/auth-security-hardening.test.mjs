@@ -119,6 +119,9 @@ function loadAuthRouteModule() {
     "@/server/workbench/service": {
       createWorkbenchService: () => ({}),
     },
+    "@/server/workbench/orchestration-ingress-audit": {
+      runWithOrchestrationIngressAudit: ({ handler }) => handler(),
+    },
     "next/server": {
       NextResponse: {
         json(body, init = {}) {

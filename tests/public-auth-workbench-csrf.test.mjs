@@ -13,11 +13,19 @@ test("public workbench writes require a valid session-bound csrf token", async (
   const previousMode = process.env.SHANHAI_AUTH_MODE;
   process.env.SHANHAI_AUTH_MODE = "password";
   try {
+    const anonymous = await route.withLocalWorkbenchActor(
+      publicRequest("POST", { origin: "https://localhost" }),
+      async () => new Response("created", { status: 201 }),
+    );
+    assert.equal(anonymous.status, 401);
+    assert.equal(route.__db.auditRows.length, 0);
+
     const withoutToken = await route.withLocalWorkbenchActor(
       publicRequest("POST", { cookie: "shanhai_session=valid_public_session", origin: "https://localhost" }),
       async () => new Response("created", { status: 201 }),
     );
     assert.equal(withoutToken.status, 403);
+    assert.equal(route.__db.auditRows.length, 0);
 
     const wrongToken = await route.withLocalWorkbenchActor(
       publicRequest("POST", {
@@ -28,6 +36,7 @@ test("public workbench writes require a valid session-bound csrf token", async (
       async () => new Response("created", { status: 201 }),
     );
     assert.equal(wrongToken.status, 403);
+    assert.equal(route.__db.auditRows.length, 0);
 
     const issued = await csrf.issueCsrfToken({
       sessionId: "auth_session_1",
@@ -42,10 +51,16 @@ test("public workbench writes require a valid session-bound csrf token", async (
         origin: "https://localhost",
         "x-shanhai-csrf": issued.token,
       }),
-      async ({ actor }) => new Response(actor.userId, { status: 201 }),
+      async ({ actor }) => Response.json({ project: { id: "project_created" }, actorUserId: actor.userId }, { status: 201 }),
     );
     assert.equal(allowed.status, 201);
-    assert.equal(await allowed.text(), "user_password_1");
+    assert.equal((await allowed.json()).actorUserId, "user_password_1");
+    assert.deepEqual(route.__db.auditRows.map((event) => event.recordType), ["attempted", "resolved"]);
+    assert.equal(route.__db.auditRows[0].authority, "teacher_http");
+    assert.equal(route.__db.auditRows[0].operationKind, "external_mutation");
+    assert.equal(route.__db.auditRows[0].authSessionDigest.length, 64);
+    assert.equal(JSON.parse(route.__db.auditRows[1].payloadJson).httpStatus, 201);
+    assert.doesNotMatch(JSON.stringify(route.__db.auditRows), /valid_public_session|valid-csrf-token/);
   } finally {
     restoreEnv("SHANHAI_AUTH_MODE", previousMode);
   }
@@ -69,7 +84,7 @@ test("public reads and local writes do not require csrf token", async () => {
   try {
     const localWrite = await route.withLocalWorkbenchActor(
       new Request("http://localhost/api/workbench/projects", { method: "POST", headers: { origin: "http://localhost" } }),
-      async () => new Response("ok", { status: 201 }),
+      async () => Response.json({ project: { id: "project_created" } }, { status: 201 }),
     );
     assert.equal(localWrite.status, 201);
   } finally {
@@ -99,6 +114,11 @@ function loadRouteWithFakeDb() {
     "@/server/db/client": { prisma: db },
     "node:crypto": require("node:crypto"),
   });
+  const audit = loadTsModule(path.join(root, "src", "server", "workbench", "orchestration-ingress-audit.ts"), {
+    "@/server/db/client": { prisma: db },
+    "../../../config/orchestration-write-operations.json": require(path.join(root, "config", "orchestration-write-operations.json")),
+    "node:crypto": require("node:crypto"),
+  });
   const route = loadTsModule(path.join(root, "src", "server", "auth", "workbench-route.ts"), {
     "@/server/auth/local-session": localSession,
     "@/server/auth/session": session,
@@ -106,6 +126,7 @@ function loadRouteWithFakeDb() {
     "@/server/workbench/service": {
       createWorkbenchService: () => ({}),
     },
+    "@/server/workbench/orchestration-ingress-audit": audit,
     "next/server": nextServerShim(),
   });
   route.__db = db;
@@ -132,8 +153,10 @@ function createFakeDb() {
     },
   ];
   const csrfRows = [];
+  const auditRows = [];
   return {
     csrfRows,
+    auditRows,
     authSession: {
       async findFirst({ where, include }) {
         const row =
@@ -164,6 +187,13 @@ function createFakeDb() {
               entry.expiresAt > where.expiresAt.gt,
           ) ?? null
         );
+      },
+    },
+    orchestrationAuditEvent: {
+      async create({ data }) {
+        const row = { ...data, sequence: auditRows.length + 1, createdAt: new Date() };
+        auditRows.push(row);
+        return row;
       },
     },
   };

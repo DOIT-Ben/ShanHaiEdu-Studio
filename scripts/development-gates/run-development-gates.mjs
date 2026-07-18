@@ -6,6 +6,7 @@ import {
   detectProviderImpact,
   verifyProviderContinuityEvidence,
 } from "./provider-continuity.mjs";
+import { evaluateOrchestrationAuditGate } from "./orchestration-audit.mjs";
 
 const staticGates = [
   { id: "policy", script: "policy-ratchet.mjs" },
@@ -17,6 +18,7 @@ const staticGates = [
 export async function runDevelopmentGates({
   root = process.cwd(),
   runSubgate = runStaticSubgate,
+  verifyOrchestration = evaluateOrchestrationAuditGate,
   detectImpact = detectProviderImpact,
   verifyProvider = verifyProviderContinuityEvidence,
 } = {}) {
@@ -26,6 +28,15 @@ export async function runDevelopmentGates({
     if (!result || result.ok !== true) throw new Error(`Development subgate ${definition.id} failed.`);
     checks.push({ id: definition.id, ok: true });
   }
+
+  const orchestration = await verifyOrchestration({ root });
+  if (!orchestration || orchestration.ok !== true) {
+    const detail = Array.isArray(orchestration?.errors) && orchestration.errors.length > 0
+      ? ` ${orchestration.errors[0]}`
+      : "";
+    throw new Error(`Orchestration audit development gate failed.${detail}`);
+  }
+  checks.push({ id: "orchestration-audit", ok: true });
 
   const impact = await detectImpact({ root });
   let provider;

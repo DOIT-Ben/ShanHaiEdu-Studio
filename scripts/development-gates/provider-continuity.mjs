@@ -68,12 +68,19 @@ const READINESS_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-plan.md
 const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md";
 const READINESS_EXPIRES_ON = "2026-07-24";
 const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
+  "config/orchestration-write-operations.json",
+  "docs/mainlines/current-mainline-status.md",
+  "docs/product/p0-05a-provider-continuity-readiness-spec.md",
   "docs/stages/active-stage.json",
+  "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
+  "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
+  "docs/stages/p0-05a-v1-9-readiness-matrix.md",
   "prisma/schema.prisma",
   "scripts/close-v1-9-run.ts",
   "scripts/development-gates/orchestration-audit.mjs",
   "scripts/development-gates/provider-continuity.mjs",
   "scripts/development-gates/run-development-gates.mjs",
+  "scripts/development-gates/stage-paths.mjs",
   "scripts/init-sqlite-schema.mjs",
   "scripts/lib/v1-9-e2e-contract.d.mts",
   "scripts/lib/v1-9-e2e-contract.mjs",
@@ -86,12 +93,15 @@ const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
   "src/server/conversation/orchestration-authority-summary.ts",
   "src/server/conversation/task-contract.ts",
   "src/server/health/sqlite-schema-readiness.mjs",
+  "src/server/health/sqlite-schema-readiness.d.mts",
   "src/server/tools/artifact-route-tool-execution.ts",
   "src/server/workbench/orchestration-ingress-audit.ts",
   "tests/artifact-route-execution-envelope.test.ts",
+  "tests/auth-security-hardening.test.mjs",
   "tests/control-plane-persistence.test.ts",
   "tests/development-gates/orchestration-audit.test.mjs",
   "tests/development-gates/provider-continuity.test.mjs",
+  "tests/development-gates/stage-paths.test.mjs",
   "tests/development-gates/wiring.test.mjs",
   "tests/e2e/v1-9-unique-real-product.spec.ts",
   "tests/health-readiness.test.ts",
@@ -394,7 +404,7 @@ function inspectReadinessImplementation(root, matchedPaths, productionMatched, n
   const allowedSensitivePaths = matchedPaths.every((entry) =>
     matchesAny(entry, READINESS_ALLOWED_IMPLEMENTATION_PATHS));
   const allowedProductionPaths = productionMatched.every((entry) =>
-    READINESS_ALLOWED_IMPLEMENTATION_PATHS.includes(entry));
+    matchesAny(entry, READINESS_ALLOWED_IMPLEMENTATION_PATHS));
   return {
     eligible: exactStage && exactContract && allowedSensitivePaths && allowedProductionPaths &&
       expiresAt !== null && now.getTime() <= expiresAt.getTime(),

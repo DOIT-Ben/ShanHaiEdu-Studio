@@ -4,6 +4,10 @@ import {
 import { publicCsrfHeaderName, requiresCsrfToken, validateCsrfToken } from "@/server/auth/csrf";
 import { resolveWorkbenchSession } from "@/server/auth/session";
 import { createWorkbenchService } from "@/server/workbench/service";
+import {
+  runWithOrchestrationIngressAudit,
+  type OrchestrationIngressAuditStore,
+} from "@/server/workbench/orchestration-ingress-audit";
 import { NextResponse } from "next/server";
 
 export type AuthenticatedWorkbenchRequest = {
@@ -19,6 +23,7 @@ export type AuthenticatedWorkbenchRequest = {
 export async function withLocalWorkbenchActor(
   request: Request,
   handler: (context: AuthenticatedWorkbenchRequest) => Promise<Response>,
+  dependencies: { orchestrationIngressAuditStore?: OrchestrationIngressAuditStore } = {},
 ) {
   if (!isLocalWorkbenchRequestAllowed(request)) {
     return NextResponse.json({ error: "请求暂时不能处理，请刷新页面后重试。" }, { status: 403 });
@@ -48,10 +53,15 @@ export async function withLocalWorkbenchActor(
     actorAuthMode: session.authMode,
     authSessionId: session.publicSession?.id ?? null,
   };
-  const response = await handler({
-    actor: session.actor,
-    executionIdentity,
-    service: createWorkbenchService(undefined, session.actor, executionIdentity),
+  const response = await runWithOrchestrationIngressAudit({
+    request,
+    identity: executionIdentity,
+    store: dependencies.orchestrationIngressAuditStore,
+    handler: () => handler({
+      actor: session.actor,
+      executionIdentity,
+      service: createWorkbenchService(undefined, session.actor, executionIdentity),
+    }),
   });
 
   if (session.setCookieHeader) {

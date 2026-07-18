@@ -213,6 +213,92 @@ test("production preflight directly rejects an incompatible control-plane schema
   assert.equal(JSON.stringify(schemaCheck).includes(path.dirname(databasePath)), false);
 });
 
+test("production preflight rejects missing orchestration audit indexes and triggers", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const storageRoot = makeExternalStorageRoot();
+
+  for (const mutation of [
+    {
+      sql: 'DROP INDEX "OrchestrationAuditEvent_eventDigest_key"',
+      reason: {
+        code: "database_schema_missing_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_eventDigest_key",
+      },
+    },
+    {
+      sql: 'DROP TRIGGER "OrchestrationAuditEvent_reject_delete"',
+      reason: {
+        code: "database_schema_missing_trigger",
+        table: "OrchestrationAuditEvent",
+        trigger: "OrchestrationAuditEvent_reject_delete",
+      },
+    },
+  ]) {
+    const databasePath = makeAuthDatabase({ admin: true });
+    const database = new Database(databasePath);
+    database.exec(mutation.sql);
+    database.close();
+
+    const result = await runProductionPreflight({
+      cwd,
+      env: completeEnv(storageRoot, { databasePath }),
+    });
+    const schemaCheck = result.checks.find((check) => check.id === "database-schema-readiness");
+    assert.equal(result.ok, false);
+    assert.equal(schemaCheck?.ok, false);
+    assert.deepEqual(schemaCheck?.reasons, [mutation.reason]);
+  }
+});
+
+test("production preflight rejects same-name orchestration audit objects with invalid semantics", async () => {
+  const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
+  const cwd = makeRepoFixture({ standalone: true });
+  const storageRoot = makeExternalStorageRoot();
+
+  for (const mutation of [
+    {
+      sql: `
+        DROP INDEX "OrchestrationAuditEvent_eventDigest_key";
+        CREATE UNIQUE INDEX "OrchestrationAuditEvent_eventDigest_key"
+          ON "OrchestrationAuditEvent"("eventId");
+      `,
+      reason: {
+        code: "database_schema_invalid_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_eventDigest_key",
+      },
+    },
+    {
+      sql: `
+        DROP TRIGGER "OrchestrationAuditEvent_reject_delete";
+        CREATE TRIGGER "OrchestrationAuditEvent_reject_delete"
+        BEFORE DELETE ON "OrchestrationAuditEvent"
+        BEGIN
+          SELECT 1;
+        END;
+      `,
+      reason: {
+        code: "database_schema_invalid_trigger",
+        table: "OrchestrationAuditEvent",
+        trigger: "OrchestrationAuditEvent_reject_delete",
+      },
+    },
+  ]) {
+    const databasePath = makeAuthDatabase({ admin: true });
+    const database = new Database(databasePath);
+    database.exec(mutation.sql);
+    database.close();
+
+    const result = await runProductionPreflight({ cwd, env: completeEnv(storageRoot, { databasePath }) });
+    const schemaCheck = result.checks.find((check) => check.id === "database-schema-readiness");
+    assert.equal(result.ok, false);
+    assert.equal(schemaCheck?.ok, false);
+    assert.deepEqual(schemaCheck?.reasons, [mutation.reason]);
+  }
+});
+
 test("production preflight rejects artifact storage inside release directories and symlink targets", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });

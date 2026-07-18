@@ -77,6 +77,161 @@ describe("V1-10A health readiness", () => {
     expect(JSON.stringify([missingTable, missingColumn])).not.toContain(columnFixture.root);
   }, 15_000);
 
+  it("fails closed when orchestration audit indexes or append-only triggers are missing", () => {
+    const indexFixture = makeFixture();
+    mutateDatabase(indexFixture.databasePath, 'DROP INDEX "OrchestrationAuditEvent_eventDigest_key"');
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${indexFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: indexFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      checks: { database: "unavailable" },
+      reasons: [{
+        code: "database_schema_missing_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_eventDigest_key",
+      }],
+    });
+
+    const triggerFixture = makeFixture();
+    mutateDatabase(triggerFixture.databasePath, 'DROP TRIGGER "OrchestrationAuditEvent_reject_update"');
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${triggerFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: triggerFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      checks: { database: "unavailable" },
+      reasons: [{
+        code: "database_schema_missing_trigger",
+        table: "OrchestrationAuditEvent",
+        trigger: "OrchestrationAuditEvent_reject_update",
+      }],
+    });
+  }, 15_000);
+
+  it("rejects same-name orchestration audit indexes and triggers with invalid semantics", () => {
+    const indexFixture = makeFixture();
+    mutateDatabase(indexFixture.databasePath, `
+      DROP INDEX "OrchestrationAuditEvent_eventDigest_key";
+      CREATE UNIQUE INDEX "OrchestrationAuditEvent_eventDigest_key"
+        ON "OrchestrationAuditEvent"("eventId");
+    `);
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${indexFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: indexFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      checks: { database: "unavailable" },
+      reasons: [{
+        code: "database_schema_invalid_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_eventDigest_key",
+      }],
+    });
+
+    const orderFixture = makeFixture();
+    mutateDatabase(orderFixture.databasePath, `
+      DROP INDEX "OrchestrationAuditEvent_attemptId_recordType_key";
+      CREATE UNIQUE INDEX "OrchestrationAuditEvent_attemptId_recordType_key"
+        ON "OrchestrationAuditEvent"("recordType", "attemptId");
+    `);
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${orderFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: orderFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      reasons: [{
+        code: "database_schema_invalid_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_attemptId_recordType_key",
+      }],
+    });
+
+    const uniquenessFixture = makeFixture();
+    mutateDatabase(uniquenessFixture.databasePath, `
+      DROP INDEX "OrchestrationAuditEvent_eventDigest_key";
+      CREATE INDEX "OrchestrationAuditEvent_eventDigest_key"
+        ON "OrchestrationAuditEvent"("eventDigest");
+    `);
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${uniquenessFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: uniquenessFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      reasons: [{
+        code: "database_schema_invalid_index",
+        table: "OrchestrationAuditEvent",
+        index: "OrchestrationAuditEvent_eventDigest_key",
+      }],
+    });
+
+    const triggerFixture = makeFixture();
+    mutateDatabase(triggerFixture.databasePath, `
+      DROP TRIGGER "OrchestrationAuditEvent_reject_update";
+      CREATE TRIGGER "OrchestrationAuditEvent_reject_update"
+      BEFORE UPDATE ON "OrchestrationAuditEvent"
+      BEGIN
+        SELECT 1;
+      END;
+    `);
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${triggerFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: triggerFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      checks: { database: "unavailable" },
+      reasons: [{
+        code: "database_schema_invalid_trigger",
+        table: "OrchestrationAuditEvent",
+        trigger: "OrchestrationAuditEvent_reject_update",
+      }],
+    });
+
+    const timingFixture = makeFixture();
+    mutateDatabase(timingFixture.databasePath, `
+      DROP TRIGGER "OrchestrationAuditEvent_reject_delete";
+      CREATE TRIGGER "OrchestrationAuditEvent_reject_delete"
+      AFTER DELETE ON "OrchestrationAuditEvent"
+      BEGIN
+        SELECT RAISE(ABORT, 'OrchestrationAuditEvent is append-only');
+      END;
+    `);
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${timingFixture.databasePath}`, ARTIFACT_STORAGE_ROOT: timingFixture.artifactRoot },
+    })).toMatchObject({
+      status: "degraded",
+      reasons: [{
+        code: "database_schema_invalid_trigger",
+        table: "OrchestrationAuditEvent",
+        trigger: "OrchestrationAuditEvent_reject_delete",
+      }],
+    });
+  }, 15_000);
+
+  it("enforces orchestration audit value contracts and append-only storage in SQLite", () => {
+    const fixture = makeFixture();
+    const database = new Database(fixture.databasePath);
+    try {
+      const insert = database.prepare(`
+        INSERT INTO "OrchestrationAuditEvent" (
+          "eventId", "attemptId", "recordType", "outcome", "operationKind", "authority",
+          "actorUserId", "actorAuthMode", "payloadJson", "eventDigest", "occurredAt"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `);
+      insert.run(
+        "audit-event-1", "attempt-1", "attempted", null, "external_mutation", "teacher_http",
+        "teacher-1", "password", "{}", "a".repeat(64),
+      );
+
+      expect(() => database.prepare(
+        'UPDATE "OrchestrationAuditEvent" SET "reasonCode" = ? WHERE "eventId" = ?',
+      ).run("tampered", "audit-event-1")).toThrow(/append-only/i);
+      expect(() => database.prepare(
+        'DELETE FROM "OrchestrationAuditEvent" WHERE "eventId" = ?',
+      ).run("audit-event-1")).toThrow(/append-only/i);
+      expect(() => insert.run(
+        "audit-event-invalid", "attempt-2", "resolved", null, "external_mutation", "teacher_http",
+        "teacher-1", "password", "{}", "b".repeat(64),
+      )).toThrow();
+    } finally {
+      database.close();
+    }
+  }, 15_000);
+
   it("keeps the required control-plane schema contract explicit", () => {
     const requirements = new Map(HEALTH_SCHEMA_REQUIREMENTS.map((entry) => [entry.table, entry.columns]));
     expect(requirements.get("ConversationMessage")).toEqual(expect.arrayContaining(["partsJson", "metadataJson"]));
@@ -84,6 +239,7 @@ describe("V1-10A health readiness", () => {
     for (const table of [
       "TaskAggregate", "AgentEventRecord", "ToolInvocationRecord", "ObservationRecord", "ValidationReportRecord",
       "SemanticContextSnapshotRecord", "ConversationTurnJob", "ProjectExecutionLease", "GenerationJob",
+      "OrchestrationAuditEvent",
     ]) {
       expect(requirements.has(table), table).toBe(true);
     }
@@ -94,6 +250,38 @@ describe("V1-10A health readiness", () => {
     expect(requirements.get("GenerationJob")).toEqual(expect.arrayContaining([
       "providerTaskId", "providerAcceptedAt", "resultArtifactId", "providerResultJson", "countsAsProviderSubmission",
     ]));
+    expect(requirements.get("OrchestrationAuditEvent")).toEqual(expect.arrayContaining([
+      "sequence", "eventId", "attemptId", "recordType", "outcome", "operationKind", "authority",
+      "claimedProjectId", "resolvedProjectId", "actorUserId", "actorAuthMode", "authSessionDigest",
+      "taskId", "turnJobId", "teacherMessageId", "toolInvocationId", "intentEpoch", "planRevision", "planId",
+      "toolOrdinal", "toolName", "actionDigest", "idempotencyKey", "observationId", "invocationStatus",
+      "executionEnvelopeDigest", "requestDigest", "reasonCode", "payloadJson", "eventDigest",
+      "occurredAt", "createdAt",
+    ]));
+    const auditRequirement = HEALTH_SCHEMA_REQUIREMENTS.find((entry) => entry.table === "OrchestrationAuditEvent");
+    expect(auditRequirement?.indexes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "OrchestrationAuditEvent_eventId_key", columns: ["eventId"], unique: true }),
+      expect.objectContaining({ name: "OrchestrationAuditEvent_eventDigest_key", columns: ["eventDigest"], unique: true }),
+      expect.objectContaining({
+        name: "OrchestrationAuditEvent_attemptId_recordType_key",
+        columns: ["attemptId", "recordType"],
+        unique: true,
+      }),
+      expect.objectContaining({
+        name: "OrchestrationAuditEvent_resolvedProjectId_taskId_intentEpoch_toolOrdinal_recordType_key",
+        columns: ["resolvedProjectId", "taskId", "intentEpoch", "toolOrdinal", "recordType"],
+        unique: true,
+      }),
+      expect.objectContaining({
+        name: "OrchestrationAuditEvent_toolInvocationId_recordType_key",
+        columns: ["toolInvocationId", "recordType"],
+        unique: true,
+      }),
+    ]));
+    expect(auditRequirement?.triggers).toEqual([
+      { name: "OrchestrationAuditEvent_reject_update", event: "UPDATE" },
+      { name: "OrchestrationAuditEvent_reject_delete", event: "DELETE" },
+    ]);
   });
 });
 

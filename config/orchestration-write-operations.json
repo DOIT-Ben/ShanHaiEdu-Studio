@@ -1,0 +1,20 @@
+[
+  { "method": "POST", "routeTemplate": "/api/workbench/projects", "operation": "project_create", "controlImpact": "teacher_write" },
+  { "method": "PATCH", "routeTemplate": "/api/workbench/projects/:projectId", "operation": "project_lifecycle_update", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/agent-runs", "operation": "legacy_agent_run_start", "controlImpact": "legacy_external_orchestration" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/agent-runs/:runId/finish", "operation": "legacy_agent_run_finish", "controlImpact": "legacy_external_orchestration" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts", "operation": "teacher_artifact_create", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/approve", "operation": "artifact_approve", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/coze-ppt", "operation": "artifact_route_coze_ppt", "controlImpact": "artifact_route" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/image", "operation": "artifact_route_image", "controlImpact": "artifact_route" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/ppt-full-deck-review", "operation": "ppt_full_deck_review_submit", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/ppt-sample-review", "operation": "ppt_sample_review_submit", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/regenerate", "operation": "artifact_regenerate", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/video", "operation": "artifact_route_video", "controlImpact": "artifact_route" },
+  { "method": "PATCH", "routeTemplate": "/api/workbench/projects/:projectId/generation-intensity", "operation": "generation_intensity_update", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/members", "operation": "project_member_add", "controlImpact": "teacher_write" },
+  { "method": "DELETE", "routeTemplate": "/api/workbench/projects/:projectId/members/:userId", "operation": "project_member_remove", "controlImpact": "teacher_write" },
+  { "method": "PATCH", "routeTemplate": "/api/workbench/projects/:projectId/members/:userId", "operation": "project_member_role_update", "controlImpact": "teacher_write" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/messages", "operation": "teacher_message_submit", "controlImpact": "teacher_task_submission" },
+  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/messages/:messageId/reaction", "operation": "message_reaction_set", "controlImpact": "teacher_write" }
+]
