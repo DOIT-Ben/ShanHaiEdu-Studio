@@ -114,6 +114,8 @@ VR-A14/A16细分为以下行为门：
 | VR-R09 | 原子与幂等 | repository事务只更新exact TurnJob；重复evidence、重复启动或并发恢复至多一次requeue/claim |
 | VR-R10 | 范围隔离 | 不改Tool selector、authority summary、媒体、Provider连续性receipt或V1-9真实run |
 
+R1本地证据：runner Node `29/29`、Provider recovery Vitest `9/9`、TypeScript和development gate通过。该证据只关闭VR-R01的恢复布尔出口；VR-R02至R09仍未实现。
+
 VR-A13细分为以下行为门，全部通过前保持blocked：
 
 | ID | 场景 | Go条件 |

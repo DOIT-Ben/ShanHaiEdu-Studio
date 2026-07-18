@@ -34,8 +34,7 @@ export type {
 const globalRecovery = globalThis as typeof globalThis & { __shanhaiTurnRecoveryScheduled?: boolean };
 
 export function scheduleRetryableConversationTurnRecovery(env: RecoveryEnv = process.env) {
-  if (env.SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START !== "1" || globalRecovery.__shanhaiTurnRecoveryScheduled) return;
-  if (!env.V1_9_E2E_MANIFEST_PATH?.trim()) return;
+  if (globalRecovery.__shanhaiTurnRecoveryScheduled || !shouldInspectV1_9StartupRecovery(env)) return;
 
   let authority: V1_9ProviderHealthRecoveryAuthority | null = null;
   let externalAuditAuthority: V1_9ExternalAuditRecoveryAuthority | null = null;
@@ -65,6 +64,12 @@ export function scheduleRetryableConversationTurnRecovery(env: RecoveryEnv = pro
       console.error("[conversation-turn-recovery]", error instanceof Error ? error.message : "recovery_failed");
     });
   }, 0);
+}
+
+export function shouldInspectV1_9StartupRecovery(
+  env: RecoveryEnv,
+): env is RecoveryEnv & Required<Pick<RecoveryEnv, "V1_9_E2E_MANIFEST_PATH" | "V1_9_E2E_STATE_PATH">> {
+  return Boolean(env.V1_9_E2E_MANIFEST_PATH?.trim() && env.V1_9_E2E_STATE_PATH?.trim());
 }
 
 export function resolveV1_9RepositoryRoot(env: Pick<RecoveryEnv, "SHANHAI_V1_9_REPOSITORY_ROOT">) {

@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   resolveV1_9ProviderHealthRecoveryAuthority,
+  shouldInspectV1_9StartupRecovery,
 } from "@/server/conversation/conversation-turn-recovery";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
@@ -47,6 +48,16 @@ afterAll(async () => {
 });
 
 describe("V1-9 Provider-health startup recovery authority", () => {
+  it("lets product paths trigger recovery inspection without a runner recovery switch", () => {
+    expect(shouldInspectV1_9StartupRecovery({
+      V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
+      V1_9_E2E_STATE_PATH: "E:\\run\\run-state.json",
+    })).toBe(true);
+    expect(shouldInspectV1_9StartupRecovery({
+      V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
+    })).toBe(false);
+  });
+
   it("validates the active pointer, frozen Provider lock, real ledger evidence and exact manifest binding", () => {
     const fixture = recoveryAuthorityFixture();
 

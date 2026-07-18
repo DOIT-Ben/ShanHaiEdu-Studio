@@ -782,7 +782,7 @@ test("V1-9 runner is desktop-only, deterministic-off and bound to a reusable run
   assert.match(source, /SHANHAI_SKILLS_EXPECTED_PROJECTION_LOCK_DIGEST:\s*skillLock\.projectionLockDigest/);
   assert.match(source, /SHANHAI_SKILLS_EXPECTED_BINDING_POLICY_DIGEST:\s*skillLock\.bindingPolicyDigest/);
   assert.match(source, /readFrozenSkillLock\(runContext\.manifest\)/);
-  assert.match(source, /SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START:\s*runMode === "resume" \? "1" : "0"/);
+  assert.doesNotMatch(source, /SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START/);
   assert.match(source, /V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID/);
   assert.match(source, /V1_9_E2E_STATE_PATH:\s*runContext\.statePath/);
   assert.match(source, /M67_E2E_FROZEN_APP_ROOT:\s*runContext\.frozenAppRoot/);
@@ -844,7 +844,7 @@ test("V1-9 fresh runner consumes prepared v2 state without reusing recovery evid
     skillLock: runContext.manifest.skillLock,
   });
   assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, "");
-  assert.equal(childEnv.SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START, "0");
+  assert.equal("SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START" in childEnv, false);
   assert.equal(childEnv.M67_E2E_PROJECTS, "chromium-desktop");
   assert.equal(childEnv.M67_E2E_DETERMINISTIC, "0");
   assert.equal(childEnv.V1_9_E2E_MANIFEST_PATH, fixture.manifestPath);
@@ -898,7 +898,7 @@ test("V1-9 recovery runner requires an evidence id only for paused or failed sta
         skillLock: runContext.manifest.skillLock,
       });
       assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, `new-evidence-${stateStatus}`);
-      assert.equal(childEnv.SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START, "1");
+      assert.equal("SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START" in childEnv, false);
     });
   }
 });
@@ -1000,7 +1000,7 @@ test("V1-9 external acceptance repair resumes the same task without Provider hea
     skillLock: runContext.manifest.skillLock,
   });
   assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, undefined);
-  assert.equal(childEnv.SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START, "1");
+  assert.equal("SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START" in childEnv, false);
   assert.equal(runContext.runState.taskContractLock.turnJobId, "turn-job-1");
   assert.equal(runContext.runState.taskContractLock.teacherMessageId, "teacher-message-1");
   assert.equal(runContext.runState.identity.taskId, "task-1");

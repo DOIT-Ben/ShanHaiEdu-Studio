@@ -25,7 +25,6 @@ import {
 
 export type RecoveryEnv = OpenAICompatibleEnv & {
   SHANHAI_V1_9_REPOSITORY_ROOT?: string;
-  SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START?: string;
   V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID?: string;
   V1_9_E2E_MANIFEST_PATH?: string;
   V1_9_E2E_STATE_PATH?: string;

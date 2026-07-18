@@ -10,7 +10,7 @@
 | `scripts/prepare-v1-9-run.ts` | adapted / contract-go | fresh与显式合同升级后继已分支；无predecessor环境可创建fresh，部分输入写前失败，旧history不进入新事实 | 仍不得实际创建V1-9 run；等待其余入口阻塞关闭后再冻结真实候选 |
 | `scripts/lib/v1-9-e2e-contract.mjs` | adapted / contract-go | `predecessor`可显式为`null`；新manifest只接受baseline v2；旧baseline v1只读解析；prompt只有一个合同源 | 继续保持旧v1不能成为当前baseline |
 | `scripts/lib/v1-9-baseline-lock.mjs` | adapted / contract-go | baseline v2绑定clean verification原始字节SHA、working tree、policy、stage、Provider manifest/receipt、签名evidence root摘要和subject digest；facts/trace由source-index SHA传递绑定，verification原始字节与receipt binding交叉校验 | 当前仓库没有真实passed receipt，因此真实baseline创建仍按设计失败关闭 |
-| `scripts/run-v1-9-e2e.mjs` | active / adapt | B2已让runner在M67完全停机后只读复算SQLite authority；但启动时仍用`V1_9_RUN_MODE`派生恢复布尔并把`paused_recovery/failed`统一要求为Provider-health证据 | 删除恢复布尔与恢复类型下传；只保留监督、启停、冻结路径和可选证据locator |
+| `scripts/run-v1-9-e2e.mjs` | partial / adapt | B2已让runner在M67停机后只读复算SQLite authority；R1已移除恢复布尔，`V1_9_RUN_MODE`只保留run文件生命周期，但`paused_recovery/failed`仍由runner统一要求Provider-health evidence ID | 下一切片把evidence选择移入DB typed disposition；runner只保留监督、启停、冻结路径和可选locator |
 | `scripts/run-m67-e2e.mjs` | reuse lifecycle / retire control entry | 隔离server、SQLite、Artifact、Playwright、IPC停机和失败后核验可复用；M67命名与兼容入口不应继续成为V1-9控制面 | 抽取受控生命周期能力，由唯一V1-9入口调用；不得决定Tool、下一步、重试或恢复 |
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
 | `tests/e2e/v1-9-unique-real-product.spec.ts` | reuse | ready/completed重入先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | DB recovery阶段不改Tool顺序或observer产品职责 |

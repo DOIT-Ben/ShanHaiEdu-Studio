@@ -330,7 +330,6 @@ export function createV1_9ChildEnvironment({ env, runContext, runMode, skillLock
     SHANHAI_SKILL_RUNTIME_MODE: "required",
     SHANHAI_SKILLS_EXPECTED_PROJECTION_LOCK_DIGEST: skillLock.projectionLockDigest,
     SHANHAI_SKILLS_EXPECTED_BINDING_POLICY_DIGEST: skillLock.bindingPolicyDigest,
-    SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START: runMode === "resume" ? "1" : "0",
     V1_9_E2E_MANIFEST_PATH: runContext.manifestPath,
     V1_9_E2E_STATE_PATH: runContext.statePath,
     V1_9_E2E_FROZEN_PROMPT: V1_9_FROZEN_PROMPT,
