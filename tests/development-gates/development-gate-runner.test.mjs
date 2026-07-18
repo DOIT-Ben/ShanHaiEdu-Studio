@@ -31,6 +31,14 @@ test("development runner accepts only the exact bootstrap deferred status", asyn
   assert.equal(captureResult.provider.status, "deferred_capture_bootstrap");
   assert.equal(captureResult.provider.passed, false);
 
+  const readinessResult = await runDevelopmentGates({
+    runSubgate: async () => ({ ok: true }),
+    detectImpact: () => ({ impacted: true, matchedPaths: ["scripts/development-gates/provider-continuity/preflight.mjs"] }),
+    verifyProvider: () => ({ ok: false, passed: false, status: "deferred_readiness_implementation" }),
+  });
+  assert.equal(readinessResult.status, "passed-with-readiness-defer");
+  assert.equal(readinessResult.provider.passed, false);
+
   await assert.rejects(() => runDevelopmentGates({
     runSubgate: async () => ({ ok: true }),
     detectImpact: () => ({ impacted: true, matchedPaths: ["src/server/tools/provider.ts"] }),

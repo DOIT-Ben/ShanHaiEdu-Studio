@@ -127,7 +127,7 @@ async function resolveActiveTaskBrief(input: {
   let decision: MainAgentTaskIntakeDecision;
   if (input.agent.intakeTask) {
     decision = await runWithProviderCallTraceBinding({ projectId: project.id, taskId: input.activeTask?.taskId,
-      teacherMessageId: message.id, turnJobId: input.turnJobId, intentEpoch: project.intentEpoch ?? 0 }, () => input.agent.intakeTask!({
+      teacherMessageId: message.id, turnJobId: input.turnJobId, intentEpoch: project.intentEpoch ?? 0, phase: "intake" }, () => input.agent.intakeTask!({
       userMessage: message.content,
       responseStyle: message.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
       generationIntensity: project.generationIntensity ?? "standard",
@@ -743,7 +743,7 @@ async function executeTeacherMessageTurn(input: {
   }) : undefined;
   const rawAgentResponse = taskIntake.precomputedTurn ?? await runWithProviderCallTraceBinding({ projectId: project.id,
     taskId: taskBrief?.taskId, teacherMessageId: input.triggerMessage.id, turnJobId,
-    intentEpoch: taskBrief?.intentEpoch ?? project.intentEpoch ?? 0 }, async () => await input.agent.respond({
+    intentEpoch: taskBrief?.intentEpoch ?? project.intentEpoch ?? 0, phase: "initial" }, async () => await input.agent.respond({
     userMessage: teacherContent,
     toolControlPlane: nativeToolControlPlaneOwnsTurn ? "native" : "outer",
     responseStyle: input.triggerMessage.metadata.responseStyle === "concise" ? "concise" : "pragmatic",
@@ -2495,7 +2495,7 @@ async function replanAfterBusinessToolResult(input: {
   const replanTraceBinding = { projectId: project.id, taskId: authoritativeReplanTaskBrief?.taskId,
     teacherMessageId: turnInput.triggerMessage.id,
     turnJobId: turnJobs.find((job) => job.teacherMessageId === turnInput.triggerMessage.id)?.id ?? null,
-    intentEpoch: authoritativeReplanTaskBrief?.intentEpoch ?? project.intentEpoch ?? 0 };
+    intentEpoch: authoritativeReplanTaskBrief?.intentEpoch ?? project.intentEpoch ?? 0, phase: "post_tool" as const };
   const contextPackage = buildConversationContextPackage({
     project,
     messages,

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { collectGitVerificationSubject } from "./verification-subject.mjs";
 
 const manifestSchemaVersion = "shanhai-development-verification.v1";
 
@@ -15,9 +16,9 @@ export async function runVerification({
   runCommand = executeCommand,
 } = {}) {
   const resolvedRoot = path.resolve(root);
-  const target = containedPath(resolvedRoot, outputPath ?? policy?.verification?.manifestPath ?? "");
+  const target = verificationOutputPath(resolvedRoot, outputPath ?? policy?.verification?.manifestPath ?? "");
   const checks = validateChecks(policy?.verification?.requiredChecks);
-  rmSync(target, { force: true });
+  removeSafeVerificationFiles(resolvedRoot, [target]);
 
   const before = await collectSubject(resolvedRoot);
   if (requireClean && before.dirty) throw new Error("Verification requires a clean working tree.");
@@ -25,7 +26,7 @@ export async function runVerification({
   for (const check of checks) {
     const result = await runCommand(check, resolvedRoot);
     if (!result || result.id !== check.id || result.exitCode !== 0) {
-      rmSync(target, { force: true });
+      removeSafeVerificationFiles(resolvedRoot, [target]);
       throw new Error(`Required check ${check.id} failed.`);
     }
     results.push(normalizeCheckResult(result));
@@ -41,37 +42,32 @@ export async function runVerification({
     requiredCheckIds: checks.map((check) => check.id),
     checks: results,
   };
-  mkdirSync(path.dirname(target), { recursive: true });
-  assertOrdinaryParent(path.dirname(target));
+  ensureSafeVerificationParent(resolvedRoot, target);
   const temporary = `${target}.tmp-${process.pid}`;
-  writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
-  renameSync(temporary, target);
+  try {
+    assertSafeVerificationTarget(resolvedRoot, target);
+    assertSafeVerificationTarget(resolvedRoot, temporary);
+    writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
+    assertSafeVerificationTarget(resolvedRoot, target);
+    assertSafeVerificationTarget(resolvedRoot, temporary);
+    renameSync(temporary, target);
+    assertSafeVerificationTarget(resolvedRoot, target);
+    const afterWrite = await collectSubject(resolvedRoot);
+    assertSafeVerificationTarget(resolvedRoot, target);
+    assertStableSubject(after, afterWrite);
+  } catch (error) {
+    try {
+      removeSafeVerificationFiles(resolvedRoot, [temporary, target]);
+    } catch (cleanupError) {
+      throw new Error("Verification cleanup refused an unsafe output path.", { cause: cleanupError });
+    }
+    throw error;
+  }
   return manifest;
 }
 
 export async function collectGitSubject(root = process.cwd()) {
-  const headSha = gitText(root, ["rev-parse", "HEAD"]);
-  const treeSha = gitText(root, ["rev-parse", "HEAD^{tree}"]);
-  const status = gitBuffer(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  const diff = gitBuffer(root, ["diff", "--binary", "--no-ext-diff", "HEAD", "--", "."]);
-  const untracked = gitBuffer(root, ["ls-files", "--others", "--exclude-standard", "-z"])
-    .toString("utf8").split("\0").filter(Boolean).sort();
-  const hash = createHash("sha256").update("tracked-diff\0").update(diff).update("\0untracked\0");
-  for (const relative of untracked) {
-    if (!isSafeRelativePath(relative)) throw new Error("Git reported an unsafe untracked path.");
-    const absolute = containedPath(root, relative);
-    const stat = lstatSync(absolute);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Untracked verification input must be an ordinary file.");
-    hash.update(normalizePath(relative)).update("\0").update(sha256(readFileSync(absolute))).update("\n");
-  }
-  return {
-    headSha,
-    treeSha,
-    workingTreeDigest: hash.digest("hex"),
-    dirty: status.length > 0,
-    policySha256: hashRequiredFile(root, "config/development-gates.json"),
-    stageSha256: hashRequiredFile(root, "docs/stages/active-stage.json"),
-  };
+  return collectGitVerificationSubject(root);
 }
 
 export async function executeCommand(check, root = process.cwd()) {
@@ -129,49 +125,69 @@ function assertStableSubject(before, after) {
   }
 }
 
-function hashRequiredFile(root, relative) {
-  const absolute = containedPath(root, relative);
-  const stat = lstatSync(absolute);
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Verification input must be an ordinary file.");
-  return sha256(readFileSync(absolute));
-}
-
-function assertOrdinaryParent(directory) {
-  let current = directory;
-  while (existsSync(current)) {
-    const stat = lstatSync(current);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Verification output parent is unsafe.");
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
+function assertSafeVerificationTarget(root, target) {
+  const relative = path.relative(root, target);
+  const segments = normalizePath(relative).split("/");
+  let current = root;
+  assertOrdinaryContainedPath(root, current, "Verification root is unsafe.", true);
+  for (const segment of segments.slice(0, -1)) {
+    current = path.join(current, segment);
+    if (!existsSync(current)) break;
+    assertOrdinaryContainedPath(root, current, "Verification output parent is unsafe.", true);
+  }
+  if (existsSync(target)) {
+    assertOrdinaryContainedPath(root, target, "Verification output target is unsafe.", false);
   }
 }
 
-function gitText(root, args) {
-  return gitBuffer(root, args).toString("utf8").trim();
+function ensureSafeVerificationParent(root, target) {
+  const relativeParent = path.relative(root, path.dirname(target));
+  const segments = normalizePath(relativeParent).split("/");
+  let current = root;
+  for (const segment of segments) {
+    assertSafeVerificationTarget(root, target);
+    current = path.join(current, segment);
+    if (!existsSync(current)) {
+      mkdirSync(current);
+    }
+    assertOrdinaryContainedPath(root, current, "Verification output parent is unsafe.", true);
+  }
+  assertSafeVerificationTarget(root, target);
 }
 
-function gitBuffer(root, args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: null, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error("Git verification command failed.");
-  return result.stdout;
+function removeSafeVerificationFiles(root, targets) {
+  for (const target of targets) {
+    assertSafeVerificationTarget(root, target);
+    if (existsSync(target)) rmSync(target, { force: true });
+  }
 }
 
-function containedPath(root, relative) {
-  const candidate = path.isAbsolute(relative ?? "")
-    ? path.resolve(relative)
-    : isSafeRelativePath(relative)
-      ? path.resolve(root, ...normalizePath(relative).split("/"))
-      : null;
-  if (!candidate) throw new Error("Verification output path is unsafe.");
-  const remainder = path.relative(root, candidate);
-  if (remainder.startsWith("..") || path.isAbsolute(remainder)) throw new Error("Verification output path is unsafe.");
-  return candidate;
+function assertOrdinaryContainedPath(root, candidate, message, directory) {
+  const stat = lstatSync(candidate);
+  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw new Error(message);
+  const realRoot = realpathSync.native(root);
+  const expected = path.resolve(realRoot, path.relative(root, candidate));
+  const actual = realpathSync.native(candidate);
+  if (!samePath(actual, expected)) throw new Error(message);
+}
+
+function samePath(left, right) {
+  const normalize = (value) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+  return normalize(left) === normalize(right);
+}
+
+function verificationOutputPath(root, relative) {
+  if (!isSafeRelativePath(relative)) throw new Error("Verification output path is unsafe.");
+  const normalized = normalizePath(relative);
+  if (!normalized.startsWith(".tmp/verification/") || normalized.endsWith("/")) {
+    throw new Error("Verification output must be inside .tmp/verification/.");
+  }
+  return path.resolve(root, ...normalized.split("/"));
 }
 
 function isSafeRelativePath(value) {
-  return typeof value === "string" && Boolean(value) && !path.isAbsolute(value) &&
-    !/^[A-Za-z]:[\\/]/.test(value) && value.split(/[\\/]/).every((part) => part && part !== "." && part !== "..");
+  return typeof value === "string" && Boolean(value) && !value.includes("\\") && !path.isAbsolute(value) &&
+    !/^[A-Za-z]:[\\/]/.test(value) && value.split("/").every((part) => part && part !== "." && part !== "..");
 }
 
 function normalizePath(value) {

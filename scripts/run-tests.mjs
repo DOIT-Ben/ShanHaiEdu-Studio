@@ -6,23 +6,55 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nodeTestDatabasePath = path.join(root, ".tmp", "node-test-workbench.db");
-const vitestDatabasePath = path.join(root, ".tmp", "vitest-test-workbench.db");
+const vitestDatabaseFamily = "vitest-test-workbench.db";
 const providerLedgerFixtureRoot = path.join(root, "tests", "fixtures", "provider-ledger");
 const providerLedgerFixtureEnvKeys = readProviderLedgerFixtureEnvKeys(providerLedgerFixtureRoot);
 const baseEnv = createTestBaseEnv();
 const nodeTestEnv = createSuiteEnv("node-test-workbench.db", { base: baseEnv });
-const vitestEnv = createSuiteEnv("vitest-test-workbench.db", {
-  base: baseEnv,
-  providerLedgerRoot: providerLedgerFixtureRoot,
-  providerEnvKeys: providerLedgerFixtureEnvKeys,
-});
 
 export function runAllTests() {
   run(npxCommand(), ["prisma", "generate"], { shell: process.platform === "win32", env: nodeTestEnv });
   initializeTestDatabase(nodeTestDatabasePath, nodeTestEnv);
-  run(process.execPath, ["--test", "tests/*.test.mjs"], { env: nodeTestEnv });
-  initializeTestDatabase(vitestDatabasePath, vitestEnv);
-  run(npxCommand(), ["vitest", "run", "--maxWorkers=1"], { shell: process.platform === "win32", env: vitestEnv });
+  run(process.execPath, createNodeTestArgs(), { env: nodeTestEnv });
+  for (const plan of createVitestShardPlans()) {
+    const vitestDatabasePath = plan.databasePath;
+    const vitestEnv = plan.env;
+    initializeTestDatabase(vitestDatabasePath, vitestEnv);
+    run(npxCommand(), plan.args, { shell: process.platform === "win32", env: vitestEnv });
+  }
+}
+
+export function createNodeTestArgs() {
+  return ["--test", "--test-concurrency=1", "tests/*.test.mjs"];
+}
+
+export function createVitestShardPlans({
+  root: repositoryRoot = root,
+  base = baseEnv,
+  providerLedgerRoot = providerLedgerFixtureRoot,
+  providerEnvKeys = providerLedgerFixtureEnvKeys,
+  shardCount = 2,
+} = {}) {
+  if (!Number.isSafeInteger(shardCount) || shardCount < 2 || shardCount > 8) {
+    throw new Error("Vitest shardCount must be an integer between 2 and 8.");
+  }
+  return Array.from({ length: shardCount }, (_, index) => {
+    const sequence = index + 1;
+    const databaseName = path.parse(vitestDatabaseFamily);
+    const databaseFileName = `${databaseName.name}-shard-${sequence}${databaseName.ext}`;
+    return Object.freeze({
+      sequence,
+      databasePath: path.join(repositoryRoot, ".tmp", databaseFileName),
+      env: createSuiteEnv(databaseFileName, { base, providerLedgerRoot, providerEnvKeys }),
+      args: [
+        "vitest",
+        "run",
+        "--maxWorkers=1",
+        "--no-file-parallelism",
+        `--shard=${sequence}/${shardCount}`,
+      ],
+    });
+  });
 }
 
 export function resolveCanonicalTestTempRoot({ fileSystem = fs, tempRoot = os.tmpdir() } = {}) {

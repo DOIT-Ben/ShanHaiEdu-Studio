@@ -57,6 +57,38 @@ const CAPTURE_BOOTSTRAP_ALLOWED_PATHS = [
   ...CAPTURE_BOOTSTRAP_PRODUCTION_PATHS,
   ...CAPTURE_BOOTSTRAP_TEST_PATHS,
 ];
+const READINESS_STAGE_ID = "p0-05a-provider-continuity-readiness";
+const READINESS_BASELINE = "336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee";
+const READINESS_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-plan.md";
+const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md";
+const READINESS_EXPIRES_ON = "2026-07-24";
+const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
+  "config/development-gates.json",
+  "package.json",
+  "scripts/development-gates/provider-continuity.mjs",
+  "scripts/development-gates/provider-continuity/**",
+  "scripts/development-gates/run-development-gates.mjs",
+  "scripts/development-gates/run-verification.mjs",
+  "scripts/development-gates/verification-manifest.mjs",
+  "scripts/development-gates/verification-subject.mjs",
+  "src/server/provider-ledger/provider-call-trace.ts",
+  "src/server/gpt-protocol/openai-responses-adapter.ts",
+  "src/server/gpt-protocol/types.ts",
+  "src/server/conversation/conversation-turn-service.ts",
+  "src/server/tools/openai-agent-tool-executor.ts",
+  "tests/conversation-turn-service.test.ts",
+  "tests/development-gates/development-gate-runner.test.mjs",
+  "tests/development-gates/policy-ratchet.test.mjs",
+  "tests/development-gates/provider-continuity-live.test.mjs",
+  "tests/development-gates/provider-continuity.test.mjs",
+  "tests/development-gates/verification-subject.test.mjs",
+  "tests/development-gates/verification-runner.test.mjs",
+  "tests/development-gates/wiring.test.mjs",
+  "tests/gpt-protocol-adapter.test.ts",
+  "tests/model-main-conversation-agent.test.ts",
+  "tests/agent-tools/openai-agent-tool-executor.test.ts",
+  "tests/provider-call-trace.test.ts",
+];
 const PRODUCTION_PROVIDER_PATHS = [
   "src/server/conversation/**",
   "src/server/agent-runtime/**",
@@ -320,6 +352,39 @@ function inspectBootstrap(root, changedPaths, productionMatched, now) {
   };
 }
 
+function inspectReadinessImplementation(root, matchedPaths, productionMatched, now) {
+  if (matchedPaths.length === 0) return { eligible: false };
+  let stage;
+  try {
+    stage = readJsonFile(root, ACTIVE_STAGE_PATH, "Active stage declaration").value;
+  } catch {
+    return { eligible: false };
+  }
+  const continuity = stage?.providerContinuity;
+  const expiresAt = parseExpiry(continuity?.expiresOn);
+  const exactStage = stage?.schemaVersion === "shanhai-active-stage.v1" &&
+    stage?.stageId === READINESS_STAGE_ID && stage?.status === "active" &&
+    stage?.baselineSha === READINESS_BASELINE && stage?.plan === READINESS_PLAN &&
+    stage?.testPlan === READINESS_TEST_PLAN;
+  const exactContract = continuity?.requirement === "provider-continuity-readiness-implementation" &&
+    continuity?.mode === "development-only" && continuity?.liveCallsAuthorized === false &&
+    continuity?.liveCampaign === "blocked-awaiting-explicit-authorization" &&
+    continuity?.liveAuthorization === null &&
+    continuity?.requiredReceiptSchema === "shanhai-provider-continuity-receipt.v2" &&
+    Array.isArray(continuity?.trustedCaptureKeyIds) && continuity.trustedCaptureKeyIds.length === 0 &&
+    continuity?.expiresOn === READINESS_EXPIRES_ON &&
+    isDeepStrictEqual(continuity?.allowedImplementationPaths, READINESS_ALLOWED_IMPLEMENTATION_PATHS);
+  const allowedSensitivePaths = matchedPaths.every((entry) =>
+    matchesAny(entry, READINESS_ALLOWED_IMPLEMENTATION_PATHS));
+  const allowedProductionPaths = productionMatched.every((entry) =>
+    READINESS_ALLOWED_IMPLEMENTATION_PATHS.includes(entry));
+  return {
+    eligible: exactStage && exactContract && allowedSensitivePaths && allowedProductionPaths &&
+      expiresAt !== null && now.getTime() <= expiresAt.getTime(),
+    expiresAt: expiresAt?.toISOString() ?? null,
+  };
+}
+
 export function detectProviderImpact(options = {}) {
   const root = path.resolve(options.root ?? process.cwd());
   const now = options.now instanceof Date ? options.now : new Date(options.now ?? Date.now());
@@ -340,6 +405,7 @@ export function detectProviderImpact(options = {}) {
     .filter((entry) => matchesAny(entry, PRODUCTION_PROVIDER_PATHS))
     .sort();
   const bootstrap = inspectBootstrap(root, changedPaths, productionMatched, now);
+  const readiness = inspectReadinessImplementation(root, matchedPaths, productionMatched, now);
   return {
     impacted: matchedPaths.length > 0,
     changedPaths: [...changedPaths].sort(),
@@ -349,6 +415,8 @@ export function detectProviderImpact(options = {}) {
     captureBootstrapOnly: bootstrap.captureEligible,
     captureProductionPaths: bootstrap.captureEligible ? productionMatched : [],
     bootstrapExpiresAt: bootstrap.expiresAt ?? null,
+    readinessImplementationOnly: readiness.eligible,
+    readinessExpiresAt: readiness.expiresAt,
   };
 }
 
@@ -714,6 +782,16 @@ export function verifyProviderContinuityEvidence(options = {}) {
 
   const receiptLocation = resolveWithin(root, policy.receiptPath, "receipt path").absolutePath;
   if (!existsSync(receiptLocation)) {
+    if (mode === "development" && impact.readinessImplementationOnly) {
+      return {
+        ok: false,
+        passed: false,
+        status: "deferred_readiness_implementation",
+        reason: "Provider continuity remains open while the exact offline readiness implementation is completed without live calls.",
+        matchedPaths: impact.matchedPaths,
+        expiresAt: impact.readinessExpiresAt,
+      };
+    }
     if (mode === "development" && impact.captureBootstrapOnly) {
       return {
         ok: false,
@@ -742,6 +820,7 @@ export function verifyProviderContinuityEvidence(options = {}) {
   const receiptFile = readJsonFile(root, policy.receiptPath, "Provider continuity receipt");
   const manifest = manifestFile.value;
   const receipt = receiptFile.value;
+  enforceActiveReceiptContract(root, manifest, receipt);
   assertSchema(manifest, "shanhai-provider-continuity-manifest.v1", "Provider manifest");
   assertSchema(receipt, "shanhai-provider-continuity-receipt.v1", "Provider receipt");
   assertNoManifestSelfReference(manifest);
@@ -801,6 +880,28 @@ export function verifyProviderContinuityEvidence(options = {}) {
     verifiedAt: receipt.verifiedAt,
     manifestSha256: receipt.manifestSha256,
   };
+}
+
+function enforceActiveReceiptContract(root, manifest, receipt) {
+  let stage;
+  try {
+    stage = readJsonFile(root, ACTIVE_STAGE_PATH, "Active stage declaration").value;
+  } catch {
+    return;
+  }
+  if (stage?.stageId !== READINESS_STAGE_ID || stage?.status !== "active") return;
+  const continuity = stage.providerContinuity;
+  if (manifest?.schemaVersion !== "shanhai-provider-continuity-manifest.v2" ||
+      receipt?.schemaVersion !== continuity?.requiredReceiptSchema) {
+    fail("P0-05A rejects legacy Provider receipts because v1 does not prove signed runtime provenance.",
+      "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");
+  }
+  if (!Array.isArray(continuity?.trustedCaptureKeyIds) || continuity.trustedCaptureKeyIds.length === 0) {
+    fail("P0-05A has no trusted capture key configured; a Provider receipt cannot be promoted.",
+      "PROVIDER_CAPTURE_TRUST_ROOT_MISSING");
+  }
+  fail("Provider continuity v2 verification is not implemented for the current candidate.",
+    "PROVIDER_RECEIPT_V2_NOT_IMPLEMENTED");
 }
 
 function parseCliArguments(argv) {

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   lstatSync,
   mkdirSync,
@@ -8,8 +7,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { collectGitVerificationSubject } from "./verification-subject.mjs";
 
 export const DEFAULT_VERIFICATION_MANIFEST_PATH = ".tmp/verification/development-verification.json";
 const POLICY_PATH = "config/development-gates.json";
@@ -97,41 +96,7 @@ export function collectVerificationSubject(root, {
   policyPath = POLICY_PATH,
   stagePath = STAGE_PATH,
 } = {}) {
-  const safePolicyPath = requireSafePath(policyPath, "policy path");
-  const safeStagePath = requireSafePath(stagePath, "stage path");
-  const headSha = runGitText(root, ["rev-parse", "HEAD"]);
-  const treeSha = runGitText(root, ["rev-parse", "HEAD^{tree}"]);
-  requireGitSha(headSha, "headSha");
-  requireGitSha(treeSha, "treeSha");
-
-  const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  const trackedDiff = runGit(root, ["diff", "--binary", "--no-ext-diff", "HEAD", "--", "."]);
-  const untrackedPaths = splitNull(runGit(root, ["ls-files", "--others", "--exclude-standard", "-z"]))
-    .map((entry) => requireSafePath(entry, "untracked Git path"))
-    .sort();
-  const workingTreeHash = createHash("sha256");
-  workingTreeHash.update("tracked-diff\0", "utf8");
-  workingTreeHash.update(trackedDiff);
-  workingTreeHash.update("\0untracked\0", "utf8");
-  for (const relativePath of untrackedPaths) {
-    assertOrdinaryPath(root, relativePath, "untracked Git path");
-    const fileSha = sha256(readFileSync(resolvePath(root, relativePath)));
-    workingTreeHash.update(relativePath, "utf8");
-    workingTreeHash.update("\0", "utf8");
-    workingTreeHash.update(fileSha, "utf8");
-    workingTreeHash.update("\n", "utf8");
-  }
-
-  assertOrdinaryPath(root, safePolicyPath, "policy path");
-  assertOrdinaryPath(root, safeStagePath, "stage path");
-  return {
-    headSha,
-    treeSha,
-    workingTreeDigest: workingTreeHash.digest("hex"),
-    dirty: status.length > 0,
-    policySha256: sha256(readFileSync(resolvePath(root, safePolicyPath))),
-    stageSha256: sha256(readFileSync(resolvePath(root, safeStagePath))),
-  };
+  return collectGitVerificationSubject(root, { policyPath, stagePath });
 }
 
 export function writeVerificationManifest({
@@ -278,24 +243,6 @@ function assertNoSymlinkAncestors(root, relativePath) {
       if (error?.code !== "ENOENT") fail("verification_path_inspection_failed", "unable to inspect verification path");
     }
   }
-}
-
-function runGit(root, args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "buffer", windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  if (result.status !== 0 || result.error) fail("verification_git_failed", `git ${args[0]} failed`);
-  return result.stdout;
-}
-
-function runGitText(root, args) {
-  return runGit(root, args).toString("utf8").trim();
-}
-
-function splitNull(buffer) {
-  return buffer.toString("utf8").split("\0").filter((entry) => entry.length > 0);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sameArray(left, right) {

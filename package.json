@@ -25,6 +25,8 @@
     "gate:manifest:verify": "node scripts/development-gates/verification-manifest.mjs verify",
     "gate:provider:impact": "node scripts/development-gates/provider-continuity.mjs impact",
     "gate:provider:verify": "node scripts/development-gates/provider-continuity.mjs verify",
+    "gate:provider:live": "node scripts/development-gates/provider-continuity/live-runner.mjs",
+    "gate:provider:seal": "node scripts/development-gates/provider-continuity/receipt-writer.mjs",
     "verify:local": "node scripts/development-gates/run-verification.mjs",
     "verify:ci": "node scripts/development-gates/run-verification.mjs --require-clean",
     "gate:release": "node scripts/development-gates/release-gate.mjs",

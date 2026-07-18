@@ -316,6 +316,11 @@
       "prisma/schema.prisma",
       "scripts/production-preflight.mjs",
       "scripts/development-gates/provider-continuity.mjs",
+      "scripts/development-gates/provider-continuity/**",
+      "scripts/development-gates/run-development-gates.mjs",
+      "scripts/development-gates/run-verification.mjs",
+      "scripts/development-gates/verification-manifest.mjs",
+      "scripts/development-gates/verification-subject.mjs",
       "config/development-gates.json"
     ],
     "manifestPath": ".tmp/provider-continuity/provider-continuity.manifest.json",

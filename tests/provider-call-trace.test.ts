@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createProviderCallTraceRecorder,
   digestProviderRequestId,
+  resolveProviderCallTraceRecorderFromEnv,
   runWithProviderCallTraceContext,
 } from "@/server/provider-ledger/provider-call-trace";
 
@@ -47,12 +48,50 @@ describe("Provider call trace", () => {
       schemaVersion: "shanhai-provider-call-trace.v1",
       campaignId: "campaign-1",
       context: context(),
-      provider: { kind: "openai_responses", channel: "primary", model: "model-1" },
+      provider: { kind: "openai_responses", channel: "primary", modelFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      continuity: { phase: "initial", callOrdinal: 1 },
       result: { outcome: "failed", httpStatus: 502, timeout: false, retryCount: 0, errorCategory: "provider" },
     });
     expect(fact.result.requestIdDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(text).not.toContain("req-secret-1");
     expect(text).not.toMatch(/authorization|bearer|api[_-]?key|https?:\/\//i);
+  });
+
+  it("fails closed when capture is enabled with an invalid configuration", () => {
+    expect(() => resolveProviderCallTraceRecorderFromEnv({
+      NODE_ENV: "test" as const,
+      SHANHAI_PROVIDER_CALL_TRACE_ENABLED: "1",
+      SHANHAI_PROVIDER_CALL_TRACE_MODE: "development",
+    })).toThrow(/configuration is incomplete/i);
+  });
+
+  it("accepts only the matching campaign capture root and keeps ordinals across recorder instances", async () => {
+    const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "shanhai-provider-repository-"));
+    roots.push(repositoryRoot);
+    const captureRoot = path.join(repositoryRoot, ".tmp", "provider-continuity", "campaigns", "campaign-1", "capture");
+    await mkdir(captureRoot, { recursive: true });
+    const env = {
+      NODE_ENV: "test" as const,
+      SHANHAI_PROVIDER_CALL_TRACE_ENABLED: "1",
+      SHANHAI_PROVIDER_CALL_TRACE_MODE: "development",
+      SHANHAI_PROVIDER_CALL_TRACE_ROOT: ".tmp/provider-continuity/campaigns/campaign-1/capture",
+      SHANHAI_PROVIDER_CALL_TRACE_CAMPAIGN_ID: "campaign-1",
+    };
+    const first = resolveProviderCallTraceRecorderFromEnv(env, repositoryRoot)!;
+    const second = resolveProviderCallTraceRecorderFromEnv(env, repositoryRoot)!;
+
+    await runWithProviderCallTraceContext(context(), async () => {
+      await first.record(successfulCall());
+      await second.record(successfulCall());
+    });
+
+    const facts = await Promise.all((await readdir(captureRoot)).map(async (file) =>
+      JSON.parse(await readFile(path.join(captureRoot, file), "utf8"))));
+    expect(facts.map((fact) => fact.continuity.callOrdinal).sort()).toEqual([1, 2]);
+    expect(() => resolveProviderCallTraceRecorderFromEnv({
+      ...env,
+      SHANHAI_PROVIDER_CALL_TRACE_ROOT: ".tmp/provider-continuity/campaigns/other/capture",
+    }, repositoryRoot)).toThrow(/configuration|campaign/i);
   });
 
   it("does not write an orphan fact without an active product-turn context", async () => {
@@ -87,5 +126,24 @@ function context() {
     turnJobId: "turn-job-1",
     teacherMessageId: "message-1",
     intentEpoch: 2,
+    phase: "initial" as const,
+  };
+}
+
+function successfulCall() {
+  return {
+    provider: "openai_responses" as const,
+    channel: "primary" as const,
+    model: "model-1",
+    startedAt: "2026-07-17T08:00:00.000Z",
+    completedAt: "2026-07-17T08:00:01.000Z",
+    durationMs: 1000,
+    outcome: "succeeded" as const,
+    httpStatus: 200,
+    timeout: false,
+    requestIdDigest: null,
+    usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3, cachedTokens: 0, cacheWriteTokens: 0 },
+    retryCount: 0 as const,
+    errorCategory: "none" as const,
   };
 }

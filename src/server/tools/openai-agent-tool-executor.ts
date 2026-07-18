@@ -5,6 +5,11 @@ import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-re
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 import { adaptPptDirectorOutputToDesignArtifact } from "@/server/ppt-quality/ppt-director-design-adapter";
 import { tryResolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
+import {
+  runWithProviderCallTracePhase,
+  type ProviderCallTraceInput,
+  type ProviderCallTraceRecorder,
+} from "@/server/provider-ledger/provider-call-trace";
 import { prisma } from "@/server/db/client";
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { resolveGenerationIntensityStrategy } from "@/server/generation-intensity/generation-intensity-policy";
@@ -37,6 +42,8 @@ export type OpenAIAgentToolExecutorOptions = {
   client: OpenAIResponsesClient;
   model: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  providerChannel?: ProviderCallTraceInput["channel"];
+  traceRecorder?: ProviderCallTraceRecorder;
   loadContext?: AgentToolContextLoader;
 };
 
@@ -74,9 +81,14 @@ export function createOpenAIAgentToolExecutor(options: OpenAIAgentToolExecutorOp
   return async (envelope, definition) => {
     try {
       const strategy = resolveGenerationIntensityStrategy(envelope.generationIntensity);
-      const adapter = createOpenAIResponsesGptAdapter({ client: options.client, model: strategy.model ?? options.model });
+      const adapter = createOpenAIResponsesGptAdapter({
+        client: options.client,
+        model: strategy.model ?? options.model,
+        providerChannel: options.providerChannel,
+        traceRecorder: options.traceRecorder,
+      });
       const artifacts = await loadContext(envelope);
-      const response = await adapter.createResponse({
+      const response = await runWithProviderCallTracePhase("tool", () => adapter.createResponse({
         reasoning: { effort: strategy.reasoningEffort ?? reasoningEffort },
         instructions: instructionsFor(definition, envelope),
         input: JSON.stringify({
@@ -93,7 +105,7 @@ export function createOpenAIAgentToolExecutor(options: OpenAIAgentToolExecutorOp
             schema: sanitizeOpenAiStrictSchema(definition.outputSchema),
           },
         },
-      });
+      }));
       if (response.diagnostics.status !== "succeeded" || !response.assistantText) {
         return failed(
           envelope,
@@ -288,6 +300,7 @@ export function createAgentToolExecutorFromEnv(
     client,
     model: config.model,
     reasoningEffort: config.reasoningEffort,
+    providerChannel: config.channel,
     loadContext: options.loadContext,
   });
 }

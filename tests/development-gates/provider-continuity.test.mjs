@@ -28,6 +28,33 @@ const CAPTURE_PRODUCTION_PATHS = [
   "src/server/gpt-protocol/types.ts",
   "src/server/provider-ledger/provider-call-trace.ts",
 ];
+const READINESS_IMPLEMENTATION_PATHS = [
+  "config/development-gates.json",
+  "package.json",
+  "scripts/development-gates/provider-continuity.mjs",
+  "scripts/development-gates/provider-continuity/**",
+  "scripts/development-gates/run-development-gates.mjs",
+  "scripts/development-gates/run-verification.mjs",
+  "scripts/development-gates/verification-manifest.mjs",
+  "scripts/development-gates/verification-subject.mjs",
+  "src/server/provider-ledger/provider-call-trace.ts",
+  "src/server/gpt-protocol/openai-responses-adapter.ts",
+  "src/server/gpt-protocol/types.ts",
+  "src/server/conversation/conversation-turn-service.ts",
+  "src/server/tools/openai-agent-tool-executor.ts",
+  "tests/conversation-turn-service.test.ts",
+  "tests/development-gates/development-gate-runner.test.mjs",
+  "tests/development-gates/policy-ratchet.test.mjs",
+  "tests/development-gates/provider-continuity-live.test.mjs",
+  "tests/development-gates/provider-continuity.test.mjs",
+  "tests/development-gates/verification-subject.test.mjs",
+  "tests/development-gates/verification-runner.test.mjs",
+  "tests/development-gates/wiring.test.mjs",
+  "tests/gpt-protocol-adapter.test.ts",
+  "tests/model-main-conversation-agent.test.ts",
+  "tests/agent-tools/openai-agent-tool-executor.test.ts",
+  "tests/provider-call-trace.test.ts",
+];
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -108,6 +135,29 @@ function writeCaptureBootstrapStage(root, overrides = {}) {
       expiresOn: "2026-07-18",
       mode: "development-only",
       allowedProductionPaths: CAPTURE_PRODUCTION_PATHS,
+      ...overrides,
+    },
+  });
+}
+
+function writeReadinessStage(root, overrides = {}) {
+  writeJson(path.join(root, "docs/stages/active-stage.json"), {
+    schemaVersion: "shanhai-active-stage.v1",
+    stageId: "p0-05a-provider-continuity-readiness",
+    status: "active",
+    baselineSha: "336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee",
+    plan: "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
+    testPlan: "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
+    providerContinuity: {
+      requirement: "provider-continuity-readiness-implementation",
+      mode: "development-only",
+      expiresOn: "2026-07-24",
+      liveCallsAuthorized: false,
+      liveCampaign: "blocked-awaiting-explicit-authorization",
+      liveAuthorization: null,
+      requiredReceiptSchema: "shanhai-provider-continuity-receipt.v2",
+      trustedCaptureKeyIds: [],
+      allowedImplementationPaths: READINESS_IMPLEMENTATION_PATHS,
       ...overrides,
     },
   });
@@ -375,6 +425,37 @@ test("missing evidence fails closed except for the exact unexpired bootstrap sta
       }),
     /receipt.*missing/i,
   );
+});
+
+test("offline readiness implementation is exact, expiring, development-only, and never passing", (t) => {
+  const root = setupRepository(t);
+  writeReadinessStage(root);
+  const changedPaths = [
+    "config/development-gates.json",
+    "scripts/development-gates/provider-continuity/preflight.mjs",
+    "tests/development-gates/provider-continuity-live.test.mjs",
+  ];
+  const result = verify(root, { changedPaths });
+  assert.equal(result.ok, false);
+  assert.equal(result.passed, false);
+  assert.equal(result.status, "deferred_readiness_implementation");
+  assert.throws(() => verifyProviderContinuityEvidence({
+    root, mode: "release", now: NOW, changedPaths,
+  }), /receipt.*missing/i);
+
+  writeReadinessStage(root, { liveCallsAuthorized: true });
+  assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i);
+  writeReadinessStage(root, { expiresOn: "2026-07-16" });
+  assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i);
+});
+
+test("active P0-05A rejects the self-reported v1 receipt even when its hashes are internally consistent", (t) => {
+  const root = setupRepository(t);
+  writeReadinessStage(root);
+  writeValidEvidence(root);
+  assert.throws(() => verify(root, {
+    changedPaths: ["scripts/development-gates/provider-continuity/preflight.mjs"],
+  }), (error) => error?.code === "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");
 });
 
 test("capture bootstrap is development-only, exact-path, expiring, and never a passing receipt", (t) => {

@@ -5,6 +5,8 @@ import { test } from "node:test";
 import YAML from "yaml";
 
 import {
+  createNodeTestArgs,
+  createVitestShardPlans,
   createSuiteEnv,
   createTestBaseEnv,
   resolveCanonicalTestTempRoot,
@@ -20,6 +22,43 @@ test("package exposes one development, CI, manifest, Provider, and release gate 
   assert.equal(pkg.scripts?.["verify:local"], "node scripts/development-gates/run-verification.mjs");
   assert.equal(pkg.scripts?.["verify:ci"], "node scripts/development-gates/run-verification.mjs --require-clean");
   assert.equal(pkg.scripts?.["gate:release"], "node scripts/development-gates/release-gate.mjs");
+});
+
+test("the full Vitest suite restarts a single worker across isolated database shards", () => {
+  assert.deepEqual(createNodeTestArgs(), ["--test", "--test-concurrency=1", "tests/*.test.mjs"]);
+  const plans = createVitestShardPlans({
+    root: "C:\\repo",
+    base: { EXISTING: "yes" },
+    providerLedgerRoot: "C:\\repo\\tests\\fixtures\\provider-ledger",
+    providerEnvKeys: ["MINIMAX_API_KEY"],
+    shardCount: 2,
+  });
+  assert.deepEqual(plans.map((plan) => plan.args), [
+    ["vitest", "run", "--maxWorkers=1", "--no-file-parallelism", "--shard=1/2"],
+    ["vitest", "run", "--maxWorkers=1", "--no-file-parallelism", "--shard=2/2"],
+  ]);
+  assert.equal(plans[0].databasePath, "C:\\repo\\.tmp\\vitest-test-workbench-shard-1.db");
+  assert.equal(plans[1].databasePath, "C:\\repo\\.tmp\\vitest-test-workbench-shard-2.db");
+  assert.notEqual(plans[0].env.DATABASE_URL, plans[1].env.DATABASE_URL);
+  assert.equal(plans[0].env.MINIMAX_API_KEY, undefined);
+});
+
+test("package exposes the single Provider live preflight and seal entrypoints", () => {
+  const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+  const policy = JSON.parse(readFileSync(path.join(process.cwd(), "config", "development-gates.json"), "utf8"));
+  assert.equal(pkg.scripts["gate:provider:live"], "node scripts/development-gates/provider-continuity/live-runner.mjs");
+  assert.equal(pkg.scripts["gate:provider:seal"], "node scripts/development-gates/provider-continuity/receipt-writer.mjs");
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/development-gates/provider-continuity/**"));
+  assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/development-gates/run-development-gates.mjs"));
+});
+
+test("the active stage starts after archival and exposes no archive mutation exception", () => {
+  const stage = JSON.parse(readFileSync(path.join(process.cwd(), "docs", "stages", "active-stage.json"), "utf8"));
+  assert.equal(stage.baselineSha, "336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee");
+  assert.deepEqual(stage.protectedPathExceptions, []);
+  assert.equal(stage.allowedPaths.some((entry) => entry.startsWith("docs/archive/")), false);
+  assert.equal(stage.allowedPaths.includes("docs/stages/project-development-gates-plan.md"), false);
+  assert.equal(stage.allowedPaths.includes("docs/stages/project-development-gates-test-plan.md"), false);
 });
 
 test("quality-gates workflow calls the repository CI entry without a success bypass", () => {

@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
+import { readProviderCallTraceContext, runWithProviderCallTraceContext } from "@/server/provider-ledger/provider-call-trace";
 import { createAgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { getAgentToolDefinition } from "@/server/tools/agent-tool-registry";
 import {
@@ -83,6 +84,34 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
     expect(createAgentToolExecutorFromEnv({
       SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
     })).toBeUndefined();
+  });
+
+  it("records responses Tool calls with the explicit channel and tool phase", async () => {
+    const captured: Array<{ channel: string; phase: string | undefined }> = [];
+    const client = { responses: { async create() {
+      return { output_text: JSON.stringify(validPptDirectorOutput()) };
+    } } } as OpenAIResponsesClient;
+    const executor = createOpenAIAgentToolExecutor({
+      client,
+      model: "test-model",
+      providerChannel: "primary",
+      traceRecorder: { async record(call) {
+        captured.push({ channel: call.channel, phase: readProviderCallTraceContext()?.phase });
+        return true;
+      } },
+      loadContext: async () => [],
+    });
+    const envelope = directorEnvelope();
+    await runWithProviderCallTraceContext({
+      projectId: envelope.projectId,
+      taskId: "task-1",
+      runId: "turn:message-1",
+      turnJobId: "job-1",
+      teacherMessageId: "message-1",
+      intentEpoch: envelope.intentEpoch,
+      phase: "initial",
+    }, () => executor(envelope, getAgentToolDefinition(envelope.toolId)));
+    expect(captured).toEqual([{ channel: "primary", phase: "tool" }]);
   });
 
   it("uses an explicitly selected Chat Completions channel without weakening Router schema validation", async () => {

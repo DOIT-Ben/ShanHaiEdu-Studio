@@ -15,6 +15,10 @@
 
 ## 2. 离线合同测试
 
+当前首批定向结果：相关Node合同`40/41`，唯一跳过项为当前Windows不允许创建测试符号链接；Provider边界相关Vitest `125/125`；TypeScript通过。修复前候选的全量Vitest采用两个顺序分片、单worker、禁止文件并行和独立SQLite，第1分片`770/770`、第2分片`794/794`；其`verify:local`五项检查全部返回0。提交前独立审查触发新的P1修复后，新增签名来源、capture全枚举、授权匹配、turn-global ordinal、D续轮和Tool phase/channel定向合同已通过；最终全量结果以提交前当前manifest和clean提交的远端CI manifest为准。
+
+测试运行器恢复事实：原单分片长寿worker连续两次在末段异常退出，其中一次表面落在`external-audit-evidence-ingress`初始化，但该文件隔离复跑`16/16`通过；后续Node全量在完整流程中一次失败而同命令隔离复跑`384/384`。不得把这类基础设施异常记作业务断言失败，也不得通过减少测试集合处理；当前Node固定单并发，Vitest分片策略保留完整测试集合并在分片间重启worker。
+
 | ID | 场景 | 预期 |
 |---|---|---|
 | PC-A01 | 未显式指定ledger root/channel | 失败且不发请求 |
@@ -37,6 +41,12 @@
 | PC-A18 | run序号不从1开始、跨server拼接、存在失败attempt或run数不等于政策值 | 失败，不得挑选成功组重封装 |
 | PC-A19 | status、timeout、mode、outcome和errorCategory不能逐调用对齐 | 失败，改用单条`providerCalls[]`事实 |
 | PC-A20 | capture root穿过junction/reparse/symlink或配置无效 | preflight在启动前失败，Provider调用为0 |
+| PC-A21 | 手工构造且内部SHA自洽的v1 receipt | P0-05A以`PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED`拒绝 |
+| PC-A22 | v2 source index无签名、key ID未被活动阶段预绑定或公钥摘要不符 | 失败，不得晋升passed receipt |
+| PC-A23 | 签名source index遗漏capture目录中的失败attempt或额外文件 | 失败，必须逐文件精确枚举 |
+| PC-A24 | intake临时taskId与TaskBrief taskId变化，或C/D共用turn身份 | ordinal按同一turn连续；仅intake允许精确临时taskId，D不得重复归1或重复引用call |
+| PC-A25 | 相同工作树只改变untracked/staged/unstaged形态 | manifest摘要不变；实际文件字节、路径或删除状态变化时摘要必须变化 |
+| PC-A26 | verification manifest目标为绝对路径、反斜杠、`.tmp/verification`外路径、reparse/symlink或非普通文件，或写入后改变subject | 在删除任何既有目标前失败；写后漂移时删除manifest并失败，不留下成功证据 |
 
 ## 3. 四场景真实合同
 
@@ -94,14 +104,14 @@ npm run verify:local
 npm run gate:manifest:verify
 ```
 
-受保护真实环境，且仅在用户批准费用后：
+当前授权前失败关闭检查：
 
 ```powershell
-npm run gate:provider:live -- --mode development --manifest .tmp/provider-continuity/provider-continuity.manifest.json
+npm run gate:provider:live -- --mode development --preflight-only
 npm run gate:provider:verify -- --mode development
 ```
 
-P0-05A不运行`gate:release`，不运行完整V1-9 runner，不运行390px，不调用媒体或整包Provider。
+当前没有真实执行命令。只有活动阶段写入完整且未过期的授权合同、trusted capture key、公钥摘要和ledger摘要，并接入受保护环境及ledger权威验证器后，才允许文档化真实命令。P0-05A不运行`gate:release`，不运行完整V1-9 runner，不运行390px，不调用媒体或整包Provider。
 
 ## 7. Go/No-Go
 

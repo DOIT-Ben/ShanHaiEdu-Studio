@@ -234,6 +234,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       turnJobId: job.id,
       teacherMessageId: teacher.id,
       intentEpoch: 0,
+      phase: "initial",
     });
 
     const persistedTeacher = (await service.getMessages(project.id)).find((message) => message.id === teacher.id)!;

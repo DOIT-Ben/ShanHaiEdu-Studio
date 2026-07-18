@@ -456,5 +456,6 @@ function traceContext() {
     turnJobId: "turn-job-1",
     teacherMessageId: "message-1",
     intentEpoch: 2,
+    phase: "initial" as const,
   };
 }

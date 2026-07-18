@@ -3,7 +3,9 @@
 日期：2026-07-17
 状态：active / offline-readiness-only / live-campaign-not-authorized
 
-本阶段已于 clean 基线 `88dae43c3cd2d71b792388ad15b93a74d4ac7bac` 激活。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
+本阶段以阶段切换提交 `336e6b3a5c94eaa1d9c674c6ffd053339b3f95ee` 为基线；此前门禁阶段归档已退出活动例外，archive重新不可修改。当前执行权只覆盖离线 harness、证据来源绑定、隔离生命周期、失败关闭和 V1-9 入口就绪审计；`liveCallsAuthorized=false`且`liveAuthorization=null`。在用户另行批准 Provider channel、model fingerprint、总费用、最大调用次数和授权摘要，并完成受保护环境与ledger权威验证器前，任何真实入口必须在创建客户端和启动服务前以零 Provider 请求失败。
+
+安全审查确认旧v1 receipt只能证明JSON自洽，不能证明真实来源。活动阶段已改为只接受未来的v2签名来源合同，并保持`trustedCaptureKeyIds=[]`；因此本轮离线实现不可能签发passed receipt。可信key必须由受保护环境持有私钥，活动阶段只预绑定非敏感key ID和公钥摘要。
 
 ## 1. 唯一路线
 
@@ -38,6 +40,8 @@
 
 ## 3. 阶段1：证据合同和红测试
 
+状态：v2签名source index验证、capture全文件枚举、SHA重算、scenario绑定和Tool trace合同已实现；受保护capture signer与v2 receipt验证仍未实现。
+
 目标：先证明现有系统不能生成合格真实receipt，再实现。
 
 任务：
@@ -51,6 +55,8 @@
 验收：新增特征测试因入口缺失或证据不完整而红；现有provider verifier测试保持绿。
 
 ## 4. 阶段2：live harness与隔离生命周期
+
+状态：离线授权匹配、隔离目录和四场景状态机已实现；当前授权为空，真实产品Playwright driver、受保护环境验证器和ledger绑定验证器未实现、未运行。
 
 目标：通过真实产品入口驱动四场景，并安全保存原始事实。
 
@@ -67,6 +73,8 @@
 
 ## 5. 阶段3：证据与receipt生成
 
+状态：签名source index、capture全文件枚举、SHA重算、scenario/Provider call对齐builder、不可覆盖原子写和失败关闭seal入口已实现；builder最多输出`source-verified`，活动阶段拒绝v1，且因可信capture key为空、受保护signer和v2 receipt verifier缺失而不能形成当前证据或签发passed receipt。
+
 目标：只从实际持久事实确定性生成verifier可接受的两文件证据。
 
 任务：
@@ -81,6 +89,8 @@
 验收：篡改任一字段、文件、时间、SHA或目录内容均失败；日志和JSON不含凭据。
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
+
+状态：只读矩阵已完成，结论为NO-GO；fresh-run predecessor、baseline lock、恢复权和observer权威来源仍需适配。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -110,6 +120,8 @@
 
 ## 7. 阶段5：完整离线验证与冻结
 
+状态：提交前独立审查发现的证据与授权P1已修复；最终本地证据以当前工作树最新manifest为准，clean提交和远端CI manifest待完成。
+
 目标：在真实费用发生前冻结唯一候选。
 
 命令：
@@ -124,7 +136,11 @@ npm run verify:local
 npm run gate:manifest:verify
 ```
 
-通过后记录candidate HEAD、tree、working tree clean状态、policy SHA、stage SHA、provider channel、model fingerprint、合同版本和费用授权版本。此后任何字节变化都终止本轮连续性计数。
+本地验证曾连续两次在单个长寿Vitest worker末段异常退出，隔离复跑未发现业务测试失败；后续全流程还出现一次Node并发瞬时失败，同命令隔离复跑通过。测试入口现把Node固定为单并发，并把Vitest拆为两个顺序分片，每片单worker、禁止文件并行、独立SQLite并重启worker，不减少测试集合。最终工作树验证通过、clean提交和CI通过后，再记录candidate HEAD、tree、working tree clean状态、policy SHA、stage SHA、provider channel、model fingerprint、合同版本和费用授权版本。此后任何字节变化都终止本轮连续性计数。
+
+提交前manifest摘要必须只绑定工作树内容，不绑定文件处于untracked、staged或unstaged的Git形态；仅执行`git add`不得改变`workingTreeDigest`，实际字节、路径或删除状态变化必须改变摘要。runner与verifier必须调用同一实现，防止双口径。
+
+提交前独立审查发现的verification输出路径P1已修复：runner只接受仓库相对`.tmp/verification/**`目标，在任何删除或写入前逐段拒绝绝对路径、反斜杠、路径逃逸、junction/reparse/symlink、非目录父级和非普通文件目标；manifest原子写入后必须重新采集subject，若输出本身改变候选工作树则删除manifest并失败，不能留下伪成功证据。
 
 ## 8. 阶段6：真实连续运行
 
