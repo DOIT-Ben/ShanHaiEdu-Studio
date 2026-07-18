@@ -1,84 +1,196 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
-const observerUrl = new URL("e2e/v1-9-unique-real-product.spec.ts", import.meta.url);
-const snapshotRouteUrl = new URL("../src/app/api/workbench/projects/[projectId]/snapshot/route.ts", import.meta.url);
+import {
+  assertV1_9OrchestrationAuthorityProjection,
+  normalizeV1_9OrchestrationAuthoritySummary,
+} from "../scripts/lib/v1-9-orchestration-authority.mjs";
 
-test("V1-9 observer keeps the v2 manifest immutable and persists only run-state contract mutations", async () => {
-  const source = await readFile(observerUrl, "utf8");
+const digest = (character) => character.repeat(64);
 
-  for (const contractApi of [
-    "normalizeV1_9RunManifestV2",
-    "createV1_9RunManifestV2Digest",
-    "normalizeV1_9RunState",
-    "bindV1_9RunStateProjectIdentity",
-    "bindV1_9TaskContractLock",
-    "recordV1_9RunStateMutation",
-    "updateV1_9RunStateCheckpoint",
-    "markV1_9RunStatePendingDecision",
-    "markV1_9RunStateRecoveryStop",
-    "markV1_9RunStatePackageReady",
+test("V1-9 accepts a complete ready product authority summary bound to the frozen task", () => {
+  const summary = authoritySummary();
+
+  assert.deepEqual(normalizeV1_9OrchestrationAuthoritySummary(summary), summary);
+  assert.deepEqual(assertV1_9OrchestrationAuthorityProjection({
+    actual: summary,
+    projected: null,
+    expectedSubject: summary.subject,
+    requireReady: true,
+  }), summary);
+});
+
+test("V1-9 rejects missing summaries, subject drift, and non-ready product authority", () => {
+  const summary = authoritySummary();
+  assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+    actual: null,
+    projected: null,
+    expectedSubject: summary.subject,
+    requireReady: true,
+  }), /v1_9_orchestration_authority_summary_missing/);
+  assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+    actual: authoritySummary({ subject: { ...summary.subject, taskId: "task-other" } }),
+    projected: null,
+    expectedSubject: summary.subject,
+    requireReady: true,
+  }), /v1_9_orchestration_authority_subject_mismatch/);
+
+  for (const actual of [
+    authoritySummary({
+      resolvedCount: 1,
+      openAttemptCount: 1,
+      complete: false,
+      readyEligible: false,
+      violationReasonCodes: ["open_attempt"],
+    }),
+    authoritySummary({ violationReasonCodes: ["unclassified_external_mutation"], readyEligible: false }),
+    authoritySummary({ complete: false, readyEligible: false }),
+    authoritySummary({ readyEligible: false }),
   ]) {
-    assert.match(source, new RegExp(`\\b${contractApi}\\b`), `${contractApi} must be used`);
-  }
-
-  assert.match(source, /V1_9_E2E_STATE_PATH/);
-  assert.match(source, /writeV1_9RunStateCooperativeCas\(\{/);
-  assert.match(source, /assertManifestBytesUnchanged/);
-  assert.match(source, /manifestFileSha256/);
-  assert.doesNotMatch(source, /writeJsonAtomic\(manifestPath,/);
-  assert.doesNotMatch(source, /\bV1_9RunManifest\b/);
-  assert.doesNotMatch(source, /\b(?:bindV1_9ProjectIdentity|bindV1_9TaskIdentity|recordV1_9UiMutation|markV1_9Completed)\b/);
-});
-
-test("V1-9 observer binds actor and the first persisted TaskBrief contract without resubmitting the goal", async () => {
-  const source = await readFile(observerUrl, "utf8");
-
-  assert.match(source, /page\.request\.get\("\/api\/auth\/me"\)/);
-  assert.match(source, /taskBrief\.digest/);
-  assert.match(source, /intentGrantDigest/);
-  assert.match(source, /budgetDigest/);
-  assert.match(source, /intensity:\s*"standard"/);
-  assert.match(source, /initialPlanRevision:\s*0/);
-  assert.match(source, /planRevision/);
-  assert.match(source, /if \(state\.identity\.actorUserId === null\)/);
-  assert.match(source, /else \{\s*expect\(state\.identity\.actorUserId\)\.toBe\(actorUserId\);\s*await selectProject/);
-  assert.match(source, /taskSubmissionCount\s*===\s*0/);
-  assert.match(source, /expect\(state\.ledger\.taskSubmissionCount\)\.toBe\(1\)/);
-  assert.doesNotMatch(source, /\.request\.(?:post|put|patch|delete)\s*\(/);
-});
-
-test("V1-9 observer stops on typed decisions or recovery and leaves a real ZIP for external acceptance", async () => {
-  const source = await readFile(observerUrl, "utf8");
-
-  assert.match(source, /markV1_9RunStatePendingDecision/);
-  assert.match(source, /markV1_9RunStateRecoveryStop/);
-  assert.match(source, /sha256File/);
-  assert.match(source, /package_ready_for_external_acceptance/);
-  assert.match(source, /manifestContractDigest/);
-  assert.match(source, /toolExposureTrace/);
-  assert.match(source, /observations/);
-  assert.match(source, /selectLatestV1_9FinalPackage/);
-  assert.match(source, /assertV1_9FinalPackageDownloadPath/);
-  assert.match(source, /final_package_not_eligible/);
-  assert.doesNotMatch(source, /snapshot\.artifacts\.find\(\(artifact\)\s*=>\s*\n?\s*artifact\.nodeKey === "final_delivery"/);
-  assert.doesNotMatch(source, /markV1_9RunStateCompletedAfterAcceptance/);
-});
-
-test("V1-9 snapshot exposes the persisted Artifact task binding required by the observer selector", async () => {
-  const source = await readFile(snapshotRouteUrl, "utf8");
-
-  for (const field of ["taskId", "taskBriefDigest", "intentEpoch", "planRevision", "origin"]) {
-    assert.match(source, new RegExp(`\\b${field}\\b`), `${field} must cross the snapshot JSON boundary`);
+    assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+      actual,
+      projected: null,
+      expectedSubject: summary.subject,
+      requireReady: true,
+    }), /v1_9_orchestration_authority_not_ready/);
   }
 });
 
-test("V1-9 observer applies the shared recursive evidence sanitizer at the atomic write boundary", async () => {
-  const source = await readFile(observerUrl, "utf8");
+test("V1-9 requires monotonic authority watermarks and stable digests at the same watermark", () => {
+  const projected = authoritySummary({ watermark: 8 });
+  assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+    actual: authoritySummary({ watermark: 7 }),
+    projected,
+    expectedSubject: projected.subject,
+    requireReady: true,
+  }), /v1_9_orchestration_authority_watermark_regression/);
+  assert.throws(() => assertV1_9OrchestrationAuthorityProjection({
+    actual: authoritySummary({
+      watermark: 8,
+      eventCount: 6,
+      attemptCount: 3,
+      resolvedCount: 3,
+      factsDigest: digest("9"),
+    }),
+    projected,
+    expectedSubject: projected.subject,
+    requireReady: true,
+  }), /v1_9_orchestration_authority_digest_drift/);
 
-  assert.match(source, /scripts\/lib\/evidence-sanitizer\.mjs/);
-  assert.match(source, /sanitizeEvidenceRecord\(value,/);
-  assert.match(source, /sanitizeEvidenceValue\(evidence,/);
-  assert.match(source, /writeJsonAtomic\(path\.join\(evidenceRoot, "v1-9-observer-latest\.json"\), sanitizedEvidence\)/);
+  const advanced = authoritySummary({
+    watermark: 9,
+    eventCount: 6,
+    attemptCount: 3,
+    resolvedCount: 3,
+    factsDigest: digest("a"),
+  });
+  assert.deepEqual(assertV1_9OrchestrationAuthorityProjection({
+    actual: advanced,
+    projected,
+    expectedSubject: projected.subject,
+    requireReady: true,
+  }), advanced);
 });
+
+test("V1-9 normalization rejects unknown fields and inconsistent aggregate counts", () => {
+  const summary = authoritySummary();
+  assert.throws(
+    () => normalizeV1_9OrchestrationAuthoritySummary({ ...summary, browserLedgerCount: 0 }),
+    /v1_9_orchestration_authority_summary_invalid/,
+  );
+  assert.throws(
+    () => normalizeV1_9OrchestrationAuthoritySummary({ ...summary, resolvedCount: summary.attemptCount + 1 }),
+    /v1_9_orchestration_authority_summary_invalid/,
+  );
+  assert.throws(
+    () => normalizeV1_9OrchestrationAuthoritySummary({ ...summary, authorities: ["teacher_http", "teacher_http"] }),
+    /v1_9_orchestration_authority_summary_invalid/,
+  );
+  assert.throws(
+    () => normalizeV1_9OrchestrationAuthoritySummary({ ...summary, readyEligible: false }),
+    /v1_9_orchestration_authority_summary_invalid/,
+  );
+  const fresh = authoritySummary({
+    subject: {
+      projectId: "project-1",
+      actorUserId: "teacher-1",
+      taskId: null,
+      taskBriefDigest: null,
+      intentEpoch: 0,
+      teacherMessageId: null,
+      turnJobId: null,
+      planId: null,
+      planRevision: null,
+    },
+    windowStartSequence: 0,
+    watermark: 0,
+    eventCount: 0,
+    attemptCount: 0,
+    resolvedCount: 0,
+    authorities: [],
+    violationReasonCodes: ["task_aggregate_binding_invalid"],
+    complete: false,
+    readyEligible: false,
+  });
+  assert.deepEqual(normalizeV1_9OrchestrationAuthoritySummary(fresh), fresh);
+  const invalidAggregate = authoritySummary({
+    ...fresh,
+    subject: { ...fresh.subject, planId: "plan-invalid", planRevision: 0 },
+  });
+  assert.deepEqual(normalizeV1_9OrchestrationAuthoritySummary(invalidAggregate), invalidAggregate);
+});
+
+function authoritySummary(overrides = {}) {
+  const { summaryDigest: _ignoredSummaryDigest, ...publicOverrides } = overrides;
+  const publicSummary = {
+    schemaVersion: "orchestration-authority-summary.v1",
+    subject: {
+      projectId: "project-1",
+      actorUserId: "teacher-1",
+      taskId: "task-1",
+      taskBriefDigest: digest("1"),
+      intentEpoch: 0,
+      teacherMessageId: "teacher-message-1",
+      turnJobId: "turn-job-1",
+      planId: "plan-1",
+      planRevision: 0,
+    },
+    windowStartSequence: 1,
+    watermark: 4,
+    eventCount: 4,
+    attemptCount: 2,
+    resolvedCount: 2,
+    openAttemptCount: 0,
+    toolClaimCount: 0,
+    toolTerminalCount: 0,
+    mainAgentToolCount: 0,
+    nonMainAgentToolCount: 0,
+    firstToolOrdinal: null,
+    lastToolOrdinal: null,
+    toolOrdinalsContiguous: true,
+    authorities: ["teacher_http"],
+    violationReasonCodes: [],
+    factsDigest: digest("2"),
+    complete: true,
+    readyEligible: true,
+    ...publicOverrides,
+  };
+  return {
+    ...publicSummary,
+    summaryDigest: digestDomain("orchestration-authority-summary.v1", publicSummary),
+  };
+}
+
+function digestDomain(domain, value) {
+  return createHash("sha256")
+    .update(`${domain}\0`, "utf8")
+    .update(canonicalJson(value), "utf8")
+    .digest("hex");
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
