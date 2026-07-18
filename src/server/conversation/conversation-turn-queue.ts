@@ -31,6 +31,7 @@ export type ConversationTurnJobExecutor = (input: {
 
 export type DrainProjectConversationQueueOptions = {
   service: WorkbenchService;
+  expectedJobId?: string;
   runtime?: AgentRuntime;
   agent?: MainConversationAgent;
   executor?: ConversationTurnJobExecutor;
@@ -75,13 +76,20 @@ export async function drainProjectConversationQueue(
 
   try {
     const executor = options.executor ?? createDefaultExecutor(options);
+    let claimAttempts = 0;
     while (true) {
+      if (options.expectedJobId && claimAttempts > 0) break;
+      claimAttempts += 1;
       const job = await options.service.startNextConversationTurnJob(projectId, {
         lockedBy: holderId,
         lockMs: leaseMs,
         fence,
+        expectedJobId: options.expectedJobId,
       });
       if (!job) break;
+      if (options.expectedJobId && job.id !== options.expectedJobId) {
+        throw new Error("Conversation turn queue claimed an unexpected recovery job.");
+      }
       if (job.status !== "running") {
         if (job.status === "failed" || job.status === "quarantined") result.failed += 1;
         continue;

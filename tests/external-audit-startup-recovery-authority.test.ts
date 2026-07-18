@@ -6,7 +6,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createExternalAuditRepairHandoff } from "@/server/conversation/external-audit-repair-contract";
-import { resolveV1_9ExternalAuditRecoveryAuthority } from "@/server/conversation/external-audit-startup-recovery";
+import {
+  assertV1_9ExternalAuditRecoverySession,
+  resolveV1_9ExternalAuditRecoveryAuthority,
+} from "@/server/conversation/external-audit-startup-recovery";
 import { resolveV1_9RepositoryRoot } from "@/server/conversation/conversation-turn-recovery";
 import {
   createV1_9ExternalAcceptanceReportDigest,
@@ -32,17 +35,12 @@ afterEach(async () => {
 });
 
 describe("V1-9 external-audit startup recovery authority", () => {
-  it("wires external-audit recovery before Provider-health recovery without requeueing", async () => {
-    const source = await readFile(path.resolve("src/server/conversation/conversation-turn-recovery.ts"), "utf8");
-    expect(source).toMatch(/resolveV1_9ExternalAuditRecoveryAuthority/);
-    expect(source).toMatch(/recoverV1_9ExternalAuditTurn/);
-    expect(source.indexOf("resolveV1_9ExternalAuditRecoveryAuthority")).toBeLessThan(
-      source.indexOf("resolveV1_9ProviderHealthRecoveryAuthority({ cwd: repositoryRoot, env })"),
-    );
-    expect(source).toMatch(/const repositoryRoot = resolveV1_9RepositoryRoot\(env\)/);
-    expect(source).toMatch(/verifyContractRepairRecoveryEvidence\(\{[\s\S]*cwd: repositoryRoot/);
-    expect(source).toMatch(/resolveV1_9ExternalAuditRecoveryAuthority\(\{ cwd: repositoryRoot, env \}\)/);
-    expect(source).not.toMatch(/requeueConversationTurnJobAfterExternalAudit/);
+  it("fails closed when the DB disposition auth session drifts before execution", () => {
+    expect(() => assertV1_9ExternalAuditRecoverySession("session-frozen", "session-replaced"))
+      .toThrow("v1_9_external_audit_recovery_invalid");
+    expect(() => assertV1_9ExternalAuditRecoverySession(null, "session-injected"))
+      .toThrow("v1_9_external_audit_recovery_invalid");
+    expect(() => assertV1_9ExternalAuditRecoverySession("session-frozen", "session-frozen")).not.toThrow();
   });
 
   it("keeps V1-9 recovery on the repository root after Next moves to the frozen cwd", async () => {

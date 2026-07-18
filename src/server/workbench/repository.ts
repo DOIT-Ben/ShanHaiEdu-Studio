@@ -791,22 +791,23 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
 
     async startNextConversationTurnJob(
       projectId: string,
-      input: { lockedBy?: string; lockMs?: number; fence?: ProjectExecutionFence; now?: Date } = {},
+      input: { lockedBy?: string; lockMs?: number; fence?: ProjectExecutionFence; now?: Date; expectedJobId?: string } = {},
     ) {
       return client.$transaction(async (tx) => {
         await assertActiveProjectForWrite(tx, projectId);
         const now = input.now ?? new Date();
         if (input.fence) await assertCurrentFence(tx, input.fence, now);
+        if (input.expectedJobId && await tx.conversationTurnJob.count({ where: { projectId, id: { not: input.expectedJobId }, status: { in: ["queued", "running"] } } }) !== 0) return null;
         const running = await tx.conversationTurnJob.findFirst({
           where: {
             projectId,
+            ...(input.expectedJobId ? { id: input.expectedJobId } : {}),
             status: "running",
             OR: [{ lockedUntil: null }, { lockedUntil: { gt: now } }],
           },
           orderBy: { createdAt: "asc" },
         });
         if (running) return null;
-
         const expiredRunning = await tx.conversationTurnJob.findFirst({
           where: {
             projectId,
@@ -816,7 +817,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           orderBy: { createdAt: "asc" },
         });
         if (expiredRunning) {
-          if (expiredRunning.attempts >= expiredRunning.maxAttempts) {
+          if (expiredRunning.attempts >= expiredRunning.maxAttempts && !input.expectedJobId) {
             return tx.conversationTurnJob.update({
               where: { id: expiredRunning.id },
               data: {
@@ -838,7 +839,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             where: { id: expiredRunning.id },
             data: {
               status: "running",
-              attempts: expiredRunning.attempts + 1,
+              attempts: input.expectedJobId ? expiredRunning.attempts : expiredRunning.attempts + 1,
               lockedBy: input.lockedBy ?? "local-worker",
               lockedUntil: new Date(now.getTime() + lockMs),
               fencingToken: input.fence?.fencingToken,
@@ -849,9 +850,8 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             },
           });
         }
-
         const next = await tx.conversationTurnJob.findFirst({
-          where: { projectId, status: "queued" },
+          where: { projectId, status: "queued", ...(input.expectedJobId ? { id: input.expectedJobId } : {}) },
           orderBy: { createdAt: "asc" },
         });
         if (!next) return null;

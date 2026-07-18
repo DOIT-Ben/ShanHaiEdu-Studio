@@ -30,6 +30,7 @@ const CAPTURE_PRODUCTION_PATHS = [
   "src/server/provider-ledger/provider-call-trace.ts",
 ];
 const READINESS_IMPLEMENTATION_PATHS = [
+  "config/development-gates.json",
   "docs/mainlines/current-mainline-status.md",
   "docs/stages/active-stage.json",
   "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
@@ -42,6 +43,7 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "scripts/lib/v1-9-e2e-contract.mjs",
   "src/instrumentation.ts",
   "src/server/conversation/conversation-turn-checkpoint-recovery.ts",
+  "src/server/conversation/conversation-turn-queue.ts",
   "src/server/conversation/conversation-turn-recovery.ts",
   "src/server/conversation/external-audit-startup-recovery.ts",
   "src/server/conversation/provider-health-startup-recovery.ts",

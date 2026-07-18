@@ -13,7 +13,7 @@
 - P0-05A离线readiness首批出口已落地：精确延期门、零请求授权preflight、物理隔离campaign目录、四场景顺序合同、来源绑定evidence builder、不可覆盖写入和失败关闭seal入口。旧v1 receipt已在活动阶段被禁止晋升。
 - P0-05A本地`verify:local`只作为提交前dirty候选证据；最新候选仍须由同一工作树manifest、clean提交和远端`quality-gates`共同形成阶段证据，不能据此提升真实Provider、V1-9或release状态。
 - P0-05A的fresh/baseline入口切片已由`9160694`完成并通过GitHub Actions run `29642751018`；远端artifact经仓内verifier复核为`dirty=false / checkCount=5`，HEAD `9160694`、tree `4cb8f70`、policy/stage SHA和五项退出码全部匹配。该证据不包含真实Provider、V1-9或媒体调用。
-- 当前第2个串行切片是VR-A13产品服务端持久编排audit。A阶段已由`b2772a7`建立append-only schema/health、18个统一写入口、成员路由接入和AST门，B1已由`a1c170c`完成本地提交。B2由`db5af68`提交run-state v3 summary投影、observer fresh snapshot重入、runner停机后只读SQLite复算和closeout双重复算；最终重锚`781af1f`已通过GitHub Actions run `29651142001`。仓内verifier复核artifact为`dirty=false / checkCount=5`，HEAD、tree、policy/stage SHA与5项退出码全部匹配，VR-A13B据此关闭。
+- VR-A13产品服务端持久编排audit已关闭。A阶段由`b2772a7`建立append-only schema/health、18个统一写入口、成员路由接入和AST门，B1由`a1c170c`完成，B2由`db5af68`提交run-state v3 summary投影、observer fresh snapshot重入、runner停机后只读SQLite复算和closeout双重复算；最终重锚`781af1f`已通过GitHub Actions run `29651142001`。仓内verifier复核artifact为`dirty=false / checkCount=5`，HEAD、tree、policy/stage SHA与5项退出码全部匹配。
 - 仓库为公开状态；当前权威文档和生产媒体解析中的本机绝对路径已清理。历史仍含非密钥旧本机路径，未获历史重写授权，不影响当前树口径。
 - 整改前基线：`b4ad3849f6ae0953f3dfe856ce000e0def292023`，分支`main`；该提交现已进入`origin/main`历史。
 - 目标架构仍是`..\architecture\V1.0 重构设计.md`；当前代码已通过本轮审查问题对应的本地合同与执行验证，但不能据此宣称完整产品E2E或release完成。
@@ -30,7 +30,7 @@
 
 ## 3. 当前未完成门
 
-本轮审查确认的15项整改问题已关闭。防复发层已建立阶段路径、政策单调性、源码字符串合同、复杂度、SHA验证manifest和Provider receipt门；当前精确锁定26个源码字符串合同债务文件与31个复杂度债务文件，既存值只能收缩。真实Provider receipt尚不存在。新逐调用事实源已可记录SDK HTTP状态、timeout、哈希request ID摘要、channel/model fingerprint、usage和project/task/turn绑定，且不记录body、header、URL、凭据、完整模型名或错误原文；开发门明确返回`passed=false / deferred_readiness_implementation`，release不接受该延期。
+本轮审查确认的15项整改问题已关闭。防复发层已建立阶段路径、政策单调性、源码字符串合同、复杂度、SHA验证manifest和Provider receipt门；当前精确锁定23个源码字符串合同债务文件与31个复杂度债务文件，既存值只能收缩。真实Provider receipt尚不存在。新逐调用事实源已可记录SDK HTTP状态、timeout、哈希request ID摘要、channel/model fingerprint、usage和project/task/turn绑定，且不记录body、header、URL、凭据、完整模型名或错误原文；开发门明确返回`passed=false / deferred_readiness_implementation`，release不接受该延期。
 
 产品层未完成项仍是连续多轮Provider稳定性、唯一V1-9真实全链路、教师签收与release；不得把开发门通过或bootstrap延期上推为这些事项完成。
 
@@ -100,9 +100,11 @@ P0-05A全量验证曾连续两次在单个长寿Vitest worker末段出现`Worker
 
 V1-9入口二次只读审查及提交前并发审查确认fresh/baseline合同出口已经关闭：fresh只允许active pointer不存在并使用no-replace hard-link发布；successor保护history并对遵守共享prepare锁的仓内pointer writer执行协作式CAS；closeout在同字节双pointer时幂等前滚、异字节失败关闭，活PID不因TTL被接管；termination与closeout共用exact-byte run-state cooperative CAS；legacy v1仅可只读解析，不能进入活动执行；签名campaign自身受TTL约束。baseline v2绑定clean verification、policy/stage、Provider manifest/receipt及签名evidence root摘要。B2消费与复算层已由clean CI关闭。P0-05A仍为NO-GO，当前进入VR-A14/A16 DB recovery与恢复身份精确绑定；真实receipt仍是后续独立阻塞。完整媒体preflight退出P0-05A，只保留给P0-05B。
 
+VR-A14/A16 R3b本地候选已把startup固定为`run context -> DB disposition -> typed evidence -> execute`，只接受同一active v2 pointer、v2 manifest和v3 run-state；manifest字节、pointer路径、runId或半套环境路径漂移均失败。checkpoint在同一事务按冻结project/task/epoch/message/TurnJob/checkpoint/actor/session/plan原子requeue；interrupted-running与所有requeue分支都通过`expectedJobId`只claim一次并取得新project lease/fence；external-audit执行前重验冻结session。requeue后的同证据queued和过期running可在崩溃后继续，exact expired reclaim不重复消耗attempt；不同digest拒绝。instrumentation用single-flight Promise让并发调用共享同一成功/失败，解析、证据、requeue、claim或执行错误都会阻止ready。runner与M67 Node `57/57`、扩展隔离SQLite恢复组合`78/78`、TypeScript和development gate通过；源码字符串债务从24个文件收缩到23个文件，复杂度债务未增长。完整`verify:local`通过development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200个文件）和生产构建；Lint保留150条既存warning，构建保留13条既存tracing warning，SHA-bound dirty manifest经仓内verifier复核5项退出码均为0。该证据尚未提交或取得clean CI，不能据此关闭阶段或提升真实Provider状态。
+
 ## 6. 唯一下一动作
 
-当前唯一动作是把R2 DB-first disposition接入startup与typed evidence。R1已移除runner恢复布尔；R2核心已从精确SQLite身份派生`none / interrupted_running / checkpoint / provider_health / contract_repair / external_audit`，并拒绝project、task、epoch、teacher message、TurnJob、checkpoint、actor/auth/session、plan错绑和其他active job。当前尚未接入instrumentation、原子requeue/claim或fail-ready，不能标记VR-A14/A16关闭。真实Provider连续3组仍等待用户另行批准。
+当前唯一动作是对VR-A14/A16本地候选执行完整测试、Lint、构建和verification manifest，提交后等待远端clean `quality-gates`并用仓内verifier复核artifact。只有clean CI绑定当前提交后才能关闭离线DB recovery切片；真实Provider连续3组仍等待用户另行批准，且不与本轮验证混跑。
 
 ## 7. 恢复入口
 

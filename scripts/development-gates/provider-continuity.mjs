@@ -68,6 +68,7 @@ const READINESS_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-plan.md
 const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md";
 const READINESS_EXPIRES_ON = "2026-07-24";
 const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
+  "config/development-gates.json",
   "docs/mainlines/current-mainline-status.md",
   "docs/stages/active-stage.json",
   "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
@@ -80,6 +81,7 @@ const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
   "scripts/lib/v1-9-e2e-contract.mjs",
   "src/instrumentation.ts",
   "src/server/conversation/conversation-turn-checkpoint-recovery.ts",
+  "src/server/conversation/conversation-turn-queue.ts",
   "src/server/conversation/conversation-turn-recovery.ts",
   "src/server/conversation/external-audit-startup-recovery.ts",
   "src/server/conversation/provider-health-startup-recovery.ts",

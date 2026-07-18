@@ -120,6 +120,8 @@ R2核心本地证据：DB disposition独立SQLite `6/6`；与Provider-health、c
 
 R3a本地证据：contract-repair evidence与DB recovery `5/5`、TypeScript和development gate通过。活动恢复已拒绝legacy v1 manifest，并把evidence绑定当前v2 manifest、v3 run-state及exact TurnJob/message/task/epoch/TaskBrief；startup接线仍未完成。
 
+R3b本地候选证据：runner与M67 Node `57/57`；临时独立SQLite初始化后，startup authority、Provider-health、contract-repair、external-audit authority/ingress、checkpoint与TurnJob queue组合`78/78`；TypeScript和development gate通过。startup按context、DB disposition、typed evidence、execute顺序运行，pointer路径、manifest字节、run-state runId和半套环境路径漂移失败；checkpoint只原子requeue冻结TurnJob，所有恢复只claim `expectedJobId`一次并取得新lease/fence，external-audit重验冻结session。single-flight并发调用共享同一结果；同digest queued/过期running在requeue、lease或claim中断后可续，不同digest失败，exact expired reclaim不重复消耗attempt。两项过期源码字符串合同已删除并把债务基线从24个文件收缩到23个文件；24文件与行数预算通过，复杂度债务未增长。完整`verify:local`的development gate、TypeScript、Lint、Node `392/392`、Vitest `1651/1651`（200文件）和生产构建全部通过，dirty manifest经仓内verifier复核5项退出码均为0。该候选尚待提交和clean CI。
+
 VR-A13细分为以下行为门，全部通过前保持blocked：
 
 | ID | 场景 | Go条件 |

@@ -53,9 +53,10 @@ describe("V1-9 Provider-health startup recovery authority", () => {
       V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
       V1_9_E2E_STATE_PATH: "E:\\run\\run-state.json",
     })).toBe(true);
-    expect(shouldInspectV1_9StartupRecovery({
+    expect(() => shouldInspectV1_9StartupRecovery({
       V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
-    })).toBe(false);
+    })).toThrow("v1_9_startup_recovery_paths_incomplete");
+    expect(shouldInspectV1_9StartupRecovery({})).toBe(false);
   });
 
   it("validates the active pointer, frozen Provider lock, real ledger evidence and exact manifest binding", () => {

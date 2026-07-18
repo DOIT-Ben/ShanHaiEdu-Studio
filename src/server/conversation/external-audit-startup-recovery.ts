@@ -168,6 +168,7 @@ export function resolveV1_9ExternalAuditRecoveryAuthority(input: {
 export async function recoverV1_9ExternalAuditTurn(input: {
   client: PrismaClient;
   authority: V1_9ExternalAuditRecoveryAuthority;
+  expectedAuthSessionId?: string | null;
   drainProject(identity: V1_9ExternalAuditDrainIdentity): Promise<void>;
 }): Promise<true> {
   const authority = normalizeAuthority(input.authority);
@@ -201,6 +202,7 @@ export async function recoverV1_9ExternalAuditTurn(input: {
       !event || !snapshot || activeOtherJobs !== 0) {
     throw invalidExternalAuditRecovery();
   }
+  assertV1_9ExternalAuditRecoverySession(input.expectedAuthSessionId, turnJob.authSessionId);
   if (turnJob.status !== "queued" || turnJob.teacherMessageId !== authority.teacherMessageId ||
       turnJob.actorUserId !== authority.actorUserId || turnJob.actorAuthMode !== authority.actorAuthMode ||
       turnJob.recoveryEvidenceDigest !== authority.handoffDigest) {
@@ -254,6 +256,15 @@ export async function recoverV1_9ExternalAuditTurn(input: {
     authSessionId: turnJob.authSessionId,
   });
   return true;
+}
+
+export function assertV1_9ExternalAuditRecoverySession(
+  expectedAuthSessionId: string | null | undefined,
+  actualAuthSessionId: string | null,
+) {
+  if (expectedAuthSessionId !== undefined && actualAuthSessionId !== expectedAuthSessionId) {
+    throw invalidExternalAuditRecovery();
+  }
 }
 
 function normalizeAuthority(value: V1_9ExternalAuditRecoveryAuthority): V1_9ExternalAuditRecoveryAuthority {

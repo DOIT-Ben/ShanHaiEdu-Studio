@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已由`9160694`和GitHub Actions run `29642751018`关闭。VR-A13A/B已由`b2772a7`、`a1c170c`、`db5af68`和最终重锚`781af1f`关闭，`quality-gates #29651142001`及其SHA-bound artifact已通过仓内verifier。当前唯一实现切片切换为VR-A14/A16 DB recovery与恢复身份精确绑定；仍为offline-only，不与真实Provider、V1-9或媒体测试并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`和GitHub Actions run `29642751018`关闭。VR-A13A/B已由`b2772a7`、`a1c170c`、`db5af68`和最终重锚`781af1f`关闭，`quality-gates #29651142001`及其SHA-bound artifact已通过仓内verifier。VR-A14/A16本地候选已完成runner去控制、DB-first disposition、typed evidence、fail-ready startup、exact checkpoint requeue、exact interrupted claim、新lease/fence、崩溃中间态续跑和single-flight启动；完整本地verification已通过，当前唯一动作是提交和clean CI复核。仍为offline-only，不与真实Provider、V1-9或媒体测试并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 

@@ -816,7 +816,6 @@ test("V1-9 runner consumes an immutable v2 pointer and separates fresh start fro
   assert.match(source, /runMode === "start-new"/);
   assert.match(source, /runState\.status !== "prepared"/);
   assert.match(source, /external_acceptance_repair_required/);
-  assert.match(source, /v1_9_agent_brain_health_evidence_required/);
   assert.match(source, /delete childEnv\.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID/);
   assert.match(source, /run-manifest\.json/);
   assert.match(source, /run-state\.json/);
@@ -872,19 +871,12 @@ test("V1-9 stopped runner reads authority from the owned SQLite bridge", async (
   assert.deepEqual(calls[0].args.slice(-2), ["project-1", "teacher-1"]);
 });
 
-test("V1-9 recovery runner requires an evidence id only for paused or failed state", async (t) => {
+test("V1-9 recovery runner leaves typed evidence selection to the product", async (t) => {
   for (const stateStatus of ["paused_recovery", "failed"]) {
     await t.test(stateStatus, async (subtest) => {
       const fixture = await createRunnerFixture(subtest, { stateStatus });
       const runContext = resolveV1_9RunContext({ rootDir: fixture.rootDir });
-      assert.throws(
-        () => resolveV1_9RunMode({ V1_9_RUN_MODE: "resume" }, runContext.runState),
-        /v1_9_agent_brain_health_evidence_required/,
-      );
-      const env = {
-        V1_9_RUN_MODE: "resume",
-        V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID: `new-evidence-${stateStatus}`,
-      };
+      const env = { V1_9_RUN_MODE: "resume" };
       assert.equal(resolveV1_9RunMode(env, runContext.runState), "resume");
       assert.throws(
         () => resolveV1_9RunMode({ ...env, V1_9_RUN_MODE: "start-new" }, runContext.runState),
@@ -897,7 +889,7 @@ test("V1-9 recovery runner requires an evidence id only for paused or failed sta
         runMode: "resume",
         skillLock: runContext.manifest.skillLock,
       });
-      assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, `new-evidence-${stateStatus}`);
+      assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, undefined);
       assert.equal("SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START" in childEnv, false);
     });
   }

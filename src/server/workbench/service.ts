@@ -427,7 +427,7 @@ export function createWorkbenchService(
 
     async startNextConversationTurnJob(
       projectId: string,
-      input: { lockedBy?: string; lockMs?: number; fence?: ProjectExecutionFence; now?: Date } = {},
+      input: { lockedBy?: string; lockMs?: number; fence?: ProjectExecutionFence; now?: Date; expectedJobId?: string } = {},
     ): Promise<ConversationTurnJobRecord | null> {
       await ensureProjectAccess(projectId, "generate");
       const job = await repository.startNextConversationTurnJob(projectId, input);

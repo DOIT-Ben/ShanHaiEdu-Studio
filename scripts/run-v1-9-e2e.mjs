@@ -304,10 +304,6 @@ export function resolveV1_9RunMode(env, runState) {
       throw new Error("v1_9_resume_run_state_invalid");
     }
     if (runState.status === "running") assertV1_9InterruptedRunningResumeState(runState);
-    if (["paused_recovery", "failed"].includes(runState.status) &&
-        !env.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID?.trim()) {
-      throw new Error("v1_9_agent_brain_health_evidence_required");
-    }
     return runMode;
   }
   throw new Error("v1_9_run_mode_invalid");

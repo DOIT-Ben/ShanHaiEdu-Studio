@@ -1,19 +1,31 @@
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
-import { rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { PrismaClient } from "@/generated/prisma/client";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
+import {
+  createV1_9StartupRecoverySingleFlight,
+  recoverV1_9StartupConversationTurn,
+} from "@/server/conversation/conversation-turn-recovery";
 import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent-react-checkpoint";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
-import { resolveV1_9StartupRecoveryDisposition } from "@/server/conversation/v1-9-startup-recovery-authority";
+import {
+  readV1_9StartupRecoveryRunContext,
+  requeueV1_9CheckpointRecoveryTurn,
+  resolveV1_9StartupRecoveryDisposition,
+} from "@/server/conversation/v1-9-startup-recovery-authority";
 import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
 import {
+  createV1_9RunManifestV2,
+  createV1_9RunManifestV2Digest,
+  createV1_9RunState,
   normalizeV1_9RunState,
   type V1_9RunState,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
@@ -22,6 +34,7 @@ import { projectReadyV1_9Authority } from "./support/v1-9-authority-summary";
 const databasePath = path.resolve(`.tmp/v1-9-startup-recovery-${crypto.randomUUID()}.db`);
 const databaseUrl = `file:${databasePath.replaceAll("\\", "/")}`;
 let client: PrismaClient;
+const runRoots: string[] = [];
 
 beforeAll(() => {
   execFileSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
@@ -37,7 +50,114 @@ afterAll(async () => {
   for (const suffix of ["", "-shm", "-wal"]) rmSync(`${databasePath}${suffix}`, { force: true });
 });
 
+afterEach(() => {
+  for (const root of runRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
 describe("V1-9 DB-first startup recovery disposition", () => {
+  it("shares one startup recovery promise across concurrent and failed callers", async () => {
+    const singleFlight = createV1_9StartupRecoverySingleFlight();
+    let complete!: () => void;
+    const pending = new Promise<void>((resolve) => { complete = resolve; });
+    let calls = 0;
+    const first = singleFlight(async () => { calls += 1; await pending; });
+    const second = singleFlight(async () => { calls += 1; });
+    expect(second).toBe(first);
+    expect(calls).toBe(1);
+    complete();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+
+    const failedSingleFlight = createV1_9StartupRecoverySingleFlight();
+    const failed = failedSingleFlight(async () => { throw new Error("startup recovery failed"); });
+    expect(failedSingleFlight(async () => undefined)).toBe(failed);
+    await expect(failed).rejects.toThrow("startup recovery failed");
+    await expect(failedSingleFlight(async () => undefined)).rejects.toThrow("startup recovery failed");
+  });
+
+  it("reads one exact v2 pointer, v2 manifest and v3 run-state", () => {
+    const fixture = createRunFileFixture();
+
+    expect(readV1_9StartupRecoveryRunContext({
+      cwd: fixture.rootDir,
+      manifestPath: fixture.manifestPath,
+      statePath: fixture.statePath,
+    })).toMatchObject({
+      runId: fixture.runId,
+      manifestPath: fixture.manifestPath,
+      statePath: fixture.statePath,
+      manifest: { schemaVersion: "v1-9-run-manifest.v2", runId: fixture.runId },
+      runState: { schemaVersion: "v1-9-run-state.v3", runId: fixture.runId },
+    });
+  });
+
+  it.each([
+    ["pointer path", (fixture: ReturnType<typeof createRunFileFixture>) => {
+      const pointer = JSON.parse(readFileSync(fixture.pointerPath, "utf8"));
+      pointer.manifestPath = `${fixture.relativeRunRoot}/other-manifest.json`;
+      writeFileSync(fixture.pointerPath, `${JSON.stringify(pointer, null, 2)}\n`, "utf8");
+    }],
+    ["manifest bytes", (fixture: ReturnType<typeof createRunFileFixture>) => {
+      writeFileSync(fixture.manifestPath, `${readFileSync(fixture.manifestPath, "utf8")}\n`, "utf8");
+    }],
+    ["run-state runId", (fixture: ReturnType<typeof createRunFileFixture>) => {
+      const state = JSON.parse(readFileSync(fixture.statePath, "utf8"));
+      state.runId = `${fixture.runId}-other`;
+      writeFileSync(fixture.statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    }],
+  ])("fails closed when the active %s drifts", (_label, mutate) => {
+    const fixture = createRunFileFixture();
+    mutate(fixture);
+
+    expect(() => readV1_9StartupRecoveryRunContext({
+      cwd: fixture.rootDir,
+      manifestPath: fixture.manifestPath,
+      statePath: fixture.statePath,
+    })).toThrow("v1_9_startup_recovery_identity_invalid");
+  });
+
+  it("orders context, DB disposition, typed evidence and execution and propagates startup failure", async () => {
+    const calls: string[] = [];
+    const disposition = { kind: "none" as const };
+    const env = {
+      V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
+      V1_9_E2E_STATE_PATH: "E:\\run\\run-state.json",
+    };
+    await expect(recoverV1_9StartupConversationTurn(env, {
+      readRunContext: () => {
+        calls.push("context");
+        return { runState: {} } as any;
+      },
+      resolveDisposition: async () => {
+        calls.push("disposition");
+        return disposition;
+      },
+      validateEvidence: () => {
+        calls.push("evidence");
+        return { kind: "none" };
+      },
+      execute: async () => {
+        calls.push("execute");
+      },
+    })).resolves.toEqual(disposition);
+    expect(calls).toEqual(["context", "disposition", "evidence", "execute"]);
+
+    await expect(recoverV1_9StartupConversationTurn(env, {
+      readRunContext: () => ({ runState: {} } as any),
+      resolveDisposition: async () => disposition,
+      validateEvidence: () => ({ kind: "none" }),
+      execute: async () => {
+        throw new Error("recovery execution failed");
+      },
+    })).rejects.toThrow("recovery execution failed");
+
+    await expect(recoverV1_9StartupConversationTurn({
+      V1_9_E2E_MANIFEST_PATH: "E:\\run\\run-manifest.json",
+    })).rejects.toThrow("v1_9_startup_recovery_paths_incomplete");
+    await expect(recoverV1_9StartupConversationTurn({
+      V1_9_E2E_STATE_PATH: "E:\\run\\run-state.json",
+    })).rejects.toThrow("v1_9_startup_recovery_paths_incomplete");
+  });
+
   it("derives Provider-health recovery from one exact SQLite identity", async () => {
     const fixture = await createFixture("provider_health");
 
@@ -58,6 +178,153 @@ describe("V1-9 DB-first startup recovery disposition", () => {
     });
   });
 
+  it("atomically requeues only the checkpoint TurnJob selected by the DB disposition", async () => {
+    const fixture = await createFixture("checkpoint");
+    const disposition = await resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state });
+    expect(disposition.kind).toBe("checkpoint");
+    if (disposition.kind !== "checkpoint") throw new Error("checkpoint disposition expected");
+
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: disposition.identity,
+      reasonCode: disposition.reasonCode,
+    })).resolves.toBe(true);
+    await expect(client.conversationTurnJob.findUnique({ where: { id: fixture.turnJobId } }))
+      .resolves.toMatchObject({ status: "queued" });
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: disposition.identity,
+      reasonCode: disposition.reasonCode,
+    })).resolves.toBe(true);
+    await expect(resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state }))
+      .resolves.toMatchObject({
+        kind: "checkpoint",
+        identity: { turnJobId: fixture.turnJobId, recoveryEvidenceDigest: expect.any(String) },
+      });
+
+    await expect(fixture.service.startNextConversationTurnJob(fixture.projectId, {
+      expectedJobId: fixture.turnJobId,
+    })).resolves.toMatchObject({
+      id: fixture.turnJobId,
+      status: "running",
+      attempts: 2,
+      errorCode: null,
+    });
+    await client.conversationTurnJob.update({
+      where: { id: fixture.turnJobId },
+      data: {
+        lockedUntil: new Date("2026-07-18T17:59:00.000Z"),
+      },
+    });
+    const expired = await resolveV1_9StartupRecoveryDisposition({
+      client,
+      runState: fixture.state,
+      now: new Date("2026-07-18T18:00:00.000Z"),
+    });
+    expect(expired).toMatchObject({ kind: "checkpoint", identity: { turnJobId: fixture.turnJobId } });
+    if (expired.kind !== "checkpoint") throw new Error("expired checkpoint disposition expected");
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: expired.identity,
+      reasonCode: expired.reasonCode,
+      now: new Date("2026-07-18T18:00:00.000Z"),
+    })).resolves.toBe(true);
+    await expect(fixture.service.startNextConversationTurnJob(fixture.projectId, {
+      expectedJobId: fixture.turnJobId,
+      now: new Date("2026-07-18T18:00:00.000Z"),
+    })).resolves.toMatchObject({ id: fixture.turnJobId, status: "running", attempts: 2, maxAttempts: 2 });
+  });
+
+  it("does not substitute another failed TurnJob when the frozen checkpoint job drifts", async () => {
+    const fixture = await createFixture("checkpoint");
+    const disposition = await resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state });
+    if (disposition.kind !== "checkpoint") throw new Error("checkpoint disposition expected");
+    await client.conversationTurnJob.update({
+      where: { id: fixture.turnJobId },
+      data: { status: "succeeded", failureRetryability: null },
+    });
+    const alternate = await client.conversationTurnJob.create({
+      data: {
+        projectId: fixture.projectId,
+        teacherMessageId: fixture.teacherMessageId,
+        status: "failed",
+        attempts: 1,
+        maxAttempts: 2,
+        errorCode: disposition.reasonCode,
+        failureRetryability: "retryable",
+        actorUserId: fixture.actorUserId,
+        actorAuthMode: "local",
+      },
+    });
+
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: disposition.identity,
+      reasonCode: disposition.reasonCode,
+    })).resolves.toBe(false);
+    await expect(client.conversationTurnJob.findUnique({ where: { id: alternate.id } }))
+      .resolves.toMatchObject({ status: "failed" });
+  });
+
+  it("keeps an exact checkpoint job resumable when the project lease is temporarily unavailable", async () => {
+    const fixture = await createFixture("checkpoint");
+    const disposition = await resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state });
+    if (disposition.kind !== "checkpoint") throw new Error("checkpoint disposition expected");
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: disposition.identity,
+      reasonCode: disposition.reasonCode,
+    })).resolves.toBe(true);
+    const lease = await fixture.service.acquireProjectExecutionLease({
+      projectId: fixture.projectId,
+      holderId: "competing-recovery-worker",
+      leaseMs: 60_000,
+    });
+    expect(lease).not.toBeNull();
+
+    await expect(drainProjectConversationQueue(fixture.projectId, {
+      service: fixture.service,
+      expectedJobId: fixture.turnJobId,
+      executor: async () => ({ status: "blocked" }),
+    })).resolves.toEqual({ started: 0, succeeded: 0, blocked: 0, failed: 0 });
+    await expect(client.conversationTurnJob.findUnique({ where: { id: fixture.turnJobId } }))
+      .resolves.toMatchObject({ status: "queued" });
+
+    if (!lease) throw new Error("competing lease expected");
+    await fixture.service.releaseProjectExecutionLease({
+      projectId: fixture.projectId,
+      holderId: "competing-recovery-worker",
+      fencingToken: lease.fencingToken,
+    });
+    await expect(drainProjectConversationQueue(fixture.projectId, {
+      service: fixture.service,
+      expectedJobId: fixture.turnJobId,
+      executor: async () => ({ status: "blocked" }),
+    })).resolves.toEqual({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
+  });
+
+  it("rejects a queued checkpoint intermediate with a different recovery evidence digest", async () => {
+    const fixture = await createFixture("checkpoint");
+    const disposition = await resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state });
+    if (disposition.kind !== "checkpoint") throw new Error("checkpoint disposition expected");
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: disposition.identity,
+      reasonCode: disposition.reasonCode,
+    })).resolves.toBe(true);
+    await client.conversationTurnJob.update({
+      where: { id: fixture.turnJobId },
+      data: { recoveryEvidenceDigest: "f".repeat(64) },
+    });
+    const resumed = await resolveV1_9StartupRecoveryDisposition({ client, runState: fixture.state });
+    if (resumed.kind !== "checkpoint") throw new Error("queued checkpoint disposition expected");
+    await expect(requeueV1_9CheckpointRecoveryTurn({
+      client,
+      identity: resumed.identity,
+      reasonCode: resumed.reasonCode,
+    })).resolves.toBe(false);
+  });
+
   it.each(["queued", "expired_running"] as const)("derives interrupted running for an exact %s TurnJob", async (mode) => {
     const fixture = await createFixture(mode);
 
@@ -66,6 +333,34 @@ describe("V1-9 DB-first startup recovery disposition", () => {
       runState: fixture.state,
       now: new Date("2026-07-18T18:00:00.000Z"),
     })).resolves.toMatchObject({ kind: "interrupted_running", identity: { turnJobId: fixture.turnJobId } });
+  });
+
+  it("claims only the expected recovery TurnJob and refuses an ambiguous active queue", async () => {
+    const ambiguous = await createFixture("queued");
+    const other = await ambiguous.service.enqueueConversationTurn(ambiguous.projectId, {
+      teacherMessageId: ambiguous.teacherMessageId,
+      idempotencyKey: `turn:${crypto.randomUUID()}`,
+      maxAttempts: 2,
+    });
+    await expect(drainProjectConversationQueue(ambiguous.projectId, {
+      service: ambiguous.service,
+      expectedJobId: ambiguous.turnJobId,
+      executor: async () => ({ status: "blocked" }),
+    })).resolves.toEqual({ started: 0, succeeded: 0, blocked: 0, failed: 0 });
+    await expect(client.conversationTurnJob.findMany({
+      where: { id: { in: [ambiguous.turnJobId, other.id] } },
+      orderBy: { createdAt: "asc" },
+    })).resolves.toEqual([
+      expect.objectContaining({ id: ambiguous.turnJobId, status: "queued" }),
+      expect.objectContaining({ id: other.id, status: "queued" }),
+    ]);
+
+    const exact = await createFixture("queued");
+    await expect(drainProjectConversationQueue(exact.projectId, {
+      service: exact.service,
+      expectedJobId: exact.turnJobId,
+      executor: async () => ({ status: "blocked" }),
+    })).resolves.toEqual({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
   });
 
   it("fails closed on missing checkpoint binding and another active TurnJob", async () => {
@@ -124,7 +419,7 @@ describe("V1-9 DB-first startup recovery disposition", () => {
   });
 });
 
-async function createFixture(mode: "provider_health" | "queued" | "expired_running") {
+async function createFixture(mode: "provider_health" | "checkpoint" | "queued" | "expired_running") {
   const actorUserId = `recovery-user-${crypto.randomUUID()}`;
   const service = createWorkbenchService(createPrismaWorkbenchRepository(client), undefined, {
     actorUserId,
@@ -181,8 +476,8 @@ async function createFixture(mode: "provider_health" | "queued" | "expired_runni
   await createControlPlaneStore(client).upsertTaskAggregate({
     taskBrief,
     intentGrant,
-    plan: { planId: "plan-fixture", revision: 1, status: mode === "provider_health" ? "paused_recovery" : "active" },
-    status: mode === "provider_health" ? "paused_recovery" : "active",
+    plan: { planId: "plan-fixture", revision: 1, status: ["provider_health", "checkpoint"].includes(mode) ? "paused_recovery" : "active" },
+    status: ["provider_health", "checkpoint"].includes(mode) ? "paused_recovery" : "active",
     checkpoint,
   });
   const job = await service.enqueueConversationTurn(project.id, {
@@ -201,6 +496,14 @@ async function createFixture(mode: "provider_health" | "queued" | "expired_runni
       failureEvidenceDigest: "a".repeat(64),
     });
   }
+  if (mode === "checkpoint") {
+    await service.failConversationTurnJob(project.id, job.id, {
+      errorCode: "main_agent_provider_timeout",
+      errorMessage: "provider timeout",
+      retryability: "retryable",
+      failureEvidenceDigest: "b".repeat(64),
+    });
+  }
   if (mode === "expired_running") {
     await client.conversationTurnJob.update({
       where: { id: job.id },
@@ -216,9 +519,11 @@ async function createFixture(mode: "provider_health" | "queued" | "expired_runni
     turnJobId: job.id,
     taskBriefDigest: taskBrief.digest,
     checkpointId: checkpoint.checkpointDigest,
-    status: mode === "provider_health" ? "paused_recovery" : "running",
+    status: ["provider_health", "checkpoint"].includes(mode) ? "paused_recovery" : "running",
+    recoveryReasonCode: mode === "checkpoint" ? "main_agent_provider_timeout" : undefined,
   });
   return {
+    service,
     actorUserId,
     projectId: project.id,
     taskId,
@@ -239,6 +544,7 @@ function createBaseState(input: {
   taskBriefDigest: string;
   checkpointId: string;
   status: "prepared" | "running" | "paused_recovery";
+  recoveryReasonCode?: string;
 }) {
   const timestamp = "2026-07-18T17:00:00.000Z";
   const taskBound = input.status !== "prepared";
@@ -296,7 +602,7 @@ function createBaseState(input: {
       ...state,
       status: "paused_recovery",
       recovery: {
-        reasonCode: "main_agent_provider_unavailable",
+        reasonCode: input.recoveryReasonCode ?? "main_agent_provider_unavailable",
         checkpointId: input.checkpointId,
         observationRefs: [],
         healthEvidenceNotBefore: timestamp,
@@ -306,4 +612,77 @@ function createBaseState(input: {
     });
   }
   return state;
+}
+
+function createRunFileFixture() {
+  const rootDir = path.resolve(`.tmp/v1-9-startup-run-files-${crypto.randomUUID()}`);
+  runRoots.push(rootDir);
+  const runId = `v1-9-startup-${crypto.randomUUID()}`;
+  const relativeRunRoot = `test-results/${runId}`;
+  const runRoot = path.join(rootDir, "test-results", runId);
+  const manifestPath = path.join(runRoot, "run-manifest.json");
+  const statePath = path.join(runRoot, "run-state.json");
+  const pointerPath = path.join(rootDir, "test-results", "v1-9-product-e2e-active.json");
+  const manifest = createV1_9RunManifestV2({
+    runId,
+    relativeRunRoot,
+    createdAt: "2026-07-18T17:00:00.000Z",
+    baselineLock: {
+      schemaVersion: "v1-9-baseline-lock.v2",
+      branch: "main",
+      gitHead: "a".repeat(40),
+      generationIntensity: "standard",
+      runtimeSourceDigest: "1".repeat(64),
+      requirementsBaselineDigest: "2".repeat(64),
+      registryDigest: "3".repeat(64),
+      projectionRegistryDigest: "3".repeat(64),
+      providerLedgerManifestDigest: "4".repeat(64),
+      projectionId: "runtime-projection-a23",
+      verificationManifestSha256: "5".repeat(64),
+      workingTreeDigest: "6".repeat(64),
+      policySha256: "7".repeat(64),
+      stageSha256: "8".repeat(64),
+      providerContinuityManifestSha256: "9".repeat(64),
+      providerContinuityReceiptSha256: "a".repeat(64),
+      providerContinuityEvidenceRootDigest: "b".repeat(64),
+      providerContinuitySubjectDigest: "c".repeat(64),
+    },
+    skillLock: {
+      schemaVersion: "v1-9-skill-lock.v1",
+      projectionLockDigest: "d".repeat(64),
+      bindingPolicyDigest: "e".repeat(64),
+      activeSkills: [{ name: "shanhai-suite", version: "1.1" }],
+    },
+    agentBrain: { providerLock: {
+      schemaVersion: "v1-9-provider-lock.v1",
+      channel: "primary",
+      model: "gpt-5.6-terra",
+      endpointCategory: "openai_compatible_responses",
+      reasoningEffort: "medium",
+      credentialSource: "ledger_private_env",
+      configDigest: "f".repeat(64),
+    } },
+    providerRuntimeLocks: ["agent_brain", "coze_ppt", "image_generation", "tts_minimax", "video_generation"]
+      .map((capability, index) => ({
+        capability: capability as "agent_brain" | "coze_ppt" | "image_generation" | "tts_minimax" | "video_generation",
+        credentialSource: "ledger_private_env" as const,
+        configDigest: capability === "agent_brain" ? "f".repeat(64) : String(index + 1).repeat(64),
+      })),
+    predecessor: null,
+  });
+  const state = createV1_9RunState({ manifest, createdAt: "2026-07-18T17:00:01.000Z" });
+  const manifestSha256 = createV1_9RunManifestV2Digest(manifest);
+  const pointer = {
+    schemaVersion: "v1-9-active-run.v2",
+    runId,
+    relativeRunRoot,
+    manifestPath: `${relativeRunRoot}/run-manifest.json`,
+    manifestSha256,
+    statePath: `${relativeRunRoot}/run-state.json`,
+  };
+  mkdirSync(runRoot, { recursive: true });
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  writeFileSync(pointerPath, `${JSON.stringify(pointer, null, 2)}\n`, "utf8");
+  return { rootDir, runId, relativeRunRoot, manifestPath, statePath, pointerPath };
 }
