@@ -10,11 +10,12 @@
 | `scripts/prepare-v1-9-run.ts` | adapted / contract-go | fresh与显式合同升级后继已分支；无predecessor环境可创建fresh，部分输入写前失败，旧history不进入新事实 | 仍不得实际创建V1-9 run；等待其余入口阻塞关闭后再冻结真实候选 |
 | `scripts/lib/v1-9-e2e-contract.mjs` | adapted / contract-go | `predecessor`可显式为`null`；新manifest只接受baseline v2；旧baseline v1只读解析；prompt只有一个合同源 | 继续保持旧v1不能成为当前baseline |
 | `scripts/lib/v1-9-baseline-lock.mjs` | adapted / contract-go | baseline v2绑定clean verification原始字节SHA、working tree、policy、stage、Provider manifest/receipt、签名evidence root摘要和subject digest；facts/trace由source-index SHA传递绑定，verification原始字节与receipt binding交叉校验 | 当前仓库没有真实passed receipt，因此真实baseline创建仍按设计失败关闭 |
-| `scripts/run-v1-9-e2e.mjs` | partial / adapt | 冻结prompt重复已关闭；B2已让runner在M67完全停机后只读复算SQLite authority并与run-state投影比对；但启动时恢复重试仍由env决定 | 只保留监督和启停壳；恢复决策改为读取产品持久状态，不由runner取得第二编排权 |
+| `scripts/run-v1-9-e2e.mjs` | active / adapt | B2已让runner在M67完全停机后只读复算SQLite authority；但启动时仍用`V1_9_RUN_MODE`派生恢复布尔并把`paused_recovery/failed`统一要求为Provider-health证据 | 删除恢复布尔与恢复类型下传；只保留监督、启停、冻结路径和可选证据locator |
 | `scripts/run-m67-e2e.mjs` | reuse lifecycle / retire control entry | 隔离server、SQLite、Artifact、Playwright、IPC停机和失败后核验可复用；M67命名与兼容入口不应继续成为V1-9控制面 | 抽取受控生命周期能力，由唯一V1-9入口调用；不得决定Tool、下一步、重试或恢复 |
 | `scripts/v1-9-product-preflight.ts` | retire from P0-05A / reuse in P0-05B | 固定检查PPT、图片、视频、TTS、文本Provider及全部媒体二进制，与P0-05A只验证文本/Main Agent的capability-scoped preflight冲突 | P0-05A不调用；完整媒体preflight保留给P0-05B并重新冻结 |
-| `tests/e2e/v1-9-unique-real-product.spec.ts` | committed / CI pending | ready/completed重入已先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | 完成clean CI；不得据此运行真实V1-9 |
-| 产品服务端持久编排audit | committed / CI pending | VR-A13A已由`b2772a7`建立专用append-only事实，B1已由`a1c170c`实现Tool authority与完整服务端summary；B2已由`db5af68`提交run-state v3投影、observer fresh snapshot、runner停机复算和closeout双重复算 | 完成B2 clean CI；未通过前不标记VR-A13关闭 |
+| `tests/e2e/v1-9-unique-real-product.spec.ts` | reuse | ready/completed重入先登录、选择绑定项目并读取fresh snapshot；final download后再次读取并投影ready summary；浏览器ledger只保留操作轨迹 | DB recovery阶段不改Tool顺序或observer产品职责 |
+| 产品服务端持久编排audit | go | VR-A13A由`b2772a7`建立专用append-only事实，B1由`a1c170c`实现Tool authority与完整服务端summary，B2由`db5af68`实现消费与复算并由`781af1f` clean CI关闭 | 不把VR-A13 contract-go上推为恢复、V1-9或Provider连续性Go |
+| 产品DB startup recovery | blocked / active | 仓内已有Provider-health、contract-repair、external-audit和expired-running局部能力，但入口由runner/env开关，contract-repair仍含legacy v1绑定，checkpoint可缺Turn身份，非法恢复只记日志 | SQLite先派生唯一typed disposition；精确身份与证据验证后原子requeue/claim并获取新lease/fence，失败阻止ready |
 | TaskBrief、IntentEpoch、IntentGrant、plan、package asset | reuse / adapt | 现有observer合同已绑定任务、epoch、授权、预算和plan；package选择器骨架可复用，但ExecutionEnvelope与正式package asset尚未反向绑定已冻结的baseline/receipt subject | 补ExecutionEnvelope及正式package asset反向血缘绑定，不恢复旧宏阶段 |
 | Provider lock | blocked / adapt | 旧合同允许`channel=fallback`，只比较config digest和credential source，未绑定model fingerprint与continuity receipt；视频preflight还可能因残留Evolink key覆盖显式选择 | 只接受显式ledger channel，禁止silent fallback；绑定model、receipt和费用授权，并增加残留key不得覆盖显式mode的负例 |
 | checkpoint与失败恢复 | blocked / adapt | observer按项目全局读取latest checkpoint/failed turn，未证明属于冻结task、message、job和epoch | 恢复查询与冻结身份精确绑定；不匹配即失败，不跨任务拼接 |
@@ -39,9 +40,9 @@
 
 ## 当前阻塞
 
-P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A已提交，VR-A13B1已由`a1c170c`本地提交。VR-A13B2已由`db5af68`提交并进入clean CI验收；通过后才处理恢复权归位与恢复身份精确绑定。不得运行真实V1-9或媒体Provider。v2签名Provider receipt与可信capture key仍是独立阻塞，不能由本矩阵替代。
+P0-05A仍是NO-GO。fresh-run与baseline lock合同出口已由`9160694`及clean CI关闭；VR-A13A/B已由`781af1f`对应clean CI关闭。当前唯一实现切片是VR-A14/A16 DB recovery与恢复身份精确绑定。不得运行真实V1-9或媒体Provider；v2签名Provider receipt与可信capture key仍是后续独立阻塞，不能由本矩阵替代。
 
-第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A已关闭VR-A13-01、02、06、09及HTTP侧03出口；VR-A13B1由`a1c170c`关闭Tool侧03、04、05和服务端07，VR-A13B2由`db5af68`提交消费侧07与08并等待clean CI。恢复权归位、恢复身份和真实receipt继续等待。该切片只处理产品持久authority事实，不是PPT或真实V1-9运行。
+第1个串行切片fresh/baseline已关闭VR-A01、VR-A02、VR-A11、VR-A12的合同出口；VR-A13A关闭VR-A13-01、02、06、09及HTTP侧03出口，VR-A13B关闭Tool侧03、04、05和服务端/消费侧07、08。当前VR-A14/A16只处理产品DB恢复权与精确身份，不是PPT、真实Provider或真实V1-9运行。
 
 ## 二次审查增补
 

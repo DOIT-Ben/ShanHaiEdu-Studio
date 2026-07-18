@@ -94,7 +94,7 @@
 
 ## 6. 阶段4：V1-9入口就绪审计与最小适配
 
-状态：第1个串行切片fresh/baseline已由`9160694`关闭并通过GitHub Actions run `29642751018`。VR-A13A已由`b2772a7`关闭append-only schema/health、HTTP ingress、成员写入口和AST机器门。VR-A13B拆成严格串行的B1与B2：B1的Tool authority和产品服务端summary已由`a1c170c`完成本地提交与验证；B2的run-state投影、observer新鲜读取、runner停机复算和closeout双重SQLite复算已由`db5af68`完成本地提交，当前只待clean CI。当前仍为offline-only；DB recovery保持后续阻塞，不与VR-A13B并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
+状态：第1个串行切片fresh/baseline已由`9160694`和GitHub Actions run `29642751018`关闭。VR-A13A/B已由`b2772a7`、`a1c170c`、`db5af68`和最终重锚`781af1f`关闭，`quality-gates #29651142001`及其SHA-bound artifact已通过仓内verifier。当前唯一实现切片切换为VR-A14/A16 DB recovery与恢复身份精确绑定；仍为offline-only，不与真实Provider、V1-9或媒体测试并行。矩阵见`p0-05a-v1-9-readiness-matrix.md`。
 
 目标：让P0-05B拥有当前合同入口，而不是恢复整改前运行。
 
@@ -103,6 +103,28 @@
 1. fresh/baseline：`prepare-v1-9-run`、preparation transaction、单一prompt合同、可空predecessor和baseline lock v2；
 2. 产品audit：服务端持久记录项目写attempt与Main Agent编排authority，observer只消费权威摘要；
 3. DB recovery：产品启动从精确绑定的TurnJob、task、epoch、message和checkpoint派生恢复动作，runner不再传恢复布尔。
+
+DB recovery采用唯一数据流：
+
+```text
+Next instrumentation启动
+-> 读取当前v2 pointer、v2 manifest、v3 run-state与同run SQLite
+-> SQLite精确匹配project/task/epoch/teacher message/TurnJob/checkpoint/actor/auth/session/plan
+-> 产品派生唯一typed disposition：none / interrupted_running / checkpoint / provider_health / contract_repair / external_audit
+-> 仅验证该disposition需要的typed evidence；env最多提供证据locator
+-> repository事务内原子requeue或claim
+-> 获取新project lease与fencing token
+-> 只drain该精确project/job
+```
+
+runner可以传冻结路径、run身份、Provider配置和可选证据locator，但不得传恢复布尔、恢复类型、待恢复job或“取latest”提示。没有恢复事实时返回`none`；存在恢复声明但身份、checkpoint或证据错误时，instrumentation必须在服务ready前失败关闭，不允许只写日志后继续启动。
+
+实现严格拆为两个串行切片：
+
+1. VR-A14：移除`SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START`控制权，新增DB-first typed disposition与真实SQLite行为测试；证明interrupted running只在exact TurnJob锁过期、无其他active job时由现有lease/fence路径接管。
+2. VR-A16：把Provider-health、contract-repair、external-audit与checkpoint全部绑定当前v2 manifest、v3 run-state和同一DB身份；`turnJobId`与`teacherMessageId`不得同时为空，legacy v1只读兼容不能进入活动恢复。
+
+本轮假设当前SQLite字段足够表达恢复身份，不新增schema；若红测试证明必须改schema，先更新架构与阶段合同并单独批准，不能在实现中静默扩表。
 
 产品audit内部只走一条路线：VR-A13A关闭HTTP ingress与SQLite边界；VR-A13B1关闭Tool selector、实际action、连续ordinal、强终态与完整服务端summary；VR-A13B2再让run-state、observer、runner和closeout消费并独立复算该summary。B2不得复制摘要算法或信任浏览器自报值。
 
@@ -118,11 +140,11 @@ VR-A13采用唯一事实链，不复用普通`AuditLog`：
 - 产品侧从完整SQLite事实生成脱敏摘要和摘要digest；observer不得传入可裁剪窗口，不得从浏览器监听或run-state自造count、authority或零值。
 - 成员管理等绕过统一workbench wrapper的现存写入口必须并入同一审计边界；新增写route由机器门禁扫描并失败关闭。
 
-本切片明确排除DB recovery、checkpoint选择、真实Provider、真实V1-9、PPT、图片、视频、PPTX、ZIP和390px验证。新增SQLite结构只承载VR-A13审计事实，不表示恢复权已经实现。
+已关闭的VR-A13切片明确不再修改。当前VR-A14/A16排除schema、Tool选择、authority摘要、真实Provider、真实V1-9、PPT、图片、视频、PPTX、ZIP和390px验证；只允许活动阶段列出的恢复入口、持久身份、测试和权威文档。
 
 fresh/baseline切片只修改`v1-9-e2e-contract`、`v1-9-baseline-lock`及其候选证据模块、`v1-9-run-preparation-transaction`、prepare/runner入口及行为测试。当前验收事实：fresh输入不含旧run身份且active pointer不存在时可准备；opaque history保持原字节，任何既有active pointer都失败关闭，新manifest写`predecessor: null`；部分predecessor输入在任何写入前失败；fresh事务覆盖journal、manifest、state、staged、run publish、最终pointer窗口和pointer publish故障恢复；successor不覆盖并发history，也不覆盖遵守共享prepare锁的仓内pointer writer；closeout同字节双pointer可前滚、异字节失败关闭，活PID不因TTL接管，termination与closeout共用run-state cooperative CAS；所有I/O拒绝仓外junction/reparse；新baseline只产生`v1-9-baseline-lock.v2`并绑定clean verification、policy/stage、Provider manifest/receipt、签名evidence root摘要和同一候选subject，facts与trace由source-index SHA传递绑定，正常提交与崩溃恢复均在pointer发布前后重验；旧v1只读解析且活动入口拒绝执行，签名campaign自身受TTL约束；prepare和runner不再保存prompt全文。
 
-fresh/baseline切片的`34 / +2500 / -800`预算已随`9160694`关闭，VR-A13A的预算也已随`b2772a7`关闭，均不结转。VR-A13B从`b2772a7`重新计算，预算为最多32个实际变更文件、`+2400/-700`、零二进制；超出时继续拆分后续切片，不以提高阈值代替范围控制。
+fresh/baseline与VR-A13预算均已关闭且不结转。VR-A14/A16从`781af1f`重新计算，预算为最多24个实际变更文件、`+2200/-800`、零二进制；活动路径已收窄为31个恢复相关文件。超出时拆分后续切片，不提高阈值、不恢复旧audit路径。
 
 必须回答：
 
@@ -200,7 +222,9 @@ P0-05A Go只关闭真实文本/Main Agent连续性与入口就绪，不创建V1-
 | A4 四场景真实driver | 5 | desktop产品入口和原始状态完整 |
 | A5 evidence/receipt writer | 5 | 原子写、不可覆盖、现存verifier通过 |
 | A6 V1-9 fresh-run合同 | 5 | 不依赖旧predecessor且历史证据只读 |
-| A7 V1-9 observer/runner适配 | 5 | 无第二编排者、无固定Tool顺序 |
+| A7a DB disposition红测试 | 5 | env不能选择恢复；SQLite身份错绑、其他active job和非过期running均失败 |
+| A7b typed recovery实现 | 5 | 只返回唯一disposition，对应evidence与v2/v3/DB同源绑定 |
+| A7c startup/runner归权 | 5 | runner不传恢复布尔；非法恢复阻止ready；exact job用新lease/fence drain |
 | A8 冻结与真实3组 | 文档/证据 | 同一候选连续通过，失败从0重启 |
 | A9 收口 | 4 | 五层口径和P0-05B Go/No-Go一致 |
 

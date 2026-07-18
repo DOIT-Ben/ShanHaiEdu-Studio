@@ -15,7 +15,7 @@
 
 ## 2. 离线合同测试
 
-首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1已由`a1c170c`本地提交。B2已由`db5af68`提交；本地证据包括run-state/authority Node `12/12`、runner Node `29/29`、SQLite summary Vitest `11/11`、closeout Vitest `23/23`、v3兼容回归`136/136`；全量Node `392/392`、Vitest `783/783 + 850/850`，总计`2025/2025`；TypeScript、Lint `0 error / 148 warnings`、生产构建、development gate和生产health smoke通过。clean CI仍待执行。
+首批离线readiness提交`b013a96`和signer/v2提交`9a936ad`均已完成远端clean `quality-gates`，对应SHA-bound verification全部成功；证据均不包含真实Provider。VR-A13A提交`b2772a7`的本地证据为ingress/health Vitest `14/14`、路由/preflight/security Node `34/34`、stage/orchestration Node `16/16`、Provider合同`29 pass / 1 Windows symlink skip`、TypeScript和development gate通过。VR-A13B1由`a1c170c`提交；B2由`db5af68`提交，本地总计`2025/2025`并通过TypeScript、Lint `0 error / 148 warnings`、生产构建、development gate和生产health smoke。最终重锚`781af1f`对应`quality-gates #29651142001`成功；仓内verifier返回`ok=true / checkCount=5`，artifact为`dirty=false`且HEAD、tree、policy/stage SHA与5项退出码全部匹配。
 
 全量本地测试只使用`run-tests.mjs`内生的单worker约束，不从外层覆盖`VITEST_MAX_WORKERS`。每次运行使用同一`test-workbench`族下带run token和角色后缀的独立Node/Vitest SQLite文件，初始化前和退出后清理`.db`、`-wal`、`-shm`；整个测试进程树通过唯一空dotenv文件阻止仓库`.env`回灌Provider凭据，成功或失败退出均清理该文件和数据库族。
 
@@ -99,6 +99,21 @@
 | VR-A15 | prepare事务安全 | 正常提交和恢复均重验baseline；successor history/pointer对遵守共享prepare锁的仓内writer执行协作式CAS；所有I/O拒绝junction/reparse路径逃逸 |
 | VR-A16 | 恢复身份 | checkpoint、TurnJob、task、epoch、message任一跨任务或缺失绑定均失败，不取项目全局latest |
 
+VR-A14/A16细分为以下行为门：
+
+| ID | 场景 | Go条件 |
+|---|---|---|
+| VR-R01 | runner输入 | child env不再包含恢复布尔或恢复类型；`V1_9_RUN_MODE`只控制run文件生命周期，不能授权产品requeue |
+| VR-R02 | DB disposition | 同一只读事务精确匹配project、task、epoch、teacher message、TurnJob、checkpoint、actor/auth/session和plan；0个或多个候选均失败 |
+| VR-R03 | 无恢复 | prepared或无typed恢复事实返回`none`且零DB写、零drain、零Provider请求 |
+| VR-R04 | interrupted running | 只接管exact、锁已过期且无其他active job的running TurnJob；随后必须取得新lease/fence，非过期或错绑不得接管 |
+| VR-R05 | checkpoint | checkpoint必须来自当前TaskAggregate并与run-state、TurnJob和teacher message一致；禁止扫描项目全局latest message/checkpoint |
+| VR-R06 | typed evidence | Provider-health、contract-repair、external-audit只验证当前disposition对应证据；contract-repair不得被Provider-health evidence前置阻塞 |
+| VR-R07 | v2/v3绑定 | 活动恢复只接受v2 manifest、v3 run-state和同run SQLite；legacy v1、缺Turn身份、跨task/epoch/message/actor/session全部失败 |
+| VR-R08 | startup失败 | 声明恢复但解析、身份、证据、requeue或claim失败时阻止服务ready；不得只记日志并让observer超时 |
+| VR-R09 | 原子与幂等 | repository事务只更新exact TurnJob；重复evidence、重复启动或并发恢复至多一次requeue/claim |
+| VR-R10 | 范围隔离 | 不改Tool selector、authority summary、媒体、Provider连续性receipt或V1-9真实run |
+
 VR-A13细分为以下行为门，全部通过前保持blocked：
 
 | ID | 场景 | Go条件 |
@@ -113,7 +128,7 @@ VR-A13细分为以下行为门，全部通过前保持blocked：
 | VR-A13-08 | 重入与closeout | ready重入仍复验新鲜摘要；缺摘要、watermark回退、同水位digest变化或任一violation拒绝完成 |
 | VR-A13-09 | SQLite readiness | 专用表、唯一约束、索引和append-only trigger缺一即health失败，不使用旧库fallback |
 
-VR-A13B1通过只表示产品服务端已持久记录并可按冻结身份生成编排summary；B2已由`db5af68`提交消费侧07与08，仍需clean CI才能关闭。完整VR-A13 contract-go也不表示恢复权、真实Provider连续性、V1-9、媒体链路或release通过。
+VR-A13已由`781af1f`对应clean CI关闭，但只表示产品持久编排authority合同通过。VR-A14/A16、真实Provider连续性、V1-9、媒体链路和release仍各自独立；不得用VR-A13证据替代恢复测试。
 
 任何一项`blocked`都使P0-05A No-Go；不以“将在P0-05B修复”绕过入口门。
 
@@ -122,6 +137,8 @@ VR-A13B1通过只表示产品服务端已持久记录并可按冻结身份生成
 实现期：
 
 ```powershell
+node --test --test-concurrency=1 tests/v1-9-e2e-runner.test.mjs tests/m67-e2e-runner.test.mjs
+npx vitest run tests/v1-9-startup-recovery-authority.test.ts tests/conversation-provider-health-recovery.test.ts tests/conversation-contract-repair-recovery.test.ts tests/external-audit-startup-recovery-authority.test.ts tests/conversation-checkpoint-recovery.test.ts src/server/workbench/__tests__/stage60-conversation-turn-queue.test.ts --maxWorkers=1 --no-file-parallelism
 node --test tests/development-gates/provider-continuity*.test.mjs
 npm run gate:development
 npm run typecheck
