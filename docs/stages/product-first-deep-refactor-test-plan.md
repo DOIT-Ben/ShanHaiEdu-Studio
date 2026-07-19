@@ -84,6 +84,14 @@ C1新鲜证据：
 - TypeScript、ESLint `0 warning`、生产构建、standalone敏感文件检查和development gate通过。
 - Provider保持离线延期、`passed=false`且请求数为0；复杂度债务仍为29个文件、源码字符串合同债务仍为21个文件。
 
+C2新鲜证据：
+
+- `createConversationTurnService`、`MessageTurnResponse`和`capabilityTeacherLabel`继续从原模块导入；没有新增竞争入口。
+- Node测试`427/427`；Vitest隔离分片`793/793`与`777/777`，覆盖讨论、单Tool、流式进度、TaskBrief、确认、取消、改道、失败与双用户隔离。
+- TypeScript、ESLint `0 warning`、生产构建、standalone敏感文件检查和development gate通过。
+- `conversation-turn-service.ts`为115行，新职责模块均低于500行且无函数超过150行；复杂度债务由29降至28，源码字符串合同债务仍为21。
+- Provider保持离线延期、`passed=false`且请求数为0。
+
 ## 7. 最终全量验证
 
 ```powershell

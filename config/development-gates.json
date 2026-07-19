@@ -121,13 +121,6 @@
         "totalFunctionLines": 351
       },
       {
-        "path": "src/server/conversation/conversation-turn-service.ts",
-        "lines": 1321,
-        "violatingFunctions": 2,
-        "maxFunctionLines": 424,
-        "totalFunctionLines": 651
-      },
-      {
         "path": "src/server/conversation/external-audit-evidence-ingress.ts",
         "lines": 490,
         "violatingFunctions": 2,
