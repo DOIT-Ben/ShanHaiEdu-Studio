@@ -39,8 +39,6 @@
     "test:e2e:stage8": "node scripts/run-stage8-e2e.mjs",
     "test:e2e:stage33": "node scripts/run-stage33-e2e.mjs",
     "test:e2e:stage40c": "node scripts/run-stage40c-e2e.mjs",
-    "test:e2e:stage41": "node scripts/run-stage41-delivery-demo.mjs",
-    "demo:e2e:delivery": "node scripts/run-stage41-delivery-demo.mjs",
     "test:e2e:stage3:preflight": "node scripts/e2e-stage3-preflight.mjs",
     "test:e2e:report": "playwright show-report playwright-report",
     "playwright:install": "playwright install chromium firefox",
@@ -55,7 +53,6 @@
   "dependencies": {
     "@assistant-ui/react": "0.14.26",
     "@assistant-ui/react-markdown": "0.14.5",
-    "@openai/agents": "0.13.3",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@radix-ui/react-dialog": "^1.1.15",

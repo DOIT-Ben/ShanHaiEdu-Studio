@@ -16,6 +16,9 @@
     "config/node-contracts/requirement_spec.json",
     "docs/README.md",
     "docs/architecture/README.md",
+    "docs/architecture/V1.0 重构设计.md",
+    "docs/architecture/decisions/README.md",
+    "docs/architecture/decisions/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
     "docs/architecture/decisions/2026-07-14-adr-main-agent-react-checkpoint-compaction.md",
     "docs/mainlines/current-mainline-status.md",
     "docs/product/**",
@@ -25,8 +28,10 @@
     "docs/archive/README.md",
     "docs/archive/2026-07-19-provider-continuity-paused/**",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/**",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/**",
     "eslint.config.mjs",
     "next.config.ts",
+    "package-lock.json",
     "package.json",
     "prisma/schema.prisma",
     "scripts/**",
@@ -42,7 +47,10 @@
     "docs/archive/2026-07-19-provider-continuity-paused/v1-9-readiness-matrix.md",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/AGENTS_20260719-120150.bak",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/README.md",
-    "docs/archive/2026-07-19-project-rule-before-offline-refactor/archive-manifest.json"
+    "docs/archive/2026-07-19-project-rule-before-offline-refactor/archive-manifest.json",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/README.md",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/archive-manifest.json",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md"
   ],
   "budgets": {
     "maxChangedFiles": 260,

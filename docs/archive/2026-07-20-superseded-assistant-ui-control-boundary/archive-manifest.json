@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "shanhai-archive-manifest.v1",
+  "archivedOn": "2026-07-20",
+  "reason": "The ADR's OrchestratorRuntime and dual runtime boundary was superseded by the Main Agent single-orchestrator architecture.",
+  "files": [
+    {
+      "source": "docs/architecture/decisions/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
+      "archivedPath": "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
+      "bytes": 5539,
+      "sha256": "8f41279f1ceec930b9bddb8c37fafa2a2bfa8a168460fbb33b709a7f89ec4fd8"
+    }
+  ]
+}

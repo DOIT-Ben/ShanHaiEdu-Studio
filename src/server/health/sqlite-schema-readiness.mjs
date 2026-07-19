@@ -29,7 +29,7 @@ export const HEALTH_SCHEMA_REQUIREMENTS = Object.freeze([
   requirement("ValidationReportRecord", [
     "id", "projectId", "capabilityId", "stage", "authority", "domain", "targetKind", "targetId", "targetDigest",
     "inputHash", "intentEpoch", "contractId", "contractVersion", "overallStatus", "reportDigest", "payloadJson",
-    "artifactId", "generationJobId", "stagedArtifactCommitId", "createdAt",
+    "artifactId", "generationJobId", "createdAt",
   ]),
   requirement("SemanticContextSnapshotRecord", [
     "snapshotId", "projectId", "taskId", "intentEpoch", "planRevision", "snapshotDigest", "payloadJson",

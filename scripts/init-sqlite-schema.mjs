@@ -225,36 +225,6 @@ CREATE TABLE IF NOT EXISTS "RunInputSnapshot" (
   CONSTRAINT "RunInputSnapshot_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "StagedArtifactCommit" (
-  "id" TEXT NOT NULL PRIMARY KEY,
-  "projectId" TEXT NOT NULL,
-  "generationJobId" TEXT NOT NULL,
-  "state" TEXT NOT NULL DEFAULT 'awaiting_result',
-  "nodeKey" TEXT,
-  "kind" TEXT,
-  "title" TEXT,
-  "artifactStatus" TEXT,
-  "summary" TEXT,
-  "markdownContent" TEXT,
-  "structuredContentJson" TEXT NOT NULL DEFAULT '{}',
-  "storageRefsJson" TEXT NOT NULL DEFAULT '[]',
-  "intentEpoch" INTEGER NOT NULL,
-  "inputHash" TEXT NOT NULL,
-  "holderId" TEXT,
-  "fencingToken" INTEGER,
-  "actorUserId" TEXT,
-  "actorAuthMode" TEXT,
-  "authSessionId" TEXT,
-  "resultArtifactId" TEXT,
-  "quarantineReason" TEXT,
-  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" DATETIME NOT NULL,
-  "committedAt" DATETIME,
-  CONSTRAINT "StagedArtifactCommit_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "StagedArtifactCommit_generationJobId_fkey" FOREIGN KEY ("generationJobId") REFERENCES "GenerationJob" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "StagedArtifactCommit_resultArtifactId_fkey" FOREIGN KEY ("resultArtifactId") REFERENCES "Artifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS "ValidationReportRecord" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "projectId" TEXT NOT NULL,
@@ -275,12 +245,10 @@ CREATE TABLE IF NOT EXISTS "ValidationReportRecord" (
   "payloadJson" TEXT NOT NULL,
   "artifactId" TEXT,
   "generationJobId" TEXT,
-  "stagedArtifactCommitId" TEXT,
   "createdAt" DATETIME NOT NULL,
   CONSTRAINT "ValidationReportRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "ValidationReportRecord_artifactId_fkey" FOREIGN KEY ("artifactId") REFERENCES "Artifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT "ValidationReportRecord_generationJobId_fkey" FOREIGN KEY ("generationJobId") REFERENCES "GenerationJob" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "ValidationReportRecord_stagedArtifactCommitId_fkey" FOREIGN KEY ("stagedArtifactCommitId") REFERENCES "StagedArtifactCommit" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "ValidationReportRecord_generationJobId_fkey" FOREIGN KEY ("generationJobId") REFERENCES "GenerationJob" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "CriticReportRecord" (
@@ -593,9 +561,6 @@ ensureColumn(db, "GenerationJob", "providerAcceptedAt", 'ALTER TABLE "Generation
 ensureColumn(db, "GenerationJob", "lastPolledAt", 'ALTER TABLE "GenerationJob" ADD COLUMN "lastPolledAt" DATETIME');
 ensureColumn(db, "GenerationJob", "providerResultJson", 'ALTER TABLE "GenerationJob" ADD COLUMN "providerResultJson" TEXT');
 ensureColumn(db, "GenerationJob", "countsAsProviderSubmission", 'ALTER TABLE "GenerationJob" ADD COLUMN "countsAsProviderSubmission" BOOLEAN NOT NULL DEFAULT true');
-ensureColumn(db, "StagedArtifactCommit", "actorUserId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorUserId" TEXT');
-ensureColumn(db, "StagedArtifactCommit", "actorAuthMode", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "actorAuthMode" TEXT');
-ensureColumn(db, "StagedArtifactCommit", "authSessionId", 'ALTER TABLE "StagedArtifactCommit" ADD COLUMN "authSessionId" TEXT');
 ensureColumn(db, "LocalUser", "authMode", 'ALTER TABLE "LocalUser" ADD COLUMN "authMode" TEXT NOT NULL DEFAULT \'local\'');
 ensureColumn(db, "LocalUser", "email", 'ALTER TABLE "LocalUser" ADD COLUMN "email" TEXT');
 ensureColumn(db, "LocalUser", "passwordHash", 'ALTER TABLE "LocalUser" ADD COLUMN "passwordHash" TEXT');
@@ -634,12 +599,8 @@ CREATE INDEX IF NOT EXISTS "VideoShot_projectId_sourceArtifactId_ordinal_idx" ON
 CREATE INDEX IF NOT EXISTS "VideoShot_projectId_status_updatedAt_idx" ON "VideoShot"("projectId", "status", "updatedAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "RunInputSnapshot_projectId_inputHash_key" ON "RunInputSnapshot"("projectId", "inputHash");
 CREATE INDEX IF NOT EXISTS "RunInputSnapshot_projectId_intentEpoch_createdAt_idx" ON "RunInputSnapshot"("projectId", "intentEpoch", "createdAt");
-CREATE UNIQUE INDEX IF NOT EXISTS "StagedArtifactCommit_generationJobId_key" ON "StagedArtifactCommit"("generationJobId");
-CREATE UNIQUE INDEX IF NOT EXISTS "StagedArtifactCommit_resultArtifactId_key" ON "StagedArtifactCommit"("resultArtifactId");
-CREATE INDEX IF NOT EXISTS "StagedArtifactCommit_projectId_state_createdAt_idx" ON "StagedArtifactCommit"("projectId", "state", "createdAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_artifactId_key" ON "ValidationReportRecord"("artifactId");
 CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_generationJobId_key" ON "ValidationReportRecord"("generationJobId");
-CREATE UNIQUE INDEX IF NOT EXISTS "ValidationReportRecord_stagedArtifactCommitId_key" ON "ValidationReportRecord"("stagedArtifactCommitId");
 CREATE INDEX IF NOT EXISTS "ValidationReportRecord_projectId_stage_createdAt_idx" ON "ValidationReportRecord"("projectId", "stage", "createdAt");
 CREATE INDEX IF NOT EXISTS "ValidationReportRecord_projectId_reportDigest_idx" ON "ValidationReportRecord"("projectId", "reportDigest");
 CREATE INDEX IF NOT EXISTS "ValidationReportRecord_targetKind_targetId_idx" ON "ValidationReportRecord"("targetKind", "targetId");

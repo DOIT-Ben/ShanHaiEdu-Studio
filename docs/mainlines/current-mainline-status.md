@@ -6,7 +6,7 @@
 
 - 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
 - 唯一活动阶段：`product-first-deep-refactor`。
-- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2切片已完成离线行为回归；阶段D继续删除假完成路径、孤立PoC、复杂度和源码字符串合同债务。
+- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3切片已完成离线行为回归；阶段D继续清理复杂度和源码字符串合同债务。
 - 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
 - 本轮未调用真实Provider，未创建V1-9 runId，未生成或测试图片、视频、PPTX、ZIP，未运行390px真实黑盒，未部署或发布。
 
@@ -29,15 +29,16 @@
 - Artifact“调整后重做”只构造带真实Artifact ID的标准教师消息并进入Main Agent队列；提交时不直接创建Artifact、不提升IntentEpoch、不绕过TaskBrief、Tool或Observation，也不清空教师尚未发送的composer草稿或误携带待确认HumanGate。
 - 前端生产数据源只剩真实API client；development adapter、环境选择器和四份mock seed已删除，`NEXT_PUBLIC_WORKBENCH_DATA_SOURCE`不能再启用mock。
 - 前端不再从固定节点推导步骤；有真实Artifact时显示其类型，无Artifact时显示项目状态。
+- Stage41 local substitute、专属runner、Playwright假文件交付和package alias已删除；无生产消费者的runtime A/B、`orchestrator-runtime`及专属测试已删除，`@openai/agents`不再是项目依赖。
+- `StagedArtifactCommit`已退出Prisma模型、新库初始化、健康检查和Provider验真合同。初始化脚本不执行DROP；旧SQLite中的遗留表、字段和数据继续保留并被新代码忽略。
+- 仍宣称`OrchestratorRuntime`和双runtime边界的2026-07-14 ADR已按原字节归档，当前活动架构只保留Main Agent唯一编排口径。
 - ESLint为`0 error / 0 warning`硬门；生产构建无动态追踪warning，standalone敏感文件检查`forbidden=[]`。
 
 ## 当前问题
 
 - 复杂度债务仍有25个文件，尚未达到清零目标。
-- 当前源码合同门报告21个文件、301次命中，但审查已证实它漏检至少21个wrapper读取文件，同时把约68次普通状态断言误报为源码合同；该报告不能再表述为全部债务。
-- Stage41 substitute、孤立runtime A/B和orchestrator runtime仍留在当前源码/脚本，是D3必须删除的假完成与PoC路径。
+- 当前源码合同门报告20个文件、293次命中，但审查已证实它漏检至少21个wrapper读取文件，同时把约68次普通状态断言误报为源码合同；该报告不能再表述为全部债务。
 - `desktop/electron-main.mjs`和`playwright.config.ts`仍赋值已失效的`NEXT_PUBLIC_WORKBENCH_DATA_SOURCE`；当前阶段路径门禁止修改这两个文件，且生产代码已无读取者，D14必须删除这两处无效配置。
-- `StagedArtifactCommit`的可执行晋升出口已删除，但Prisma模型、初始化SQL和健康检查兼容字段仍在；它们不再形成第二控制面，必须在D3按数据兼容边界显式退役。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
 
 ## 尚未实现
@@ -49,6 +50,7 @@
 ## 已废弃
 
 - 固定宏阶段推进、外层计划执行下一Tool、生产deterministic draft/fallback。
+- Stage41 substitute交付、runtime A/B、独立`OrchestratorRuntime`和OpenAI Agents SDK第二runtime方案。
 - 用复杂度baseline、warning预算或源码字符串baseline长期容纳历史债务。
 - 用CI、Gate、manifest或文档齐全替代教师可用性和真实产品链路。
 
@@ -61,6 +63,7 @@
 - C3全量回归：Node测试`427/427`，Vitest隔离分片`793/793`与`778/778`；TypeScript、ESLint `0 warning`、生产构建、standalone检查和development gate通过。`main-agent-tool-loop-config.ts`降至97行，新模块均低于复杂度阈值，V1-9 repair evidence绑定全部拆分模块，债务降至27；Provider为离线延期、`passed=false`且请求数为0，连续性仍未验证。
 - D1全量回归：Node测试`427/427`，Vitest隔离分片`801/801`与`773/773`；TypeScript、ESLint `0 warning`、生产构建和development gate通过。repository由2058行降至29行并退出复杂度基线，复杂度债务降至26；D1未调用Provider。
 - D2全量回归：Node测试`424/424`，Vitest隔离分片`782/782`与`786/786`；标准重做消息、真实Artifact引用、交错失败幂等重试、Artifact版本/批准指针、零直接Artifact写入、零IntentEpoch绕行和15条写入口合同通过。`workbench-api.ts`降至233行并退出复杂度基线，债务降至25；未运行PPT浏览器验收，未调用Provider。
+- D3全量回归：数据库退役红测先以`2`项失败证明新库仍创建staging结构且旧表会触发初始化失败，修复后定向`92/92`、Node`423/423`、Vitest隔离分片`778/778`与`773/773`通过；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过。复杂度债务保持25，源码合同门收缩为20文件/293次；Provider保持离线延期、`passed=false`且请求数为0。
 
 ## 当前验收边界
 
@@ -74,4 +77,4 @@
 
 ## 唯一下一动作
 
-执行D3：删除Stage41 local substitute、无生产消费者的runtime A/B和orchestrator runtime；核验数据库兼容边界后按独立迁移步骤退役`StagedArtifactCommit`残留。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+执行D4检测器纠偏：修复跨作用域误报、属性名污染和TypeScript表达式解析，只校准当前直接源码读取，不提前把尚未迁移的wrapper隐藏债务写成0。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。

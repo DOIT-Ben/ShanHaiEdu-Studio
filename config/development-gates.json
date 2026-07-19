@@ -245,7 +245,6 @@
       { "path": "tests/m74-branded-auth-page.test.mjs", "occurrences": 46 },
       { "path": "tests/ppt-asset-image-generation-run.test.ts", "occurrences": 2 },
       { "path": "tests/production-preflight.test.mjs", "occurrences": 6 },
-      { "path": "tests/stage41-delivery-demo-script.test.mjs", "occurrences": 8 },
       { "path": "tests/v1-9-e2e-runner.test.mjs", "occurrences": 106 },
       { "path": "tests/v1-9r-intensity-conflict.test.mjs", "occurrences": 2 },
       { "path": "tests/v1-9r-legacy-control-paths.test.ts", "occurrences": 1 },

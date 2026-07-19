@@ -28,11 +28,10 @@
 
 ## 当前已接受ADR
 
-1. `decisions\2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md`
-2. `decisions\2026-07-14-adr-main-agent-react-checkpoint-compaction.md`
-3. `decisions\2026-07-14-adr-r5-ppt-design-candidate-boundary.md`
-4. `decisions\2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md`
-5. `decisions\2026-07-17-adr-project-development-gates.md`
+1. `decisions\2026-07-14-adr-main-agent-react-checkpoint-compaction.md`
+2. `decisions\2026-07-14-adr-r5-ppt-design-candidate-boundary.md`
+3. `decisions\2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md`
+4. `decisions\2026-07-17-adr-project-development-gates.md`
 
 入口：`decisions\README.md`。
 
@@ -40,7 +39,7 @@
 
 - Provider台账绑定：`..\contracts\provider-ledger-runtime-contract.md`
 - 产品不变量：`..\product\current-requirements-baseline.md`
-- 当前Runner完整性阻塞：`..\mainlines\current-mainline-status.md`
+- 当前重构与发布阻塞：`..\mainlines\current-mainline-status.md`
 
 ## 未来候选
 

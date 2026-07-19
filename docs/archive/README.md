@@ -23,4 +23,6 @@
 
 2026-07-19离线重构例外前规则备份：`2026-07-19-project-rule-before-offline-refactor\README.md`。该目录保存项目准则修改前原始字节。
 
+2026-07-20过期assistant-ui控制边界ADR归档：`2026-07-20-superseded-assistant-ui-control-boundary\README.md`。该目录按原字节保存已被Main Agent唯一编排决策覆盖的旧ADR。
+
 既有archive内容和规则备份在本轮保持原位不变。

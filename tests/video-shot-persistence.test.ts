@@ -250,7 +250,6 @@ async function expectSelectedArtifactBinding(repository: VideoShotRepository) {
     expect.stringContaining("binding is invalid"),
     expect.stringContaining("binding is invalid"),
   ]);
-  await expect(client.stagedArtifactCommit.count({ where: { resultArtifactId: correct.id } })).resolves.toBe(0);
   await expect(repository.selectVideoShotArtifact(project.id, source.id, "shot_01", correct.id))
     .resolves.toMatchObject({ selectedArtifactId: correct.id, status: "ready" });
 }

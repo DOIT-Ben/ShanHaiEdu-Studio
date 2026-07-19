@@ -104,7 +104,6 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     expect(second.runInputSnapshotId).toBe(first.runInputSnapshotId);
     expect(second.inputHash).toBe(first.inputHash);
     expect(await clientA.generationJob.count({ where: { projectId: fixture.project.id } })).toBe(1);
-    expect(await clientA.stagedArtifactCommit.count({ where: { generationJobId: first.id } })).toBe(0);
   });
 
   it("rejects the same key with a different input hash", async () => {
@@ -344,7 +343,6 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
       providerResultJson: result,
       resultArtifactId: null,
     });
-    expect(await clientA.stagedArtifactCommit.count({ where: { generationJobId: queued.id } })).toBe(0);
   });
 
 });

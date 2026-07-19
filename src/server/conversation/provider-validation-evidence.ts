@@ -83,7 +83,7 @@ export function matchesPersistedProviderValidationReport(input: {
     record.contractId === report.contract.id && record.contractVersion === report.contract.version &&
     record.overallStatus === report.overallStatus && record.reportDigest === report.reportDigest &&
     record.payloadJson === JSON.stringify(report) && record.artifactId === artifact.id &&
-    record.generationJobId === generationJob.id && record.stagedArtifactCommitId === null &&
+    record.generationJobId === generationJob.id &&
     record.createdAt.getTime() === createdAt.getTime();
 }
 

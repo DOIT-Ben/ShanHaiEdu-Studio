@@ -121,6 +121,14 @@ D2新鲜证据：
 - `npm test`通过：Node`424/424`，Vitest隔离分片`782/782`与`786/786`；TypeScript和development gate通过，复杂度债务由26降至25。
 - 按用户要求未运行PPT浏览器验收；Provider请求数为0。
 
+D3新鲜证据：
+
+- 数据库行为红测先以`2`项失败证明新库仍创建`StagedArtifactCommit`且旧表会被初始化脚本的旧索引假设阻断；修复后全新库无该表/字段，旧库遗留表和数据保留并被health忽略。
+- Stage41 runner/spec/alias、runtime A/B、`orchestrator-runtime`、专属测试和`@openai/agents`依赖已删除；活动源码与依赖零引用。
+- 定向数据库与control-plane回归`92/92`；`npm test`通过：Node`423/423`，Vitest隔离分片`778/778`与`773/773`。
+- TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过；复杂度债务保持25，源码合同门由21文件/301次收缩为20文件/293次。
+- Provider保持离线延期、`passed=false`且请求数为0；未运行PPT浏览器验收、390px或任何真实媒体/整包流程。
+
 ## 7. 最终全量验证
 
 ```powershell

@@ -29,6 +29,80 @@ describe("V1-10A health readiness", () => {
     expect(JSON.stringify(result)).not.toContain(fixture.root);
   }, 15_000);
 
+  it("does not create the retired staged artifact schema in a new database", () => {
+    const fixture = makeFixture();
+    const database = new Database(fixture.databasePath, { readonly: true });
+    try {
+      const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
+        .map((row) => (row as { name: string }).name);
+      const validationColumns = database.prepare('PRAGMA table_info("ValidationReportRecord")').all()
+        .map((row) => (row as { name: string }).name);
+
+      expect(tables).not.toContain("StagedArtifactCommit");
+      expect(validationColumns).not.toContain("stagedArtifactCommitId");
+    } finally {
+      database.close();
+    }
+  }, 15_000);
+
+  it("preserves and ignores a retired staged artifact table in a legacy database", () => {
+    const fixture = makeFixture();
+    const legacy = new Database(fixture.databasePath);
+    try {
+      legacy.pragma("foreign_keys = OFF");
+      legacy.exec(`
+        DROP TABLE IF EXISTS "StagedArtifactCommit";
+        CREATE TABLE "StagedArtifactCommit" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "legacyPayload" TEXT NOT NULL
+        );
+        INSERT INTO "StagedArtifactCommit" ("id", "legacyPayload")
+        VALUES ('legacy-staged-1', 'preserve-me');
+      `);
+      const validationColumns = legacy.prepare('PRAGMA table_info("ValidationReportRecord")').all()
+        .map((row) => (row as { name: string }).name);
+      if (!validationColumns.includes("stagedArtifactCommitId")) {
+        legacy.exec('ALTER TABLE "ValidationReportRecord" ADD COLUMN "stagedArtifactCommitId" TEXT');
+      }
+      legacy.exec(`
+        INSERT INTO "Project" ("id", "title", "currentNodeKey", "updatedAt")
+        VALUES ('legacy-project-1', 'Legacy project', 'requirement_spec', CURRENT_TIMESTAMP);
+        INSERT INTO "ValidationReportRecord" (
+          "id", "projectId", "capabilityId", "stage", "authority", "domain", "targetKind",
+          "contractId", "contractVersion", "overallStatus", "reportDigest", "payloadJson",
+          "stagedArtifactCommitId", "createdAt"
+        ) VALUES (
+          'legacy-report-1', 'legacy-project-1', 'requirement_spec', 'requirement_spec', 'legacy', 'lesson',
+          'artifact_draft', 'legacy-contract', 'v1', 'passed', 'legacy-report-digest', '{}',
+          'legacy-staged-1', CURRENT_TIMESTAMP
+        );
+      `);
+    } finally {
+      legacy.close();
+    }
+
+    initializeSchema(fixture.databasePath);
+
+    const inspected = new Database(fixture.databasePath, { readonly: true });
+    try {
+      expect(inspected.prepare(
+        'SELECT "id", "legacyPayload" FROM "StagedArtifactCommit" WHERE "id" = ?',
+      ).get("legacy-staged-1")).toEqual({ id: "legacy-staged-1", legacyPayload: "preserve-me" });
+      expect(inspected.prepare(
+        'SELECT "id", "stagedArtifactCommitId" FROM "ValidationReportRecord" WHERE "id" = ?',
+      ).get("legacy-report-1")).toEqual({ id: "legacy-report-1", stagedArtifactCommitId: "legacy-staged-1" });
+    } finally {
+      inspected.close();
+    }
+    expect(checkHealthReadiness({
+      env: { DATABASE_URL: `file:${fixture.databasePath}`, ARTIFACT_STORAGE_ROOT: fixture.artifactRoot },
+    })).toEqual({
+      status: "ok",
+      checks: { database: "ok", artifactStorage: "ok" },
+      reasons: [],
+    });
+  }, 15_000);
+
   it("fails closed with a stable response when either dependency is unavailable", () => {
     const fixture = makeFixture();
     const missingDatabase = checkHealthReadiness({
