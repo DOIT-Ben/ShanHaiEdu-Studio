@@ -74,6 +74,7 @@ const OFFLINE_REFACTOR_IMPLEMENTATION_PATHS = [
   "src/server/conversation/**",
   "src/server/agent-runtime/**",
   "src/server/tools/**",
+  "src/server/workbench/*.ts",
   "src/server/provider-ledger/provider-ledger-adapter.ts",
   "src/server/provider-ledger/provider-ledger-contract.mjs",
   "src/app/api/**/route.ts",
@@ -144,6 +145,7 @@ function makeConfig() {
         "src/server/conversation/**",
         "src/server/gpt-protocol/**",
         "src/server/provider-ledger/**",
+        "src/server/workbench/*.ts",
         "scripts/lib/v1-9-e2e-contract*",
         "scripts/development-gates/provider-continuity.mjs",
         "config/development-gates.json",
@@ -555,6 +557,7 @@ test("offline product refactor is exact, expiring, development-only, and never p
     "scripts/development-gates/provider-continuity.mjs",
     "scripts/development-gates/run-development-gates.mjs",
     "src/server/conversation/conversation-turn-service.ts",
+    "src/server/workbench/workbench-generation-service.ts",
     "tests/development-gates/provider-continuity.test.mjs",
   ];
   const result = verify(root, { changedPaths });
@@ -613,6 +616,24 @@ test("offline product refactor is exact, expiring, development-only, and never p
     /receipt.*missing/i,
     "file drift with synchronized stage self-report",
   );
+});
+
+test("detectProviderImpact covers workbench production modules without matching nested tests", (t) => {
+  const root = setupRepository(t);
+  const productionPaths = [
+    "src/server/workbench/workbench-artifact-service.ts",
+    "src/server/workbench/workbench-generation-service.ts",
+    "src/server/workbench/workbench-turn-job-service.ts",
+  ];
+  const impact = detectProviderImpact({
+    root,
+    changedPaths: [...productionPaths, "src/server/workbench/__tests__/service.test.ts"],
+    now: NOW,
+  });
+
+  assert.equal(impact.impacted, true);
+  assert.deepEqual(impact.matchedPaths, productionPaths);
+  assert.deepEqual(impact.productionProviderPaths, productionPaths);
 });
 
 test("offline product refactor rejects legacy or unsigned receipts in release mode", (t) => {

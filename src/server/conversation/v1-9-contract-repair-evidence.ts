@@ -63,6 +63,15 @@ export const V1_9_CONTRACT_REPAIR_REQUIRED_FILES = Object.freeze([
   "src/server/workbench/types.ts",
   "src/server/workbench/validation-report-repository-helpers.ts",
   "src/server/workbench/video-shot-repository.ts",
+  "src/server/workbench/workbench-artifact-service.ts",
+  "src/server/workbench/workbench-generation-service.ts",
+  "src/server/workbench/workbench-message-service.ts",
+  "src/server/workbench/workbench-project-service.ts",
+  "src/server/workbench/workbench-service-context.ts",
+  "src/server/workbench/workbench-service-mappers.ts",
+  "src/server/workbench/workbench-snapshot-service.ts",
+  "src/server/workbench/workbench-turn-job-service.ts",
+  "src/server/workbench/workbench-video-shot-service.ts",
   "tests/capability-availability.test.ts",
   "tests/control-plane-lifecycle-repair.test.ts",
   "tests/control-plane-persistence.test.ts",
@@ -76,6 +85,7 @@ export const V1_9_CONTRACT_REPAIR_REQUIRED_FILES = Object.freeze([
   "tests/v1-9-contract-repair-evidence.test.ts",
   "tests/v1-9-e2e-runner.test.mjs",
   "tests/v1-9-product-preflight.test.ts",
+  "tests/workbench-service-facade.test.ts",
 ]);
 
 export type V1_9ContractRepairEvidence = {

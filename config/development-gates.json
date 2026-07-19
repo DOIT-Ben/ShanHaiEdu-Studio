@@ -203,13 +203,6 @@
         "violatingFunctions": 1,
         "maxFunctionLines": 243,
         "totalFunctionLines": 243
-      },
-      {
-        "path": "src/server/workbench/service.ts",
-        "lines": 667,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 452,
-        "totalFunctionLines": 452
       }
     ]
   },
@@ -260,6 +253,7 @@
       "src/server/agent-runtime/**",
       "src/server/gpt-protocol/**",
       "src/server/tools/**",
+      "src/server/workbench/*.ts",
       "src/server/provider-ledger/**",
       "src/server/provider-ledger-*.ts",
       "src/app/api/**/route.ts",

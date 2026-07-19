@@ -31,8 +31,8 @@
 
 仍存在的问题：
 
-- 复杂度债务已由27降至25个文件；D4后当前源码合同门报告19个文件、219次直接读取命中。检测器只覆盖直接读取，wrapper读取仍未纳入，不能把该数字当作完整债务或清零证据。
-- `conversation-turn-service.ts`为115行，`main-agent-tool-loop-config.ts`为97行，workbench repository已由2058行降至29行；三个公开门面只负责组合内部职责。
+- 复杂度债务已由27降至24个文件；D4后当前源码合同门报告19个文件、219次直接读取命中。检测器只覆盖直接读取，wrapper读取仍未纳入，不能把该数字当作完整债务或清零证据。
+- `conversation-turn-service.ts`为115行，`main-agent-tool-loop-config.ts`为97行，workbench repository已由2058行降至29行，workbench service已由667行降至58行；四个公开门面只负责组合内部职责。
 
 尚未实现：
 
@@ -160,20 +160,27 @@ D4已完成（检测器纠偏）：
 - 复杂度债务保持25个文件；Provider保持离线延期且请求数为0。
 - 全量验证通过Node`423/423`、Vitest`778/778 + 773/773`、TypeScript、ESLint `0 warning`、生产构建、standalone检查、development gate和工作树绑定`verify:local`。
 
-D4后的唯一执行顺序：
+D5已完成（workbench service拆分）：
 
-1. **D5 workbench service**：按项目/消息、Artifact、Generation、VideoShot、TurnJob、snapshot与Guard拆分，保持工厂参数和授权/映射合同。
-2. **D6 消息与事件合同**：先把Provider敏感路径从精确文件扩为新目录glob，再拆MessagePart和TeacherEvent合同。
-3. **D7 control plane与外部审计**：拆store后拆唯一external-audit ingress，保持原子提交和authority事实。
-4. **D8 Skill**：bindings、output contract、registry叶子先行，runtime最后组合。
-5. **D9 Tool**：agent router、package/provider adapters、tool-router依次迁移；Provider请求和响应语义只允许机械保持。
-6. **D10 Runtime与模型Agent**：OpenAI runtime、controlled ReAct loop、model agent依次迁移；任何请求/重试/晋升语义变化都退出离线阶段。
-7. **D11 Feedback**：repository、service、controller、dialog按依赖顺序拆分。
-8. **D12 真实前端**：删除无生产消费者的PromptComposer并把必要能力/测试绑定到assistant-ui，再处理controller和MediaWorkbench。
-9. **D13 视频route**：保留GET/POST、外层wrapper、Envelope、任务隔离和错误码，只做机械拆分。
-10. **D14 Ops源码合同**：container、deploy、desktop、auth和video smoke改为结构化配置或可注入行为测试，并删除已无消费者的旧数据源环境变量赋值。
-11. **D15 Runner源码合同**：先M67后V1-9，改验冻结树、child process、shutdown和manifest/state行为。
-12. **D16 最终检测**：启用wrapper/常量表/属性传播检测，清完最后漏项后同时置空complexity与source baseline。
+- `createWorkbenchService`保持原导入路径、四个位置参数和47个公开方法；门面降至58行，只组合项目、消息、Artifact、Generation、VideoShot、TurnJob、snapshot以及执行身份/lease职责。
+- 共享`ensureProjectAccess`、消息Artifact引用投影和六类数据库记录映射各只有一份实现；9个内部模块均为48至179行且函数低于150行。
+- complexity baseline先移除旧债务并观察到`New complexity debt`红灯，拆分后复杂度债务由25降至24。V1-9 contract repair evidence的默认SHA闭包覆盖门面、全部9个内部模块和门面合同测试。
+- 门面行为测试冻结服务端执行身份覆盖、guard写入、读授权以及finish/fail跳过普通项目查询并透传同一guard。`src/server/workbench/*.ts`已同步进入Provider敏感生产路径、脚本生产闭包和离线阶段精确白名单，且不匹配嵌套`__tests__`；开发态仍只允许延期，release不接受延期。
+- 最终全量回归通过Node`423/423`与Vitest`776/776 + 781/781`；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过。Provider保持离线延期、`passed=false`且请求数为0。
+
+D5后的唯一执行顺序：
+
+1. **D6 消息与事件合同**：拆分MessagePart和TeacherEvent合同，保持序列化、持久化、assistant-ui投影以及D5已扩展的Provider敏感路径边界不变。
+2. **D7 control plane与外部审计**：拆store后拆唯一external-audit ingress，保持原子提交和authority事实。
+3. **D8 Skill**：bindings、output contract、registry叶子先行，runtime最后组合。
+4. **D9 Tool**：agent router、package/provider adapters、tool-router依次迁移；Provider请求和响应语义只允许机械保持。
+5. **D10 Runtime与模型Agent**：OpenAI runtime、controlled ReAct loop、model agent依次迁移；任何请求/重试/晋升语义变化都退出离线阶段。
+6. **D11 Feedback**：repository、service、controller、dialog按依赖顺序拆分。
+7. **D12 真实前端**：删除无生产消费者的PromptComposer并把必要能力/测试绑定到assistant-ui，再处理controller和MediaWorkbench。
+8. **D13 视频route**：保留GET/POST、外层wrapper、Envelope、任务隔离和错误码，只做机械拆分。
+9. **D14 Ops源码合同**：container、deploy、desktop、auth和video smoke改为结构化配置或可注入行为测试，并删除已无消费者的旧数据源环境变量赋值。
+10. **D15 Runner源码合同**：先M67后V1-9，改验冻结树、child process、shutdown和manifest/state行为。
+11. **D16 最终检测**：启用wrapper/常量表/属性传播检测，清完最后漏项后同时置空complexity与source baseline。
 
 验收：
 

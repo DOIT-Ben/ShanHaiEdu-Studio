@@ -78,6 +78,7 @@
       "src/server/conversation/**",
       "src/server/agent-runtime/**",
       "src/server/tools/**",
+      "src/server/workbench/*.ts",
       "src/server/provider-ledger/provider-ledger-adapter.ts",
       "src/server/provider-ledger/provider-ledger-contract.mjs",
       "src/app/api/**/route.ts",

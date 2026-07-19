@@ -136,6 +136,14 @@ D4新鲜证据：
 - `wiring.test.mjs`的活动归档例外清单已与2026-07-20归档目录三项文件同步；Provider保持离线延期、`passed=false`且请求数为0。
 - 开发门禁测试`119/119`，另有1项Windows符号链接能力跳过；`npm test`通过Node`423/423`与Vitest`778/778 + 773/773`，TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`、development gate和工作树绑定`verify:local`通过。
 
+D5完成证据：
+
+- 新增运行时门面合同冻结`createWorkbenchService`的47个方法以及`withExecutionGuard`身份传递；初始`2/2`通过，随后扩展为`5/5`，覆盖两个enqueue入口的服务端身份覆盖、guard写入、读授权以及finish/fail原guard透传。
+- complexity baseline移除`src/server/workbench/service.ts`后先以`New complexity debt`失败；拆分后门面58行，9个内部模块48至179行且函数均低于150行，复杂度债务由25降至24。
+- V1-9 contract repair evidence的默认SHA闭包覆盖门面、9个内部职责模块和门面合同测试；门面与闭包定向`9/9`通过。
+- Provider红测先证明workbench模块未进入生产闭包且离线阶段不接受该路径；修复后Provider门禁`32/32`通过，另有1项Windows符号链接能力跳过。三个生产模块均命中`impacted:true`与`offlineRefactorOnly:true`，嵌套`__tests__`不命中；release仍因缺少真实receipt失败关闭。
+- 最终`npm test`通过Node`423/423`与Vitest`776/776 + 781/781`；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过。Provider保持离线延期、`passed=false`且请求数为0。
+
 ## 7. 最终全量验证
 
 ```powershell

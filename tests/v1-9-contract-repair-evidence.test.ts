@@ -60,6 +60,22 @@ describe("V1-9 contract repair evidence", () => {
     ]));
   });
 
+  it("binds every decomposed workbench service responsibility into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/workbench/service.ts",
+      "src/server/workbench/workbench-artifact-service.ts",
+      "src/server/workbench/workbench-generation-service.ts",
+      "src/server/workbench/workbench-message-service.ts",
+      "src/server/workbench/workbench-project-service.ts",
+      "src/server/workbench/workbench-service-context.ts",
+      "src/server/workbench/workbench-service-mappers.ts",
+      "src/server/workbench/workbench-snapshot-service.ts",
+      "src/server/workbench/workbench-turn-job-service.ts",
+      "src/server/workbench/workbench-video-shot-service.ts",
+      "tests/workbench-service-facade.test.ts",
+    ]));
+  });
+
   it("binds the exact Job, teacher message, TaskBrief, idempotency key, failure signature and required repair closure", () => {
     const cwd = path.resolve(".tmp", "v1-9-contract-repair-evidence");
     const repairFile = "repair/recovery.ts";
