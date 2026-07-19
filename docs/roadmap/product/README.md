@@ -17,4 +17,4 @@
 
 进入主线前先在 `..\..\product\requirements-backlog.md` 建立当期条目，再生成新的阶段plan和test-plan。
 
-P0-05A已于2026-07-17进入活动阶段，其规格位于`..\..\product\p0-05a-provider-continuity-readiness-spec.md`，plan和test-plan位于`..\..\stages\`，不再属于Roadmap。
+Provider连续性已暂停并由`..\release\provider-continuity-readiness-spec.md`保存未来需求边界。原活动plan、test-plan和就绪矩阵只在archive中保留历史证据，不能直接恢复。

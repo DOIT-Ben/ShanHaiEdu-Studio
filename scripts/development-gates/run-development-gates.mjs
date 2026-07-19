@@ -49,9 +49,9 @@ export async function runDevelopmentGates({
       evidence?.status === "deferred_bootstrap";
     const exactCaptureBootstrap = evidence?.ok === false && evidence?.passed === false &&
       evidence?.status === "deferred_capture_bootstrap";
-    const exactReadinessImplementation = evidence?.ok === false && evidence?.passed === false &&
-      evidence?.status === "deferred_readiness_implementation";
-    if (!passed && !exactBootstrap && !exactCaptureBootstrap && !exactReadinessImplementation) {
+    const exactOfflineRefactor = evidence?.ok === false && evidence?.passed === false &&
+      evidence?.status === "deferred_provider_validation_during_offline_refactor";
+    if (!passed && !exactBootstrap && !exactCaptureBootstrap && !exactOfflineRefactor) {
       throw new Error("Provider continuity development gate failed.");
     }
     provider = evidence;
@@ -63,8 +63,8 @@ export async function runDevelopmentGates({
       ? "passed-with-bootstrap-defer"
       : provider.status === "deferred_capture_bootstrap"
         ? "passed-with-capture-bootstrap-defer"
-        : provider.status === "deferred_readiness_implementation"
-          ? "passed-with-readiness-defer"
+        : provider.status === "deferred_provider_validation_during_offline_refactor"
+          ? "passed-with-offline-refactor-defer"
         : "passed",
     checks,
     provider: {

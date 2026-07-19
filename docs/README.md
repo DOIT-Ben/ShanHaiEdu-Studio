@@ -1,6 +1,6 @@
 # ShanHaiEdu 文档权威入口
 
-更新时间：2026-07-17
+更新时间：2026-07-19
 
 本页是活动文档唯一导航。历史材料已集中到 `docs\archive\`，默认不参与搜索、规划和验收判断。
 
@@ -37,13 +37,13 @@
 | 总账 | `product\requirements-backlog.md` | 未完成、延期和未来需求 |
 | 主线 | `mainlines\current-mainline-status.md` | 当前事实、五层状态、阻塞和下一动作 |
 | 架构 | `architecture\README.md`、`architecture\V1.0 重构设计.md` | 当前智能体原子 Tool 架构与已接受ADR |
-| 阶段 | `stages\README.md` | 当前唯一活动阶段是P0-05A Provider连续性与V1-9就绪；目前只执行离线readiness |
+| 阶段 | `stages\README.md` | 当前唯一活动阶段是产品优先深度重构 |
 | Provider合同 | `contracts\provider-ledger-runtime-contract.md` | API台账到运行时的非敏感绑定边界 |
 | 前端 | `ui\README.md` | assistant-ui工作台与视觉证据入口 |
 
 ## 4. 未来工作
 
-已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。P0-05A已激活，但真实Provider campaign仍等待单独的通道、模型、费用和调用次数授权；当前只实现并验证离线readiness。P0-05A Go后才允许规划P0-05B、生成新的V1-9 plan、manifest和runId；整改前旧材料不得恢复。Roadmap不自动取得执行权。
+已接受但不属于当前阶段的产品、架构、UI和发布工作统一从 `roadmap\README.md` 进入。Provider连续性已暂停并回到发布Roadmap；深度重构关闭后必须重新冻结候选和授权，不能恢复旧run、旧manifest或旧阶段预算。Roadmap不自动取得执行权。
 
 ## 5. 历史与证据
 

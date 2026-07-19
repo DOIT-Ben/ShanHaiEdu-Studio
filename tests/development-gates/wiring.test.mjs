@@ -56,13 +56,23 @@ test("package exposes the single Provider live preflight and seal entrypoints", 
   assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/lib/v1-9-orchestration-authority*"));
 });
 
-test("the active stage starts after archival and exposes no archive mutation exception", () => {
+test("the active stage is the product-first refactor and permits only the exact one-time archive migration", () => {
   const stage = JSON.parse(readFileSync(path.join(process.cwd(), "docs", "stages", "active-stage.json"), "utf8"));
-  assert.equal(stage.baselineSha, "781af1fbb2a0451514807e8c587566496bfc502a");
-  assert.deepEqual(stage.protectedPathExceptions, []);
-  assert.equal(stage.allowedPaths.some((entry) => entry.startsWith("docs/archive/")), false);
-  assert.equal(stage.allowedPaths.includes("docs/stages/project-development-gates-plan.md"), false);
-  assert.equal(stage.allowedPaths.includes("docs/stages/project-development-gates-test-plan.md"), false);
+  assert.equal(stage.stageId, "product-first-deep-refactor");
+  assert.equal(stage.baselineSha, "95b9b29d22553474ffe0c937d035bbe55924b157");
+  assert.equal(stage.plan, "docs/stages/product-first-deep-refactor-plan.md");
+  assert.equal(stage.testPlan, "docs/stages/product-first-deep-refactor-test-plan.md");
+  assert.deepEqual(stage.protectedPathExceptions, [
+    "docs/archive/README.md",
+    "docs/archive/2026-07-19-provider-continuity-paused/README.md",
+    "docs/archive/2026-07-19-provider-continuity-paused/archive-manifest.json",
+    "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-plan.md",
+    "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-test-plan.md",
+    "docs/archive/2026-07-19-provider-continuity-paused/v1-9-readiness-matrix.md",
+    "docs/archive/2026-07-19-project-rule-before-offline-refactor/AGENTS_20260719-120150.bak",
+    "docs/archive/2026-07-19-project-rule-before-offline-refactor/README.md",
+    "docs/archive/2026-07-19-project-rule-before-offline-refactor/archive-manifest.json",
+  ]);
 });
 
 test("quality-gates workflow calls the repository CI entry without a success bypass", () => {

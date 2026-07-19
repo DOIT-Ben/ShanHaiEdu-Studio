@@ -19,4 +19,8 @@
 
 2026-07-17项目开发门禁制度化完成入口：`2026-07-17-project-development-gates\README.md`。该目录保存退出活动权威时的阶段合同、计划、测试计划、CI关闭证据和逐文件SHA-256迁移清单。
 
+2026-07-19 Provider连续性暂停入口：`2026-07-19-provider-continuity-paused\README.md`。该目录按原字节保存退出活动权威的plan、test-plan和V1-9就绪矩阵；真实Provider工作必须从Roadmap重新规划。
+
+2026-07-19离线重构例外前规则备份：`2026-07-19-project-rule-before-offline-refactor\README.md`。该目录保存项目准则修改前原始字节。
+
 既有archive内容和规则备份在本轮保持原位不变。

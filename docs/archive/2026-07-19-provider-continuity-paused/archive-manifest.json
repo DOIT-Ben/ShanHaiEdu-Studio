@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "shanhai-archive-manifest.v1",
+  "archivedOn": "2026-07-19",
+  "reason": "Provider continuity remains unauthorized and was displaced by the product-first deep refactor stage.",
+  "files": [
+    {
+      "source": "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
+      "archivedPath": "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-plan.md",
+      "bytes": 20572,
+      "sha256": "fc7f0bacc2046c4dfb4d64adb93a94156e471de6e5a29d9ca7f1d7e9afacab2a"
+    },
+    {
+      "source": "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
+      "archivedPath": "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-test-plan.md",
+      "bytes": 17626,
+      "sha256": "3530e0b80a096df88e4a59a550f241657da661110e66f6254d2a42b6ead38bf3"
+    },
+    {
+      "source": "docs/stages/p0-05a-v1-9-readiness-matrix.md",
+      "archivedPath": "docs/archive/2026-07-19-provider-continuity-paused/v1-9-readiness-matrix.md",
+      "bytes": 8392,
+      "sha256": "e139540a3b9b05e79f99e308af021785299ae4e405b1a50025c3afa61f2786a7"
+    }
+  ]
+}

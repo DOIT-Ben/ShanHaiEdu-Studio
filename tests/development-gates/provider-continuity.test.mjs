@@ -65,6 +65,18 @@ const READINESS_IMPLEMENTATION_PATHS = [
   "tests/v1-9-run-state-v2.test.mjs",
   "tests/v1-9-startup-recovery-authority.test.ts",
 ];
+const OFFLINE_REFACTOR_IMPLEMENTATION_PATHS = [
+  "config/development-gates.json",
+  "docs/stages/active-stage.json",
+  "scripts/development-gates/provider-continuity.mjs",
+  "scripts/development-gates/run-development-gates.mjs",
+  "src/server/conversation/**",
+  "src/server/agent-runtime/**",
+  "src/server/tools/**",
+  "src/app/api/**/route.ts",
+  "src/lib/conversation-message-contract.ts",
+  "prisma/schema.prisma",
+];
 
 test("test database initialization removes stale WAL and shared-memory sidecars", () => {
   const removed = [];
@@ -203,6 +215,31 @@ function writeReadinessStage(root, overrides = {}) {
   });
 }
 
+function writeOfflineRefactorStage(root, continuityOverrides = {}, stageOverrides = {}) {
+  writeJson(path.join(root, "docs/stages/active-stage.json"), {
+    schemaVersion: "shanhai-active-stage.v1",
+    stageId: "product-first-deep-refactor",
+    status: "active",
+    baselineSha: "95b9b29d22553474ffe0c937d035bbe55924b157",
+    plan: "docs/stages/product-first-deep-refactor-plan.md",
+    testPlan: "docs/stages/product-first-deep-refactor-test-plan.md",
+    ...stageOverrides,
+    providerContinuity: {
+      requirement: "offline-product-refactor",
+      mode: "development-only",
+      expiresOn: "2026-08-16",
+      liveCallsAuthorized: false,
+      liveCampaign: "blocked-outside-current-stage",
+      liveAuthorization: null,
+      requiredReceiptSchema: "shanhai-provider-continuity-receipt.v2",
+      trustedCaptureKeyIds: [],
+      trustedLedgerAuthorityKeyIds: [],
+      allowedImplementationPaths: OFFLINE_REFACTOR_IMPLEMENTATION_PATHS,
+      ...continuityOverrides,
+    },
+  });
+}
+
 function setupRepository(t) {
   const root = mkdtempSync(path.join(tmpdir(), "shanhai-provider-gate-"));
   t.after(() => rmSync(root, { force: true, recursive: true }));
@@ -301,6 +338,11 @@ function scenarioEvidence(definition, runIndex) {
 function writeValidEvidence(root, options = {}) {
   const config = makeConfig();
   const policy = config.providerContinuity;
+  if (options.preserveActiveStage !== true) {
+    const stagePath = path.join(root, "docs/stages/active-stage.json");
+    const stage = JSON.parse(readFileSync(stagePath, "utf8"));
+    writeJson(stagePath, { ...stage, status: "fixture" });
+  }
   const mode = options.mode ?? "development";
   const runCount =
     options.runCount ??
@@ -483,33 +525,93 @@ test("missing evidence fails closed except for the exact unexpired bootstrap sta
   );
 });
 
-test("offline readiness implementation is exact, expiring, development-only, and never passing", (t) => {
+test("offline product refactor is exact, expiring, development-only, and never passes Provider validation", (t) => {
   const root = setupRepository(t);
-  writeReadinessStage(root);
+  writeOfflineRefactorStage(root);
   const changedPaths = [
     "scripts/development-gates/provider-continuity.mjs",
-    "scripts/run-v1-9-e2e.mjs",
-    "src/server/conversation/conversation-turn-recovery.ts",
+    "scripts/development-gates/run-development-gates.mjs",
+    "src/server/conversation/conversation-turn-service.ts",
     "tests/development-gates/provider-continuity.test.mjs",
   ];
   const result = verify(root, { changedPaths });
   assert.equal(result.ok, false);
   assert.equal(result.passed, false);
-  assert.equal(result.status, "deferred_readiness_implementation");
+  assert.equal(result.status, "deferred_provider_validation_during_offline_refactor");
   assert.throws(() => verifyProviderContinuityEvidence({
     root, mode: "release", now: NOW, changedPaths,
   }), /receipt.*missing/i);
 
-  writeReadinessStage(root, { liveCallsAuthorized: true });
+  writeOfflineRefactorStage(root, { liveCallsAuthorized: true });
   assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i);
-  writeReadinessStage(root, { expiresOn: "2026-07-16" });
+  writeOfflineRefactorStage(root, { expiresOn: "2026-07-16" });
   assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i);
+  writeOfflineRefactorStage(root);
+  assert.throws(() => verify(root, {
+    changedPaths: ["src/server/gpt-protocol/openai-responses-adapter.ts"],
+  }), /receipt.*missing/i);
+
+  const driftCases = [
+    ["status", {}, { status: "paused" }],
+    ["baseline", {}, { baselineSha: "a".repeat(40) }],
+    ["plan", {}, { plan: "docs/stages/other-plan.md" }],
+    ["testPlan", {}, { testPlan: "docs/stages/other-test-plan.md" }],
+    ["requirement", { requirement: "other" }, {}],
+    ["mode", { mode: "release" }, {}],
+    ["liveCampaign", { liveCampaign: "other" }, {}],
+    ["liveAuthorization", { liveAuthorization: { authorizationDigest: "a".repeat(64) } }, {}],
+    ["requiredReceiptSchema", { requiredReceiptSchema: "shanhai-provider-continuity-receipt.v1" }, {}],
+    ["allowedImplementationPaths", { allowedImplementationPaths: [...OFFLINE_REFACTOR_IMPLEMENTATION_PATHS, "src/server/gpt-protocol/**"] }, {}],
+  ];
+  for (const [label, continuityOverrides, stageOverrides] of driftCases) {
+    writeOfflineRefactorStage(root, continuityOverrides, stageOverrides);
+    assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i, label);
+  }
+});
+
+test("offline product refactor rejects legacy or unsigned receipts in release mode", (t) => {
+  const root = setupRepository(t);
+  const changedPaths = ["src/server/conversation/conversation-turn-service.ts"];
+  writeOfflineRefactorStage(root);
+  writeValidEvidence(root, { mode: "release", runCount: 5, preserveActiveStage: true });
+  assert.throws(() => verifyProviderContinuityEvidence({
+    root, mode: "release", now: NOW, changedPaths,
+  }), (error) => error?.code === "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");
+
+  const manifestPath = path.join(root, ".tmp/provider-continuity/provider-continuity.manifest.json");
+  const receiptPath = path.join(root, ".tmp/provider-continuity/provider-continuity.receipt.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  writeJson(manifestPath, { ...manifest, schemaVersion: "shanhai-provider-continuity-manifest.v2" });
+  writeJson(receiptPath, { ...receipt, schemaVersion: "shanhai-provider-continuity-receipt.v2" });
+  assert.throws(() => verifyProviderContinuityEvidence({
+    root, mode: "release", now: NOW, changedPaths,
+  }), (error) => error?.code === "PROVIDER_CAPTURE_TRUST_ROOT_MISSING");
+
+  writeOfflineRefactorStage(root, {
+    trustedCaptureKeyIds: ["capture-test"],
+    trustedLedgerAuthorityKeyIds: ["ledger-test"],
+  });
+  assert.throws(() => verifyProviderContinuityEvidence({
+    root, mode: "release", now: NOW, changedPaths,
+  }), (error) => error?.code === "PROVIDER_LIVE_AUTHORIZATION_MISSING");
+});
+
+test("an active stage cannot validate a receipt without declaring the signed receipt schema", (t) => {
+  const root = setupRepository(t);
+  writeValidEvidence(root, { mode: "release", runCount: 5, preserveActiveStage: true });
+  assert.throws(() => verifyProviderContinuityEvidence({
+    root,
+    mode: "release",
+    now: NOW,
+    changedPaths: ["config/development-gates.json"],
+  }), (error) => error?.code === "PROVIDER_RECEIPT_SCHEMA_UNDECLARED");
 });
 
 test("active P0-05A rejects the self-reported v1 receipt even when its hashes are internally consistent", (t) => {
   const root = setupRepository(t);
   writeReadinessStage(root);
-  writeValidEvidence(root);
+  writeValidEvidence(root, { preserveActiveStage: true });
   assert.throws(() => verify(root, {
     changedPaths: ["scripts/development-gates/provider-continuity/preflight.mjs"],
   }), (error) => error?.code === "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");

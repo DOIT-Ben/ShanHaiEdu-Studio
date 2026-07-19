@@ -62,46 +62,22 @@ const CAPTURE_BOOTSTRAP_ALLOWED_PATHS = [
   ...CAPTURE_BOOTSTRAP_PRODUCTION_PATHS,
   ...CAPTURE_BOOTSTRAP_TEST_PATHS,
 ];
-const READINESS_STAGE_ID = "p0-05a-provider-continuity-readiness";
-const READINESS_BASELINE = "781af1fbb2a0451514807e8c587566496bfc502a";
-const READINESS_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-plan.md";
-const READINESS_TEST_PLAN = "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md";
-const READINESS_EXPIRES_ON = "2026-07-24";
-const READINESS_ALLOWED_IMPLEMENTATION_PATHS = [
+const OFFLINE_REFACTOR_STAGE_ID = "product-first-deep-refactor";
+const OFFLINE_REFACTOR_BASELINE = "95b9b29d22553474ffe0c937d035bbe55924b157";
+const OFFLINE_REFACTOR_PLAN = "docs/stages/product-first-deep-refactor-plan.md";
+const OFFLINE_REFACTOR_TEST_PLAN = "docs/stages/product-first-deep-refactor-test-plan.md";
+const OFFLINE_REFACTOR_EXPIRES_ON = "2026-08-16";
+const OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS = [
   "config/development-gates.json",
-  "docs/mainlines/current-mainline-status.md",
   "docs/stages/active-stage.json",
-  "docs/stages/p0-05a-provider-continuity-readiness-plan.md",
-  "docs/stages/p0-05a-provider-continuity-readiness-test-plan.md",
-  "docs/stages/p0-05a-v1-9-readiness-matrix.md",
-  "scripts/run-v1-9-e2e.mjs",
-  "scripts/run-m67-e2e.mjs",
   "scripts/development-gates/provider-continuity.mjs",
-  "scripts/lib/v1-9-e2e-contract.d.mts",
-  "scripts/lib/v1-9-e2e-contract.mjs",
-  "src/instrumentation.ts",
-  "src/server/conversation/conversation-turn-checkpoint-recovery.ts",
-  "src/server/conversation/conversation-turn-queue.ts",
-  "src/server/conversation/conversation-turn-recovery.ts",
-  "src/server/conversation/external-audit-startup-recovery.ts",
-  "src/server/conversation/provider-health-startup-recovery.ts",
-  "src/server/conversation/v1-9-contract-repair-evidence.ts",
-  "src/server/conversation/v1-9-startup-recovery-authority.ts",
-  "src/server/workbench/repository.ts",
-  "src/server/workbench/service.ts",
-  "src/server/workbench/types.ts",
-  "src/server/workbench/__tests__/stage60-conversation-turn-queue.test.ts",
-  "tests/conversation-checkpoint-recovery.test.ts",
-  "tests/conversation-contract-repair-recovery.test.ts",
-  "tests/conversation-provider-health-recovery.test.ts",
-  "tests/development-gates/provider-continuity.test.mjs",
-  "tests/development-gates/wiring.test.mjs",
-  "tests/external-audit-startup-recovery-authority.test.ts",
-  "tests/m67-e2e-runner.test.mjs",
-  "tests/v1-9-contract-repair-evidence.test.ts",
-  "tests/v1-9-e2e-runner.test.mjs",
-  "tests/v1-9-run-state-v2.test.mjs",
-  "tests/v1-9-startup-recovery-authority.test.ts",
+  "scripts/development-gates/run-development-gates.mjs",
+  "src/server/conversation/**",
+  "src/server/agent-runtime/**",
+  "src/server/tools/**",
+  "src/app/api/**/route.ts",
+  "src/lib/conversation-message-contract.ts",
+  "prisma/schema.prisma",
 ];
 const PRODUCTION_PROVIDER_PATHS = [
   "src/server/conversation/**",
@@ -370,7 +346,7 @@ function inspectBootstrap(root, changedPaths, productionMatched, now) {
   };
 }
 
-function inspectReadinessImplementation(root, matchedPaths, productionMatched, now) {
+function inspectOfflineRefactor(root, matchedPaths, productionMatched, now) {
   if (matchedPaths.length === 0) return { eligible: false };
   let stage;
   try {
@@ -381,22 +357,22 @@ function inspectReadinessImplementation(root, matchedPaths, productionMatched, n
   const continuity = stage?.providerContinuity;
   const expiresAt = parseExpiry(continuity?.expiresOn);
   const exactStage = stage?.schemaVersion === "shanhai-active-stage.v1" &&
-    stage?.stageId === READINESS_STAGE_ID && stage?.status === "active" &&
-    stage?.baselineSha === READINESS_BASELINE && stage?.plan === READINESS_PLAN &&
-    stage?.testPlan === READINESS_TEST_PLAN;
-  const exactContract = continuity?.requirement === "provider-continuity-readiness-implementation" &&
+    stage?.stageId === OFFLINE_REFACTOR_STAGE_ID && stage?.status === "active" &&
+    stage?.baselineSha === OFFLINE_REFACTOR_BASELINE && stage?.plan === OFFLINE_REFACTOR_PLAN &&
+    stage?.testPlan === OFFLINE_REFACTOR_TEST_PLAN;
+  const exactContract = continuity?.requirement === "offline-product-refactor" &&
     continuity?.mode === "development-only" && continuity?.liveCallsAuthorized === false &&
-    continuity?.liveCampaign === "blocked-awaiting-explicit-authorization" &&
+    continuity?.liveCampaign === "blocked-outside-current-stage" &&
     continuity?.liveAuthorization === null &&
     continuity?.requiredReceiptSchema === "shanhai-provider-continuity-receipt.v2" &&
     Array.isArray(continuity?.trustedCaptureKeyIds) && continuity.trustedCaptureKeyIds.length === 0 &&
     Array.isArray(continuity?.trustedLedgerAuthorityKeyIds) && continuity.trustedLedgerAuthorityKeyIds.length === 0 &&
-    continuity?.expiresOn === READINESS_EXPIRES_ON &&
-    isDeepStrictEqual(continuity?.allowedImplementationPaths, READINESS_ALLOWED_IMPLEMENTATION_PATHS);
+    continuity?.expiresOn === OFFLINE_REFACTOR_EXPIRES_ON &&
+    isDeepStrictEqual(continuity?.allowedImplementationPaths, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS);
   const allowedSensitivePaths = matchedPaths.every((entry) =>
-    matchesAny(entry, READINESS_ALLOWED_IMPLEMENTATION_PATHS));
+    matchesAny(entry, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS));
   const allowedProductionPaths = productionMatched.every((entry) =>
-    matchesAny(entry, READINESS_ALLOWED_IMPLEMENTATION_PATHS));
+    matchesAny(entry, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS));
   return {
     eligible: exactStage && exactContract && allowedSensitivePaths && allowedProductionPaths &&
       expiresAt !== null && now.getTime() <= expiresAt.getTime(),
@@ -424,7 +400,7 @@ export function detectProviderImpact(options = {}) {
     .filter((entry) => matchesAny(entry, PRODUCTION_PROVIDER_PATHS))
     .sort();
   const bootstrap = inspectBootstrap(root, changedPaths, productionMatched, now);
-  const readiness = inspectReadinessImplementation(root, matchedPaths, productionMatched, now);
+  const offlineRefactor = inspectOfflineRefactor(root, matchedPaths, productionMatched, now);
   return {
     impacted: matchedPaths.length > 0,
     changedPaths: [...changedPaths].sort(),
@@ -434,8 +410,8 @@ export function detectProviderImpact(options = {}) {
     captureBootstrapOnly: bootstrap.captureEligible,
     captureProductionPaths: bootstrap.captureEligible ? productionMatched : [],
     bootstrapExpiresAt: bootstrap.expiresAt ?? null,
-    readinessImplementationOnly: readiness.eligible,
-    readinessExpiresAt: readiness.expiresAt,
+    offlineRefactorOnly: offlineRefactor.eligible,
+    offlineRefactorExpiresAt: offlineRefactor.expiresAt,
   };
 }
 
@@ -801,14 +777,14 @@ export function verifyProviderContinuityEvidence(options = {}) {
 
   const receiptLocation = resolveWithin(root, policy.receiptPath, "receipt path").absolutePath;
   if (!existsSync(receiptLocation)) {
-    if (mode === "development" && impact.readinessImplementationOnly) {
+    if (mode === "development" && impact.offlineRefactorOnly) {
       return {
         ok: false,
         passed: false,
-        status: "deferred_readiness_implementation",
-        reason: "Provider continuity remains open while the exact offline readiness implementation is completed without live calls.",
+        status: "deferred_provider_validation_during_offline_refactor",
+        reason: "Provider validation remains open while the exact offline product refactor is completed without live calls.",
         matchedPaths: impact.matchedPaths,
-        expiresAt: impact.readinessExpiresAt,
+        expiresAt: impact.offlineRefactorExpiresAt,
       };
     }
     if (mode === "development" && impact.captureBootstrapOnly) {
@@ -944,20 +920,24 @@ function enforceActiveReceiptContract(root, manifest, receipt) {
   } catch {
     return;
   }
-  if (stage?.stageId !== READINESS_STAGE_ID || stage?.status !== "active") return;
+  if (stage?.status !== "active") return;
   const continuity = stage.providerContinuity;
+  if (typeof continuity?.requiredReceiptSchema !== "string" || continuity.requiredReceiptSchema.length === 0) {
+    fail("The active stage does not declare a signed Provider receipt schema.",
+      "PROVIDER_RECEIPT_SCHEMA_UNDECLARED");
+  }
   if (manifest?.schemaVersion !== "shanhai-provider-continuity-manifest.v2" ||
       receipt?.schemaVersion !== continuity?.requiredReceiptSchema) {
-    fail("P0-05A rejects legacy Provider receipts because v1 does not prove signed runtime provenance.",
+    fail("The active stage rejects legacy Provider receipts because they do not prove signed runtime provenance.",
       "PROVIDER_RECEIPT_SCHEMA_UNSUPPORTED");
   }
   if (!Array.isArray(continuity?.trustedCaptureKeyIds) || continuity.trustedCaptureKeyIds.length === 0 ||
       !Array.isArray(continuity?.trustedLedgerAuthorityKeyIds) || continuity.trustedLedgerAuthorityKeyIds.length === 0) {
-    fail("P0-05A has no trusted capture or ledger authority key configured; a Provider receipt cannot be promoted.",
+    fail("The active stage has no trusted capture or ledger authority key configured; a Provider receipt cannot be promoted.",
       "PROVIDER_CAPTURE_TRUST_ROOT_MISSING");
   }
   if (continuity.liveCallsAuthorized !== true || !continuity.liveAuthorization) {
-    fail("P0-05A live authorization is missing; a Provider receipt cannot be promoted.",
+    fail("The active stage has no live authorization; a Provider receipt cannot be promoted.",
       "PROVIDER_LIVE_AUTHORIZATION_MISSING");
   }
   return continuity;

@@ -1,25 +1,22 @@
 # 当前阶段入口
 
-更新时间：2026-07-17
+更新时间：2026-07-19
 
-`docs\stages\`当前唯一活动阶段是 **P0-05A真实Provider连续性与V1-9就绪**。当前子阶段只实施离线readiness：harness合同、证据来源绑定、隔离生命周期、失败关闭和V1-9入口就绪审计。`liveCallsAuthorized=false`，不调用真实Provider，也不签发passed receipt。
+`docs\stages\`当前唯一活动阶段是 **产品优先深度重构**。目标不是继续增加证明机制，而是删除旧控制面、修复核心合同漏洞、拆分巨型模块，并让教师主链路只依赖一套可维护实现。
 
 ## 活动文件
 
 - 机器合同：`active-stage.json`
-- 产品规格：`..\product\p0-05a-provider-continuity-readiness-spec.md`
-- 实施计划：`p0-05a-provider-continuity-readiness-plan.md`
-- 测试计划：`p0-05a-provider-continuity-readiness-test-plan.md`
+- 实施计划：`product-first-deep-refactor-plan.md`
+- 测试计划：`product-first-deep-refactor-test-plan.md`
 
-已完成的项目开发门禁阶段位于`..\archive\2026-07-17-project-development-gates\`，不得恢复为活动阶段。旧Streaming、整改前V1-9和其他历史阶段只作归档证据。
+## 固定边界
 
-## 当前固定边界
+- 先修业务合同和生产控制权，再处理一般工程债务。
+- 不保留竞争实现；消费者迁移完成后删除旧入口、旧类型和旧测试口径。
+- 复杂度 baseline、源码字符串合同 baseline、Lint warning 和构建动态追踪 warning 必须在本阶段清零。
+- `WorkflowNode`、外层 `toolPlan` / `deliveryPlan` 和生产 deterministic runtime 必须退出 `src`。
+- 不调用真实 Provider，不创建 V1-9 runId，不生成图片、视频、PPTX、ZIP，不运行390px真实黑盒。
+- release 仍要求新鲜真实 Provider receipt；离线重构延期状态不能上推为 model orchestration、product E2E 或 release 通过。
 
-- Main Agent仍是唯一拥有业务Tool选择、下一步、重试、Replan和停止权的组件；harness只提交教师输入并观察事实。
-- 离线实现状态必须保持`passed=false / deferred_readiness_implementation`；release不得接受该状态。
-- 缺少显式Provider channel、model fingerprint、费用上限、调用次数和授权摘要时，live入口必须在创建客户端和启动服务前失败，Provider请求数为0。
-- 不调用真实图片、视频、TTS、PPTX、ZIP或V1-9整包Provider；不创建V1-9 runId，不运行390px真实黑盒。
-- fixture只证明contract或executor，不能上推为model orchestration、product E2E、R5或release。
-- 真实Provider连续3组需要用户另行授权；失败、候选变化或服务重启后从0重新计数。
-
-未来阶段统一从`..\roadmap\README.md`进入；历史阶段统一从`..\archive\README.md`追溯。二者都不能自动取得执行权。
+暂停的 Provider 连续性工作已回到 `..\roadmap\release\provider-continuity-readiness-spec.md`；原活动计划、测试计划和就绪矩阵按原字节归档在 `..\archive\2026-07-19-provider-continuity-paused\`。

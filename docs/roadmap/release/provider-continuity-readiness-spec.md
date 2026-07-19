@@ -1,7 +1,9 @@
 # P0-05A真实Provider连续性与V1-9就绪规格
 
 日期：2026-07-17
-状态：active / offline-readiness / live-campaign-blocked
+状态：paused / roadmap / live-campaign-blocked
+
+> 2026-07-19口径：离线readiness与恢复合同已经实现，但真实Provider连续性没有获得授权或receipt。本规格退出活动阶段；产品优先深度重构关闭后，依据当时最终HEAD、Provider授权和当前产品合同重新生成plan/test-plan，不恢复旧阶段文件。
 
 ## 1. 决策
 
@@ -22,7 +24,7 @@
 - Provider只从显式ledger root和显式channel解析，禁止ambient env静默切换。
 - 首先确认现有持久事实能否权威提供每次上游Provider调用的原始HTTP状态、timeout和关联ID。若不能，当前门禁关闭前必须批准一个精确、一次性、到期的`provider-evidence-capture-bootstrap`机制；它只允许增加脱敏调用轨迹和测试，返回`passed=false`，不能冒充连续性receipt。
 
-前四项基线条件已满足，P0-05A因此取得离线 readiness 执行权。真实调用授权仍缺失：Provider channel、model fingerprint、总费用、最大调用次数和授权摘要保持空值；在这些值由用户另行批准前，live campaign不得启动，也不得生成passed receipt。
+这些条件描述未来重新激活时的入场要求。真实调用授权仍缺失：Provider channel、model fingerprint、总费用、最大调用次数和授权摘要保持空值；在这些值由用户另行批准前，live campaign不得启动，也不得生成passed receipt。
 
 ## 3. 目标
 
@@ -101,28 +103,28 @@ type ContinuityScenarioEvidence = Readonly<{
 
 证据不得包含凭据、完整Provider URL、原始环境变量、教师敏感信息或思维链。
 
-## 6. 命令合同
+## 6. 未来命令边界
 
-当前已有命令：
+以下命令只记录能力入口，不授予当前执行权。重新激活时必须按当时HEAD、政策和依赖重新生成测试计划，不沿用本节阈值：
 
 ```powershell
 npm run gate:development
 npm run typecheck
-npm run lint -- --max-warnings 150
+npm run lint -- --max-warnings 0
 npm test
 npm run build
 npm run gate:provider:verify -- --mode development
 npm run gate:manifest:verify
 ```
 
-P0-05A计划新增唯一真实执行入口：
+未来真实阶段预期复用的入口：
 
 ```powershell
 npm run gate:provider:live -- --mode development --manifest .tmp/provider-continuity/provider-continuity.manifest.json
 npm run gate:provider:seal -- --mode development
 ```
 
-该命令不存在前不得用临时脚本、手工JSON或旧V1-9 runner替代。
+不得用临时脚本、手工JSON或旧V1-9 runner替代；命令存在也不等于当前获得执行授权。
 
 ## 7. 测试策略
 
@@ -134,9 +136,9 @@ npm run gate:provider:seal -- --mode development
 
 ## 8. 边界
 
-### VR-A13数据库与公共接口变更
+### VR-A13历史数据库与公共接口边界
 
-本规格批准仅用于产品服务端持久编排audit的最小schema和只读摘要接口变化：
+以下内容记录历史实施目标与部分边界，不代表当前正确性已经关闭，也不批准当前数据库或公共接口变更：
 
 - 新增专用append-only编排审计事实，不复用普通认证与生命周期`AuditLog`。
 - 认证项目写请求在业务handler前持久attempt；完成、拒绝和失败追加唯一终态，open attempt直接构成No-Go。

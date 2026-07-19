@@ -1,8 +1,10 @@
 # P0-05A Provider连续性运行手册
 
-状态：首批离线readiness已通过clean CI；signer/v2 receipt离线实现已完成，真实campaign未授权
+状态：paused / roadmap reference / 禁止执行live与seal
 
-## 当前可执行
+本手册只保留未来重新规划时需要复核的安全边界。当前唯一活动阶段是产品优先深度重构，未授权任何Provider campaign；下列命令不是当前执行清单。
+
+## 未来重新激活后复核的命令
 
 ```powershell
 npm run gate:provider:impact
@@ -11,7 +13,7 @@ npm run gate:provider:live -- --mode development --preflight-only
 npm run gate:provider:seal -- --campaign-root .tmp/provider-continuity/campaigns/<campaignId>
 ```
 
-当前活动阶段固定`liveCallsAuthorized=false`且`liveAuthorization=null`。因此`gate:provider:live`命令当前只用于证明授权前失败，必须在创建Provider客户端、启动服务或创建campaign目录前退出，实际Provider请求数为0。真实driver、受保护环境验证器和ledger绑定验证器尚未接线；`gate:provider:seal`在没有完整capture/evidence或可信签名来源时必须失败，不能生成passed receipt。
+当前活动阶段固定`liveCallsAuthorized=false`且`liveAuthorization=null`，不得运行`gate:provider:live`或`gate:provider:seal`。未来重新激活前必须重新核对命令、driver、受保护环境验证器和ledger绑定验证器；没有完整capture/evidence或可信签名来源时不能生成passed receipt。
 
 ## 隔离合同
 

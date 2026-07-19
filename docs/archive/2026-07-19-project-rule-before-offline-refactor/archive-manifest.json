@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "shanhai-archive-manifest.v1",
+  "archivedOn": "2026-07-19",
+  "files": [
+    {
+      "source": "AGENTS.md",
+      "archivedPath": "docs/archive/2026-07-19-project-rule-before-offline-refactor/AGENTS_20260719-120150.bak",
+      "bytes": 10740,
+      "sha256": "7be2162147cde2c542fcd8f55a2109acf0f3176bbb7dea619d6b8febcd417857"
+    }
+  ]
+}
