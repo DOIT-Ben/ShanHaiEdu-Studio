@@ -1,4 +1,5 @@
-import { createPrismaWorkbenchRepository, GenerationResultQuarantinedError, type WorkbenchRepository } from "./repository";
+import { createPrismaWorkbenchRepository, type WorkbenchRepository } from "./repository";
+import { stripConversationTurnSubmissionReceipt } from "./conversation-turn-repository-shared";
 import { getProjectLifecycleState, mutateProjectLifecycle } from "./project-lifecycle-service";
 import type { WorkbenchActor } from "@/server/auth/actor";
 import { canReadProject, canTriggerGeneration, canWriteProjectContent } from "@/server/auth/authorization";
@@ -15,7 +16,6 @@ import type {
   FailGenerationJobInput,
   FinishConversationTurnInput,
   GenerationJobRecord,
-  GenerationResultCommitRecord,
   ProjectRecord,
   ProjectLifecycleMutation,
   ProjectLifecycleState,
@@ -31,7 +31,6 @@ import type {
   ProjectExecutionFence,
   ProjectExecutionGuard,
   RecordGenerationProviderTaskInput,
-  StageGenerationResultInput,
   SubmitPptSampleReviewInput,
   SubmitPptFullDeckReviewInput,
   UpsertVideoShotsInput,
@@ -295,37 +294,6 @@ export function createWorkbenchService(
       };
     },
 
-    async commitGenerationResult(
-      projectId: string,
-      jobId: string,
-      input: StageGenerationResultInput,
-    ): Promise<GenerationResultCommitRecord> {
-      await ensureProjectAccess(projectId, "generate");
-      const staged = await repository.stageGenerationResult(projectId, jobId, input, executionGuard);
-      if ("status" in staged && staged.status === "quarantined") {
-        throw new GenerationResultQuarantinedError(staged.reason);
-      }
-      const promoted = await repository.promoteStagedGenerationResult(projectId, jobId, executionGuard);
-      if (promoted.status === "quarantined") {
-        throw new GenerationResultQuarantinedError(promoted.reason);
-      }
-      return { artifact: mapArtifact(promoted.artifact), job: mapGenerationJob(promoted.job) };
-    },
-
-    async resumeStagedGenerationResult(projectId: string, jobId: string): Promise<GenerationResultCommitRecord | null> {
-      await ensureProjectAccess(projectId, "generate");
-      const stage = await repository.getStagedGenerationResult(projectId, jobId);
-      if (!stage || stage.state === "awaiting_result") return null;
-      if (stage.state === "quarantined") {
-        throw new GenerationResultQuarantinedError(stage.quarantineReason ?? "quarantined");
-      }
-      const promoted = await repository.promoteStagedGenerationResult(projectId, jobId, executionGuard);
-      if (promoted.status === "quarantined") {
-        throw new GenerationResultQuarantinedError(promoted.reason);
-      }
-      return { artifact: mapArtifact(promoted.artifact), job: mapGenerationJob(promoted.job) };
-    },
-
     async failGenerationJob(projectId: string, jobId: string, input: FailGenerationJobInput): Promise<GenerationJobRecord> {
       await ensureProjectAccess(projectId, "generate");
       const job = await repository.failGenerationJob(projectId, jobId, input);
@@ -579,12 +547,11 @@ function mapMessage(message: ConversationMessage, reaction?: string): Conversati
     content: message.content,
     parts: messagePartsFromRecord(message),
     artifactRefs: parseJsonArray(message.artifactRefsJson),
-    metadata: parseJsonObject(message.metadataJson ?? "{}"),
+    metadata: stripConversationTurnSubmissionReceipt(parseJsonObject(message.metadataJson ?? "{}")),
     ...(reaction === "helpful" || reaction === "unhelpful" ? { reaction } : {}),
     createdAt: message.createdAt.toISOString(),
   };
 }
-
 function messagePartsFromRecord(message: ConversationMessage) {
   const raw = parseJsonUnknownArray(message.partsJson ?? "[]");
   return raw.length > 0 ? normalizeMessageParts(raw) : legacyContentToMessageParts(message.content);

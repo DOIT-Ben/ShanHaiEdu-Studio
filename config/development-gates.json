@@ -212,18 +212,11 @@
         "totalFunctionLines": 243
       },
       {
-        "path": "src/server/workbench/repository.ts",
-        "lines": 2058,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 1428,
-        "totalFunctionLines": 1428
-      },
-      {
         "path": "src/server/workbench/service.ts",
-        "lines": 707,
+        "lines": 674,
         "violatingFunctions": 1,
-        "maxFunctionLines": 489,
-        "totalFunctionLines": 489
+        "maxFunctionLines": 458,
+        "totalFunctionLines": 458
       }
     ]
   },

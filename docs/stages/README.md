@@ -4,7 +4,7 @@
 
 `docs\stages\`当前唯一活动阶段是 **产品优先深度重构**。目标不是继续增加证明机制，而是删除旧控制面、修复核心合同漏洞、拆分巨型模块，并让教师主链路只依赖一套可维护实现。
 
-当前进度：阶段A“合同正确性”、阶段B“删除竞争控制面”以及阶段C的C0合同、C1 PendingDecision一致性、C2 turn service拆分、C3 tool loop拆分已完成离线验收；阶段C以阶段B验收提交`20c6e2530b991db77108c7b7a61090e9060b7fca`为活动基线完成。唯一下一阶段是阶段D，先拆分workbench repository，再清零其余复杂度和源码字符串合同债务。整个活动阶段仍未关闭。
+当前进度：阶段A、阶段B、阶段C以及阶段D的D1 workbench repository切片已完成离线行为回归；repository已退出复杂度基线，ConversationTurn幂等与并发claim、GenerationJob状态降级、VideoShot计划与片段血缘漏洞已关闭。阶段D仍在进行，唯一下一切片是D2：删除绕过Main Agent的直接regenerate写入口和生产源码中的mock adapter。整个活动阶段仍未关闭。
 
 ## 活动文件
 
@@ -16,6 +16,7 @@
 
 - 先修业务合同和生产控制权，再处理一般工程债务。
 - 不保留竞争实现；消费者迁移完成后删除旧入口、旧类型和旧测试口径。
+- 源码字符串检测器当前既有漏报也有误报；只有全部显性与隐藏源码断言迁移、检测器修正并在增强扫描下报告0，才能清空该债务。
 - 复杂度 baseline、源码字符串合同 baseline、Lint warning 和构建动态追踪 warning 必须在本阶段清零。
 - `WorkflowNode`、外层 `toolPlan` / `deliveryPlan` 和生产 deterministic runtime 必须退出 `src`。
 - 不调用真实 Provider，不创建 V1-9 runId，不生成图片、视频、PPTX、ZIP，不运行390px真实黑盒。

@@ -39,6 +39,47 @@ afterAll(async () => {
 });
 
 describe("V1 Stage 2B quality report persistence", () => {
+  it("persists a matching Artifact validation report and rejects a mismatched digest atomically", async () => {
+    const repository = createPrismaWorkbenchRepository(client);
+    const project = await repository.createProject({ title: `artifact-validation-${randomUUID()}` });
+    const draft = {
+      nodeKey: "lesson_plan" as const,
+      kind: "lesson_plan" as const,
+      title: "结构化教案",
+      status: "needs_review" as const,
+      summary: "已生成结构化教案。",
+      markdownContent: "# 教案",
+      structuredContent: { objectives: ["理解概念"] },
+    };
+    const report = createValidationReport({
+      reportId: `validation-${randomUUID()}`,
+      createdAt: "2026-07-20T00:00:00.000Z",
+      domain: "lesson",
+      stage: "lesson_plan",
+      target: { kind: "artifact_draft", targetDigest: hashArtifactDraft(draft) },
+      contract: { id: "tool:lesson_plan", version: "tool-v1" },
+      overallStatus: "passed",
+      gates: [],
+    });
+
+    const artifact = await repository.saveArtifact(project.id, { ...draft, validationReport: report });
+    expect(await client.validationReportRecord.findUniqueOrThrow({ where: { artifactId: artifact.id } }))
+      .toMatchObject({ id: report.reportId, overallStatus: "passed", reportDigest: report.reportDigest });
+
+    const mismatchedReport = createValidationReport({
+      ...report,
+      reportId: `validation-${randomUUID()}`,
+      target: {
+        kind: "artifact_draft",
+        targetDigest: hashArtifactDraft({ ...draft, summary: "另一份内容" }),
+      },
+    });
+    await expect(repository.saveArtifact(project.id, { ...draft, validationReport: mismatchedReport }))
+      .rejects.toThrow("validation_target_digest_mismatch");
+    expect(await client.artifact.count({ where: { projectId: project.id, kind: "lesson_plan" } })).toBe(1);
+    expect(await client.validationReportRecord.count({ where: { projectId: project.id, stage: "lesson_plan" } })).toBe(1);
+  });
+
   it("persists CriticReport and QualityDecision atomically under the current fence", async () => {
     const fixture = await createFixture("quality-atomic");
     const quality = createQualityReportRepository(client);

@@ -98,7 +98,6 @@ function createPptAssetBatchLifecycle(input: {
         capabilityId,
         idempotencyKey,
         sourceArtifactIds: [input.sourceArtifactId],
-        createStagedArtifactCommit: false,
         inputSnapshot: {
           taskId: input.taskBrief.taskId,
           taskBriefDigest: input.taskBrief.digest,

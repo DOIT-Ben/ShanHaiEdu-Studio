@@ -1,3 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "@/generated/prisma/client";
+import { prisma } from "@/server/db/client";
 import { describe, expect, it } from "vitest";
 import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
 import { FixtureAgentRuntime } from "../../../../tests/helpers/fixture-agent-runtime";
@@ -13,6 +20,7 @@ import {
   type TaskRequestedOutput,
 } from "@/server/conversation/task-contract";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
+import { createPrismaWorkbenchRepository } from "../repository";
 import { createWorkbenchService } from "../service";
 
 describe("Local Real MVP M60 conversation turn queue", () => {
@@ -116,6 +124,166 @@ describe("Local Real MVP M60 conversation turn queue", () => {
 
     expect(duplicated.id).toBe(first.id);
     expect(snapshot.turnJobs).toHaveLength(1);
+  });
+
+  it("rejects a reused turn idempotency key when the message, retry budget, or identity changes", async () => {
+    const repository = createPrismaWorkbenchRepository();
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "M60 TurnJob 幂等冲突" });
+    const firstMessage = await service.addMessage(project.id, { role: "teacher", content: "第一条消息" });
+    const secondMessage = await service.addMessage(project.id, { role: "teacher", content: "第二条消息" });
+    const baseline = {
+      teacherMessageId: firstMessage.id,
+      idempotencyKey: "m60-turn-payload-conflict",
+      maxAttempts: 3,
+      executionIdentity: {
+        actorUserId: "local-test-user",
+        actorAuthMode: "local" as const,
+        authSessionId: "session-a",
+      },
+    };
+
+    const first = await repository.enqueueConversationTurn(project.id, baseline);
+    const replay = await repository.enqueueConversationTurn(project.id, {
+      executionIdentity: { authSessionId: "session-a", actorAuthMode: "local", actorUserId: "local-test-user" },
+      maxAttempts: 3,
+      idempotencyKey: baseline.idempotencyKey,
+      teacherMessageId: firstMessage.id,
+    });
+    expect(replay.id).toBe(first.id);
+
+    const conflicts = [
+      { ...baseline, teacherMessageId: secondMessage.id },
+      { ...baseline, maxAttempts: 4 },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, actorUserId: "other-user" } },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, actorAuthMode: "password" as const } },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, authSessionId: "session-b" } },
+    ];
+    for (const conflict of conflicts) {
+      await expect(repository.enqueueConversationTurn(project.id, conflict))
+        .rejects.toThrow("Conversation turn idempotency key already exists with a different payload.");
+    }
+    expect(await repository.getConversationTurnJobs(project.id)).toHaveLength(1);
+  });
+
+  it("rejects a reused message-turn idempotency key when any submitted field changes", async () => {
+    const repository = createPrismaWorkbenchRepository();
+    const service = createQueueTestService();
+    const project = await service.createProject({ title: "M60 消息与 TurnJob 幂等冲突" });
+    const baseline = {
+      role: "teacher" as const,
+      content: "暂停当前任务",
+      parts: [{ type: "text" as const, schemaVersion: "message-part.v1" as const, text: "暂停当前任务", format: "plain" as const }],
+      artifactRefs: ["artifact-a"],
+      metadata: { source: "composer", nested: { b: 2, a: 1 } },
+      idempotencyKey: "m60-message-turn-payload-conflict",
+      maxAttempts: 3,
+      executionIdentity: {
+        actorUserId: "local-test-user",
+        actorAuthMode: "local" as const,
+        authSessionId: "session-a",
+      },
+      preemptiveControl: {
+        kind: "pause" as const,
+        reasonCode: "teacher_requested_pause" as const,
+        advanceIntentEpoch: false,
+        userMessage: "暂停当前任务",
+      },
+    };
+
+    const first = await repository.enqueueMessageAndConversationTurn(project.id, baseline);
+    const replay = await repository.enqueueMessageAndConversationTurn(project.id, {
+      ...baseline,
+      metadata: { nested: { a: 1, b: 2 }, source: "composer" },
+      executionIdentity: { authSessionId: "session-a", actorAuthMode: "local", actorUserId: "local-test-user" },
+    });
+    expect(replay.message.id).toBe(first.message.id);
+    expect(replay.job.id).toBe(first.job.id);
+
+    const conflicts = [
+      { ...baseline, role: "assistant" as const },
+      { ...baseline, content: "取消当前任务" },
+      { ...baseline, parts: [{ ...baseline.parts[0], text: "取消当前任务" }] },
+      { ...baseline, artifactRefs: ["artifact-b"] },
+      { ...baseline, metadata: { source: "quick-reply", nested: { a: 1, b: 2 } } },
+      { ...baseline, maxAttempts: 4 },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, actorUserId: "other-user" } },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, actorAuthMode: "password" as const } },
+      { ...baseline, executionIdentity: { ...baseline.executionIdentity, authSessionId: "session-b" } },
+      { ...baseline, preemptiveControl: { ...baseline.preemptiveControl, kind: "cancel" as const, reasonCode: "teacher_requested_cancel" as const } },
+      { ...baseline, preemptiveControl: { ...baseline.preemptiveControl, reasonCode: "teacher_requested_cancel" as const } },
+      { ...baseline, preemptiveControl: { ...baseline.preemptiveControl, advanceIntentEpoch: true } },
+      { ...baseline, preemptiveControl: { ...baseline.preemptiveControl, userMessage: "请先暂停" } },
+    ];
+    for (const conflict of conflicts) {
+      await expect(repository.enqueueMessageAndConversationTurn(project.id, conflict))
+        .rejects.toThrow("Conversation turn idempotency key already exists with a different payload.");
+    }
+    expect(await repository.getConversationTurnJobs(project.id)).toHaveLength(1);
+  });
+
+  it("rejects an idempotent replay when its persisted message or job identity has drifted", async () => {
+    const repository = createPrismaWorkbenchRepository();
+    const service = createQueueTestService();
+    const baseline = {
+      role: "teacher" as const,
+      content: "保持原始提交事实",
+      metadata: { source: "composer" },
+      idempotencyKey: "m60-persisted-fact-drift",
+      maxAttempts: 2,
+      executionIdentity: {
+        actorUserId: "local-test-user",
+        actorAuthMode: "local" as const,
+        authSessionId: "session-a",
+      },
+    };
+
+    const messageProject = await service.createProject({ title: "M60 消息事实漂移" });
+    const messageTurn = await repository.enqueueMessageAndConversationTurn(messageProject.id, baseline);
+    await prisma.conversationMessage.update({
+      where: { id: messageTurn.message.id },
+      data: { content: "被改写的消息" },
+    });
+    await expect(repository.enqueueMessageAndConversationTurn(messageProject.id, baseline))
+      .rejects.toThrow("Conversation turn idempotency key already exists with a different payload.");
+
+    const identityProject = await service.createProject({ title: "M60 身份事实漂移" });
+    const identityTurn = await repository.enqueueMessageAndConversationTurn(identityProject.id, {
+      ...baseline,
+      idempotencyKey: "m60-persisted-identity-drift",
+    });
+    await prisma.conversationTurnJob.update({
+      where: { id: identityTurn.job.id },
+      data: { actorUserId: "rewritten-user" },
+    });
+    await expect(repository.enqueueMessageAndConversationTurn(identityProject.id, {
+      ...baseline,
+      idempotencyKey: "m60-persisted-identity-drift",
+    })).rejects.toThrow("Conversation turn idempotency key already exists with a different payload.");
+  });
+
+  it("lets only one of two independent Prisma clients claim the same turn job", async () => {
+    const isolated = createIsolatedQueueClients();
+    try {
+      const repositoryA = createPrismaWorkbenchRepository(isolated.clientA);
+      const repositoryB = createPrismaWorkbenchRepository(isolated.clientB);
+      const project = await repositoryA.createProject({ title: "M60 独立连接并发 claim" });
+      const message = await repositoryA.addMessage(project.id, { role: "teacher", content: "只执行一次" });
+      const queued = await repositoryA.enqueueConversationTurn(project.id, { teacherMessageId: message.id });
+
+      const claims = await Promise.all([
+        repositoryA.startNextConversationTurnJob(project.id, { lockedBy: "worker-a", expectedJobId: queued.id }),
+        repositoryB.startNextConversationTurnJob(project.id, { lockedBy: "worker-b", expectedJobId: queued.id }),
+      ]);
+
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(claims.find(Boolean)).toMatchObject({ id: queued.id, status: "running", attempts: 1 });
+      expect(await isolated.clientA.conversationTurnJob.count({
+        where: { projectId: project.id, id: queued.id, status: "running", attempts: 1 },
+      })).toBe(1);
+    } finally {
+      await isolated.dispose();
+    }
   });
 
   it("POST /messages persists a teacher message and returns an accepted turn job", async () => {
@@ -953,4 +1121,35 @@ async function getLatestPendingActionId(service: ReturnType<typeof createWorkben
 
 function pendingDecisionOf(message?: { metadata: Record<string, unknown> }) {
   return (message?.metadata.pendingDecision ?? {}) as Partial<PendingDecision>;
+}
+
+function createIsolatedQueueClients() {
+  const root = process.cwd();
+  const databaseRoot = path.join(root, ".tmp", "stage60-conversation-turn-queue");
+  const databasePath = path.join(databaseRoot, `queue-${randomUUID()}.db`);
+  const databaseUrl = `file:${databasePath.replaceAll("\\", "/")}`;
+  mkdirSync(databaseRoot, { recursive: true });
+  const initialized = spawnSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
+    cwd: root,
+    env: { ...process.env, DATABASE_URL: databaseUrl, SHANHAI_DB_INIT_SKIP_DOTENV: "1" },
+    encoding: "utf8",
+  });
+  if (initialized.status !== 0) {
+    throw new Error(initialized.stderr || initialized.stdout || "Stage 60 isolated database initialization failed.");
+  }
+  const createClient = () => new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: databaseUrl, timeout: 15_000 }),
+  });
+  const clientA = createClient();
+  const clientB = createClient();
+  return {
+    clientA,
+    clientB,
+    async dispose() {
+      await Promise.allSettled([clientA.$disconnect(), clientB.$disconnect()]);
+      for (const candidate of [`${databasePath}-wal`, `${databasePath}-shm`, databasePath]) {
+        rmSync(candidate, { force: true });
+      }
+    },
+  };
 }

@@ -33,6 +33,10 @@
 | DR-D03 | 新增源码字符串合同 | source-contract gate失败 |
 | DR-D04 | 新增Lint warning | Lint失败 |
 | DR-D05 | 动态路径可逃逸受限根 | 构建/路径合同失败 |
+| DR-D06 | ConversationTurn同一幂等键携带不同消息、身份、metadata或控制动作 | 失败关闭，不复用旧Job |
+| DR-D07 | 两个独立PrismaClient同时claim同一TurnJob | 只有一个running执行者，另一方返回null且不timeout |
+| DR-D08 | 陈旧worker把queued、failed或succeeded GenerationJob标成submission_unknown | 状态不变并失败关闭 |
+| DR-D09 | VideoShot完整计划移除旧shot或选择同项目错误shot/source片段 | 旧shot删除；错误血缘拒绝，正确血缘可选 |
 
 ## 3. 每切片验证
 
@@ -100,6 +104,14 @@ C3新鲜证据：
 - TypeScript、ESLint `0 warning`和生产构建通过，standalone检查`forbidden=[]`；`main-agent-tool-loop-config.ts`为97行，15个职责模块均低于500行且无函数超过150行。
 - V1-9 contract repair evidence的默认SHA闭包包含全部15个拆分模块，定向合同`2/2`通过。
 - development gate通过；复杂度债务由28降至27，源码字符串合同债务仍为21。Provider保持离线延期、`passed=false`和0请求，未把离线回归上推为连续性通过。
+
+D1新鲜证据：
+
+- 红测先复现两种幂等入口静默吞掉异payload、双PrismaClient claim timeout、queued GenerationJob被降级、VideoShot旧计划残留和错误片段绑定。
+- `createPrismaWorkbenchRepository`为29行；全部内部模块低于500行且函数低于150行，复杂度债务由27降至26。
+- 无生产消费者的staged result promotion及其自动stage写入已删除；迟到结果隔离继续由当前control-plane行为测试覆盖。
+- `npm test`通过：Node`427/427`，Vitest隔离分片`801/801`与`773/773`；匹配ValidationReport与Artifact原子保存、摘要不匹配时零新增事实的迁移测试已恢复；TypeScript和ESLint `0 warning`通过。
+- 当前source gate仍报告21文件/301次，但该数字已确认有漏报和误报，只能作为旧检测器输出，不能作为最终债务总数。
 
 ## 7. 最终全量验证
 

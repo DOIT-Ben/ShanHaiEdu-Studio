@@ -191,7 +191,15 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     ]);
     const generated = snapshot.artifacts.find((artifact) => artifact.id !== source.id);
 
-    expect(generated).toMatchObject({ kind: "image_prompts", status: "needs_review" });
+    expect(generated).toMatchObject({
+      kind: "image_prompts",
+      status: "needs_review",
+      taskId: brief.taskId,
+      taskBriefDigest: brief.digest,
+      intentEpoch: brief.intentEpoch,
+      planRevision: 0,
+      origin: "tool_result",
+    });
     expect(invocations).toHaveLength(1);
     expect(invocations[0]).toMatchObject({
       toolName: "generate_classroom_image",

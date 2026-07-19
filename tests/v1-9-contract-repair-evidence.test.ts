@@ -39,6 +39,27 @@ describe("V1-9 contract repair evidence", () => {
     ]));
   });
 
+  it("binds every decomposed workbench repository responsibility into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/workbench/artifact-repository.ts",
+      "src/server/workbench/conversation-turn-completion-repository.ts",
+      "src/server/workbench/conversation-turn-enqueue-repository.ts",
+      "src/server/workbench/conversation-turn-recovery-repository.ts",
+      "src/server/workbench/conversation-turn-repository-guards.ts",
+      "src/server/workbench/conversation-turn-repository-shared.ts",
+      "src/server/workbench/execution-guard-repository.ts",
+      "src/server/workbench/generation-job-repository.ts",
+      "src/server/workbench/generation-repository-guards.ts",
+      "src/server/workbench/generation-repository-input.ts",
+      "src/server/workbench/generation-repository-unit-result.ts",
+      "src/server/workbench/message-repository.ts",
+      "src/server/workbench/project-repository.ts",
+      "src/server/workbench/repository.ts",
+      "src/server/workbench/validation-report-repository-helpers.ts",
+      "src/server/workbench/video-shot-repository.ts",
+    ]));
+  });
+
   it("binds the exact Job, teacher message, TaskBrief, idempotency key, failure signature and required repair closure", () => {
     const cwd = path.resolve(".tmp", "v1-9-contract-repair-evidence");
     const repairFile = "repair/recovery.ts";

@@ -6,7 +6,6 @@ import { createControlPlaneStore } from "@/server/conversation/control-plane-sto
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { prisma } from "@/server/db/client";
-import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { generateImageFromArtifact } from "@/server/image-generation/image-generation-run";
 import { createWorkbenchService } from "../service";
 
@@ -74,41 +73,12 @@ describe("Local Real MVP M30 generation job queue", () => {
     expect(running.attempts).toBe(1);
     expect(running.startedAt).not.toBeNull();
 
-    const resultDraft = {
-      nodeKey: "image_prompts" as const,
-      kind: "image_prompts" as const,
-      title: "真实课堂视觉图",
-      status: "needs_review" as const,
-      summary: "已生成图片。",
-      markdownContent: "# 已生成图片",
-    };
-    const committed = await service.commitGenerationResult(project.id, queued.id, {
-      ...resultDraft,
-      validationReport: createValidationReport({
-        reportId: `validation-${queued.id}`,
-        createdAt: new Date().toISOString(),
-        domain: "ppt",
-        stage: "image_asset",
-        target: { kind: "artifact_draft", targetDigest: hashArtifactDraft(resultDraft) },
-        contract: { id: "tool:generate_classroom_image", version: "tool-v1" },
-        inputHash: queued.inputHash ?? undefined,
-        intentEpoch: queued.intentEpoch,
-        overallStatus: "passed",
-        gates: [],
-      }),
-    });
-    const resultArtifact = committed.artifact;
-    const succeeded = committed.job;
-    expect(succeeded.status).toBe("succeeded");
-    expect(succeeded.resultArtifactId).toBe(resultArtifact.id);
-    expect(succeeded.finishedAt).not.toBeNull();
-
     const snapshot = await service.getProjectSnapshot(project.id);
     expect(snapshot.generationJobs).toHaveLength(1);
     expect(snapshot.generationJobs[0]).toMatchObject({
       id: queued.id,
-      status: "succeeded",
-      resultArtifactId: resultArtifact.id,
+      status: "running",
+      resultArtifactId: null,
     });
   });
 

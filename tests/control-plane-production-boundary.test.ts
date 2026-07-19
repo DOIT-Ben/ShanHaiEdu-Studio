@@ -4,9 +4,26 @@ import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
+import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("production control-plane boundaries", () => {
+  it("does not expose the retired staged generation promotion path", () => {
+    const repository = createPrismaWorkbenchRepository();
+    const service = createWorkbenchService(repository);
+
+    for (const retiredMethod of [
+      "getStagedGenerationResult",
+      "stageGenerationResult",
+      "promoteStagedGenerationResult",
+      "commitGenerationResult",
+      "resumeStagedGenerationResult",
+    ]) {
+      expect(repository).not.toHaveProperty(retiredMethod);
+      expect(service).not.toHaveProperty(retiredMethod);
+    }
+  });
+
   it("keeps natural conversation outside the business Tool loop", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({

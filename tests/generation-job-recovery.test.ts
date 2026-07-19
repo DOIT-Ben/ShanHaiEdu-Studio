@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@/generated/prisma/client";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
-import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { VideoTaskPersistenceUnknownError, executeRecoverableVideoTask } from "@/server/video-generation/video-generation-run";
 import { GenerationJobIdempotencyConflictError, createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { randomUUID } from "node:crypto";
@@ -105,6 +104,7 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     expect(second.runInputSnapshotId).toBe(first.runInputSnapshotId);
     expect(second.inputHash).toBe(first.inputHash);
     expect(await clientA.generationJob.count({ where: { projectId: fixture.project.id } })).toBe(1);
+    expect(await clientA.stagedArtifactCommit.count({ where: { generationJobId: first.id } })).toBe(0);
   });
 
   it("rejects the same key with a different input hash", async () => {
@@ -179,6 +179,136 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     });
   });
 
+  it("marks only a running submitting job without a provider task as submission_unknown", async () => {
+    const fixture = await createProjectArtifact(clientA, "submission-unknown-direct");
+    const repository = createPrismaWorkbenchRepository(clientA);
+    const queued = await repository.createGenerationJob(fixture.project.id, {
+      kind: "video",
+      sourceArtifactId: fixture.artifact.id,
+      idempotencyKey: "video:unknown-direct",
+    });
+    await repository.startGenerationJob(fixture.project.id, queued.id);
+
+    const unknown = await repository.markGenerationSubmissionUnknown(
+      fixture.project.id,
+      queued.id,
+      "Provider response was ambiguous.",
+    );
+
+    expect(unknown).toMatchObject({
+      status: "submission_unknown",
+      pollState: "submission_unknown",
+      providerTaskId: null,
+      errorMessage: "Provider response was ambiguous.",
+    });
+  });
+
+  it("replays submission_unknown idempotently without replacing the first error", async () => {
+    const fixture = await createProjectArtifact(clientA, "submission-unknown-idempotent");
+    const repository = createPrismaWorkbenchRepository(clientA);
+    const queued = await repository.createGenerationJob(fixture.project.id, {
+      kind: "video",
+      sourceArtifactId: fixture.artifact.id,
+      idempotencyKey: "video:unknown-idempotent",
+    });
+    await repository.startGenerationJob(fixture.project.id, queued.id);
+    const first = await repository.markGenerationSubmissionUnknown(
+      fixture.project.id,
+      queued.id,
+      "First ambiguous submission.",
+    );
+    const replay = await repository.markGenerationSubmissionUnknown(
+      fixture.project.id,
+      queued.id,
+      "A stale worker must not replace the first error.",
+    );
+
+    expect(replay).toMatchObject({
+      id: first.id,
+      status: "submission_unknown",
+      pollState: "submission_unknown",
+      errorMessage: "First ambiguous submission.",
+      finishedAt: first.finishedAt,
+      updatedAt: first.updatedAt,
+    });
+  });
+
+  it("keeps a running polling job when its provider task is already persisted", async () => {
+    const fixture = await createProjectArtifact(clientA, "submission-unknown-polling");
+    const repository = createPrismaWorkbenchRepository(clientA);
+    const queued = await repository.createGenerationJob(fixture.project.id, {
+      kind: "video",
+      sourceArtifactId: fixture.artifact.id,
+      idempotencyKey: "video:unknown-polling",
+    });
+    await repository.startGenerationJob(fixture.project.id, queued.id);
+    const polling = await repository.recordGenerationProviderTask(fixture.project.id, queued.id, {
+      providerTaskId: "provider-task-persisted",
+    });
+
+    const unchanged = await repository.markGenerationSubmissionUnknown(
+      fixture.project.id,
+      queued.id,
+      "A stale worker reported an ambiguous submission.",
+    );
+
+    expect(unchanged).toMatchObject({
+      id: polling.id,
+      status: "running",
+      pollState: "polling",
+      providerTaskId: "provider-task-persisted",
+      errorMessage: null,
+      updatedAt: polling.updatedAt,
+    });
+  });
+
+  it("rejects submission_unknown downgrades from queued, failed, and succeeded jobs", async () => {
+    const fixture = await createProjectArtifact(clientA, "submission-unknown-invalid-states");
+    const repository = createPrismaWorkbenchRepository(clientA);
+    const queued = await repository.createGenerationJob(fixture.project.id, {
+      kind: "image",
+      sourceArtifactId: fixture.artifact.id,
+      idempotencyKey: "image:unknown-from-queued",
+    });
+    const failed = await repository.createGenerationJob(fixture.project.id, {
+      kind: "image",
+      sourceArtifactId: fixture.artifact.id,
+      idempotencyKey: "image:unknown-from-failed",
+    });
+    await repository.startGenerationJob(fixture.project.id, failed.id);
+    const terminalFailed = await repository.failGenerationJob(fixture.project.id, failed.id, {
+      errorMessage: "Provider rejected the request.",
+    });
+    const succeeded = await repository.createGenerationJob(fixture.project.id, {
+      kind: "image",
+      sourceArtifactId: fixture.artifact.id,
+      unitId: "asset-terminal",
+      idempotencyKey: "image:unknown-from-succeeded",
+      inputSnapshot: {
+        batchDigest: "batch-terminal",
+        request: { assetId: "asset-terminal", inputHash: "request-terminal", transparentBackground: true },
+      },
+    });
+    await repository.startGenerationJob(fixture.project.id, succeeded.id);
+    const terminalSucceeded = await repository.completeGenerationUnit(fixture.project.id, succeeded.id, {
+      providerResultJson: createPptAssetUnitResultJson({
+        batchDigest: "batch-terminal",
+        assetId: "asset-terminal",
+        requestInputHash: "request-terminal",
+      }),
+    });
+
+    for (const job of [queued, terminalFailed, terminalSucceeded]) {
+      await expect(repository.markGenerationSubmissionUnknown(fixture.project.id, job.id, "late worker timeout"))
+        .rejects.toThrow(`GenerationJob cannot mark submission unknown from state: ${job.status}/${job.pollState}`);
+      await expect(clientA.generationJob.findUniqueOrThrow({ where: { id: job.id } })).resolves.toMatchObject({
+        status: job.status,
+        pollState: job.pollState,
+        providerTaskId: null,
+      });
+    }
+  });
+
   it("persists a terminal Provider unit result without creating an Artifact commit", async () => {
     const fixture = await createProjectArtifact(clientA, "provider-unit-result");
     const repository = createPrismaWorkbenchRepository(clientA);
@@ -191,7 +321,6 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
         batchDigest: "batch-1",
         request: { assetId: "asset-1", inputHash: "request-1", transparentBackground: true },
       },
-      createStagedArtifactCommit: false,
     });
     await repository.startGenerationJob(fixture.project.id, queued.id);
     const fileEvidence = {
@@ -218,49 +347,6 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     expect(await clientA.stagedArtifactCommit.count({ where: { generationJobId: queued.id } })).toBe(0);
   });
 
-  it("quarantines completion after the project intent epoch advances", async () => {
-    const fixture = await createProjectArtifact(clientA, "stale-epoch");
-    const repository = createPrismaWorkbenchRepository(clientA);
-    const queued = await repository.createGenerationJob(fixture.project.id, {
-      kind: "image",
-      sourceArtifactId: fixture.artifact.id,
-      idempotencyKey: "image:old-epoch",
-    });
-    await repository.startGenerationJob(fixture.project.id, queued.id);
-    await repository.regenerateArtifact(fixture.project.id, fixture.artifact.id, {
-      summary: "Teacher changed the upstream outline.",
-      markdownContent: "# Updated upstream outline",
-      expectedLatestVersion: 1,
-    });
-
-    const staleDraft = {
-      nodeKey: "image_prompts" as const,
-      kind: "image_prompts" as const,
-      title: "Stale image result",
-      status: "needs_review" as const,
-      summary: "Must remain quarantined.",
-      markdownContent: "# Stale",
-    };
-    const completed = await repository.stageGenerationResult(fixture.project.id, queued.id, {
-      ...staleDraft,
-      validationReport: createValidationReport({
-        reportId: `validation-${queued.id}`,
-        createdAt: new Date().toISOString(),
-        domain: "ppt",
-        stage: "image_asset",
-        target: { kind: "artifact_draft", targetDigest: hashArtifactDraft(staleDraft) },
-        contract: { id: "tool:generate_classroom_image", version: "tool-v1" },
-        inputHash: queued.inputHash ?? undefined,
-        intentEpoch: queued.intentEpoch,
-        overallStatus: "passed",
-        gates: [],
-      }),
-    });
-
-    expect(completed).toMatchObject({ status: "quarantined", reason: "stale_intent", job: { intentEpoch: 0 } });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.project.id, kind: "image_prompts" } })).toBe(0);
-    expect((await clientA.project.findUniqueOrThrow({ where: { id: fixture.project.id } })).intentEpoch).toBe(1);
-  });
 });
 
 describe("V1 Stage 1B SQLite upgrade", () => {
@@ -374,4 +460,33 @@ function removeSqliteFiles(databasePath: string) {
   for (const suffix of ["", "-shm", "-wal"]) {
     rmSync(`${databasePath}${suffix}`, { force: true });
   }
+}
+
+function createPptAssetUnitResultJson(input: {
+  batchDigest: string;
+  assetId: string;
+  requestInputHash: string;
+}) {
+  const fileEvidence = {
+    fileName: `${input.assetId}.png`, storageRef: `image-artifacts/${input.assetId}.png`, sha256: "b".repeat(64),
+    bytes: 1024, width: 1024, height: 1024, mime: "image/png",
+  };
+  return JSON.stringify({
+    schemaVersion: "ppt-asset-unit-result.v1",
+    batchDigest: input.batchDigest,
+    assetId: input.assetId,
+    requestInputHash: input.requestInputHash,
+    result: {
+      ...fileEvidence,
+      provider: "minimax",
+      model: "test-model",
+      clientRequestId: `client-${input.assetId}`,
+      providerRequestId: null,
+      providerTaskId: null,
+      sentReferenceAssetIds: [],
+      transparentBackgroundVerified: true,
+      rawAsset: fileEvidence,
+      normalizedAsset: fileEvidence,
+    },
+  });
 }

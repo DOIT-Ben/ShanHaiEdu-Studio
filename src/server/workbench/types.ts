@@ -282,17 +282,7 @@ export type CreateGenerationJobInput = {
   idempotencyKey?: string;
   inputSnapshot?: Record<string, unknown>;
   sourceArtifactIds?: string[];
-  createStagedArtifactCommit?: boolean;
   countsAsProviderSubmission?: boolean;
-};
-
-export type StageGenerationResultInput = Omit<SaveArtifactInput, "validationReport"> & {
-  validationReport: import("@/server/quality/quality-types").ValidationReport;
-};
-
-export type GenerationResultCommitRecord = {
-  artifact: ArtifactRecord;
-  job: GenerationJobRecord;
 };
 
 export type FailGenerationJobInput = {
