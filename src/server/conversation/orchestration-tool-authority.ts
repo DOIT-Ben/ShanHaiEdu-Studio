@@ -14,9 +14,23 @@ import {
   type IntentGrant,
   type TaskBrief,
 } from "./task-contract";
+import {
+  createToolInvocationAuditPayload,
+  readToolResultModeFromAuditPayload,
+  resolveServerToolResultMode,
+  type ToolResultMode,
+} from "./tool-result-mode";
+import { appendToolAuditEvent, digestToolAuditEvent } from "./orchestration-tool-audit-event";
+import { evaluateProjectToolTerminalMatrix } from "./orchestration-authority-terminal-matrix";
+import {
+  toolInvocationStatusForObservationStatus,
+  type ToolInvocationTerminalStatus,
+} from "./tool-terminal-status";
+
+export { toolInvocationStatusForObservationStatus } from "./tool-terminal-status";
+export type { ToolInvocationTerminalStatus } from "./tool-terminal-status";
 
 type ToolInvocationAuthority = "main_agent" | "artifact_route";
-export type ToolInvocationTerminalStatus = "succeeded" | "failed" | "blocked";
 export type StartToolInvocationInput = {
   invocationId: string;
   envelope: ExecutionEnvelope;
@@ -56,6 +70,7 @@ async function claimToolInvocationAuthority(
   const executionEnvelopeJson = JSON.stringify(input.envelope);
   const requestDigest = sha256(requestJson);
   const executionEnvelopeDigest = sha256(executionEnvelopeJson);
+  const resultMode = resolveServerToolResultMode(toolName, input.request);
 
   return client.$transaction((tx) => claimToolInvocationInTransaction(tx, input, authority, {
     toolName,
@@ -63,6 +78,7 @@ async function claimToolInvocationAuthority(
     executionEnvelopeJson,
     requestDigest,
     executionEnvelopeDigest,
+    resultMode,
   }));
 }
 
@@ -76,9 +92,10 @@ async function claimToolInvocationInTransaction(
     executionEnvelopeJson: string;
     requestDigest: string;
     executionEnvelopeDigest: string;
+    resultMode: ToolResultMode;
   },
 ): Promise<RawToolInvocationClaim> {
-    const { toolName, requestJson, executionEnvelopeJson, requestDigest, executionEnvelopeDigest } = prepared;
+    const { toolName, requestJson, executionEnvelopeJson, requestDigest, executionEnvelopeDigest, resultMode } = prepared;
     const existing = await tx.toolInvocationRecord.findUnique({
       where: {
         projectId_idempotencyKey: {
@@ -97,6 +114,7 @@ async function claimToolInvocationInTransaction(
         authority,
         executionEnvelopeDigest,
         requestDigest,
+        resultMode,
       );
     }
 
@@ -131,7 +149,6 @@ async function claimToolInvocationInTransaction(
     const turnJobs = await tx.conversationTurnJob.findMany({
       where: {
         projectId: input.envelope.projectId,
-        teacherMessageId: taskBrief.sourceMessageId,
         status: "running",
       },
       select: {
@@ -205,7 +222,7 @@ async function claimToolInvocationInTransaction(
       executionEnvelopeDigest,
       requestDigest,
       reasonCode: "tool_invocation_claimed",
-      payloadJson: JSON.stringify({ schemaVersion: "tool-invocation-audit.v1" }),
+      payloadJson: JSON.stringify(createToolInvocationAuditPayload(resultMode)),
       occurredAt: invocation.startedAt,
     });
     return { kind: "claimed", invocation };
@@ -232,6 +249,7 @@ export async function requireActiveToolInvocationAuthority(
     tx.conversationTurnJob.findUnique({ where: { id: attempted.turnJobId ?? "" } }),
   ]);
   const taskBrief = aggregate ? parseJson<TaskBrief>(aggregate.taskBriefJson) : null;
+  const envelope = parsePersistedExecutionEnvelope(invocation.executionEnvelopeJson);
   if (
     !project ||
     project.intentEpoch !== invocation.intentEpoch ||
@@ -241,8 +259,9 @@ export async function requireActiveToolInvocationAuthority(
     aggregate.planRevision !== invocation.planRevision ||
     aggregate.status !== "active" ||
     !taskBrief ||
-    taskBrief.sourceMessageId !== attempted.teacherMessageId ||
+    taskBrief.digest !== envelope.taskBriefDigest ||
     !turnJob ||
+    turnJob.status !== "running" ||
     turnJob.projectId !== invocation.projectId ||
     turnJob.teacherMessageId !== attempted.teacherMessageId ||
     turnJob.actorUserId !== attempted.actorUserId ||
@@ -259,8 +278,7 @@ export function assertToolTerminalEventBinding(
   invocation: Pick<ToolInvocationRecord, "projectId" | "taskId" | "intentEpoch" | "toolName">,
   observationId: string,
   observationStatus: string,
-  invocationStatus: ToolInvocationTerminalStatus,
-) {
+): ToolInvocationTerminalStatus {
   if (
     event.projectId !== invocation.projectId ||
     event.taskId !== invocation.taskId ||
@@ -271,9 +289,8 @@ export function assertToolTerminalEventBinding(
   if (event.payload.observationId !== observationId) {
     throw new Error("Tool result event Observation does not match the committed Observation.");
   }
-  if (toolInvocationStatusForObservationStatus(observationStatus, event.kind) !== invocationStatus) {
-    throw new Error("Tool result Observation status does not match the invocation terminal status.");
-  }
+  const invocationStatus = toolInvocationStatusForObservationStatus(observationStatus, event.kind);
+  if (!invocationStatus) throw new Error("Tool result Observation status is not terminal.");
   if (event.payload.status !== undefined && event.payload.status !== observationStatus) {
     throw new Error("Tool result event status does not match the committed Observation.");
   }
@@ -281,19 +298,7 @@ export function assertToolTerminalEventBinding(
       event.payload.toolName.trim() !== invocation.toolName) {
     throw new Error("Tool result event Tool does not match the invocation.");
   }
-}
-
-export function toolInvocationStatusForObservationStatus(
-  observationStatus: string,
-  eventKind?: string,
-): ToolInvocationTerminalStatus | null {
-  if (observationStatus === "succeeded") return "succeeded";
-  if (observationStatus === "needs_input") return eventKind === "decision_pending" ? "succeeded" : "blocked";
-  if (observationStatus === "blocked") return "blocked";
-  if (observationStatus === "failed" || observationStatus === "repair" || observationStatus === "inconclusive") {
-    return "failed";
-  }
-  return null;
+  return invocationStatus;
 }
 
 export async function appendResolvedToolInvocationAudit(
@@ -336,7 +341,7 @@ export async function appendResolvedToolInvocationAudit(
     executionEnvelopeDigest: input.attempted.executionEnvelopeDigest,
     requestDigest: input.attempted.requestDigest,
     reasonCode: `tool_invocation_${input.invocationStatus}`,
-    payloadJson: JSON.stringify({ schemaVersion: "tool-invocation-audit.v1" }),
+    payloadJson: JSON.stringify(createToolInvocationAuditPayload(requireFrozenToolResultMode(input.attempted))),
     occurredAt: input.occurredAt,
   });
 }
@@ -350,6 +355,7 @@ async function classifyExistingInvocation(
   authority: ToolInvocationAuthority,
   executionEnvelopeDigest: string,
   requestDigest: string,
+  resultMode: ToolResultMode,
 ): Promise<RawToolInvocationClaim> {
   if (
     invocation.toolName !== toolName ||
@@ -376,6 +382,7 @@ async function classifyExistingInvocation(
     attempted.idempotencyKey !== invocation.idempotencyKey ||
     attempted.executionEnvelopeDigest !== executionEnvelopeDigest ||
     attempted.requestDigest !== requestDigest ||
+    readToolResultModeFromAuditPayload(attempted.payloadJson) !== resultMode ||
     attempted.invocationStatus !== "running" ||
     attempted.observationId !== null ||
     attempted.eventDigest !== digestToolAuditEvent(attempted) ||
@@ -385,14 +392,50 @@ async function classifyExistingInvocation(
     throw new Error("Tool invocation authority or attempted audit binding conflicts with the replay.");
   }
   if (invocation.status === "running") return { kind: "in_progress", invocation };
-  if (!invocation.observationId) throw new Error("Terminal Tool invocation is missing its Observation.");
-  const observation = await tx.observationRecord.findUnique({ where: { observationId: invocation.observationId } });
-  if (!observation) throw new Error("Terminal Tool invocation Observation is missing.");
+  const [auditEvents, observations, artifacts, agentEvents, generationJobs, runInputSnapshots, validationReports] = await Promise.all([
+    tx.orchestrationAuditEvent.findMany({
+      where: { toolInvocationId: invocation.invocationId },
+      orderBy: { sequence: "asc" },
+    }),
+    tx.observationRecord.findMany({ where: { invocationId: invocation.invocationId } }),
+    tx.artifact.findMany({
+      where: { projectId: invocation.projectId, taskId: invocation.taskId, intentEpoch: invocation.intentEpoch },
+    }),
+    tx.agentEventRecord.findMany({
+      where: { projectId: invocation.projectId, taskId: invocation.taskId, intentEpoch: invocation.intentEpoch },
+    }),
+    tx.generationJob.findMany({
+      where: { projectId: invocation.projectId, intentEpoch: invocation.intentEpoch },
+    }),
+    tx.runInputSnapshot.findMany({
+      where: { projectId: invocation.projectId, intentEpoch: invocation.intentEpoch },
+    }),
+    tx.validationReportRecord.findMany({
+      where: { projectId: invocation.projectId, intentEpoch: invocation.intentEpoch },
+    }),
+  ]);
+  const violations = new Set<string>();
+  evaluateProjectToolTerminalMatrix({
+    auditEvents,
+    facts: {
+      invocations: [invocation], observations, artifacts, agentEvents,
+      generationJobs, runInputSnapshots, validationReports,
+    },
+    violations,
+    evaluateGenerationReverse: false,
+  });
+  if (violations.size > 0) {
+    throw new Error("Tool invocation terminal replay facts are invalid: " + [...violations].sort().join(","));
+  }
+  const observation = observations.find((row) => row.observationId === invocation.observationId);
+  if (!observation) throw new Error("Tool invocation terminal replay facts are invalid: Observation missing.");
   return { kind: "terminal_replay", invocation, observation };
 }
 
 function isValidAttemptedToolAudit(attempted: OrchestrationAuditEvent, invocation: ToolInvocationRecord) {
   const envelope = parsePersistedExecutionEnvelope(invocation.executionEnvelopeJson);
+  const request = parseJson<Record<string, unknown>>(invocation.requestJson);
+  const resultMode = resolveServerToolResultMode(invocation.toolName, request);
   return attempted.recordType === "attempted" &&
     attempted.outcome === null &&
     attempted.operationKind === "tool_invocation" &&
@@ -411,56 +454,19 @@ function isValidAttemptedToolAudit(attempted: OrchestrationAuditEvent, invocatio
     attempted.invocationStatus === "running" &&
     attempted.executionEnvelopeDigest === sha256(invocation.executionEnvelopeJson) &&
     attempted.requestDigest === sha256(invocation.requestJson) &&
+    readToolResultModeFromAuditPayload(attempted.payloadJson) === resultMode &&
     attempted.eventDigest === digestToolAuditEvent(attempted) &&
     Boolean(attempted.planId && attempted.turnJobId && attempted.teacherMessageId) &&
     Number.isInteger(attempted.toolOrdinal) &&
     (attempted.toolOrdinal ?? 0) > 0;
 }
 
-type ToolAuditEventInput = Omit<OrchestrationAuditEvent, "sequence" | "eventDigest" | "createdAt">;
-
-async function appendToolAuditEvent(tx: ToolAuthorityTransaction, input: ToolAuditEventInput) {
-  return tx.orchestrationAuditEvent.create({
-    data: { ...input, eventDigest: digestToolAuditEvent(input) },
-  });
-}
-
-function digestToolAuditEvent(event: ToolAuditEventInput | OrchestrationAuditEvent) {
-  const payload = {
-    eventId: event.eventId,
-    attemptId: event.attemptId,
-    recordType: event.recordType,
-    outcome: event.outcome,
-    operationKind: event.operationKind,
-    authority: event.authority,
-    claimedProjectId: event.claimedProjectId,
-    resolvedProjectId: event.resolvedProjectId,
-    actorUserId: event.actorUserId,
-    actorAuthMode: event.actorAuthMode,
-    authSessionDigest: event.authSessionDigest,
-    taskId: event.taskId,
-    turnJobId: event.turnJobId,
-    teacherMessageId: event.teacherMessageId,
-    toolInvocationId: event.toolInvocationId,
-    intentEpoch: event.intentEpoch,
-    planRevision: event.planRevision,
-    planId: event.planId,
-    toolOrdinal: event.toolOrdinal,
-    toolName: event.toolName,
-    actionDigest: event.actionDigest,
-    idempotencyKey: event.idempotencyKey,
-    observationId: event.observationId,
-    invocationStatus: event.invocationStatus,
-    executionEnvelopeDigest: event.executionEnvelopeDigest,
-    requestDigest: event.requestDigest,
-    reasonCode: event.reasonCode,
-    payloadJson: event.payloadJson,
-    occurredAt: event.occurredAt.toISOString(),
-  };
-  return createHash("sha256")
-    .update("shanhai-orchestration-audit-event.v1\0", "utf8")
-    .update(canonicalJson(payload), "utf8")
-    .digest("hex");
+export function requireFrozenToolResultMode(
+  attempted: Pick<OrchestrationAuditEvent, "payloadJson">,
+): ToolResultMode {
+  const resultMode = readToolResultModeFromAuditPayload(attempted.payloadJson);
+  if (!resultMode) throw new Error("Tool invocation result mode is missing or invalid.");
+  return resultMode;
 }
 
 function parsePersistedExecutionEnvelope(value: string): ExecutionEnvelope {
@@ -479,11 +485,4 @@ function isToolAuditAuthMode(value: string | null): value is "local" | "password
 
 function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const source = value as Record<string, unknown>;
-  return `{${Object.keys(source).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(source[key])}`).join(",")}}`;
 }

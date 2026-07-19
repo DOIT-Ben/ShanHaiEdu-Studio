@@ -23,7 +23,10 @@ const runtimeTraceExcludes = [
   "./tests/**/*",
   "./tsconfig.json",
   "./vitest.config.ts",
-  "./API台账系统/**/*",
+  "./API台账系统/research/**/*",
+  "./API台账系统/install-private-env.ps1",
+  "./API台账系统/schemas/provider-entry.schema.json",
+  "./API台账系统/scripts/validate_ledger.py",
 ];
 
 const runtimeTraceIncludes = ["./API台账系统/manifest.json"];

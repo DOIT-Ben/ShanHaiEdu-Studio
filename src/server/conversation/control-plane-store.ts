@@ -2,11 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type { PrismaClient, ToolInvocationRecord } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
-import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
-import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
-import { commitToolResultAtomically } from "@/server/execution/tool-result-commit";
-import type { ValidationReport } from "@/server/quality/quality-types";
-import { getToolDefinition } from "@/server/tools/tool-registry";
 import type { SaveArtifactInput } from "@/server/workbench/types";
 
 import {
@@ -23,15 +18,22 @@ import {
   type SemanticContextSnapshot,
 } from "./context-semantic-snapshot";
 import { restoreMainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
+import { saveValidationReportInTransaction } from "./control-plane-validation-report";
 import {
-  appendResolvedToolInvocationAudit,
-  assertToolTerminalEventBinding,
   claimArtifactRouteToolInvocationAuthority,
   claimMainAgentToolInvocationAuthority,
-  requireActiveToolInvocationAuthority,
   type RawToolInvocationClaim,
   type StartToolInvocationInput,
 } from "./orchestration-tool-authority";
+import {
+  commitToolArtifactResult,
+  commitToolObservationResult,
+  type AgentEventInput,
+  type CommitToolArtifactInput,
+  type CommitToolObservationInput,
+  type ToolResultCommitOperations,
+  type ToolResultObservationInput,
+} from "./control-plane-tool-result-commit";
 import {
   hasValidExecutionEnvelope,
   hasValidTaskBrief,
@@ -42,7 +44,7 @@ import {
 
 type TransactionClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
-export type AgentEventInput = Omit<AgentEventEnvelope, "schemaVersion" | "sequence">;
+export type { AgentEventInput, ToolResultObservationInput } from "./control-plane-tool-result-commit";
 
 export type PersistedTaskAggregate = {
   taskBrief: TaskBrief;
@@ -57,22 +59,6 @@ export type SemanticSnapshotScope = {
   taskId: string;
   intentEpoch: number;
   maxPlanRevision?: number;
-};
-
-export type ToolResultObservationInput = {
-  observationId: string;
-  status: string;
-  reasonCodes: string[];
-  payload: Record<string, unknown>;
-};
-
-type CommitToolObservationInput = {
-  invocationId: string;
-  generationJob?: { jobId: string; status: "failed" | "submission_unknown"; errorMessage: string };
-  observation: ToolResultObservationInput;
-  event: AgentEventInput;
-  validationReport?: ValidationReport;
-  advancePlanRevision?: boolean;
 };
 
 export type PersistedToolObservation = {
@@ -435,114 +421,16 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       return row ? mapObservation(row) : null;
     },
 
-    async commitToolResult(input: {
-      invocationId: string;
-      generationJobId?: string;
-      artifact: SaveArtifactInput;
-      observation: ToolResultObservationInput;
-      event: AgentEventInput;
-    }) {
-      return commitToolResultAtomically({
-        transaction: (commit) => client.$transaction(async (tx) => {
-          const { invocation, attempted } = await requireActiveToolInvocationAuthority(tx, input.invocationId);
-          assertToolTerminalEventBinding(input.event, invocation, input.observation.observationId, input.observation.status, "succeeded");
-          if (input.event.kind !== "artifact_committed") throw new Error("Tool result event kind is invalid.");
-          let committedArtifactId: string | undefined;
-          let committedObservationId: string | undefined;
-          return commit({
-            saveArtifact: async (artifact) => {
-              const envelope = parsePersistedExecutionEnvelope(invocation.executionEnvelopeJson);
-              const created = await saveArtifactInTransaction(tx, invocation.projectId, artifact, {
-                taskId: invocation.taskId,
-                taskBriefDigest: envelope.taskBriefDigest,
-                intentEpoch: invocation.intentEpoch,
-                planRevision: invocation.planRevision,
-              });
-              if (artifact.validationReport) {
-                await saveValidationReportInTransaction(tx, invocation, created.id, artifact, input.generationJobId);
-              }
-              committedArtifactId = created.id;
-              return created;
-            },
-            saveObservation: async (observation) => {
-              if (!committedArtifactId) throw new Error("Atomic result is missing its Artifact.");
-              const created = await tx.observationRecord.create({
-                data: {
-                  observationId: observation.observationId,
-                  projectId: invocation.projectId,
-                  taskId: invocation.taskId,
-                  invocationId: invocation.invocationId,
-                  intentEpoch: invocation.intentEpoch,
-                  status: observation.status,
-                  reasonCodesJson: JSON.stringify(uniqueText(observation.reasonCodes)),
-                  payloadJson: JSON.stringify(observation.payload),
-                  artifactId: committedArtifactId,
-                },
-              });
-              committedObservationId = created.observationId;
-              return created;
-            },
-            saveEvent: async (event) => {
-              if (!committedArtifactId || !committedObservationId) {
-                throw new Error("Atomic result is missing its Observation.");
-              }
-              const created = await appendEventInTransaction(tx, event);
-              const finishedAt = new Date();
-              const terminal = await tx.toolInvocationRecord.updateMany({
-                where: { invocationId: invocation.invocationId, status: "running" },
-                data: {
-                  status: "succeeded",
-                  artifactId: committedArtifactId,
-                  observationId: committedObservationId,
-                  finishedAt,
-                },
-              });
-              if (terminal.count !== 1) throw new Error("Tool invocation is not active.");
-              if (input.generationJobId) {
-                const generationJob = await tx.generationJob.updateMany({
-                  where: {
-                    id: input.generationJobId,
-                    projectId: invocation.projectId,
-                    intentEpoch: invocation.intentEpoch,
-                    status: { in: ["queued", "running"] },
-                  },
-                  data: {
-                    status: "succeeded",
-                    pollState: "completed",
-                    resultArtifactId: committedArtifactId,
-                    errorMessage: null,
-                    finishedAt: new Date(),
-                  },
-                });
-                if (generationJob.count !== 1) {
-                  throw new Error("GenerationJob cannot be completed from the current Tool invocation.");
-                }
-              }
-              await appendResolvedToolInvocationAudit(tx, {
-                attempted,
-                observationId: committedObservationId,
-                invocationStatus: "succeeded",
-                occurredAt: finishedAt,
-              });
-              await advanceTaskPlanRevision(tx, invocation);
-              return created;
-            },
-          });
-        }),
-        artifact: input.artifact,
-        observation: input.observation,
-        event: input.event,
-      });
+    async commitToolResult(input: CommitToolArtifactInput) {
+      return commitToolArtifactResult(client, input, toolResultCommitOperations);
     },
 
     async commitToolFailure(input: CommitToolObservationInput) {
-      return commitObservationOnly(client, input, "failed");
+      return commitToolObservationResult(client, input, false, toolResultCommitOperations);
     },
 
-    async commitToolObservation(input: CommitToolObservationInput & {
-      invocationStatus: "succeeded" | "failed" | "blocked";
-    }) {
-      return commitObservationOnly(client, input, input.invocationStatus);
+    async commitToolObservation(input: CommitToolObservationInput) {
+      return commitToolObservationResult(client, input, true, toolResultCommitOperations);
     },
 
     async commitRunFailure(input: {
@@ -603,109 +491,23 @@ function mapRawToolInvocationClaim(claim: RawToolInvocationClaim): ToolInvocatio
     : claim;
 }
 
-async function commitObservationOnly(
-  client: PrismaClient,
-  input: CommitToolObservationInput,
-  invocationStatus: "succeeded" | "failed" | "blocked",
-) {
-  return client.$transaction(async (tx) => {
-    const { invocation, attempted } = await requireActiveToolInvocationAuthority(tx, input.invocationId);
-    assertToolTerminalEventBinding(input.event, invocation, input.observation.observationId, input.observation.status, invocationStatus);
-    if (input.validationReport) {
-      await saveToolInvocationValidationReportInTransaction(tx, invocation, input.validationReport);
+const toolResultCommitOperations: ToolResultCommitOperations = {
+  async saveArtifact(tx, invocation, artifact, generationJobId) {
+    const envelope = parsePersistedExecutionEnvelope(invocation.executionEnvelopeJson);
+    const created = await saveArtifactInTransaction(tx, invocation.projectId, artifact, {
+      taskId: invocation.taskId,
+      taskBriefDigest: envelope.taskBriefDigest,
+      intentEpoch: invocation.intentEpoch,
+      planRevision: invocation.planRevision,
+    });
+    if (artifact.validationReport) {
+      await saveValidationReportInTransaction(tx, invocation, created.id, artifact, generationJobId);
     }
-    const observation = await tx.observationRecord.create({
-      data: {
-        observationId: input.observation.observationId,
-        projectId: invocation.projectId,
-        taskId: invocation.taskId,
-        invocationId: invocation.invocationId,
-        intentEpoch: invocation.intentEpoch,
-        status: input.observation.status,
-        reasonCodesJson: JSON.stringify(uniqueText(input.observation.reasonCodes)),
-        payloadJson: JSON.stringify(input.observation.payload),
-      },
-    });
-    const event = await appendEventInTransaction(tx, input.event);
-    const finishedAt = new Date();
-    const terminal = await tx.toolInvocationRecord.updateMany({
-      where: { invocationId: invocation.invocationId, status: "running" },
-      data: {
-        status: invocationStatus,
-        observationId: observation.observationId,
-        finishedAt,
-      },
-    });
-    if (terminal.count !== 1) throw new Error("Tool invocation is not active.");
-    if (input.generationJob) {
-      const generationJob = await tx.generationJob.updateMany({
-        where: {
-          id: input.generationJob.jobId,
-          projectId: invocation.projectId,
-          intentEpoch: invocation.intentEpoch,
-          status: { in: ["queued", "running"] },
-        },
-        data: {
-          status: input.generationJob.status,
-          pollState: input.generationJob.status === "submission_unknown" ? "submission_unknown" : "failed",
-          errorMessage: input.generationJob.errorMessage,
-          finishedAt: new Date(),
-        },
-      });
-      if (generationJob.count !== 1) {
-        throw new Error("GenerationJob cannot be failed from the current Tool invocation.");
-      }
-    }
-    await appendResolvedToolInvocationAudit(tx, {
-      attempted,
-      observationId: observation.observationId,
-      invocationStatus,
-      occurredAt: finishedAt,
-    });
-    if (input.advancePlanRevision !== false) await advanceTaskPlanRevision(tx, invocation);
-    return { observation, event };
-  });
-}
-
-async function saveToolInvocationValidationReportInTransaction(
-  tx: TransactionClient,
-  invocation: ToolInvocationRecord,
-  report: ValidationReport,
-) {
-  if (
-    !hasValidValidationReportDigest(report) ||
-    report.overallStatus !== "failed" ||
-    report.target.kind !== "tool_invocation" ||
-    report.target.targetId !== invocation.invocationId ||
-    (report.intentEpoch !== undefined && report.intentEpoch !== invocation.intentEpoch)
-  ) {
-    throw new Error("Tool invocation ValidationReport is invalid.");
-  }
-  const createdAt = new Date(report.createdAt);
-  if (!Number.isFinite(createdAt.getTime())) throw new Error("Validation report createdAt is invalid.");
-  await tx.validationReportRecord.create({
-    data: {
-      id: report.reportId,
-      projectId: invocation.projectId,
-      capabilityId: invocation.toolName,
-      stage: report.stage,
-      authority: report.authority,
-      domain: report.domain,
-      targetKind: report.target.kind,
-      targetId: report.target.targetId,
-      targetVersion: report.target.targetVersion,
-      targetDigest: report.target.targetDigest,
-      inputHash: report.inputHash,
-      intentEpoch: report.intentEpoch,
-      contractId: report.contract.id,
-      contractVersion: report.contract.version,
-      overallStatus: report.overallStatus,
-      reportDigest: report.reportDigest,
-      payloadJson: JSON.stringify(report),
-      createdAt,
-    },
-  });
-}
+    return created;
+  },
+  appendEvent: appendEventInTransaction,
+  advancePlanRevision: advanceTaskPlanRevision,
+};
 
 async function appendEventInTransaction(tx: TransactionClient, input: AgentEventInput): Promise<AgentEventEnvelope> {
   const latest = await tx.agentEventRecord.findFirst({
@@ -819,112 +621,6 @@ function parsePersistedExecutionEnvelope(value: string): ExecutionEnvelope {
   }
   if (!hasValidExecutionEnvelope(parsed)) throw new Error("Tool invocation ExecutionEnvelope is invalid.");
   return parsed;
-}
-
-async function saveValidationReportInTransaction(
-  tx: TransactionClient,
-  invocation: ToolInvocationRecord,
-  artifactId: string,
-  input: SaveArtifactInput,
-  generationJobId?: string,
-) {
-  const report = input.validationReport!;
-  const envelope = parsePersistedExecutionEnvelope(invocation.executionEnvelopeJson);
-  const tool = getToolDefinition(invocation.toolName);
-  const contract = resolveRuntimeContract(tool);
-  const targetDigest = hashArtifactDraft({
-    nodeKey: input.nodeKey,
-    kind: input.kind,
-    title: input.title,
-    summary: input.summary,
-    markdownContent: input.markdownContent,
-    structuredContent: input.structuredContent,
-  });
-  if (
-    !hasValidValidationReportDigest(report) ||
-    report.overallStatus !== "passed" ||
-    report.target.kind !== "artifact_draft" ||
-    report.target.targetId !== invocation.toolName ||
-    report.target.targetDigest !== targetDigest ||
-    report.intentEpoch !== invocation.intentEpoch ||
-    report.stage !== contract.capabilityId ||
-    report.contract.id !== contract.id ||
-    report.contract.version !== contract.version ||
-    contract.outputArtifactKind !== input.kind
-  ) {
-    throw new Error("Validation report rejected during atomic Tool result commit.");
-  }
-  const expectedInputHash = generationJobId
-    ? await validationInputHashForGenerationJob(tx, invocation, generationJobId, contract.capabilityId)
-    : envelope.idempotencyKey;
-  if (report.inputHash !== expectedInputHash) {
-    throw new Error("Validation report rejected during atomic Tool result commit.");
-  }
-  const createdAt = new Date(report.createdAt);
-  if (!Number.isFinite(createdAt.getTime())) throw new Error("Validation report createdAt is invalid.");
-  await tx.validationReportRecord.create({
-    data: {
-      id: report.reportId,
-      projectId: invocation.projectId,
-      capabilityId: report.stage,
-      stage: report.stage,
-      authority: report.authority,
-      domain: report.domain,
-      targetKind: report.target.kind,
-      targetId: report.target.targetId,
-      targetVersion: report.target.targetVersion,
-      targetDigest: report.target.targetDigest,
-      inputHash: report.inputHash,
-      intentEpoch: report.intentEpoch,
-      contractId: report.contract.id,
-      contractVersion: report.contract.version,
-      overallStatus: report.overallStatus,
-      reportDigest: report.reportDigest,
-      payloadJson: JSON.stringify(report),
-      artifactId,
-      ...(generationJobId ? { generationJobId } : {}),
-      createdAt,
-    },
-  });
-}
-
-async function validationInputHashForGenerationJob(
-  tx: TransactionClient,
-  invocation: ToolInvocationRecord,
-  generationJobId: string,
-  capabilityId: string,
-): Promise<string> {
-  const job = await tx.generationJob.findFirst({
-    where: {
-      id: generationJobId,
-      projectId: invocation.projectId,
-      intentEpoch: invocation.intentEpoch,
-    },
-    select: {
-      status: true,
-      inputHash: true,
-      runInputSnapshot: {
-        select: {
-          projectId: true,
-          intentEpoch: true,
-          capabilityId: true,
-          inputHash: true,
-        },
-      },
-    },
-  });
-  if (
-    job?.status !== "running" ||
-    !job.inputHash ||
-    !job.runInputSnapshot ||
-    job.runInputSnapshot.projectId !== invocation.projectId ||
-    job.runInputSnapshot.intentEpoch !== invocation.intentEpoch ||
-    job.runInputSnapshot.capabilityId !== capabilityId ||
-    job.runInputSnapshot.inputHash !== job.inputHash
-  ) {
-    throw new Error("Validation report rejected during atomic Tool result commit.");
-  }
-  return job.inputHash;
 }
 
 async function advanceTaskPlanRevision(

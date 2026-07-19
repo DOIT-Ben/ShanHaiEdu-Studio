@@ -104,6 +104,21 @@ test("next config allows loopback dev origins used by local MVP browser checks",
   assert.deepEqual(config.default.allowedDevOrigins, ["127.0.0.1"]);
 });
 
+test("next config traces only the public Provider manifest from the local ledger", () => {
+  const config = loadTsModule(path.join(root, "next.config.ts"), {});
+  const excludes = config.default.outputFileTracingExcludes["/api/**/*"];
+  const includes = config.default.outputFileTracingIncludes["/api/**/*"];
+
+  assert.deepEqual(includes, ["./API台账系统/manifest.json"]);
+  assert.equal(excludes.includes("./API台账系统/**/*"), false);
+  assert.deepEqual(excludes.filter((entry) => entry.startsWith("./API台账系统/")), [
+    "./API台账系统/research/**/*",
+    "./API台账系统/install-private-env.ps1",
+    "./API台账系统/schemas/provider-entry.schema.json",
+    "./API台账系统/scripts/validate_ledger.py",
+  ]);
+});
+
 function loadAuthRouteModule() {
   const db = {};
   const actor = loadActorModule();

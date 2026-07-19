@@ -90,7 +90,8 @@ test("M60/M68 does not let deterministic execution masquerade as real video asse
   assert.match(registrySource, /id: "concat_only_assemble"[\s\S]*providerMode: "package"[\s\S]*deterministicFallback: "blocked"/);
   assert.match(runnerSource, /generationMode === "deterministic_draft"[\s\S]*deterministicFallback === "blocked"/);
   assert.match(runnerSource, /deterministic_runtime_blocked_real_asset/);
-  assert.match(toolRegistrySource, /id: "asset_image_generate"[\s\S]*adapterKind: "provider"[\s\S]*implemented: true/);
+  assert.match(toolRegistrySource, /function providerTool[\s\S]*adapterKind: "provider"[\s\S]*implemented: true/);
+  assert.match(toolRegistrySource, /providerTool\(\{[\s\S]*id: "asset_image_generate"[\s\S]*producedArtifactKind: "asset_image_generate"/);
   assert.match(toolRegistrySource, /function packageTool[\s\S]*adapterKind: "package"[\s\S]*implemented: true/);
   assert.match(toolRegistrySource, /packageTool\(\{[\s\S]*id: "concat_only_assemble"[\s\S]*producedArtifactKind: "concat_only_assemble"/);
   assert.match(toolRegistrySource, /id: "intro_video"[\s\S]*blockedReason:/);

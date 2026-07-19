@@ -1,4 +1,5 @@
 import type { CapabilityId } from "@/server/capabilities/types";
+import { assertValidGenerationSourceContract } from "./generation-source-binding";
 import type { JsonSchemaObject, ToolDefinition, ToolFailurePolicy, ToolSideEffectLevel } from "./tool-types";
 
 const defaultFailurePolicy: ToolFailurePolicy = {
@@ -213,6 +214,29 @@ function packageTool(definition: {
   };
 }
 
+function providerTool(definition: {
+  id: string;
+  label: string;
+  description: string;
+  capabilityId: CapabilityId;
+  providerToolId: string;
+  requiredArtifactKinds: string[];
+  primarySourceArtifactKind: string;
+  producedArtifactKind: string;
+  inputSchema?: JsonSchemaObject;
+}): ToolDefinition {
+  return {
+    ...definition,
+    adapterKind: "provider",
+    inputSchema: definition.inputSchema ?? artifactInputSchema(definition.requiredArtifactKinds),
+    outputSchema: artifactOutputSchema(definition.producedArtifactKind),
+    requiresHumanGate: true,
+    sideEffectLevel: "external_call",
+    failurePolicy: defaultFailurePolicy,
+    implemented: true,
+  };
+}
+
 const toolDefinitions: ToolDefinition[] = [
   internalTool({
     id: "create_requirement_spec",
@@ -303,22 +327,16 @@ const toolDefinitions: ToolDefinition[] = [
     producedArtifactKind: "video_storyboard",
     blockedReason: "导入视频真实生成能力尚未完成接入，暂不注册为可执行工具。",
   }),
-  {
+  providerTool({
     id: "asset_image_generate",
     label: "生成视频资产图",
     description: "根据资产说明生成统一风格图、角色参考图、道具参考图、场景参考图和关键帧图。",
-    adapterKind: "provider",
     capabilityId: "asset_image_generate",
     providerToolId: "image_asset.generate_asset_reference",
-    inputSchema: artifactInputSchema(["asset_brief_generate"]),
-    outputSchema: artifactOutputSchema("asset_image_generate"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["asset_brief_generate"],
+    primarySourceArtifactKind: "asset_brief_generate",
     producedArtifactKind: "asset_image_generate",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
+  }),
   packageTool({
     id: "concat_only_assemble",
     label: "只拼接最终导入视频",
@@ -336,38 +354,26 @@ const toolDefinitions: ToolDefinition[] = [
     producedArtifactKind: "final_delivery",
     inputSchema: finalPackageInputSchema(["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_script_generate", "concat_only_assemble"]),
   }),
-  {
+  providerTool({
     id: "generate_pptx_from_design",
     label: "生成 PPTX 文件",
     description: "基于已确认的逐页 PPT 设计稿生成可下载演示文稿。",
-    adapterKind: "provider",
     capabilityId: "coze_ppt",
     providerToolId: "coze_ppt.generate_pptx",
-    inputSchema: artifactInputSchema(["ppt_design_draft"]),
-    outputSchema: artifactOutputSchema("pptx_artifact"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["ppt_design_draft"],
+    primarySourceArtifactKind: "ppt_design_draft",
     producedArtifactKind: "pptx_artifact",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
-  {
+  }),
+  providerTool({
     id: "generate_ppt_sample_assets",
     label: "生成 PPT 关键样张资产批次",
     description: "按已确认 PageSpec 生成关键场景和透明小素材，并输出逐对象来源清单。",
-    adapterKind: "provider",
     capabilityId: "ppt_sample_assets",
     providerToolId: "image_asset.generate_ppt_sample_assets",
-    inputSchema: artifactInputSchema(["ppt_design_draft"]),
-    outputSchema: artifactOutputSchema("image_prompts"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["ppt_design_draft"],
+    primarySourceArtifactKind: "ppt_design_draft",
     producedArtifactKind: "image_prompts",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
+  }),
   packageTool({
     id: "assemble_ppt_key_samples",
     label: "组装 PPT 关键样张",
@@ -392,71 +398,52 @@ const toolDefinitions: ToolDefinition[] = [
     requiredArtifactKinds: ["pptx_artifact", "ppt_design_draft", "image_prompts"],
     producedArtifactKind: "pptx_artifact",
   }),
-  {
+  providerTool({
     id: "generate_ppt_full_assets",
     label: "生成 PPT 全量正式资产",
     description: "在当前关键样张明确批准后，为全部页面生成正式场景和透明小素材，并输出完整来源清单。",
-    adapterKind: "provider",
     capabilityId: "ppt_full_assets",
     providerToolId: "image_asset.generate_ppt_full_assets",
-    inputSchema: artifactInputSchema(["ppt_design_draft", "image_prompts"]),
-    outputSchema: artifactOutputSchema("image_prompts"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["ppt_design_draft", "image_prompts"],
+    primarySourceArtifactKind: "ppt_design_draft",
     producedArtifactKind: "image_prompts",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
-  {
+  }),
+  providerTool({
     id: "generate_classroom_image",
     label: "生成课堂图片素材",
     description: "基于已确认的课件大纲生成课堂图片素材。",
-    adapterKind: "provider",
     capabilityId: "image_asset",
     providerToolId: "image_asset.generate",
-    inputSchema: artifactInputSchema(["ppt_draft"]),
-    outputSchema: artifactOutputSchema("image_prompts"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["ppt_draft"],
+    primarySourceArtifactKind: "ppt_draft",
     producedArtifactKind: "image_prompts",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
-  {
+  }),
+  providerTool({
     id: "generate_video_narration",
     label: "生成视频旁白与字幕",
     description: "基于已通过校验的视频脚本生成真实旁白音轨和时间绑定字幕。",
-    adapterKind: "provider",
     capabilityId: "video_narration_generate",
     providerToolId: "tts_minimax.generate_narration",
-    inputSchema: artifactInputSchema(["video_script_generate"]),
-    outputSchema: artifactOutputSchema("video_narration_generate"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["video_script_generate"],
+    primarySourceArtifactKind: "video_script_generate",
     producedArtifactKind: "video_narration_generate",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
-  {
+  }),
+  providerTool({
     id: "generate_video_segment",
     label: "生成分镜视频片段",
     description: "基于已确认的片段计划、分镜和资产图生成单段视频。",
-    adapterKind: "provider",
     capabilityId: "video_segment_generate",
     providerToolId: "video_segment_generate.generate",
     inputSchema: videoSegmentInputSchema(),
-    outputSchema: artifactOutputSchema("video_segment_generate"),
-    requiresHumanGate: true,
-    sideEffectLevel: "external_call",
     requiredArtifactKinds: ["video_segment_plan", "storyboard_generate", "asset_image_generate"],
+    primarySourceArtifactKind: "video_segment_plan",
     producedArtifactKind: "video_segment_generate",
-    failurePolicy: defaultFailurePolicy,
-    implemented: true,
-  },
+  }),
 ];
+
+for (const definition of toolDefinitions) {
+  assertValidGenerationSourceContract(definition);
+}
 
 function cloneToolDefinition(definition: ToolDefinition): ToolDefinition {
   return structuredClone(definition);

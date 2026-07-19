@@ -1,47 +1,45 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { prisma } from "@/server/db/client";
-import operationRegistry from "../../../config/orchestration-write-operations.json";
+import { digestOrchestrationAuditEvent } from "@/server/conversation/orchestration-audit-event-digest";
+import {
+  findOrchestrationIngressClassification,
+  normalizeWriteMethod,
+  resolveOrchestrationIngressOperation,
+  safeProjectId,
+  type OrchestrationIngressControlImpact,
+  type OrchestrationIngressOperation,
+  type OrchestrationIngressWriteMethod,
+} from "./orchestration-ingress-route";
 
-export type OrchestrationIngressOperation =
-  | "project_create"
-  | "project_lifecycle_update"
-  | "teacher_message_submit"
-  | "message_reaction_set"
-  | "legacy_agent_run_start"
-  | "legacy_agent_run_finish"
-  | "generation_intensity_update"
-  | "project_member_add"
-  | "project_member_role_update"
-  | "project_member_remove"
-  | "teacher_artifact_create"
-  | "artifact_approve"
-  | "artifact_regenerate"
-  | "ppt_sample_review_submit"
-  | "ppt_full_deck_review_submit"
-  | "artifact_route_coze_ppt"
-  | "artifact_route_image"
-  | "artifact_route_video"
-  | "unclassified_external";
+export { resolveOrchestrationIngressOperation } from "./orchestration-ingress-route";
+export type {
+  OrchestrationIngressControlImpact,
+  OrchestrationIngressOperation,
+} from "./orchestration-ingress-route";
 
-export type OrchestrationIngressControlImpact =
-  | "teacher_write"
-  | "teacher_task_submission"
-  | "legacy_external_orchestration"
-  | "artifact_route"
-  | "unclassified_external";
-
-type WriteMethod = "POST" | "PUT" | "PATCH" | "DELETE";
+type WriteMethod = OrchestrationIngressWriteMethod;
 type AuditRecordType = "attempted" | "resolved";
 type AuditOutcome = "committed" | "rejected" | "failed" | null;
 type AuditReasonCode = "http_2xx" | "http_3xx" | "http_4xx" | "http_5xx" | "handler_exception" | null;
+type OrchestrationIngressAuditSchemaVersion =
+  | "orchestration-ingress-audit.v1"
+  | "orchestration-ingress-audit.v2";
+
+const INGRESS_AUDIT_V1 = "orchestration-ingress-audit.v1" as const;
+const INGRESS_AUDIT_V2 = "orchestration-ingress-audit.v2" as const;
 
 type OrchestrationIngressPayload = {
+  schemaVersion?: typeof INGRESS_AUDIT_V2;
   operation: OrchestrationIngressOperation;
   routeTemplate: string;
   method: WriteMethod;
   controlImpact: OrchestrationIngressControlImpact;
   httpStatus: number | null;
+};
+
+type ParsedOrchestrationIngressPayload = Omit<OrchestrationIngressPayload, "schemaVersion"> & {
+  schemaVersion: OrchestrationIngressAuditSchemaVersion;
 };
 
 export type OrchestrationIngressAuditEventInput = {
@@ -56,6 +54,7 @@ export type OrchestrationIngressAuditEventInput = {
   actorUserId: string;
   actorAuthMode: "local" | "password" | "oauth" | "sso";
   authSessionDigest: string | null;
+  teacherMessageId: string | null;
   reasonCode: AuditReasonCode;
   payloadJson: string;
   eventDigest: string;
@@ -69,15 +68,6 @@ export type OrchestrationIngressAuditEvent = OrchestrationIngressAuditEventInput
 export type OrchestrationIngressAuditStore = {
   append(event: OrchestrationIngressAuditEventInput): Promise<OrchestrationIngressAuditEvent>;
 };
-
-type RegistryEntry = {
-  method: WriteMethod;
-  routeTemplate: string;
-  operation: Exclude<OrchestrationIngressOperation, "unclassified_external">;
-  controlImpact: Exclude<OrchestrationIngressControlImpact, "unclassified_external">;
-};
-
-const registry = Object.freeze(operationRegistry.map(parseRegistryEntry));
 
 export const prismaOrchestrationIngressAuditStore: OrchestrationIngressAuditStore = {
   async append(event) {
@@ -99,30 +89,6 @@ export const prismaOrchestrationIngressAuditStore: OrchestrationIngressAuditStor
     return Object.freeze({ ...event, sequence: row.sequence });
   },
 };
-
-export function resolveOrchestrationIngressOperation(request: Request) {
-  const method = normalizeWriteMethod(request.method);
-  if (!method) return null;
-  const pathname = new URL(request.url).pathname;
-  if (pathname !== "/api/workbench/projects" && !pathname.startsWith("/api/workbench/projects/")) return null;
-  for (const candidate of registry) {
-    if (candidate.method !== method) continue;
-    const routeParams = matchRouteTemplate(candidate.routeTemplate, pathname);
-    if (!routeParams) continue;
-    return {
-      operation: candidate.operation,
-      routeTemplate: candidate.routeTemplate,
-      claimedProjectId: safeProjectId(routeParams.projectId),
-      controlImpact: candidate.controlImpact,
-    };
-  }
-  return {
-    operation: "unclassified_external" as const,
-    routeTemplate: "/api/workbench/projects/:unclassified",
-    claimedProjectId: safeProjectId(/^\/api\/workbench\/projects\/([^/]+)/.exec(pathname)?.[1]),
-    controlImpact: "unclassified_external" as const,
-  };
-}
 
 export async function runWithOrchestrationIngressAudit(input: {
   request: Request;
@@ -151,6 +117,7 @@ export async function runWithOrchestrationIngressAudit(input: {
     actorUserId: requiredId(input.identity.actorUserId),
     actorAuthMode: input.identity.actorAuthMode,
     authSessionDigest: input.identity.authSessionId ? sha256(input.identity.authSessionId) : null,
+    teacherMessageId: null,
   };
   const attempted = createEvent({
     ...identity,
@@ -175,6 +142,7 @@ export async function runWithOrchestrationIngressAudit(input: {
       outcome: "failed",
       resolvedProjectId: null,
       reasonCode: "handler_exception",
+      teacherMessageId: null,
       payloadJson: createPayloadJson(route, normalizeWriteMethod(input.request.method)!, null),
       occurredAt: timestamp(now()),
     }));
@@ -185,8 +153,14 @@ export async function runWithOrchestrationIngressAudit(input: {
   const resolvedProjectId = route.operation === "project_create" && classification.outcome === "committed"
     ? await readCreatedProjectId(response)
     : route.claimedProjectId;
+  const teacherMessageId = route.operation === "teacher_message_submit" && classification.outcome === "committed"
+    ? await readSubmittedTeacherMessageId(response)
+    : null;
   if (route.operation === "project_create" && classification.outcome === "committed" && !resolvedProjectId) {
     throw new Error("orchestration_audit_project_resolution_failed");
+  }
+  if (route.operation === "teacher_message_submit" && classification.outcome === "committed" && !teacherMessageId) {
+    throw new Error("orchestration_audit_teacher_message_resolution_failed");
   }
   await store.append(createEvent({
     ...identity,
@@ -194,6 +168,7 @@ export async function runWithOrchestrationIngressAudit(input: {
     recordType: "resolved",
     outcome: classification.outcome,
     resolvedProjectId,
+    teacherMessageId,
     reasonCode: classification.reasonCode,
     payloadJson: createPayloadJson(route, normalizeWriteMethod(input.request.method)!, response.status),
     occurredAt: timestamp(now()),
@@ -245,10 +220,18 @@ export function evaluateOrchestrationIngressAudit(events: readonly Orchestration
 
 function createEvent(input: Omit<OrchestrationIngressAuditEventInput, "eventDigest">): OrchestrationIngressAuditEventInput {
   const event = { ...input, eventDigest: "" } as OrchestrationIngressAuditEventInput;
-  return Object.freeze({ ...event, eventDigest: digestEvent(event) });
+  const payload = parsePayload(event.payloadJson);
+  if (!payload) throw new Error("orchestration_audit_payload_invalid");
+  return Object.freeze({ ...event, eventDigest: digestEvent(event, payload.schemaVersion) });
 }
 
-function digestEvent(event: OrchestrationIngressAuditEventInput | OrchestrationIngressAuditEvent) {
+function digestEvent(
+  event: OrchestrationIngressAuditEventInput | OrchestrationIngressAuditEvent,
+  schemaVersion: OrchestrationIngressAuditSchemaVersion,
+) {
+  if (schemaVersion === INGRESS_AUDIT_V2) {
+    return digestOrchestrationAuditEvent(event, "shanhai-orchestration-audit-event.v2");
+  }
   const payload = {
     eventId: event.eventId,
     attemptId: event.attemptId,
@@ -271,38 +254,6 @@ function digestEvent(event: OrchestrationIngressAuditEventInput | OrchestrationI
     .digest("hex");
 }
 
-function parseRegistryEntry(value: unknown): RegistryEntry {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("orchestration_operation_registry_invalid");
-  const source = value as Record<string, unknown>;
-  const method = normalizeWriteMethod(String(source.method ?? ""));
-  if (!method || typeof source.routeTemplate !== "string" || !source.routeTemplate.startsWith("/api/workbench/projects")) {
-    throw new Error("orchestration_operation_registry_invalid");
-  }
-  return {
-    method,
-    routeTemplate: source.routeTemplate,
-    operation: source.operation as RegistryEntry["operation"],
-    controlImpact: source.controlImpact as RegistryEntry["controlImpact"],
-  };
-}
-
-function matchRouteTemplate(template: string, pathname: string) {
-  const templateSegments = template.split("/").filter(Boolean);
-  const pathSegments = pathname.split("/").filter(Boolean);
-  if (templateSegments.length !== pathSegments.length) return null;
-  const params: Record<string, string> = {};
-  for (let index = 0; index < templateSegments.length; index += 1) {
-    const templateSegment = templateSegments[index];
-    const pathSegment = pathSegments[index];
-    if (templateSegment.startsWith(":")) {
-      params[templateSegment.slice(1)] = pathSegment;
-    } else if (templateSegment !== pathSegment) {
-      return null;
-    }
-  }
-  return params;
-}
-
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -311,8 +262,11 @@ function canonicalJson(value: unknown): string {
 }
 
 function isValidEvent(event: OrchestrationIngressAuditEvent) {
-  return Number.isSafeInteger(event.sequence) && event.sequence > 0 && parsePayload(event.payloadJson) !== null &&
-    event.eventDigest === digestEvent(event);
+  if (!Number.isSafeInteger(event.sequence) || event.sequence < 1) return false;
+  const payload = parsePayload(event.payloadJson);
+  return payload !== null && hasValidExternalEventCore(event) &&
+    hasValidExternalRecordSemantics(event, payload) && hasValidTeacherMessageBinding(event, payload) &&
+    event.eventDigest === digestEvent(event, payload.schemaVersion);
 }
 
 function sameAttemptIdentity(left: OrchestrationIngressAuditEvent, right: OrchestrationIngressAuditEvent) {
@@ -323,6 +277,7 @@ function sameAttemptIdentity(left: OrchestrationIngressAuditEvent, right: Orches
   const leftPayload = parsePayload(left.payloadJson);
   const rightPayload = parsePayload(right.payloadJson);
   return sameColumns && leftPayload !== null && rightPayload !== null &&
+    leftPayload.schemaVersion === rightPayload.schemaVersion &&
     leftPayload.operation === rightPayload.operation &&
     leftPayload.routeTemplate === rightPayload.routeTemplate &&
     leftPayload.method === rightPayload.method &&
@@ -335,6 +290,7 @@ function createPayloadJson(
   httpStatus: number | null,
 ) {
   const payload: OrchestrationIngressPayload = {
+    schemaVersion: INGRESS_AUDIT_V2,
     operation: route.operation,
     routeTemplate: route.routeTemplate,
     method,
@@ -360,22 +316,25 @@ async function readCreatedProjectId(response: Response) {
   }
 }
 
-function normalizeWriteMethod(value: string): WriteMethod | null {
-  const method = value.toUpperCase();
-  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE" ? method : null;
-}
-
-function safeProjectId(value: unknown) {
-  if (typeof value !== "string") return null;
-  let decoded: string;
-  try { decoded = decodeURIComponent(value); } catch { return null; }
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/.test(decoded) ? decoded : null;
+async function readSubmittedTeacherMessageId(response: Response) {
+  try {
+    const value = await response.clone().json() as { message?: { id?: unknown } };
+    return safeAuditId(value.message?.id);
+  } catch {
+    return null;
+  }
 }
 
 function requiredId(value: unknown) {
   const normalized = String(value ?? "").trim();
   if (!normalized || normalized.length > 200) throw new Error("orchestration_audit_id_invalid");
   return normalized;
+}
+
+function safeAuditId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= 200 ? normalized : null;
 }
 
 function timestamp(value: Date) {
@@ -393,24 +352,84 @@ function normalizeOccurredAt(value: string | Date) {
   return date.toISOString();
 }
 
-function parsePayload(value: string): OrchestrationIngressPayload | null {
+function parsePayload(value: string): ParsedOrchestrationIngressPayload | null {
   try {
     const parsed = JSON.parse(value) as Partial<OrchestrationIngressPayload>;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== INGRESS_AUDIT_V2) return null;
     if (typeof parsed.operation !== "string" || typeof parsed.routeTemplate !== "string") return null;
     const method = normalizeWriteMethod(String(parsed.method ?? ""));
     if (!method || typeof parsed.controlImpact !== "string") return null;
     if (parsed.httpStatus === undefined) return null;
     const httpStatus = parsed.httpStatus;
     if (httpStatus !== null && (typeof httpStatus !== "number" || !Number.isInteger(httpStatus) || httpStatus < 100 || httpStatus > 599)) return null;
-    const classification = parsed.operation === "unclassified_external"
-      ? { routeTemplate: "/api/workbench/projects/:unclassified", controlImpact: "unclassified_external" }
-      : registry.find((entry) => entry.operation === parsed.operation);
+    const classification = findOrchestrationIngressClassification(parsed.operation);
     if (!classification || classification.routeTemplate !== parsed.routeTemplate ||
         classification.controlImpact !== parsed.controlImpact ||
         ("method" in classification && classification.method !== method)) return null;
-    return parsed as OrchestrationIngressPayload;
+    return {
+      schemaVersion: parsed.schemaVersion ?? INGRESS_AUDIT_V1,
+      operation: parsed.operation as OrchestrationIngressOperation,
+      routeTemplate: parsed.routeTemplate,
+      method,
+      controlImpact: parsed.controlImpact as OrchestrationIngressControlImpact,
+      httpStatus,
+    };
   } catch {
     return null;
   }
+}
+
+function hasValidTeacherMessageBinding(
+  event: OrchestrationIngressAuditEvent,
+  payload: ParsedOrchestrationIngressPayload,
+) {
+  if (payload.schemaVersion === INGRESS_AUDIT_V1) return event.teacherMessageId === null;
+  if (event.recordType === "attempted") return event.teacherMessageId === null;
+  const requiresTeacherMessage = payload.operation === "teacher_message_submit" && event.outcome === "committed";
+  if (!requiresTeacherMessage) return event.teacherMessageId === null;
+  return safeAuditId(event.teacherMessageId) === event.teacherMessageId;
+}
+
+function hasValidExternalEventCore(event: OrchestrationIngressAuditEvent) {
+  const source = event as unknown as Record<string, unknown>;
+  const toolOnlyFields = [
+    "taskId", "turnJobId", "toolInvocationId", "intentEpoch", "planRevision", "planId", "toolOrdinal",
+    "toolName", "actionDigest", "idempotencyKey", "observationId", "invocationStatus",
+    "executionEnvelopeDigest", "requestDigest",
+  ];
+  return safeAuditId(event.eventId) === event.eventId && safeAuditId(event.attemptId) === event.attemptId &&
+    event.operationKind === "external_mutation" && event.authority === "teacher_http" &&
+    safeAuditId(event.actorUserId) === event.actorUserId &&
+    ["local", "password", "oauth", "sso"].includes(event.actorAuthMode) &&
+    (event.authSessionDigest === null || /^[a-f0-9]{64}$/.test(event.authSessionDigest)) &&
+    (event.claimedProjectId === null || safeProjectId(event.claimedProjectId) === event.claimedProjectId) &&
+    (event.resolvedProjectId === null || safeProjectId(event.resolvedProjectId) === event.resolvedProjectId) &&
+    toolOnlyFields.every((field) => source[field] === null || source[field] === undefined);
+}
+
+function hasValidExternalRecordSemantics(
+  event: OrchestrationIngressAuditEvent,
+  payload: ParsedOrchestrationIngressPayload,
+) {
+  const projectCreate = payload.operation === "project_create";
+  if ((projectCreate && event.claimedProjectId !== null) ||
+      (!projectCreate && event.claimedProjectId === null)) return false;
+  if (event.recordType === "attempted") {
+    return event.outcome === null && event.reasonCode === null && payload.httpStatus === null &&
+      event.resolvedProjectId === null;
+  }
+  if (event.recordType !== "resolved" || event.outcome === null) return false;
+  if (payload.httpStatus === null) {
+    return event.outcome === "failed" && event.reasonCode === "handler_exception" &&
+      event.resolvedProjectId === null;
+  }
+  const expected = classifyResponse(payload.httpStatus);
+  if (event.outcome !== expected.outcome || event.reasonCode !== expected.reasonCode) return false;
+  if (projectCreate) {
+    return event.outcome === "committed"
+      ? event.resolvedProjectId !== null
+      : event.resolvedProjectId === null;
+  }
+  return event.resolvedProjectId === event.claimedProjectId;
 }

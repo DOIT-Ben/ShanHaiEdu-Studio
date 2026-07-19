@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
-import { getToolDefinition, getToolDefinitionByCapabilityId, listToolDefinitions } from "@/server/tools/tool-registry";
+import {
+  getToolDefinition,
+  getToolDefinitionByCapabilityId,
+  listToolDefinitions,
+} from "@/server/tools/tool-registry";
+import { assertValidGenerationSourceContract } from "@/server/tools/generation-source-binding";
 import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
 import type { ToolDefinition } from "@/server/tools/tool-types";
 
@@ -159,6 +164,38 @@ describe("ToolRegistry", () => {
       requiredArtifactKinds: ["ppt_design_draft"],
       producedArtifactKind: "pptx_artifact",
     });
+  });
+
+  it("declares one explicit primary source kind for every Provider Tool", () => {
+    const expected = new Map([
+      ["asset_image_generate", "asset_brief_generate"],
+      ["generate_pptx_from_design", "ppt_design_draft"],
+      ["generate_ppt_sample_assets", "ppt_design_draft"],
+      ["generate_ppt_full_assets", "ppt_design_draft"],
+      ["generate_classroom_image", "ppt_draft"],
+      ["generate_video_narration", "video_script_generate"],
+      ["generate_video_segment", "video_segment_plan"],
+    ]);
+    const providers = listToolDefinitions().filter((tool) => tool.adapterKind === "provider");
+
+    expect(providers).toHaveLength(expected.size);
+    for (const tool of providers) {
+      expect(tool.primarySourceArtifactKind).toBe(expected.get(tool.id));
+      expect(tool.requiredArtifactKinds).toContain(tool.primarySourceArtifactKind);
+      expect(() => assertValidGenerationSourceContract(tool)).not.toThrow();
+    }
+  });
+
+  it("fails closed on missing, unrelated, or non-Provider primary source declarations", () => {
+    const provider = getToolDefinition("generate_ppt_full_assets");
+    const internal = getToolDefinition("create_requirement_spec");
+
+    expect(() => assertValidGenerationSourceContract({ ...provider, primarySourceArtifactKind: undefined }))
+      .toThrow(/must declare/i);
+    expect(() => assertValidGenerationSourceContract({ ...provider, primarySourceArtifactKind: "lesson_plan" }))
+      .toThrow(/must declare/i);
+    expect(() => assertValidGenerationSourceContract({ ...internal, primarySourceArtifactKind: "requirement_spec" }))
+      .toThrow(/only Provider/i);
   });
 
   it("finds tools by capability id", () => {

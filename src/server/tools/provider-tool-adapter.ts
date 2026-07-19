@@ -26,6 +26,11 @@ import { generateMiniMaxVideoNarration, VideoNarrationProviderError, type VideoN
 import { validateVideoNarrationScript, type VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import { resolveStoryboardShotDurations, validateStoryboardManifest, type StoryboardManifest } from "@/server/video-quality/video-production-contract";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
+import {
+  findMissingArtifactKinds,
+  findPrimarySourceArtifact,
+  findResolvedArtifact,
+} from "./provider-tool-artifact-resolution";
 import type { ToolArtifactTruth, ToolDefinition, ToolExecutionResult, ToolQualityGateResult } from "./tool-types";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 
@@ -142,7 +147,7 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
     return executeVideoNarrationTool(input, capabilityId, provider);
   }
 
-  const sourceArtifact = findResolvedArtifact(input, "ppt_design_draft");
+  const sourceArtifact = findPrimarySourceArtifact(input);
   if (!sourceArtifact) {
     return buildNeedsInputResult(input, capabilityId, provider, ["ppt_design_draft"]);
   }
@@ -163,7 +168,7 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
 }
 
 async function executePptAssetTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
-  const sourceArtifact = findResolvedArtifact(input, "ppt_design_draft");
+  const sourceArtifact = findPrimarySourceArtifact(input);
   if (!sourceArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["ppt_design_draft"]);
   const isFullProduction = input.tool.capabilityId === PPT_FULL_ASSET_PROVIDER;
   const approvalArtifact = isFullProduction ? findResolvedArtifact(input, "image_prompts") : undefined;
@@ -222,8 +227,8 @@ function assertPptProductionEvidenceResolved(designArtifact: ArtifactRecord, res
 }
 
 async function executeImageTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
-  const sourceArtifactKind = input.tool.capabilityId === ASSET_IMAGE_PROVIDER ? "asset_brief_generate" : "ppt_draft";
-  const sourceArtifact = findResolvedArtifact(input, sourceArtifactKind);
+  const sourceArtifactKind = input.tool.primarySourceArtifactKind ?? "";
+  const sourceArtifact = findPrimarySourceArtifact(input);
   if (!sourceArtifact) {
     return buildNeedsInputResult(input, capabilityId, provider, [sourceArtifactKind]);
   }
@@ -241,7 +246,7 @@ async function executeImageTool(input: ProviderToolAdapterInput, capabilityId: s
 }
 
 async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
-  const sourceArtifact = findResolvedArtifact(input, "video_segment_plan");
+  const sourceArtifact = findPrimarySourceArtifact(input);
   const storyboard = findResolvedArtifact(input, "storyboard_generate");
   const assetImages = findResolvedArtifact(input, "asset_image_generate");
   const missingInputs = [
@@ -280,7 +285,7 @@ async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: s
 }
 
 async function executeVideoNarrationTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
-  const sourceArtifact = findResolvedArtifact(input, "video_script_generate");
+  const sourceArtifact = findPrimarySourceArtifact(input);
   if (!sourceArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["video_script_generate"]);
   const script = sourceArtifact.structuredContent.videoNarrationScript as VideoNarrationScript | undefined;
   if (!script || !validateVideoNarrationScript(script).valid) {
@@ -960,27 +965,6 @@ function resolveProvider(tool: ToolDefinition): string | undefined {
   if (tool.capabilityId === ASSET_IMAGE_PROVIDER) return IMAGE_PROVIDER;
   if (tool.capabilityId === "video_narration_generate") return VIDEO_NARRATION_PROVIDER;
   return tool.capabilityId;
-}
-
-function findMissingArtifactKinds(requiredArtifactKinds: string[], input: ProviderToolAdapterInput): string[] {
-  return requiredArtifactKinds.filter((kind) => !findResolvedArtifact(input, kind));
-}
-
-function findResolvedArtifact(input: ProviderToolAdapterInput, kind: string): ArtifactRecord | undefined {
-  for (let index = input.artifactRefs.length - 1; index >= 0; index -= 1) {
-    const artifactRef = input.artifactRefs[index];
-    if (artifactRef.kind !== kind || !artifactRef.artifactId.trim()) continue;
-    const resolved = (input.resolvedArtifacts ?? []).find(
-      (artifact) =>
-        artifact.id === artifactRef.artifactId &&
-        artifact.projectId === input.projectId &&
-        artifact.kind === kind &&
-        artifact.nodeKey === kind &&
-        isArtifactTrustedForDownstream(artifact),
-    );
-    if (resolved) return resolved;
-  }
-  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

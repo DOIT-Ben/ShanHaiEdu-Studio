@@ -27,6 +27,17 @@ export type ArtifactValidationEvidence = {
   targetDigest: string | null;
 };
 
+export type ArtifactTaskBinding = {
+  taskId?: string | null;
+  taskBriefDigest?: string | null;
+  intentEpoch?: number | null;
+  origin?: string | null;
+};
+
+export type TaskExecutionBinding = Pick<TaskBrief, "taskId" | "intentEpoch"> & {
+  digest: string;
+};
+
 export function sanitizeTeacherArtifactStructuredContent(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value)
@@ -81,7 +92,10 @@ export function hasVerifiedArtifactApprovalEvidence(artifact: ArtifactRecord): b
   });
 }
 
-export function isArtifactAvailableAsTaskInput(artifact: ArtifactRecord, taskBrief: TaskBrief): boolean {
+export function isArtifactAvailableForTaskBinding(
+  artifact: ArtifactTaskBinding,
+  taskBrief: TaskExecutionBinding,
+): boolean {
   if (artifact.intentEpoch !== taskBrief.intentEpoch) return false;
   const hasTaskId = hasText(artifact.taskId);
   const hasTaskBriefDigest = hasText(artifact.taskBriefDigest);
@@ -90,6 +104,10 @@ export function isArtifactAvailableAsTaskInput(artifact: ArtifactRecord, taskBri
     return artifact.taskId === taskBrief.taskId && artifact.taskBriefDigest === taskBrief.digest;
   }
   return artifact.origin === "teacher_input" || artifact.origin === "tool_result";
+}
+
+export function isArtifactAvailableAsTaskInput(artifact: ArtifactRecord, taskBrief: TaskBrief): boolean {
+  return isArtifactAvailableForTaskBinding(artifact, taskBrief);
 }
 
 // Existing callers use this boundary to select context and upstream inputs.

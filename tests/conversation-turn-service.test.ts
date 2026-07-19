@@ -703,7 +703,10 @@ describe("M54-B3 ConversationTurnService route contract", () => {
       async respond(input: MainConversationAgentInput) {
         agentCalls += 1;
         if (agentCalls === 1) {
-          await seedRunningToolTurn(input, actor.userId);
+          const currentTeacherMessage = (await service.getMessages(project.id))
+            .filter((message) => message.role === "teacher")
+            .at(-1)!;
+          await seedRunningToolTurn(input, actor.userId, currentTeacherMessage.id);
           await input.agentToolLoop!.dispatch({
             callId: "director-before-design",
             toolName: "ppt_director_plan_or_repair",
@@ -770,12 +773,17 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     }
   });
 
-  async function seedRunningToolTurn(input: MainConversationAgentInput, actorUserId: string) {
+  async function seedRunningToolTurn(
+    input: MainConversationAgentInput,
+    actorUserId: string,
+    teacherMessageId = input.taskBrief?.sourceMessageId,
+  ) {
     if (!input.taskBrief) throw new Error("tool_turn_fixture_task_missing");
+    if (!teacherMessageId) throw new Error("tool_turn_fixture_message_missing");
     await prisma.conversationTurnJob.create({
       data: {
         projectId: input.taskBrief.projectId,
-        teacherMessageId: input.taskBrief.sourceMessageId,
+        teacherMessageId,
         status: "running",
         actorUserId,
         actorAuthMode: "local",

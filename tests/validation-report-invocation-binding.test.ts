@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { omitFixtureFields } from "./support/omit-fixture-fields";
 
-import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
-import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
+import { createValidationReport, validateToolExecutionResult } from "@/server/contracts/contract-validator";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { prisma } from "@/server/db/client";
@@ -19,6 +18,7 @@ const replayCases: Array<{
   mutate: ReportMutation;
   jobCapabilityId?: string;
   startJob?: boolean;
+  errorPattern?: RegExp;
 }> = [
   {
     label: "a non-draft target",
@@ -49,9 +49,28 @@ const replayCases: Array<{
     mutate: (report) => reissue(report, { contract: { id: "tool:generate_video_segment", version: "tool-v1" } }),
   },
   {
+    label: "an empty self-signed Provider gate set",
+    mutate: (report) => reissue(report, { gates: [] }),
+  },
+  {
+    label: "a contradictory failed gate under an overall passed status",
+    mutate: (report) => reissue(report, {
+      gates: [
+        ...report.gates,
+        {
+          ...report.gates[0],
+          gateId: "contradictory_provider_gate",
+          status: "failed",
+          reasonCode: "provider_output_invalid",
+        },
+      ],
+    }),
+  },
+  {
     label: "a GenerationJob from another capability",
     mutate: (report) => report,
     jobCapabilityId: "video_segment_generate",
+    errorPattern: /GenerationJob does not match the current Tool invocation contract/,
   },
   {
     label: "a GenerationJob that was never started",
@@ -82,14 +101,14 @@ describe("ValidationReport Invocation and IntentEpoch binding", () => {
         eventId: fixture.eventId,
         projectId: fixture.projectId,
         taskId: fixture.taskId,
-        runId: `run:${fixture.invocationId}`,
+        runId: `turn:${fixture.teacherMessageId}`,
         intentEpoch: fixture.intentEpoch,
         kind: "artifact_committed",
         visibility: "internal",
         occurredAt: "2026-07-15T00:00:00.000Z",
         payload: { observationId: fixture.observationId },
       },
-    })).rejects.toThrow(/Validation report rejected during atomic Tool result commit/);
+    })).rejects.toThrow(testCase.errorPattern ?? /Validation report rejected during atomic Tool result commit/);
 
     const [artifacts, observations, events, reports, invocation, job, aggregate] = await Promise.all([
       prisma.artifact.findMany({ where: { projectId: fixture.projectId } }),
@@ -124,6 +143,13 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     status: "needs_review",
     summary: "Current source for the isolated contract fixture.",
     markdownContent: "# Current PPT outline",
+    structuredContent: {
+      artifactQualityState: {
+        validationStatus: "passed",
+        reviewStatus: "passed",
+        downstreamEligibility: "eligible",
+      },
+    },
   });
   const intentEpoch = project.intentEpoch ?? 0;
   const taskBrief = createTaskBrief({
@@ -156,6 +182,16 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     intentGrant,
     plan: { planId: `plan:${project.id}`, revision: 0, status: "active" },
     checkpoint: null,
+  });
+  await prisma.artifact.update({
+    where: { id: source.id },
+    data: {
+      taskId: taskBrief.taskId,
+      taskBriefDigest: taskBrief.digest,
+      intentEpoch,
+      planRevision: 0,
+      origin: "tool_result",
+    },
   });
 
   const tool = getToolDefinition("generate_classroom_image");
@@ -192,7 +228,15 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     kind: "image",
     sourceArtifactId: source.id,
     capabilityId: input.jobCapabilityId ?? tool.capabilityId,
-    inputSnapshot: { sourceArtifactId: source.id, sourceArtifactVersion: source.version },
+    idempotencyKey: envelope.idempotencyKey,
+    sourceArtifactIds: [source.id],
+    inputSnapshot: {
+      toolName: tool.id,
+      arguments: action.arguments,
+      taskBriefDigest: taskBrief.digest,
+      intentEpoch,
+      sourceArtifacts: [{ artifactId: source.id, kind: source.kind, version: source.version }],
+    },
   });
   const job = input.startJob === false
     ? queuedJob
@@ -208,22 +252,22 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     markdownContent: "# Offline classroom image",
     structuredContent: { fixture: true },
   };
-  const contract = resolveRuntimeContract(tool);
-  const validationReport = createValidationReport({
-    reportId: randomUUID(),
-    createdAt: "2026-07-15T00:00:00.000Z",
-    domain: "ppt",
-    stage: contract.capabilityId,
-    target: {
-      kind: "artifact_draft",
-      targetId: tool.id,
-      targetDigest: hashArtifactDraft(artifactDraft),
+  const validationReport = validateToolExecutionResult({
+    tool,
+    projectId: project.id,
+    result: {
+      status: "succeeded",
+      artifactDraft,
+      artifactTruth: {
+        created: true,
+        persisted: true,
+        placeholder: false,
+        producedArtifactKind: artifactDraft.kind,
+      },
+      qualityGate: { passed: true, gates: ["offline_contract_fixture"] },
     },
-    contract: { id: contract.id, version: contract.version },
     inputHash: job.inputHash,
     intentEpoch,
-    overallStatus: "passed",
-    gates: [],
   });
 
   return {
@@ -231,6 +275,7 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
     projectId: project.id,
     sourceArtifactId: source.id,
     taskId: taskBrief.taskId,
+    teacherMessageId: taskBrief.sourceMessageId,
     intentEpoch,
     invocationId,
     job,

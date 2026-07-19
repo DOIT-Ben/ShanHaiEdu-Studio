@@ -276,7 +276,10 @@ export async function commitArtifactRouteToolReplay(input: {
   const observationId = randomUUID();
   return input.claim.controlPlaneStore.commitToolObservation({
     invocationId: input.claim.invocationId,
-    invocationStatus: "succeeded",
+    existingArtifact: {
+      artifactId: input.artifactId,
+      generationJobId: input.generationJobId,
+    },
     observation: {
       observationId,
       status: "succeeded",
@@ -288,7 +291,7 @@ export async function commitArtifactRouteToolReplay(input: {
         generationJobId: input.generationJobId,
       },
     },
-    event: eventForClaim(input.claim, "tool_observed", {
+    event: eventForClaim(input.claim, "artifact_committed", {
       observationId,
       toolName: input.claim.toolName,
       status: "succeeded",

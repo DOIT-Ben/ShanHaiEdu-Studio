@@ -17,15 +17,17 @@
 - native function-call已承担主控制循环；局部真实文本回合曾成功保持单Tool范围。
 - SQLite、Provider ledger、验证manifest和release receipt具有基础合同。
 
-确认存在的问题：
+阶段启动时确认、现已由阶段A修复的问题：
 
-- `WorkflowNode`、`toolPlan`、`deliveryPlan`和deterministic runtime仍存在于生产源码，当前只是失去部分执行权，没有真正删除。
 - Tool终态允许Observation、Event、Invocation和审计结果互相矛盾；权威摘要也未完整重算该关系。
 - succeeded被错误等同于必须产生Artifact，合法的Observation-only成功会被误判。
 - 部分项目写入口可以绕过统一actor/CSRF/orchestration wrapper，入口门只检查“出现过调用”，不能证明最外层统一包裹。
+
+仍存在的问题：
+
+- `WorkflowNode`、`toolPlan`、`deliveryPlan`和deterministic runtime仍存在于生产源码，当前只是失去部分执行权，没有真正删除。
 - 31个复杂度债务文件和22个源码字符串合同债务文件仍是活动事实；Lint与构建动态追踪warning已清零并锁入门禁。
 - `conversation-turn-service.ts`、`main-agent-tool-loop-config.ts`、workbench repository等巨型模块同时承载多项职责。
-- 当前状态文档保存了大量阶段流水账，掩盖当前事实。
 
 尚未实现：
 
@@ -43,6 +45,8 @@
 
 ### 阶段A：合同正确性
 
+状态：**已完成离线合同与执行验收**。不代表真实Provider、model orchestration、product E2E或release通过。
+
 目标：先堵住会产生错误业务事实的出口。
 
 修改范围：
@@ -54,7 +58,21 @@
 
 验收：行为负例覆盖绕行、状态错绑、重复终态、错误Artifact要求和摘要篡改；定向测试、TypeScript和开发门通过。
 
+完成事实：
+
+- 18个项目写入口统一到registry、外层wrapper和AST门。
+- `resultMode`由服务端Tool registry冻结并在终态与summary中独立复核。
+- terminal replay复核attempted/resolved audit、Observation、Event和Artifact完整矩阵。
+- authority summary保留历史IntentEpoch违规，按消息身份处理幂等提交，并明确降级旧v1证据。
+- 失败ValidationReport绑定当前Invocation、runtime contract、capability、IntentEpoch和inputHash。
+- `in_progress`普通Tool不会再次加载Skill或执行；Provider只有在已持久化同一GenerationJob任务ID且输入、epoch和运行状态一致时恢复轮询。
+- 新增生产模块均低于500行；复杂度债务仍为31项，未新增债务，3个既存债务文件的7项复杂度指标已向下收紧。
+
+验收入口：8文件阶段矩阵、TypeScript、零warning Lint、源码合同门、复杂度门、development gate及`git diff --check`均需在阶段A提交候选上通过。
+
 ### 阶段B：删除竞争控制面
+
+状态：**下一阶段，尚未开始**。
 
 目标：生产源码只剩Main Agent原子Tool控制循环。
 

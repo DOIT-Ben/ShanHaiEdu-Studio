@@ -1,13 +1,57 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "@/generated/prisma/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 
+import { createValidationReport, validateToolExecutionResult } from "@/server/contracts/contract-validator";
+import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
 import { buildSemanticContextSnapshot } from "@/server/conversation/context-semantic-snapshot";
 import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
-import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createControlPlaneStore as createControlPlaneStoreForClient } from "@/server/conversation/control-plane-store";
 import { createMainAgentReActCheckpoint } from "@/server/conversation/main-agent-react-checkpoint";
-import { prisma } from "@/server/db/client";
-import { createWorkbenchService } from "@/server/workbench/service";
+import type { ValidationReport } from "@/server/quality/quality-types";
+import { getToolDefinition } from "@/server/tools/tool-registry";
+import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
+import { createWorkbenchService as createWorkbenchServiceForRepository } from "@/server/workbench/service";
+
+const root = process.cwd();
+const stageRoot = path.join(root, ".tmp", "control-plane-persistence-tests");
+const databasePath = path.join(stageRoot, `control-plane-${randomUUID()}.db`);
+const databaseUrl = `file:${databasePath.replaceAll("\\", "/")}`;
+let client: PrismaClient;
+let prisma: PrismaClient;
+
+beforeAll(() => {
+  mkdirSync(stageRoot, { recursive: true });
+  const initialized = spawnSync(process.execPath, ["scripts/init-sqlite-schema.mjs"], {
+    cwd: root,
+    env: { ...process.env, DATABASE_URL: databaseUrl, SHANHAI_DB_INIT_SKIP_DOTENV: "1" },
+    encoding: "utf8",
+  });
+  if (initialized.status !== 0) {
+    throw new Error(initialized.stderr || initialized.stdout || "Control-plane persistence database initialization failed.");
+  }
+  client = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: databaseUrl }) });
+  prisma = client;
+});
+
+afterAll(async () => {
+  await client?.$disconnect();
+  for (const suffix of ["", "-shm", "-wal"]) rmSync(`${databasePath}${suffix}`, { force: true });
+});
+
+function createControlPlaneStore() {
+  return createControlPlaneStoreForClient(client);
+}
+
+function createWorkbenchService() {
+  return createWorkbenchServiceForRepository(createPrismaWorkbenchRepository(client));
+}
 
 describe("control-plane persistence", () => {
   it("persists task aggregate, ordered events and a resumable semantic snapshot", async () => {
@@ -436,6 +480,91 @@ describe("control-plane persistence", () => {
     expect((await service.getArtifacts(project.id)).some((artifact) => artifact.title === "不应提升的迟到成果")).toBe(false);
   });
 
+  it("rejects a terminal result after the frozen TurnJob ends or its TaskBrief digest changes", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Frozen turn terminal guard" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-frozen-turn", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    const turn = await createRunningTurn(brief);
+    const request = { goal: brief.goal };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: request },
+    });
+    const invocationId = `${project.id}-ended-turn`;
+    await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request });
+    await prisma.conversationTurnJob.update({ where: { id: turn.id }, data: { status: "succeeded" } });
+    await expect(store.commitToolFailure({
+      invocationId,
+      observation: { observationId: `${project.id}-ended-turn-observation`, status: "failed", reasonCodes: ["late"], payload: {} },
+      event: eventInput(project.id, brief.taskId, `${project.id}-ended-turn-event`, "tool_observed", {
+        observationId: `${project.id}-ended-turn-observation`, status: "failed",
+      }),
+    })).rejects.toThrow("stale");
+
+    await prisma.conversationTurnJob.update({ where: { id: turn.id }, data: { status: "running" } });
+    const replacementBrief = createTaskBrief({
+      taskId: brief.taskId,
+      projectId: brief.projectId,
+      intentEpoch: brief.intentEpoch,
+      goal: "同一轮被替换的任务目标",
+      requestedOutputs: brief.requestedOutputs,
+      constraints: brief.constraints,
+      excludedOutputs: brief.excludedOutputs,
+      generationIntensity: brief.generationIntensity,
+      sourceMessageId: brief.sourceMessageId,
+    });
+    await prisma.taskAggregate.update({
+      where: { projectId_intentEpoch: { projectId: project.id, intentEpoch: 0 } },
+      data: { taskBriefJson: JSON.stringify(replacementBrief) },
+    });
+    await expect(store.commitToolFailure({
+      invocationId,
+      observation: { observationId: `${project.id}-changed-brief-observation`, status: "failed", reasonCodes: ["late"], payload: {} },
+      event: eventInput(project.id, brief.taskId, `${project.id}-changed-brief-event`, "tool_observed", {
+        observationId: `${project.id}-changed-brief-observation`, status: "failed",
+      }),
+    })).rejects.toThrow("stale");
+  });
+
+  it("rejects a Tool terminal whose event kind contradicts the Observation", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool terminal event matrix" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-event-matrix", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const request = { goal: brief.goal };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: request },
+    });
+    const invocationId = `${project.id}-event-matrix`;
+    await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request });
+    const observationId = `${project.id}-event-matrix-observation`;
+    await expect(store.commitToolFailure({
+      invocationId,
+      observation: { observationId, status: "failed", reasonCodes: ["validation_failed"], payload: {} },
+      event: eventInput(project.id, brief.taskId, `${project.id}-event-matrix-event`, "artifact_committed", {
+        observationId, status: "failed",
+      }),
+    })).rejects.toThrow("terminal");
+    expect(await store.getToolInvocation(invocationId)).toMatchObject({ status: "running" });
+  });
+
   it("atomically binds a Main Agent claim to the actual action, TurnJob identity and attempted audit", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "Tool authority claim" });
@@ -678,7 +807,7 @@ describe("control-plane persistence", () => {
         observationId: secondObservationId,
         status: "failed",
       }),
-    })).rejects.toThrow("terminal status");
+    })).rejects.toThrow("terminal");
     await expect(store.commitToolFailure({
       invocationId: secondInvocationId,
       observation: {
@@ -691,7 +820,7 @@ describe("control-plane persistence", () => {
         observationId: secondObservationId,
         status: "succeeded",
       }),
-    })).rejects.toThrow("terminal status");
+    })).rejects.toThrow("cannot persist a successful terminal result");
     await expect(store.commitToolFailure({
       invocationId: secondInvocationId,
       observation: {
@@ -726,6 +855,632 @@ describe("control-plane persistence", () => {
     expect(await prisma.orchestrationAuditEvent.count({
       where: { toolInvocationId: secondInvocationId, recordType: "resolved" },
     })).toBe(0);
+  });
+
+  it("freezes Tool result mode at claim time and derives terminal status from persisted facts", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Tool result mode" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-result-mode", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+
+    const artifactEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "create_requirement_spec", arguments: {} },
+    });
+    const artifactInvocationId = `${project.id}-artifact-required`;
+    await store.startToolInvocation({
+      invocationId: artifactInvocationId,
+      envelope: artifactEnvelope,
+      toolName: "create_requirement_spec",
+      request: {},
+    });
+    const missingArtifactObservationId = `${project.id}-missing-artifact`;
+    await expect(store.commitToolObservation({
+      invocationId: artifactInvocationId,
+      observation: {
+        observationId: missingArtifactObservationId,
+        status: "succeeded",
+        reasonCodes: ["tool_succeeded"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-missing-artifact-event`, "artifact_committed", {
+        observationId: missingArtifactObservationId,
+        status: "succeeded",
+      }),
+    })).rejects.toThrow("without an Artifact binding");
+    expect(await store.getToolInvocation(artifactInvocationId)).toMatchObject({ status: "running" });
+    expect(await store.getObservation(missingArtifactObservationId)).toBeNull();
+
+    const checkpointRequest = { question: "请选择本轮重点" };
+    const checkpointEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "request_teacher_decision", arguments: checkpointRequest },
+    });
+    const checkpointInvocationId = `${project.id}-dialogue-checkpoint`;
+    await store.startToolInvocation({
+      invocationId: checkpointInvocationId,
+      envelope: checkpointEnvelope,
+      toolName: "request_teacher_decision",
+      request: checkpointRequest,
+    });
+    const forgedArtifactObservationId = `${project.id}-dialogue-forged-artifact`;
+    await expect(store.commitToolObservation({
+      invocationId: checkpointInvocationId,
+      observation: {
+        observationId: forgedArtifactObservationId,
+        status: "succeeded",
+        reasonCodes: ["dialogue_checkpoint_succeeded"],
+        payload: {},
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-dialogue-forged-event`, "artifact_committed", {
+        observationId: forgedArtifactObservationId,
+        status: "succeeded",
+      }),
+    })).rejects.toThrow("event kind");
+    expect(await store.getToolInvocation(checkpointInvocationId)).toMatchObject({ status: "running" });
+    expect(await store.getObservation(forgedArtifactObservationId)).toBeNull();
+
+    const checkpointObservationId = `${project.id}-dialogue-observation`;
+    await store.commitToolObservation({
+      invocationId: checkpointInvocationId,
+      observation: {
+        observationId: checkpointObservationId,
+        status: "needs_input",
+        reasonCodes: ["dialogue_checkpoint_requested"],
+        payload: { question: checkpointRequest.question },
+      },
+      event: eventInput(project.id, brief.taskId, `${project.id}-dialogue-event`, "decision_pending", {
+        observationId: checkpointObservationId,
+        status: "needs_input",
+        artifactId: "caller-forged-artifact",
+      }),
+    });
+    expect(await store.getToolInvocation(checkpointInvocationId)).toMatchObject({
+      status: "succeeded",
+      artifactId: null,
+      observationId: checkpointObservationId,
+    });
+    const checkpointEvent = await prisma.agentEventRecord.findUniqueOrThrow({
+      where: { eventId: `${project.id}-dialogue-event` },
+    });
+    expect(JSON.parse(checkpointEvent.payloadJson)).toEqual(expect.objectContaining({
+      observationId: checkpointObservationId,
+      status: "needs_input",
+      reasonCodes: ["dialogue_checkpoint_requested"],
+      toolName: "request_teacher_decision",
+    }));
+    expect(JSON.parse(checkpointEvent.payloadJson)).not.toHaveProperty("artifactId");
+  });
+
+  it("rejects a Provider success without generation evidence or with the wrong Artifact kind", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Provider terminal evidence" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-provider-terminal-evidence", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const source = await prisma.artifact.create({
+      data: {
+        projectId: project.id, taskId: brief.taskId, taskBriefDigest: brief.digest,
+        intentEpoch: brief.intentEpoch, planRevision: 0, origin: "tool_result",
+        nodeKey: "ppt_draft", kind: "ppt_draft", title: "课堂图片输入",
+        status: "approved", summary: "已确认大纲", markdownContent: "", structuredContentJson: "{}", version: 1,
+      },
+    });
+    const request = { sourceArtifactId: source.id, sourceArtifactVersion: source.version };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "generate_classroom_image", arguments: request },
+    });
+    const invocationId = `${project.id}-provider-terminal-evidence`;
+    await store.startArtifactRouteToolInvocation({
+      invocationId, envelope, toolName: "generate_classroom_image", request,
+    });
+    const event = (observationId: string, suffix: string) => ({
+      ...eventInput(project.id, brief.taskId, `${project.id}-${suffix}`, "artifact_committed", {
+        observationId,
+        status: "succeeded",
+      }),
+      runId: `artifact-route:${invocationId}`,
+    });
+    const wrongKindObservationId = `${project.id}-wrong-kind-observation`;
+    await expect(store.commitToolResult({
+      invocationId,
+      artifact: artifactInput("错误类型成果"),
+      observation: {
+        observationId: wrongKindObservationId, status: "succeeded", reasonCodes: ["tool_succeeded"], payload: {},
+      },
+      event: event(wrongKindObservationId, "wrong-kind-event"),
+    })).rejects.toThrow("server result contract");
+
+    const missingEvidenceObservationId = `${project.id}-missing-provider-evidence`;
+    await expect(store.commitToolResult({
+      invocationId,
+      artifact: {
+        nodeKey: "image_prompts", kind: "image_prompts", title: "无证据图片", status: "needs_review",
+        summary: "不应提交", markdownContent: "", structuredContent: {},
+      },
+      observation: {
+        observationId: missingEvidenceObservationId,
+        status: "succeeded",
+        reasonCodes: ["tool_succeeded"],
+        payload: {},
+      },
+      event: event(missingEvidenceObservationId, "missing-provider-evidence-event"),
+    })).rejects.toThrow("GenerationJob and ValidationReport evidence");
+    expect(await store.getToolInvocation(invocationId)).toMatchObject({ status: "running" });
+    expect(await store.getObservation(wrongKindObservationId)).toBeNull();
+    expect(await store.getObservation(missingEvidenceObservationId)).toBeNull();
+  });
+
+  it("binds a reused Artifact to its completed GenerationJob instead of trusting payload IDs", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Artifact replay binding" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-replay-binding", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const sourceArtifact = await prisma.artifact.create({
+      data: {
+        projectId: project.id,
+        taskId: brief.taskId,
+        taskBriefDigest: brief.digest,
+        intentEpoch: 0,
+        planRevision: 0,
+        origin: "tool_result",
+        nodeKey: "ppt_design_draft",
+        kind: "ppt_design_draft",
+        title: "PPT设计稿",
+        status: "approved",
+        summary: "PPTX生成输入",
+        markdownContent: "",
+        structuredContentJson: trustedStructuredContentJson(),
+        version: 1,
+      },
+    });
+    const request = { sourceArtifactId: sourceArtifact.id, sourceArtifactVersion: sourceArtifact.version };
+    const productionEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 0,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "generate_pptx_from_design", arguments: request },
+    });
+    const productionInvocationId = `${project.id}-artifact-production`;
+    await store.startToolInvocation({
+      invocationId: productionInvocationId,
+      envelope: productionEnvelope,
+      toolName: "generate_pptx_from_design",
+      request,
+    });
+    const queuedJob = await service.createGenerationJob(project.id, {
+      kind: "pptx",
+      sourceArtifactId: sourceArtifact.id,
+      capabilityId: "coze_ppt",
+      idempotencyKey: productionEnvelope.idempotencyKey,
+      sourceArtifactIds: [sourceArtifact.id],
+      inputSnapshot: {
+        toolName: "generate_pptx_from_design",
+        arguments: request,
+        taskBriefDigest: brief.digest,
+        intentEpoch: brief.intentEpoch,
+        sourceArtifacts: [{
+          artifactId: sourceArtifact.id,
+          kind: sourceArtifact.kind,
+          version: sourceArtifact.version,
+        }],
+      },
+    });
+    const runningJob = (await service.startGenerationJobForExecution(project.id, queuedJob.id)).job;
+    const artifactDraft = {
+      nodeKey: "pptx_artifact" as const,
+      kind: "pptx_artifact" as const,
+      title: "已生成课件",
+      summary: "真实生成结果",
+      markdownContent: "",
+      structuredContent: {},
+    };
+    const validationReport = validateToolExecutionResult({
+      tool: getToolDefinition("generate_pptx_from_design"),
+      projectId: project.id,
+      result: {
+        status: "succeeded",
+        artifactDraft,
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          placeholder: false,
+          producedArtifactKind: "pptx_artifact",
+        },
+        qualityGate: { passed: true, gates: ["offline_pptx_contract"] },
+      },
+      inputHash: runningJob.inputHash!,
+      intentEpoch: brief.intentEpoch,
+    });
+    const productionObservationId = `${project.id}-artifact-production-observation`;
+    await store.commitToolResult({
+      invocationId: productionInvocationId,
+      generationJobId: runningJob.id,
+      artifact: { ...artifactDraft, status: "needs_review", validationReport },
+      observation: {
+        observationId: productionObservationId,
+        status: "succeeded",
+        reasonCodes: ["provider_tool_succeeded"],
+        payload: {},
+      },
+      event: eventInput(
+        project.id,
+        brief.taskId,
+        `${project.id}-artifact-production-event`,
+        "artifact_committed",
+        { observationId: productionObservationId, status: "succeeded" },
+      ),
+    });
+    const productionInvocation = await store.getToolInvocation(productionInvocationId);
+    const artifact = await prisma.artifact.findUniqueOrThrow({ where: { id: productionInvocation!.artifactId! } });
+    const generationJob = await prisma.generationJob.findUniqueOrThrow({ where: { id: runningJob.id } });
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 1,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "generate_pptx_from_design", arguments: request },
+    });
+    const invocationId = `${project.id}-artifact-replay`;
+    await store.startArtifactRouteToolInvocation({
+      invocationId,
+      envelope,
+      toolName: "generate_pptx_from_design",
+      request,
+    });
+    const observationId = `${project.id}-artifact-replay-observation`;
+    const replayInput = {
+      invocationId,
+      observation: {
+        observationId,
+        status: "succeeded",
+        reasonCodes: ["generation_result_reused"],
+        payload: {},
+      },
+      event: {
+        ...eventInput(project.id, brief.taskId, `${project.id}-artifact-replay-event`, "artifact_committed", {
+          observationId,
+          status: "succeeded",
+        }),
+        runId: `artifact-route:${invocationId}`,
+      },
+    };
+    await expect(store.commitToolObservation({
+      ...replayInput,
+      existingArtifact: { artifactId: artifact.id, generationJobId: "missing-job" },
+    })).rejects.toThrow("completed GenerationJob");
+    await store.commitToolObservation({
+      ...replayInput,
+      existingArtifact: { artifactId: artifact.id, generationJobId: generationJob.id },
+    });
+    expect(await store.getToolInvocation(invocationId)).toMatchObject({
+      status: "succeeded",
+      artifactId: artifact.id,
+      observationId,
+    });
+    expect(await store.getObservation(observationId)).toMatchObject({ artifactId: artifact.id });
+    const event = await prisma.agentEventRecord.findUniqueOrThrow({ where: { eventId: replayInput.event.eventId } });
+    expect(JSON.parse(event.payloadJson)).toMatchObject({
+      artifactId: artifact.id,
+      observationId,
+      reasonCodes: ["generation_result_reused"],
+      toolName: "generate_pptx_from_design",
+    });
+
+    await prisma.validationReportRecord.delete({ where: { generationJobId: generationJob.id } });
+    const rejectedEnvelope = createExecutionEnvelope({
+      actorUserId: "teacher-1",
+      taskBrief: brief,
+      planRevision: 2,
+      intensity: "standard",
+      intentGrant: grant,
+      action: { toolName: "generate_pptx_from_design", arguments: request },
+    });
+    const rejectedInvocationId = `${project.id}-artifact-replay-without-report`;
+    await store.startArtifactRouteToolInvocation({
+      invocationId: rejectedInvocationId,
+      envelope: rejectedEnvelope,
+      toolName: "generate_pptx_from_design",
+      request,
+    });
+    const rejectedObservationId = `${project.id}-artifact-replay-without-report-observation`;
+    await expect(store.commitToolObservation({
+      invocationId: rejectedInvocationId,
+      existingArtifact: { artifactId: artifact.id, generationJobId: generationJob.id },
+      observation: {
+        observationId: rejectedObservationId,
+        status: "succeeded",
+        reasonCodes: ["generation_result_reused"],
+        payload: {},
+      },
+      event: {
+        ...eventInput(project.id, brief.taskId, `${project.id}-artifact-replay-without-report-event`, "artifact_committed", {
+          observationId: rejectedObservationId,
+          status: "succeeded",
+        }),
+        runId: `artifact-route:${rejectedInvocationId}`,
+      },
+    })).rejects.toThrow("valid persisted Provider evidence");
+  });
+
+  it("cannot fail another GenerationJob from the same project and IntentEpoch", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "GenerationJob invocation binding" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-generation-binding", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const createSource = (title: string) => prisma.artifact.create({
+      data: {
+        projectId: project.id, taskId: brief.taskId, taskBriefDigest: brief.digest,
+        intentEpoch: brief.intentEpoch, planRevision: 0, origin: "tool_result",
+        nodeKey: "ppt_design_draft", kind: "ppt_design_draft", title,
+        status: "approved", summary: title, markdownContent: "", structuredContentJson: trustedStructuredContentJson(), version: 1,
+      },
+    });
+    const [intendedSource, unrelatedSource] = await Promise.all([
+      createSource("当前调用输入"),
+      createSource("同 epoch 的其他输入"),
+    ]);
+    const createRunningJob = async (sourceArtifact: typeof intendedSource) => {
+      const queued = await service.createGenerationJob(project.id, {
+        kind: "pptx",
+        sourceArtifactId: sourceArtifact.id,
+        capabilityId: "coze_ppt",
+        inputSnapshot: {
+          source: {
+            id: sourceArtifact.id,
+            kind: sourceArtifact.kind,
+            nodeKey: sourceArtifact.nodeKey,
+            version: sourceArtifact.version,
+          },
+        },
+      });
+      return (await service.startGenerationJobForExecution(project.id, queued.id)).job;
+    };
+    const [intendedJob, unrelatedJob] = await Promise.all([
+      createRunningJob(intendedSource),
+      createRunningJob(unrelatedSource),
+    ]);
+    const request = {
+      sourceArtifactId: intendedSource.id,
+      sourceArtifactVersion: intendedSource.version,
+    };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "generate_pptx_from_design", arguments: request },
+    });
+    const invocationId = `${project.id}-generation-binding`;
+    await store.startArtifactRouteToolInvocation({
+      invocationId, envelope, toolName: "generate_pptx_from_design", request,
+    });
+    const rejectedObservationId = `${project.id}-wrong-job-observation`;
+    await expect(store.commitToolFailure({
+      invocationId,
+      generationJob: { jobId: unrelatedJob.id, status: "failed", errorMessage: "wrong job" },
+      observation: {
+        observationId: rejectedObservationId,
+        status: "failed",
+        reasonCodes: ["provider_failed"],
+        payload: {},
+      },
+      event: {
+        ...eventInput(project.id, brief.taskId, `${project.id}-wrong-job-event`, "tool_observed", {
+          observationId: rejectedObservationId,
+          status: "failed",
+        }),
+        runId: `artifact-route:${invocationId}`,
+      },
+    })).rejects.toThrow("GenerationJob does not match");
+    expect(await store.getToolInvocation(invocationId)).toMatchObject({ status: "running" });
+    expect(await store.getObservation(rejectedObservationId)).toBeNull();
+    expect(await prisma.generationJob.findUniqueOrThrow({ where: { id: unrelatedJob.id } }))
+      .toMatchObject({ status: "running" });
+
+    const observationId = `${project.id}-bound-job-observation`;
+    await store.commitToolFailure({
+      invocationId,
+      generationJob: { jobId: intendedJob.id, status: "failed", errorMessage: "provider failed" },
+      observation: { observationId, status: "failed", reasonCodes: ["provider_failed"], payload: {} },
+      event: {
+        ...eventInput(project.id, brief.taskId, `${project.id}-bound-job-event`, "tool_observed", {
+          observationId,
+          status: "failed",
+        }),
+        runId: `artifact-route:${invocationId}`,
+      },
+    });
+    expect(await prisma.generationJob.findUniqueOrThrow({ where: { id: intendedJob.id } }))
+      .toMatchObject({ status: "failed" });
+  });
+
+  it("rejects terminal replay when any audit, Observation, Event or Artifact fact is incomplete", async () => {
+    const missingAudit = await createReplayFixtureWithoutTerminalAudit();
+    await expect(replayFailedInvocation(missingAudit)).rejects.toThrow("terminal replay facts");
+
+    const missingEvent = await createFailedReplayFixture("missing-event");
+    await prisma.agentEventRecord.delete({ where: { eventId: missingEvent.eventId } });
+    await expect(replayFailedInvocation(missingEvent)).rejects.toThrow("terminal replay facts");
+
+    const mismatchedObservation = await createFailedReplayFixture("mismatched-observation");
+    await prisma.observationRecord.update({
+      where: { observationId: mismatchedObservation.observationId },
+      data: { status: "succeeded" },
+    });
+    await expect(replayFailedInvocation(mismatchedObservation)).rejects.toThrow("terminal replay facts");
+
+    const unexpectedArtifact = await createFailedReplayFixture("unexpected-artifact");
+    const artifact = await prisma.artifact.create({
+      data: {
+        projectId: unexpectedArtifact.projectId,
+        taskId: unexpectedArtifact.brief.taskId,
+        taskBriefDigest: unexpectedArtifact.brief.digest,
+        intentEpoch: unexpectedArtifact.brief.intentEpoch,
+        planRevision: 0,
+        origin: "main_agent",
+        nodeKey: "requirement_spec",
+        kind: "requirement_spec",
+        title: "不应绑定到失败回放的成果",
+        status: "draft",
+        summary: "invalid replay fixture",
+        markdownContent: "",
+        structuredContentJson: "{}",
+        version: 1,
+      },
+    });
+    await prisma.toolInvocationRecord.update({
+      where: { invocationId: unexpectedArtifact.invocationId },
+      data: { artifactId: artifact.id },
+    });
+    await prisma.observationRecord.update({
+      where: { observationId: unexpectedArtifact.observationId },
+      data: { artifactId: artifact.id },
+    });
+    await expect(replayFailedInvocation(unexpectedArtifact)).rejects.toThrow("terminal replay facts");
+  });
+
+  it.each([
+    ["authority", (report: ValidationReport) => reissueFailureReport(report, { authority: "advisory_semantic" as never })],
+    ["domain", (report: ValidationReport) => reissueFailureReport(report, { domain: "generic" })],
+    ["stage", (report: ValidationReport) => reissueFailureReport(report, { stage: "video_segment_generate" })],
+    ["contract", (report: ValidationReport) => reissueFailureReport(report, {
+      contract: { id: "tool:generate_video_segment", version: "tool-v1" },
+    })],
+    ["inputHash", (report: ValidationReport) => reissueFailureReport(report, { inputHash: "f".repeat(64) })],
+    ["IntentEpoch", (report: ValidationReport) => reissueFailureReport(report, { intentEpoch: undefined })],
+    ["target digest", (report: ValidationReport) => reissueFailureReport(report, {
+      target: { ...report.target, targetDigest: "a".repeat(64) },
+    })],
+  ])("rejects a failure ValidationReport with caller-controlled %s", async (_label, mutate) => {
+    const fixture = await createFailureValidationFixture();
+    await expect(fixture.store.commitToolFailure({
+      invocationId: fixture.invocationId,
+      validationReport: mutate(fixture.report),
+      observation: {
+        observationId: fixture.observationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: {},
+      },
+      event: eventInput(fixture.projectId, fixture.brief.taskId, fixture.eventId, "tool_observed", {
+        observationId: fixture.observationId,
+        status: "failed",
+      }),
+    })).rejects.toThrow("ValidationReport is invalid");
+    expect(await prisma.validationReportRecord.count({ where: { projectId: fixture.projectId } })).toBe(0);
+    expect(await fixture.store.getToolInvocation(fixture.invocationId)).toMatchObject({ status: "running" });
+  });
+
+  it("persists a server-bound failure ValidationReport with the Tool capability identity", async () => {
+    const fixture = await createFailureValidationFixture();
+    await fixture.store.commitToolFailure({
+      invocationId: fixture.invocationId,
+      validationReport: fixture.report,
+      observation: {
+        observationId: fixture.observationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        payload: {},
+      },
+      event: eventInput(fixture.projectId, fixture.brief.taskId, fixture.eventId, "tool_observed", {
+        observationId: fixture.observationId,
+        status: "failed",
+      }),
+    });
+    expect(await prisma.validationReportRecord.findUniqueOrThrow({ where: { id: fixture.report.reportId } }))
+      .toMatchObject({ capabilityId: "requirement_spec", stage: "requirement_spec", overallStatus: "failed" });
+  });
+
+  it("rejects an Artifact replay produced by a different Tool and GenerationJob contract", async () => {
+    const service = createWorkbenchService();
+    const project = await service.createProject({ title: "Cross-tool Artifact replay" });
+    const brief = taskBrief(project.id);
+    const grant = intentGrant(brief.taskId, project.id);
+    const store = createControlPlaneStore();
+    await store.upsertTaskAggregate({
+      taskBrief: brief,
+      intentGrant: grant,
+      plan: { planId: "plan-cross-tool-replay", revision: 0, status: "active" },
+      checkpoint: null,
+    });
+    await createRunningTurn(brief);
+    const artifact = await prisma.artifact.create({
+      data: {
+        projectId: project.id, taskId: brief.taskId, taskBriefDigest: brief.digest,
+        intentEpoch: 0, planRevision: 0, origin: "tool_result", nodeKey: "image_asset", kind: "image_asset",
+        title: "另一工具的图片", status: "needs_review", summary: "不属于PPTX工具", markdownContent: "",
+        structuredContentJson: "{}", version: 1,
+      },
+    });
+    const generationJob = await prisma.generationJob.create({
+      data: {
+        projectId: project.id, kind: "image", sourceArtifactId: "source-artifact", intentEpoch: 0,
+        status: "succeeded", pollState: "completed", resultArtifactId: artifact.id,
+      },
+    });
+    const request = { sourceArtifactId: "source-artifact" };
+    const envelope = createExecutionEnvelope({
+      actorUserId: "teacher-1", taskBrief: brief, planRevision: 0, intensity: "standard", intentGrant: grant,
+      action: { toolName: "generate_pptx_from_design", arguments: request },
+    });
+    const invocationId = `${project.id}-cross-tool-replay`;
+    await store.startArtifactRouteToolInvocation({
+      invocationId, envelope, toolName: "generate_pptx_from_design", request,
+    });
+    const observationId = `${project.id}-cross-tool-observation`;
+    await expect(store.commitToolObservation({
+      invocationId,
+      existingArtifact: { artifactId: artifact.id, generationJobId: generationJob.id },
+      observation: { observationId, status: "succeeded", reasonCodes: ["generation_result_reused"], payload: {} },
+      event: {
+        ...eventInput(project.id, brief.taskId, `${project.id}-cross-tool-event`, "artifact_committed", {
+          observationId, status: "succeeded",
+        }),
+        runId: `artifact-route:${invocationId}`,
+      },
+    })).rejects.toThrow("contract");
+    expect(await store.getToolInvocation(invocationId)).toMatchObject({ status: "running" });
   });
 
   it("atomically persists a run failure Observation while pausing the latest TaskAggregate", async () => {
@@ -809,14 +1564,14 @@ function eventInput(
   projectId: string,
   taskId: string,
   eventId: string,
-  kind: "task_created" | "task_updated" | "tool_started" | "tool_observed" | "artifact_committed" | "run_failed",
+  kind: "task_created" | "task_updated" | "tool_started" | "tool_observed" | "artifact_committed" | "decision_pending" | "run_failed",
   payload: Record<string, unknown> = {},
 ) {
   return {
     eventId,
     projectId,
     taskId,
-    runId: "run-1",
+    runId: "turn:message-1",
     intentEpoch: 0,
     kind,
     visibility: "internal" as const,
@@ -839,6 +1594,183 @@ async function createRunningTurn(
       authSessionId: overrides.authSessionId ?? null,
     },
   });
+}
+
+async function createFailedReplayFixture(label: string) {
+  const service = createWorkbenchService();
+  const project = await service.createProject({ title: `Terminal replay ${label}` });
+  const brief = taskBrief(project.id);
+  const grant = intentGrant(brief.taskId, project.id);
+  const store = createControlPlaneStore();
+  await store.upsertTaskAggregate({
+    taskBrief: brief,
+    intentGrant: grant,
+    plan: { planId: `plan-replay-${label}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
+  await createRunningTurn(brief);
+  const request = { goal: brief.goal, label };
+  const envelope = createExecutionEnvelope({
+    actorUserId: "teacher-1",
+    taskBrief: brief,
+    planRevision: 0,
+    intensity: "standard",
+    intentGrant: grant,
+    action: { toolName: "create_requirement_spec", arguments: request },
+  });
+  const invocationId = `${project.id}-replay-${label}`;
+  const observationId = `${invocationId}-observation`;
+  const eventId = `${invocationId}-event`;
+  await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request });
+  await store.commitToolFailure({
+    invocationId,
+    observation: { observationId, status: "failed", reasonCodes: ["validation_failed"], payload: {} },
+    event: eventInput(project.id, brief.taskId, eventId, "tool_observed", {
+      observationId,
+      status: "failed",
+    }),
+  });
+  return { store, projectId: project.id, brief, envelope, request, invocationId, observationId, eventId };
+}
+
+async function createReplayFixtureWithoutTerminalAudit() {
+  const fixture = await createClaimedReplayFixture("missing-audit");
+  await prisma.observationRecord.create({
+    data: {
+      observationId: fixture.observationId,
+      projectId: fixture.projectId,
+      taskId: fixture.brief.taskId,
+      invocationId: fixture.invocationId,
+      intentEpoch: fixture.brief.intentEpoch,
+      status: "failed",
+      reasonCodesJson: JSON.stringify(["validation_failed"]),
+      payloadJson: "{}",
+    },
+  });
+  await prisma.agentEventRecord.create({
+    data: {
+      eventId: fixture.eventId,
+      projectId: fixture.projectId,
+      taskId: fixture.brief.taskId,
+      runId: `turn:${fixture.brief.sourceMessageId}`,
+      intentEpoch: fixture.brief.intentEpoch,
+      sequence: 1,
+      kind: "tool_observed",
+      visibility: "internal",
+      occurredAt: new Date("2026-07-14T00:00:00.000Z"),
+      envelopeJson: "{}",
+      payloadJson: JSON.stringify({
+        observationId: fixture.observationId,
+        status: "failed",
+        reasonCodes: ["validation_failed"],
+        toolName: "create_requirement_spec",
+      }),
+    },
+  });
+  await prisma.toolInvocationRecord.update({
+    where: { invocationId: fixture.invocationId },
+    data: { status: "failed", observationId: fixture.observationId, finishedAt: new Date() },
+  });
+  return fixture;
+}
+
+async function createClaimedReplayFixture(label: string) {
+  const service = createWorkbenchService();
+  const project = await service.createProject({ title: `Claimed terminal replay ${label}` });
+  const brief = taskBrief(project.id);
+  const grant = intentGrant(brief.taskId, project.id);
+  const store = createControlPlaneStore();
+  await store.upsertTaskAggregate({
+    taskBrief: brief,
+    intentGrant: grant,
+    plan: { planId: `plan-claimed-replay-${label}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
+  await createRunningTurn(brief);
+  const request = { goal: brief.goal, label };
+  const envelope = createExecutionEnvelope({
+    actorUserId: "teacher-1",
+    taskBrief: brief,
+    planRevision: 0,
+    intensity: "standard",
+    intentGrant: grant,
+    action: { toolName: "create_requirement_spec", arguments: request },
+  });
+  const invocationId = `${project.id}-claimed-replay-${label}`;
+  await store.startToolInvocation({ invocationId, envelope, toolName: "create_requirement_spec", request });
+  return {
+    store,
+    projectId: project.id,
+    brief,
+    envelope,
+    request,
+    invocationId,
+    observationId: `${invocationId}-observation`,
+    eventId: `${invocationId}-event`,
+  };
+}
+
+function replayFailedInvocation(fixture: Awaited<ReturnType<typeof createFailedReplayFixture>>) {
+  return fixture.store.startToolInvocation({
+    invocationId: `${fixture.invocationId}-replay-request`,
+    envelope: fixture.envelope,
+    toolName: "create_requirement_spec",
+    request: fixture.request,
+  });
+}
+
+async function createFailureValidationFixture() {
+  const service = createWorkbenchService();
+  const project = await service.createProject({ title: `Failure validation ${randomUUID()}` });
+  const brief = taskBrief(project.id);
+  const grant = intentGrant(brief.taskId, project.id);
+  const store = createControlPlaneStore();
+  await store.upsertTaskAggregate({
+    taskBrief: brief,
+    intentGrant: grant,
+    plan: { planId: `plan-validation-${project.id}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
+  await createRunningTurn(brief);
+  const tool = getToolDefinition("create_requirement_spec");
+  const contract = resolveRuntimeContract(tool);
+  const request = { goal: brief.goal };
+  const envelope = createExecutionEnvelope({
+    actorUserId: "teacher-1",
+    taskBrief: brief,
+    planRevision: 0,
+    intensity: "standard",
+    intentGrant: grant,
+    action: { toolName: tool.id, arguments: request },
+  });
+  const invocationId = `${project.id}-validation`;
+  await store.startToolInvocation({ invocationId, envelope, toolName: tool.id, request });
+  const report = createValidationReport({
+    reportId: `${invocationId}-report`,
+    createdAt: "2026-07-19T00:00:00.000Z",
+    domain: "lesson",
+    stage: contract.capabilityId,
+    target: { kind: "tool_invocation", targetId: invocationId },
+    contract: { id: contract.id, version: contract.version },
+    inputHash: envelope.idempotencyKey,
+    intentEpoch: brief.intentEpoch,
+    overallStatus: "failed",
+    gates: [],
+  });
+  return {
+    store,
+    projectId: project.id,
+    brief,
+    invocationId,
+    report,
+    observationId: `${invocationId}-observation`,
+    eventId: `${invocationId}-event`,
+  };
+}
+
+function reissueFailureReport(report: ValidationReport, patch: Partial<ValidationReport>) {
+  const input = omitFixtureFields(report, "reportDigest");
+  return createValidationReport({ ...input, ...patch } as never);
 }
 
 function orchestrationAuditDigest(event: Record<string, unknown>) {
@@ -867,4 +1799,14 @@ function artifactInput(title: string) {
     markdownContent: "# 需求规格",
     structuredContent: { goal: "整理百分数备课需求" },
   };
+}
+
+function trustedStructuredContentJson() {
+  return JSON.stringify({
+    artifactQualityState: {
+      validationStatus: "passed",
+      reviewStatus: "passed",
+      downstreamEligibility: "eligible",
+    },
+  });
 }

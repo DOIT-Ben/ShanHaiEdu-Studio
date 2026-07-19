@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 
 import type { OrchestrationAuditEvent, PrismaClient } from "@/generated/prisma/client";
-import { toolInvocationStatusForObservationStatus } from "@/server/conversation/orchestration-tool-authority";
 import { prisma } from "@/server/db/client";
 import { hasValidTaskBrief, type TaskBrief } from "@/server/conversation/task-contract";
 import type { WorkbenchActor } from "@/server/auth/local-session";
 import { evaluateOrchestrationIngressAudit } from "@/server/workbench/orchestration-ingress-audit";
+import { buildAuthorityFactsDigest } from "./orchestration-authority-facts-digest";
+import { evaluateCurrentTaskToolBindings, readCurrentTaskProductFacts } from "./orchestration-authority-tool-facts";
 
 type TransactionClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
@@ -55,19 +56,21 @@ async function readSummaryInTransaction(
   if (!project) throw new Error("orchestration_authority_project_missing");
   const violations = new Set<string>();
   const binding = await deriveSummarySubject(tx, project, input.actorUserId, violations);
+  const facts = await readCurrentTaskProductFacts(tx, project);
   const events = await readCompleteProjectWindow(tx, {
     projectId: project.id,
     taskId: binding.boundTask?.taskId ?? null,
     teacherMessageId: binding.teacherMessageId,
     turnJobId: binding.turnJob?.id ?? null,
-  });
+  }, facts);
   const attempts = evaluateAuditWindow(events, {
     projectId: project.id,
     actorUserId: input.actorUserId,
     hasTask: binding.boundTask !== null,
+    teacherMessageId: binding.teacherMessageId,
+    authSessionDigest: binding.turnJob?.authSessionId ? sha256(binding.turnJob.authSessionId) : null,
   }, violations);
-  const facts = await readProductFacts(tx, project.id);
-  const tools = evaluateToolBindings({ project, actorUserId: input.actorUserId, binding, events, facts, violations });
+  const tools = evaluateCurrentTaskToolBindings({ project, actorUserId: input.actorUserId, binding, events, facts, violations });
   return buildAuthoritySummary({ project, actorUserId: input.actorUserId, binding, events, attempts, facts, tools, violations });
 }
 
@@ -105,7 +108,13 @@ async function deriveSummarySubject(
 
 function evaluateAuditWindow(
   events: readonly OrchestrationAuditEvent[],
-  subject: { projectId: string; actorUserId: string; hasTask: boolean },
+  subject: {
+    projectId: string;
+    actorUserId: string;
+    hasTask: boolean;
+    teacherMessageId: string | null;
+    authSessionDigest: string | null;
+  },
   violations: Set<string>,
 ) {
   const attempts = groupAttempts(events, violations);
@@ -118,143 +127,14 @@ function evaluateAuditWindow(
   return attempts;
 }
 
-async function readProductFacts(tx: TransactionClient, projectId: string) {
-  const [invocations, observations, artifacts, agentEvents] = await Promise.all([
-    tx.toolInvocationRecord.findMany({ where: { projectId }, orderBy: [{ startedAt: "asc" }, { invocationId: "asc" }] }),
-    tx.observationRecord.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { observationId: "asc" }] }),
-    tx.artifact.findMany({ where: { projectId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-    tx.agentEventRecord.findMany({ where: { projectId }, orderBy: [{ sequence: "asc" }, { eventId: "asc" }] }),
-  ]);
-  return { invocations, observations, artifacts, agentEvents };
-}
-
-function evaluateToolBindings(input: {
-  project: { id: string; intentEpoch: number };
-  actorUserId: string;
-  binding: Awaited<ReturnType<typeof deriveSummarySubject>>;
-  events: readonly OrchestrationAuditEvent[];
-  facts: Awaited<ReturnType<typeof readProductFacts>>;
-  violations: Set<string>;
-}) {
-  const { project, actorUserId, binding, events, facts, violations } = input;
-  const { aggregate, boundTask, teacherMessageId, turnJob } = binding;
-  const toolClaims = events.filter((event) => event.operationKind === "tool_invocation" && event.recordType === "attempted");
-  const toolTerminals = events.filter((event) => event.operationKind === "tool_invocation" && event.recordType === "resolved");
-  if (events.some((event) => event.operationKind === "tool_invocation" && event.eventDigest !== auditEventDigest(event))) {
-    violations.add("tool_audit_event_integrity_invalid");
-  }
-  const ordinals = toolClaims.flatMap((event) => Number.isSafeInteger(event.toolOrdinal) ? [event.toolOrdinal!] : []);
-  const sortedOrdinals = [...ordinals].sort((left, right) => left - right);
-  const toolOrdinalsContiguous = sortedOrdinals.length === toolClaims.length &&
-    sortedOrdinals.every((ordinal, index) => ordinal === index + 1);
-  if (!toolOrdinalsContiguous) violations.add("tool_ordinal_discontinuous");
-
-  const invocationById = new Map(facts.invocations.map((row) => [row.invocationId, row]));
-  const observationById = new Map(facts.observations.map((row) => [row.observationId, row]));
-  const artifactById = new Map(facts.artifacts.map((row) => [row.id, row]));
-  for (const claim of toolClaims) {
-    if (claim.authority !== "main_agent") violations.add("tool_selector_authority_invalid");
-    if (claim.outcome !== null || claim.invocationStatus !== "running" ||
-        claim.reasonCode !== "tool_invocation_claimed" ||
-        parsedRecord(claim.payloadJson)?.schemaVersion !== "tool-invocation-audit.v1") {
-      violations.add("tool_claim_contract_invalid");
-    }
-    if (!boundTask || !aggregate || !turnJob ||
-        claim.resolvedProjectId !== project.id || claim.taskId !== boundTask.taskId ||
-        claim.intentEpoch !== project.intentEpoch || claim.teacherMessageId !== teacherMessageId ||
-        claim.turnJobId !== turnJob.id || claim.actorUserId !== actorUserId ||
-        claim.actorAuthMode !== turnJob.actorAuthMode || claim.planId !== aggregate.planId ||
-        claim.planRevision === null || claim.planRevision > aggregate.planRevision) {
-      violations.add("tool_claim_subject_binding_invalid");
-    }
-    const invocation = claim.toolInvocationId ? invocationById.get(claim.toolInvocationId) : undefined;
-    if (!invocation || !matchesInvocationClaim(claim, invocation, actorUserId, boundTask)) {
-      violations.add("tool_invocation_binding_invalid");
-      continue;
-    }
-    const terminal = toolTerminals.find((event) => event.attemptId === claim.attemptId);
-    if (!terminal || !matchesToolTerminalClaim(claim, terminal, invocation.status)) {
-      violations.add("tool_terminal_binding_invalid");
-      continue;
-    }
-    const observation = terminal.observationId ? observationById.get(terminal.observationId) : undefined;
-    if (!observation || observation.invocationId !== invocation.invocationId ||
-        observation.projectId !== project.id || observation.taskId !== invocation.taskId ||
-        observation.intentEpoch !== invocation.intentEpoch || invocation.observationId !== observation.observationId) {
-      violations.add("tool_observation_binding_invalid");
-      continue;
-    }
-    const boundEvent = facts.agentEvents.find((event) => event.taskId === invocation.taskId &&
-      event.intentEpoch === invocation.intentEpoch && parsedRecord(event.payloadJson)?.observationId === observation.observationId);
-    const boundEventPayload = boundEvent ? parsedRecord(boundEvent.payloadJson) : null;
-    if (toolInvocationStatusForObservationStatus(observation.status, boundEvent?.kind) !== invocation.status)
-      violations.add("tool_observation_status_invalid");
-    if (invocation.artifactId || observation.artifactId || boundEvent?.kind === "artifact_committed") {
-      const artifact = invocation.artifactId ? artifactById.get(invocation.artifactId) : undefined;
-      if (!artifact || observation.artifactId !== artifact.id || artifact.taskId !== invocation.taskId ||
-          artifact.intentEpoch !== invocation.intentEpoch || artifact.planRevision !== invocation.planRevision ||
-          artifact.taskBriefDigest !== boundTask?.digest) {
-        violations.add("tool_artifact_binding_invalid");
-      }
-    }
-    if (!boundEvent || (boundEventPayload?.status !== undefined && boundEventPayload.status !== observation.status)) {
-      violations.add("tool_event_binding_invalid");
-    }
-  }
-  return { toolClaims, toolTerminals, sortedOrdinals, toolOrdinalsContiguous };
-}
-
-function buildFactsDigest(
-  binding: Awaited<ReturnType<typeof deriveSummarySubject>>,
-  events: readonly OrchestrationAuditEvent[],
-  facts: Awaited<ReturnType<typeof readProductFacts>>,
-) {
-  const { aggregate, boundTask, turnJob } = binding;
-  const { invocations, observations, artifacts, agentEvents } = facts;
-  return digestDomain("shanhai-orchestration-authority-facts.v1", {
-    subjectBindingDigest: digestDomain("shanhai-orchestration-authority-subject.v1", {
-      aggregate: aggregate ? {
-        taskId: aggregate.taskId, projectId: aggregate.projectId, intentEpoch: aggregate.intentEpoch,
-        planId: aggregate.planId, planRevision: aggregate.planRevision, status: aggregate.status,
-        taskBriefDigest: boundTask?.digest ?? null,
-      } : null,
-      turnJob: turnJob ? {
-        id: turnJob.id, projectId: turnJob.projectId, teacherMessageId: turnJob.teacherMessageId,
-        actorUserId: turnJob.actorUserId, actorAuthMode: turnJob.actorAuthMode, status: turnJob.status,
-      } : null,
-    }),
-    events: events.map((event) => ({ sequence: event.sequence, eventDigest: event.eventDigest })),
-    invocations: invocations.map((row) => ({
-      invocationId: row.invocationId, status: row.status, artifactId: row.artifactId, observationId: row.observationId,
-      envelopeDigest: sha256(row.executionEnvelopeJson), requestDigest: sha256(row.requestJson),
-    })),
-    observations: observations.map((row) => ({
-      observationId: row.observationId, invocationId: row.invocationId, status: row.status,
-      artifactId: row.artifactId, payloadDigest: sha256(row.payloadJson),
-    })),
-    artifacts: artifacts.map((row) => ({
-      id: row.id, taskId: row.taskId, intentEpoch: row.intentEpoch, planRevision: row.planRevision,
-      status: row.status, version: row.version,
-      contentDigest: digestDomain("shanhai-orchestration-authority-artifact.v1", {
-        nodeKey: row.nodeKey, title: row.title, kind: row.kind, status: row.status, summary: row.summary,
-        markdownContent: row.markdownContent, structuredContentJson: row.structuredContentJson, origin: row.origin,
-      }),
-    })),
-    agentEvents: agentEvents.map((row) => ({
-      eventId: row.eventId, sequence: row.sequence, kind: row.kind, runId: row.runId, intentEpoch: row.intentEpoch,
-      envelopeDigest: sha256(row.envelopeJson), payloadDigest: sha256(row.payloadJson),
-    })),
-  });
-}
-
 function buildAuthoritySummary(input: {
   project: { id: string; intentEpoch: number };
   actorUserId: string;
   binding: Awaited<ReturnType<typeof deriveSummarySubject>>;
   events: readonly OrchestrationAuditEvent[];
   attempts: Map<string, OrchestrationAuditEvent[]>;
-  facts: Awaited<ReturnType<typeof readProductFacts>>;
-  tools: ReturnType<typeof evaluateToolBindings>;
+  facts: Awaited<ReturnType<typeof readCurrentTaskProductFacts>>;
+  tools: ReturnType<typeof evaluateCurrentTaskToolBindings>;
   violations: Set<string>;
 }): OrchestrationAuthoritySummary {
   const { project, actorUserId, binding, events, attempts, facts, tools, violations } = input;
@@ -264,14 +144,26 @@ function buildAuthoritySummary(input: {
     "task_aggregate_binding_invalid", "turn_job_missing", "turn_job_ambiguous", "turn_job_actor_binding_invalid",
     "audit_attempt_id_missing", "audit_attempt_pair_invalid", "open_attempt", "external_audit_event_integrity_invalid",
     "external_actor_binding_invalid", "external_authority_invalid", "external_project_binding_invalid",
-    "teacher_task_submission_missing", "tool_ordinal_discontinuous", "tool_claim_subject_binding_invalid",
+    "teacher_task_submission_missing", "teacher_task_submission_session_invalid", "teacher_task_submission_legacy_unbound",
+    "tool_ordinal_discontinuous", "tool_plan_revision_non_monotonic", "tool_claim_subject_binding_invalid",
     "tool_audit_event_integrity_invalid", "tool_claim_contract_invalid",
+    "tool_result_mode_contract_invalid", "tool_event_kind_invalid",
     "tool_invocation_binding_invalid", "tool_terminal_binding_invalid", "tool_observation_binding_invalid", "tool_observation_status_invalid",
-    "tool_artifact_binding_invalid", "tool_event_binding_invalid",
+    "tool_artifact_binding_invalid", "tool_event_binding_invalid", "tool_event_cardinality_invalid",
+    "tool_invocation_audit_cardinality_invalid", "tool_observation_cardinality_invalid",
+    "tool_observation_reverse_binding_invalid", "tool_event_reverse_binding_invalid",
+    "tool_artifact_reverse_binding_invalid", "tool_unexpected_artifact_binding",
+    "tool_artifact_generation_binding_invalid", "tool_generation_binding_invalid",
+    "tool_generation_reverse_binding_invalid", "tool_validation_report_cardinality_invalid",
+    "tool_validation_report_binding_invalid", "tool_validation_report_reverse_binding_invalid",
+    "tool_historical_project_binding_invalid", "tool_historical_actor_binding_invalid",
+    "tool_historical_aggregate_binding_invalid", "tool_historical_subject_binding_invalid",
+    "tool_historical_sequence_invalid",
+    "tool_observation_reason_codes_invalid",
   ]);
   const violationReasonCodes = [...violations].sort(compareText);
   const complete = !violationReasonCodes.some((code) => structuralCodes.has(code));
-  const factsDigest = buildFactsDigest(binding, events, facts);
+  const factsDigest = buildAuthorityFactsDigest(binding, events, facts);
   const publicSummary = {
     schemaVersion: ORCHESTRATION_AUTHORITY_SUMMARY_VERSION,
     subject: {
@@ -316,6 +208,7 @@ function buildAuthoritySummary(input: {
 async function readCompleteProjectWindow(
   tx: TransactionClient,
   subject: { projectId: string; taskId: string | null; teacherMessageId: string | null; turnJobId: string | null },
+  facts: Awaited<ReturnType<typeof readCurrentTaskProductFacts>>,
 ) {
   const selectors: Array<Record<string, unknown>> = [
     { claimedProjectId: subject.projectId },
@@ -324,6 +217,14 @@ async function readCompleteProjectWindow(
   if (subject.taskId) selectors.push({ taskId: subject.taskId });
   if (subject.teacherMessageId) selectors.push({ teacherMessageId: subject.teacherMessageId });
   if (subject.turnJobId) selectors.push({ turnJobId: subject.turnJobId });
+  const taskIds = facts.taskAggregates.map((aggregate) => aggregate.taskId);
+  const teacherMessageIds = facts.turnJobs.map((turnJob) => turnJob.teacherMessageId);
+  const turnJobIds = facts.turnJobs.map((turnJob) => turnJob.id);
+  const toolInvocationIds = facts.invocations.map((invocation) => invocation.invocationId);
+  if (taskIds.length > 0) selectors.push({ taskId: { in: taskIds } });
+  if (teacherMessageIds.length > 0) selectors.push({ teacherMessageId: { in: teacherMessageIds } });
+  if (turnJobIds.length > 0) selectors.push({ turnJobId: { in: turnJobIds } });
+  if (toolInvocationIds.length > 0) selectors.push({ toolInvocationId: { in: toolInvocationIds } });
   const primary = await tx.orchestrationAuditEvent.findMany({
     where: { OR: selectors },
     orderBy: { sequence: "asc" },
@@ -362,7 +263,13 @@ function groupAttempts(events: readonly OrchestrationAuditEvent[], violations: S
 
 function evaluateExternalPolicy(
   events: readonly OrchestrationAuditEvent[],
-  subject: { projectId: string; actorUserId: string; hasTask: boolean },
+  subject: {
+    projectId: string;
+    actorUserId: string;
+    hasTask: boolean;
+    teacherMessageId: string | null;
+    authSessionDigest: string | null;
+  },
   violations: Set<string>,
 ) {
   for (const event of events) {
@@ -374,16 +281,25 @@ function evaluateExternalPolicy(
     }
   }
   const committed = events.filter((event) => event.recordType === "resolved" && event.outcome === "committed");
-  let taskSubmissions = 0;
+  const taskSubmissionMessageIds = new Set<string>();
+  let hasLegacyTaskSubmission = false;
+  let hasCurrentSessionBinding = false;
   for (const event of committed) {
     const payload = parsedRecord(event.payloadJson);
     const operation = typeof payload?.operation === "string" ? payload.operation : null;
     const controlImpact = typeof payload?.controlImpact === "string" ? payload.controlImpact : null;
-    if (!operation || !controlImpact) {
+    if (!payload || !operation || !controlImpact) {
       violations.add("external_audit_payload_invalid");
       continue;
     }
-    if (operation === "teacher_message_submit") taskSubmissions += 1;
+    if (operation === "teacher_message_submit") {
+      if (payload.schemaVersion === undefined && event.teacherMessageId === null) {
+        hasLegacyTaskSubmission = true;
+      } else if (event.teacherMessageId === subject.teacherMessageId && event.teacherMessageId) {
+        taskSubmissionMessageIds.add(event.teacherMessageId);
+        if (event.authSessionDigest === subject.authSessionDigest) hasCurrentSessionBinding = true;
+      }
+    }
     if (operation === "unclassified_external" || controlImpact === "unclassified_external") {
       violations.add("unclassified_external_mutation");
     } else if (controlImpact === "legacy_external_orchestration") {
@@ -392,59 +308,14 @@ function evaluateExternalPolicy(
       violations.add("external_artifact_route_orchestration");
     }
   }
-  if (subject.hasTask && taskSubmissions === 0) violations.add("teacher_task_submission_missing");
-  if (taskSubmissions > 1) violations.add("duplicate_teacher_task_submission");
-}
-
-function matchesInvocationClaim(
-  claim: OrchestrationAuditEvent,
-  invocation: {
-    projectId: string;
-    taskId: string;
-    intentEpoch: number;
-    planRevision: number;
-    toolName: string;
-    executionEnvelopeJson: string;
-    requestJson: string;
-    idempotencyKey: string;
-  },
-  actorUserId: string,
-  taskBrief: TaskBrief | null,
-) {
-  const envelope = parsedRecord(invocation.executionEnvelopeJson);
-  const request = parsedRecord(invocation.requestJson);
-  if (!envelope || !request || !taskBrief) return false;
-  const expectedActionDigest = sha256(JSON.stringify({ toolName: invocation.toolName.trim(), arguments: request }));
-  return invocation.projectId === claim.resolvedProjectId && invocation.taskId === claim.taskId &&
-    invocation.intentEpoch === claim.intentEpoch && invocation.planRevision === claim.planRevision &&
-    invocation.toolName === claim.toolName && invocation.idempotencyKey === claim.idempotencyKey &&
-    claim.executionEnvelopeDigest === sha256(invocation.executionEnvelopeJson) &&
-    claim.requestDigest === sha256(invocation.requestJson) && claim.actionDigest === expectedActionDigest &&
-    envelope.actionDigest === expectedActionDigest && envelope.idempotencyKey === invocation.idempotencyKey &&
-    envelope.actorUserId === actorUserId && envelope.projectId === invocation.projectId &&
-    envelope.taskId === invocation.taskId && envelope.intentEpoch === invocation.intentEpoch &&
-    envelope.planRevision === invocation.planRevision && envelope.taskBriefDigest === taskBrief.digest;
-}
-
-function matchesToolTerminalClaim(
-  claim: OrchestrationAuditEvent,
-  terminal: OrchestrationAuditEvent,
-  invocationStatus: string,
-) {
-  const frozenFields: Array<keyof OrchestrationAuditEvent> = [
-    "attemptId", "operationKind", "authority", "claimedProjectId", "resolvedProjectId",
-    "actorUserId", "actorAuthMode", "authSessionDigest", "taskId", "turnJobId", "teacherMessageId",
-    "toolInvocationId", "intentEpoch", "planRevision", "planId", "toolOrdinal", "toolName",
-    "actionDigest", "idempotencyKey", "executionEnvelopeDigest", "requestDigest",
-  ];
-  const expectedOutcome = invocationStatus === "succeeded"
-    ? "committed"
-    : invocationStatus === "blocked" || invocationStatus === "rejected" ? "rejected" : "failed";
-  return terminal.recordType === "resolved" && terminal.sequence > claim.sequence &&
-    terminal.outcome === expectedOutcome && terminal.invocationStatus === invocationStatus &&
-    terminal.reasonCode === `tool_invocation_${invocationStatus}` &&
-    parsedRecord(terminal.payloadJson)?.schemaVersion === "tool-invocation-audit.v1" &&
-    frozenFields.every((field) => terminal[field] === claim[field]);
+  if (subject.hasTask && taskSubmissionMessageIds.size === 0) {
+    violations.add(hasLegacyTaskSubmission
+      ? "teacher_task_submission_legacy_unbound"
+      : "teacher_task_submission_missing");
+  }
+  if (taskSubmissionMessageIds.size > 0 && !hasCurrentSessionBinding) {
+    violations.add("teacher_task_submission_session_invalid");
+  }
 }
 
 function parseTaskBrief(value: string | undefined): TaskBrief | null {
@@ -475,13 +346,6 @@ function assertSummaryInput(value: unknown): asserts value is { projectId: strin
 
 function digestDomain(domain: string, value: unknown) {
   return createHash("sha256").update(`${domain}\0`, "utf8").update(canonicalJson(value), "utf8").digest("hex");
-}
-
-function auditEventDigest(event: OrchestrationAuditEvent) {
-  const source = Object.fromEntries(Object.entries(event)
-    .filter(([key]) => key !== "sequence" && key !== "eventDigest" && key !== "createdAt")
-    .map(([key, value]) => [key, value instanceof Date ? value.toISOString() : value]));
-  return digestDomain("shanhai-orchestration-audit-event.v1", source);
 }
 
 function canonicalJson(value: unknown): string {

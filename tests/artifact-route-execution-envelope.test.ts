@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as postImage } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { readOrchestrationAuthoritySummary } from "@/server/conversation/orchestration-authority-summary";
 import { createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { prisma } from "@/server/db/client";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
@@ -235,6 +236,54 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     expect(toolAudits[1].requestDigest).toBe(toolAudits[0].requestDigest);
     expect(JSON.stringify(toolAudits)).not.toContain(source.id);
     expect(JSON.stringify(toolAudits)).not.toContain(validPngBase64());
+
+    const reusedResponse = await postImage(routeRequest({ confirmedActionId }), routeContext(project.id, source.id));
+    const reusedPayload = await reusedResponse.json();
+    expect({ status: reusedResponse.status, payload: reusedPayload }).toMatchObject({
+      status: 200,
+      payload: { reused: true },
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    const [reusedInvocations, reusedEvents, reusedJobs] = await Promise.all([
+      prisma.toolInvocationRecord.findMany({ where: { projectId: project.id }, orderBy: { startedAt: "asc" } }),
+      prisma.agentEventRecord.findMany({ where: { projectId: project.id }, orderBy: { sequence: "asc" } }),
+      service.getGenerationJobs(project.id),
+    ]);
+    expect(reusedInvocations).toHaveLength(2);
+    expect(reusedEvents).toHaveLength(2);
+    expect(reusedEvents[1]).toMatchObject({ kind: "artifact_committed", taskId: brief.taskId });
+    expect(reusedJobs).toHaveLength(1);
+
+    const replayedInvocation = reusedInvocations[1];
+    const terminalReplay = await createControlPlaneStore().startArtifactRouteToolInvocation({
+      invocationId: `${replayedInvocation.invocationId}:retry`,
+      envelope: JSON.parse(replayedInvocation.executionEnvelopeJson),
+      toolName: replayedInvocation.toolName,
+      request: JSON.parse(replayedInvocation.requestJson),
+    });
+    expect(terminalReplay).toMatchObject({
+      kind: "terminal_replay",
+      invocation: { invocationId: replayedInvocation.invocationId, status: "succeeded" },
+    });
+    const authoritySummary = await readOrchestrationAuthoritySummary({
+      projectId: project.id,
+      actor: { userId: "local-test-user" },
+    });
+    for (const violation of [
+      "tool_event_kind_invalid",
+      "tool_artifact_binding_invalid",
+      "tool_artifact_reverse_binding_invalid",
+      "tool_artifact_generation_binding_invalid",
+      "tool_generation_binding_invalid",
+    ]) {
+      expect(authoritySummary.violationReasonCodes).not.toContain(violation);
+    }
+    expect(new Set(authoritySummary.violationReasonCodes)).toEqual(new Set([
+      "teacher_task_submission_missing",
+      "tool_selector_authority_invalid",
+    ]));
+    expect(authoritySummary).toMatchObject({ complete: false, readyEligible: false });
   });
 
   it("keeps all three artifact routes on the shared gateway and atomic result boundary", () => {

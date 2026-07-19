@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { digestOrchestrationAuditEvent } from "@/server/conversation/orchestration-audit-event-digest";
 import {
   evaluateOrchestrationIngressAudit,
   resolveOrchestrationIngressOperation,
@@ -99,6 +100,7 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
       reasonCode: "http_2xx",
     });
     expect(JSON.parse(store.events[1].payloadJson)).toEqual({
+      schemaVersion: "orchestration-ingress-audit.v2",
       operation: "project_create",
       routeTemplate: "/api/workbench/projects",
       method: "POST",
@@ -151,6 +153,126 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
     })).rejects.toThrow(/project_resolution_failed/);
     expect(store.events).toHaveLength(1);
     expect(evaluateOrchestrationIngressAudit(store.events).go).toBe(false);
+  });
+
+  it("binds a committed teacher submission to the response message identity", async () => {
+    const store = memoryStore();
+    await runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1/messages", { method: "POST" }),
+      identity: identity(),
+      store,
+      handler: async () => Response.json({ message: { id: "message_1" } }, { status: 202 }),
+      randomId: ids("legacy_attempt_1", "v2_event_1", "v2_event_2"),
+    });
+    expect(store.events[0]).toMatchObject({ teacherMessageId: null, recordType: "attempted" });
+    expect(store.events[1]).toMatchObject({ teacherMessageId: "message_1", recordType: "resolved", outcome: "committed" });
+    expect(evaluateOrchestrationIngressAudit(store.events)).toMatchObject({ go: true });
+  });
+
+  it("keeps pre-v2 audit rows valid without accepting unsigned teacher-message bindings", () => {
+    const legacy = legacyAuditPair();
+    expect(evaluateOrchestrationIngressAudit(legacy)).toMatchObject({ go: true, resolvedCount: 1 });
+
+    const injected = legacy.map((event, index) => index === 1
+      ? { ...event, teacherMessageId: "unsigned_message" }
+      : event);
+    expect(evaluateOrchestrationIngressAudit(injected)).toMatchObject({
+      go: false,
+      invalidAttemptIds: ["legacy_attempt_1"],
+    });
+  });
+
+  it("rejects v2 teacher-message tampering and mixed audit schema pairs", async () => {
+    const store = memoryStore();
+    await runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1/messages", { method: "POST" }),
+      identity: identity(),
+      store,
+      handler: async () => Response.json({ message: { id: "message_1" } }, { status: 202 }),
+    });
+    const tampered = store.events.map((event, index) => index === 1
+      ? { ...event, teacherMessageId: "message_2" }
+      : event);
+    expect(evaluateOrchestrationIngressAudit(tampered)).toMatchObject({
+      go: false,
+      invalidAttemptIds: [store.events[0].attemptId],
+    });
+
+    const legacyAttempt = legacyAuditPair()[0];
+    const mixed = [legacyAttempt, store.events[1]];
+    expect(evaluateOrchestrationIngressAudit(mixed)).toMatchObject({
+      go: false,
+      invalidAttemptIds: [store.events[0].attemptId],
+    });
+  });
+
+  it("rejects unsigned authority columns on an external audit event", async () => {
+    const store = memoryStore();
+    await runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1", { method: "PATCH" }),
+      identity: identity(),
+      store,
+      handler: async () => new Response(null, { status: 204 }),
+    });
+    const injected = store.events.map((event) => ({
+      ...event,
+      taskId: "injected_task",
+      turnJobId: "injected_turn",
+      toolInvocationId: "injected_tool",
+    })) as OrchestrationIngressAuditEvent[];
+    expect(evaluateOrchestrationIngressAudit(injected)).toMatchObject({
+      go: false,
+      invalidAttemptIds: [store.events[0].attemptId],
+    });
+  });
+
+  it("cross-checks resolved outcome and reason against the persisted HTTP status", async () => {
+    const store = memoryStore();
+    await runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1", { method: "PATCH" }),
+      identity: identity(),
+      store,
+      handler: async () => new Response(null, { status: 500 }),
+    });
+    const forged = store.events.map((event, index) => {
+      if (index === 0) return event;
+      const changed = { ...event, outcome: "committed" as const, reasonCode: "http_2xx" as const };
+      return { ...changed, eventDigest: currentV2IngressDigest(changed) };
+    });
+    expect(evaluateOrchestrationIngressAudit(forged)).toMatchObject({
+      go: false,
+      invalidAttemptIds: [store.events[0].attemptId],
+    });
+  });
+
+  it("rejects an empty attempt identity even when both event digests are recomputed", async () => {
+    const store = memoryStore();
+    await runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1", { method: "PATCH" }),
+      identity: identity(),
+      store,
+      handler: async () => new Response(null, { status: 204 }),
+    });
+    const forged = store.events.map((event) => {
+      const changed = { ...event, attemptId: "" };
+      return { ...changed, eventDigest: currentV2IngressDigest(changed) };
+    });
+    expect(evaluateOrchestrationIngressAudit(forged)).toMatchObject({
+      go: false,
+      invalidAttemptIds: [""],
+    });
+  });
+
+  it("does not return teacher submission success without a response message identity", async () => {
+    const store = memoryStore();
+    await expect(runWithOrchestrationIngressAudit({
+      request: new Request("https://localhost/api/workbench/projects/project_1/messages", { method: "POST" }),
+      identity: identity(),
+      store,
+      handler: async () => Response.json({ status: "queued" }, { status: 202 }),
+    })).rejects.toThrow(/teacher_message_resolution_failed/);
+    expect(store.events).toHaveLength(1);
+    expect(evaluateOrchestrationIngressAudit(store.events)).toMatchObject({ go: false });
   });
 
   it("records rejected responses and thrown handlers without persisting private details", async () => {
@@ -236,4 +358,51 @@ function ids(...values: string[]) {
 function times(...values: string[]) {
   let index = 0;
   return () => new Date(values[index++] ?? values.at(-1));
+}
+
+function legacyAuditPair(): OrchestrationIngressAuditEvent[] {
+  return [
+    {
+      sequence: 1,
+      eventId: "legacy_event_1",
+      attemptId: "legacy_attempt_1",
+      recordType: "attempted",
+      outcome: null,
+      operationKind: "external_mutation",
+      authority: "teacher_http",
+      claimedProjectId: "project_1",
+      resolvedProjectId: null,
+      actorUserId: "teacher_1",
+      actorAuthMode: "password",
+      authSessionDigest: "6ba4e038655718b1ccf5a97f9dfeea2a2453dca4c1517d3a98fe2e4fca4caac1",
+      teacherMessageId: null,
+      reasonCode: null,
+      payloadJson: "{\"operation\":\"teacher_message_submit\",\"routeTemplate\":\"/api/workbench/projects/:projectId/messages\",\"method\":\"POST\",\"controlImpact\":\"teacher_task_submission\",\"httpStatus\":null}",
+      eventDigest: "7d310a7929c507b748c0e80d2d961cf223aab00b18c1bbc0cd198b333ab31a06",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    },
+    {
+      sequence: 2,
+      eventId: "legacy_event_2",
+      attemptId: "legacy_attempt_1",
+      recordType: "resolved",
+      outcome: "committed",
+      operationKind: "external_mutation",
+      authority: "teacher_http",
+      claimedProjectId: "project_1",
+      resolvedProjectId: "project_1",
+      actorUserId: "teacher_1",
+      actorAuthMode: "password",
+      authSessionDigest: "6ba4e038655718b1ccf5a97f9dfeea2a2453dca4c1517d3a98fe2e4fca4caac1",
+      teacherMessageId: null,
+      reasonCode: "http_2xx",
+      payloadJson: "{\"operation\":\"teacher_message_submit\",\"routeTemplate\":\"/api/workbench/projects/:projectId/messages\",\"method\":\"POST\",\"controlImpact\":\"teacher_task_submission\",\"httpStatus\":202}",
+      eventDigest: "8b89f2bbebf7e56a6d277b1465449098f229ecd2b0941e5ce8560bec00b5a110",
+      occurredAt: "2026-07-18T00:00:01.000Z",
+    },
+  ];
+}
+
+function currentV2IngressDigest(event: OrchestrationIngressAuditEvent) {
+  return digestOrchestrationAuditEvent(event, "shanhai-orchestration-audit-event.v2");
 }

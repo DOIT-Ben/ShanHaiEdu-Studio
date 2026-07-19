@@ -14,7 +14,11 @@ import { actionRiskForTool, createPendingDecisionForAction, evaluateActionPolicy
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { resolveBudgetUpgrade, resolveStandardTaskBudget } from "@/server/guards/task-budget-policy";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
-import { createValidationReport, hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
+import {
+  createValidationReport,
+  hasValidValidationReportDigest,
+  hashArtifactDraft,
+} from "@/server/contracts/contract-validator";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
 import { adaptPptAgentCriticReview } from "@/server/ppt-quality/ppt-agent-critic-review-adapter";
@@ -36,7 +40,6 @@ import { dispatchMainAgentToolCall } from "@/server/tools/main-agent-tool-dispat
 import { toolDefinitionToOpenAiFunctionTool } from "@/server/tools/openai-tool-schema";
 import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
-import type { ToolDefinition } from "@/server/tools/tool-types";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactRecord, ConversationMessageRecord, ExecutionIdentitySnapshot, GenerationJobRecord, ProjectExecutionFence, ProjectRecord, SaveArtifactInput } from "@/server/workbench/types";
@@ -49,6 +52,8 @@ import { isCapabilityInTaskScope } from "./task-output-scope";
 import { createControlPlaneStore, type ToolInvocationClaim } from "./control-plane-store";
 import { buildSemanticContextSnapshot } from "./context-semantic-snapshot";
 import { restoreMainAgentReActCheckpoint, type MainAgentReActCheckpoint } from "./main-agent-react-checkpoint";
+import { persistBusinessSkillOutputFailure, persistBusinessSkillRuntimeFailure } from "./business-skill-tool-failure";
+import { claimMainAgentToolInvocation, prepareNativeProviderGenerationForInvocation } from "./native-provider-generation";
 import { resolveProjectSemanticScope } from "./project-semantic-scope";
 import { evaluateTaskCompletionContract } from "./task-completion-contract";
 import {
@@ -579,7 +584,6 @@ export function createMainAgentToolLoopOptions(
         });
         await controlPlaneStore.commitToolObservation({
           invocationId,
-          invocationStatus: "succeeded",
           observation: {
             observationId: observation.observationId,
             status: observation.status,
@@ -774,19 +778,14 @@ export function createMainAgentToolLoopOptions(
       }
       const reviewTargetRef = resolveReviewTarget(call.arguments, taskArtifacts());
       let businessSkillContext: BusinessToolSkillContext | undefined;
-      let invocationId: string = randomUUID();
-      let invocationClaim: ToolInvocationClaim | undefined;
-      if (executionEnvelope) {
-        const claim = await controlPlaneStore.startToolInvocation({
-          invocationId,
-          envelope: executionEnvelope,
-          toolName: requestedDefinition.internalToolId ?? requestedDefinition.id,
-          request: structuredClone(call.arguments),
-        });
-        if (claim.kind === "terminal_replay") return toolInvocationReplayResult(claim);
-        invocationClaim = claim;
-        invocationId = claim.invocation.invocationId;
-      }
+      const invocationStart = executionEnvelope ? await claimMainAgentToolInvocation({
+        service: input.service, controlPlaneStore, invocationId: randomUUID(), executionEnvelope,
+        definition: requestedDefinition, artifacts: taskArtifacts(), arguments: call.arguments,
+        pptAssetBatchLifecycle: pptAssetBatchExecution?.lifecycle,
+      }) : null;
+      if (invocationStart?.kind === "replay") return toolInvocationReplayResult(invocationStart.claim);
+      const invocationId = invocationStart?.invocationId ?? randomUUID();
+      const { claim: invocationClaim, resumedProviderGeneration = null } = invocationStart ?? {};
       const skillBoundBusinessTool = typeof requestedDefinition.internalToolId === "string" &&
         Boolean(requestedDefinition.businessSkillName);
       const formalSkillBoundBusinessTool = skillBoundBusinessTool &&
@@ -831,6 +830,7 @@ export function createMainAgentToolLoopOptions(
             businessToolName: requestedDefinition.id,
           });
         } catch (error) {
+          if (invocationClaim?.kind === "in_progress") return toolInvocationReplayResult(invocationClaim);
           const required = input.businessSkillRuntimeMode === "required";
           const reasonCode = skillRuntimeFailureReason(error) ?? "business_skill_load_failed";
           if (executionEnvelope && invocationClaim?.kind === "claimed") {
@@ -861,22 +861,24 @@ export function createMainAgentToolLoopOptions(
           };
         }
       }
-      const providerGeneration = executionEnvelope
-        ? await prepareNativeProviderGeneration({
-            service: input.service,
-            projectId: input.project.id,
-            definition: requestedDefinition,
-            artifacts: taskArtifacts(),
-            arguments: call.arguments,
-            idempotencyKey: executionEnvelope.idempotencyKey,
-            taskBriefDigest: executionEnvelope.taskBriefDigest,
-            intentEpoch: executionEnvelope.intentEpoch,
-            pptAssetBatchLifecycle: pptAssetBatchExecution?.lifecycle,
-          })
+      const providerPreparation = executionEnvelope
+        ? invocationClaim?.kind === "in_progress"
+          ? { kind: "ready" as const, generation: resumedProviderGeneration }
+          : await prepareNativeProviderGenerationForInvocation({
+              service: input.service, controlPlaneStore, invocationId, executionEnvelope, triggerMessageId: input.triggerMessage.id,
+              messageMetadata: currentMetadata,
+              projectId: input.project.id, definition: requestedDefinition, artifacts: taskArtifacts(),
+              arguments: call.arguments, idempotencyKey: executionEnvelope.idempotencyKey,
+              taskBriefDigest: executionEnvelope.taskBriefDigest, intentEpoch: executionEnvelope.intentEpoch,
+              pptAssetBatchLifecycle: pptAssetBatchExecution?.lifecycle,
+            })
         : null;
-      if (invocationClaim?.kind === "in_progress" && !providerGeneration?.lifecycle.providerTaskId) {
-        return toolInvocationReplayResult(invocationClaim);
+      if (providerPreparation?.kind === "failed") {
+        currentPlanRevision += 1;
+        currentMetadata = providerPreparation.messageMetadata;
+        return providerPreparation.dispatchResult;
       }
+      const providerGeneration = providerPreparation?.generation ?? null;
       if (invocationClaim) currentPlanRevision += 1;
       if (providerGeneration?.active.job.status === "submission_unknown") {
         const observation = createAgentObservation({
@@ -1013,7 +1015,7 @@ export function createMainAgentToolLoopOptions(
             teacherSafeSummary: dispatch.result.observation.teacherSafeSummary,
           });
           await controlPlaneStore.commitToolObservation({
-            invocationId, invocationStatus: "blocked",
+            invocationId,
             ...(providerGeneration ? {
               generationJob: {
                 jobId: providerGeneration.active.job.id,
@@ -1154,7 +1156,7 @@ export function createMainAgentToolLoopOptions(
               toolName: requestedDefinition.internalToolId!,
               businessSkillContext,
               error,
-              ...(providerGeneration ? { generationJobId: providerGeneration.active.job.id } : {}),
+              ...(providerGeneration ? { generationJobId: providerGeneration.active.job.id, generationInputHash: providerGeneration.active.job.inputHash ?? undefined } : {}),
             });
             currentMetadata = appendAgentObservationMetadata(currentMetadata, failure.observation);
             await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
@@ -1821,63 +1823,6 @@ function resolveBusinessToolInstruction(argumentsValue: Record<string, unknown>,
   return toolInstruction || fallback;
 }
 
-async function prepareNativeProviderGeneration(input: {
-  service: WorkbenchService;
-  projectId: string;
-  definition: MainAgentToolDefinition;
-  artifacts: ArtifactRecord[];
-  arguments: Record<string, unknown>;
-  idempotencyKey: string;
-  taskBriefDigest: string;
-  intentEpoch: number;
-  pptAssetBatchLifecycle?: PptAssetBatchLifecycle;
-}) {
-  if (input.definition.adapterKind !== "provider" || typeof input.definition.internalToolId !== "string") return null;
-  const definition = input.definition;
-  const requiredKinds = new Set(definition.requiredArtifactKinds);
-  const trustedSources = input.artifacts.filter((artifact) =>
-    requiredKinds.has(artifact.kind) && isArtifactTrustedForDownstream(artifact),
-  );
-  const sourceArtifact = trustedSources.at(-1);
-  if (!sourceArtifact) {
-    throw new Error("Native Provider Tool requires a trusted source Artifact for GenerationJob recovery.");
-  }
-  const queued = await input.service.createGenerationJob(input.projectId, {
-    kind: generationJobKindFor(definition),
-    sourceArtifactId: sourceArtifact.id,
-    ...(generationUnitId(input.arguments) ? { unitId: generationUnitId(input.arguments) } : {}),
-    capabilityId: definition.capabilityId,
-    idempotencyKey: input.idempotencyKey,
-    sourceArtifactIds: trustedSources.map((artifact) => artifact.id),
-    inputSnapshot: {
-      toolName: definition.internalToolId,
-      arguments: structuredClone(input.arguments),
-      taskBriefDigest: input.taskBriefDigest,
-      intentEpoch: input.intentEpoch,
-      sourceArtifacts: trustedSources.map((artifact) => ({
-        artifactId: artifact.id,
-        kind: artifact.kind,
-        version: artifact.version,
-      })),
-    },
-    ...(input.pptAssetBatchLifecycle ? { countsAsProviderSubmission: false } : {}),
-  });
-  const active = await input.service.startGenerationJobForExecution(input.projectId, queued.id);
-  return {
-    active,
-    pptAssetBatchLifecycle: input.pptAssetBatchLifecycle,
-    lifecycle: {
-      providerTaskId: active.providerTaskId,
-      onTaskAccepted: async (providerTaskId: string) => {
-        await input.service.recordGenerationProviderTask(input.projectId, active.job.id, { providerTaskId });
-      },
-      onPoll: async () => {
-        await input.service.recordGenerationPoll(input.projectId, active.job.id);
-      },
-    },
-  };
-}
-
 type PptAssetBatchExecutionPlan = {
   pendingUnitCount: number;
   authoritativeProviderCallsUsed: number;
@@ -2032,201 +1977,6 @@ function isPptAssetFileEvidence(value: unknown) {
     typeof file.mime === "string" && file.mime.startsWith("image/");
 }
 
-function generationJobKindFor(definition: ToolDefinition): GenerationJobRecord["kind"] {
-  if (definition.producedArtifactKind === "pptx_artifact") return "pptx";
-  if (definition.producedArtifactKind === "video_narration_generate") return "audio";
-  if (definition.producedArtifactKind === "video_segment_generate") return "video";
-  return "image";
-}
-
-function generationUnitId(argumentsValue: Record<string, unknown>) {
-  for (const key of ["shotId", "unitId", "pageId"]) {
-    const value = argumentsValue[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-
-async function persistBusinessSkillRuntimeFailure(input: {
-  controlPlaneStore: ReturnType<typeof createControlPlaneStore>;
-  invocationId: string;
-  executionEnvelope: ReturnType<typeof createExecutionEnvelope>;
-  triggerMessageId: string;
-  toolName: string;
-  reasonCode: string;
-  nextAction: AgentObservation["minimalNextAction"];
-}) {
-  const observation = createAgentObservation({
-    projectId: input.executionEnvelope.projectId,
-    source: "validation",
-    status: "failed",
-    actionKey: input.toolName,
-    inputHash: input.executionEnvelope.idempotencyKey,
-    reasonCodes: [input.reasonCode],
-    reportRefs: [],
-    targetLocators: [{ kind: "tool", toolId: input.toolName }],
-    responsibleStage: "business_skill_runtime",
-    minimalNextAction: input.nextAction,
-    teacherSafeSummary: "这一步的业务能力没有完成加载，系统已保存恢复信息且没有执行生成。",
-  });
-  const validationReport = createValidationReport({
-    reportId: randomUUID(),
-    createdAt: new Date().toISOString(),
-    domain: "generic",
-    stage: "business_skill_load",
-    target: { kind: "tool_invocation", targetId: input.invocationId },
-    contract: { id: "business-skill-runtime", version: "v1" },
-    inputHash: input.executionEnvelope.idempotencyKey,
-    intentEpoch: input.executionEnvelope.intentEpoch,
-    overallStatus: "failed",
-    gates: [{
-      gateId: "business_skill_load",
-      validatorId: "business_skill_runtime",
-      validatorVersion: "v1",
-      status: "failed",
-      evidenceRefs: [],
-      locators: [{ kind: "tool", toolId: input.toolName }],
-      responsibleStage: "business_skill_runtime",
-      reasonCode: input.reasonCode,
-    }],
-  });
-  await input.controlPlaneStore.commitToolFailure({
-    invocationId: input.invocationId,
-    advancePlanRevision: false,
-    validationReport,
-    observation: {
-      observationId: observation.observationId,
-      status: observation.status,
-      reasonCodes: observation.reasonCodes,
-      payload: structuredClone(observation) as unknown as Record<string, unknown>,
-    },
-    event: {
-      eventId: randomUUID(),
-      projectId: input.executionEnvelope.projectId,
-      taskId: input.executionEnvelope.taskId,
-      runId: `turn:${input.triggerMessageId}`,
-      intentEpoch: input.executionEnvelope.intentEpoch,
-      kind: "tool_observed",
-      visibility: "internal",
-      occurredAt: new Date().toISOString(),
-      payload: {
-        observationId: observation.observationId,
-        validationReportId: validationReport.reportId,
-        status: "failed",
-      },
-    },
-  });
-  return { observation, validationReport };
-}
-
-async function persistBusinessSkillOutputFailure(input: {
-  controlPlaneStore: ReturnType<typeof createControlPlaneStore>;
-  invocationId: string;
-  executionEnvelope: ReturnType<typeof createExecutionEnvelope>;
-  triggerMessageId: string;
-  toolName: string;
-  businessSkillContext: BusinessToolSkillContext;
-  error: unknown;
-  generationJobId?: string;
-}) {
-  const reasonCode = input.error instanceof BusinessToolSkillOutputContractError
-    ? input.error.reasonCode
-    : "formal_skill_output_validation_failed";
-  const validationErrors = input.error instanceof BusinessToolSkillOutputContractError
-    ? sanitizeFormalSkillValidationErrors(input.error.validationErrors)
-    : [];
-  const formalContract = input.businessSkillContext.semanticSlice.contracts.skill?.produces[0];
-  const observation = createAgentObservation({
-    projectId: input.executionEnvelope.projectId,
-    source: "validation",
-    status: "failed",
-    actionKey: input.toolName,
-    inputHash: input.executionEnvelope.idempotencyKey,
-    reasonCodes: [reasonCode],
-    reportRefs: [],
-    targetLocators: [{ kind: "tool", toolId: input.toolName }],
-    responsibleStage: "business_skill_output",
-    minimalNextAction: "repair_upstream",
-    teacherSafeSummary: "生成结果没有通过当前业务交付合同，我没有保存这份结果，并已把具体问题交回智能体调整。",
-  });
-  const validationReport = createValidationReport({
-    reportId: randomUUID(),
-    createdAt: new Date().toISOString(),
-    domain: "generic",
-    stage: "business_skill_output",
-    target: { kind: "tool_invocation", targetId: input.invocationId },
-    contract: {
-      id: formalContract?.artifactType ?? input.businessSkillContext.skillName,
-      version: formalContract?.contractVersion ?? input.businessSkillContext.skillVersion,
-    },
-    inputHash: input.executionEnvelope.idempotencyKey,
-    intentEpoch: input.executionEnvelope.intentEpoch,
-    overallStatus: "failed",
-    gates: [{
-      gateId: "formal_skill_output_contract",
-      validatorId: "business_skill_runtime",
-      validatorVersion: "v2",
-      status: "failed",
-      evidenceRefs: [
-        input.businessSkillContext.provenance.entrypointSha256,
-        input.businessSkillContext.provenance.bindingPolicyDigest,
-        ...input.businessSkillContext.provenance.references.map((reference) => reference.sha256),
-      ],
-      locators: [{ kind: "tool", toolId: input.toolName }],
-      responsibleStage: "business_skill_output",
-      reasonCode,
-    }],
-  });
-  await input.controlPlaneStore.commitToolFailure({
-    invocationId: input.invocationId,
-    ...(input.generationJobId ? {
-      generationJob: {
-        jobId: input.generationJobId,
-        status: "failed" as const,
-        errorMessage: observation.teacherSafeSummary,
-      },
-    } : {}),
-    validationReport,
-    observation: {
-      observationId: observation.observationId,
-      status: observation.status,
-      reasonCodes: observation.reasonCodes,
-      payload: {
-        ...structuredClone(observation),
-        validationErrors,
-        skillName: input.businessSkillContext.skillName,
-        skillVersion: input.businessSkillContext.skillVersion,
-        ...(formalContract ? { formalContract: structuredClone(formalContract) } : {}),
-      } as unknown as Record<string, unknown>,
-    },
-    event: {
-      eventId: randomUUID(),
-      projectId: input.executionEnvelope.projectId,
-      taskId: input.executionEnvelope.taskId,
-      runId: `turn:${input.triggerMessageId}`,
-      intentEpoch: input.executionEnvelope.intentEpoch,
-      kind: "tool_observed",
-      visibility: "internal",
-      occurredAt: new Date().toISOString(),
-      payload: {
-        observationId: observation.observationId,
-        validationReportId: validationReport.reportId,
-        reasonCode,
-        status: "failed",
-      },
-    },
-  });
-  return { observation, validationReport };
-}
-
-function sanitizeFormalSkillValidationErrors(errors: string[]) {
-  return [...new Set(errors
-    .map((error) => String(error).replace(/\s+/g, " ").trim())
-    .filter((error) => error.length > 0 && error.length <= 200)
-    .filter((error) => !/[A-Z]:\\|\/Users\/|https?:\/\/|api[_-]?key|token|secret|credential/i.test(error))
-    .slice(0, 20))];
-}
-
 async function persistAgentToolObservation(input: {
   controlPlaneStore: ReturnType<typeof createControlPlaneStore>;
   invocationId: string;
@@ -2237,9 +1987,6 @@ async function persistAgentToolObservation(input: {
   if (!input.executionEnvelope) throw new Error("Agent Tool result requires an ExecutionEnvelope.");
   await input.controlPlaneStore.commitToolObservation({
     invocationId: input.invocationId,
-    invocationStatus: input.observation.status === "succeeded"
-      ? "succeeded"
-      : input.observation.status === "blocked" || input.observation.status === "needs_input" ? "blocked" : "failed",
     observation: {
       observationId: input.observation.observationId,
       status: input.observation.status,

@@ -107,7 +107,7 @@ export function validateToolPreconditions(input: {
   return createValidationReport({
     reportId: randomUUID(),
     createdAt: new Date().toISOString(),
-    domain: domainFor(contract.capabilityId),
+    domain: validationDomainForCapability(contract.capabilityId),
     stage: contract.capabilityId,
     target: { kind: "tool_execution", targetId: input.tool.id },
     contract: { id: contract.id, version: contract.version },
@@ -139,6 +139,13 @@ export function validateToolExecutionResult(input: {
       reasonCode: input.result.reasonCode ?? "tool_execution_not_succeeded",
     }));
   } else {
+    gates.push(gate({
+      gateId: "execution_result",
+      status: "passed",
+      evidenceRefs: [`tool:${input.tool.id}:succeeded`],
+      locators: [{ kind: "tool", toolId: input.tool.id }],
+      stage: contract.capabilityId,
+    }));
     gates.push(gate({
       gateId: "output_kind",
       status: artifactDraft.kind === contract.outputArtifactKind ? "passed" : "failed",
@@ -199,7 +206,7 @@ export function validateToolExecutionResult(input: {
   return createValidationReport({
     reportId: randomUUID(),
     createdAt: new Date().toISOString(),
-    domain: domainFor(contract.capabilityId),
+    domain: validationDomainForCapability(contract.capabilityId),
     stage: contract.capabilityId,
     target: { kind: artifactDraft ? "artifact_draft" : "tool_execution", targetId: input.tool.id, targetDigest },
     contract: { id: contract.id, version: contract.version },
@@ -452,7 +459,7 @@ function overallStatus(gates: ValidationGateResult[]): ValidationOverallStatus {
   return "passed";
 }
 
-function domainFor(capabilityId: string): ValidationDomain {
+export function validationDomainForCapability(capabilityId: string): ValidationDomain {
   if (capabilityId.includes("ppt") || capabilityId === "image_asset") return "ppt";
   if (capabilityId.includes("video") || ["knowledge_anchor_extract", "creative_theme_generate", "storyboard_generate", "asset_brief_generate", "asset_image_generate", "concat_only_assemble"].includes(capabilityId)) return "video";
   if (capabilityId === "final_package") return "package";

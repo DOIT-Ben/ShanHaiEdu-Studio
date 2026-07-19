@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { buildAgentHarnessBudgetEvent } from "@/server/conversation/agent-harness-budget";
+import { validateToolExecutionResult } from "@/server/contracts/contract-validator";
+import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { createMainAgentToolLoopOptions } from "@/server/conversation/main-agent-tool-loop-config";
 import { createTaskBrief, type IntentGrant, type TaskBrief } from "@/server/conversation/task-contract";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { prisma } from "@/server/db/client";
+import { getToolDefinition } from "@/server/tools/tool-registry";
 
 describe("Main Agent business Tool Skill execution", () => {
   it("fails closed in required mode when a Skill-bound Tool has no Runtime", async () => {
@@ -71,11 +74,14 @@ describe("Main Agent business Tool Skill execution", () => {
         payload: expect.objectContaining({ status: "failed" }),
       }));
       expect((await service.getArtifacts(project.id)).map((artifact) => artifact.id)).toEqual([assetBrief.id]);
+      const resumedAggregate = await controlPlaneStore.getTaskAggregate(project.id, taskBrief.intentEpoch);
+      expect(resumedAggregate).toMatchObject({ plan: { revision: 1 } });
 
       const frozenMismatch = createMainAgentToolLoopOptions({
         service, project, triggerMessage: message, artifacts: [assetBrief],
         identity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null }, fence,
-        taskBrief, intentGrant, controlPlaneStore, businessSkillRuntimeMode: "required", businessToolRouter,
+        taskBrief, intentGrant, planRevision: resumedAggregate!.plan.revision,
+        controlPlaneStore, businessSkillRuntimeMode: "required", businessToolRouter,
         businessSkillRuntime: {
           loadForSelectedTool: vi.fn(async () => {
             throw Object.assign(new Error("private projection path must not leak"), {
@@ -227,26 +233,52 @@ describe("Main Agent business Tool Skill execution", () => {
         },
       })),
     };
-    const businessToolRouter = vi.fn(async (input) => ({
-      status: "succeeded" as const,
-      toolId: "asset_image_generate",
-      capabilityId: "asset_image_generate",
-      artifactDraft: {
+    const businessToolRouter = vi.fn(async (input) => {
+      const artifactDraft = {
         nodeKey: "asset_image_generate" as const,
         kind: "asset_image_generate" as const,
         title: "灯塔角色资产图",
         summary: "独立短片角色参考图。",
         markdownContent: "# 灯塔角色资产图",
         structuredContent: { skillName: input.businessSkillContext?.skillName },
-      },
-      assistantSummary: "视频资产图已形成。",
-      budgetEvent: buildAgentHarnessBudgetEvent({
-        capabilityId: "asset_image_generate",
-        actionKey: "asset_image_generate:asset_image_generate",
-        status: "succeeded",
-        kind: "tool_succeeded",
-      }),
-    }));
+      };
+      const tool = getToolDefinition("asset_image_generate");
+      const contract = resolveRuntimeContract(tool);
+      const result = {
+        status: "succeeded" as const,
+        toolId: tool.id,
+        capabilityId: contract.capabilityId,
+        provider: "provider-contract-test",
+        artifactDraft,
+        artifactTruth: {
+          created: true,
+          persisted: true,
+          persistenceScope: "provider_local_file" as const,
+          providerPersisted: true,
+          workbenchPersisted: false,
+          placeholder: false,
+          producedArtifactKind: "asset_image_generate",
+        },
+        qualityGate: { passed: true, gates: ["image_valid", "supported_image_mime"] },
+        assistantSummary: "视频资产图已形成。",
+        budgetEvent: buildAgentHarnessBudgetEvent({
+          capabilityId: "asset_image_generate",
+          actionKey: "asset_image_generate:asset_image_generate",
+          status: "succeeded",
+          kind: "tool_succeeded",
+        }),
+      };
+      return {
+        ...result,
+        validationReport: validateToolExecutionResult({
+          tool,
+          projectId: project.id,
+          result,
+          inputHash: input.executionInputHash!,
+          intentEpoch: taskBrief.intentEpoch,
+        }),
+      };
+    });
 
     try {
       const config = createMainAgentToolLoopOptions({

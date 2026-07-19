@@ -122,10 +122,10 @@
       },
       {
         "path": "src/server/conversation/control-plane-store.ts",
-        "lines": 1066,
+        "lines": 762,
         "violatingFunctions": 1,
-        "maxFunctionLines": 504,
-        "totalFunctionLines": 504
+        "maxFunctionLines": 406,
+        "totalFunctionLines": 406
       },
       {
         "path": "src/server/conversation/conversation-control-resolver.ts",
@@ -157,10 +157,10 @@
       },
       {
         "path": "src/server/conversation/main-agent-tool-loop-config.ts",
-        "lines": 2336,
+        "lines": 2083,
         "violatingFunctions": 2,
-        "maxFunctionLines": 1296,
-        "totalFunctionLines": 2255
+        "maxFunctionLines": 1293,
+        "totalFunctionLines": 2249
       },
       {
         "path": "src/server/conversation/model-main-conversation-agent.ts",
@@ -227,7 +227,7 @@
       },
       {
         "path": "src/server/tools/provider-tool-adapter.ts",
-        "lines": 1091,
+        "lines": 1075,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0

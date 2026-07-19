@@ -36,6 +36,7 @@ export type ToolDefinition = {
   requiresHumanGate: boolean;
   sideEffectLevel: ToolSideEffectLevel;
   requiredArtifactKinds: string[];
+  primarySourceArtifactKind?: string;
   producedArtifactKind?: string;
   failurePolicy: ToolFailurePolicy;
   implemented: boolean;

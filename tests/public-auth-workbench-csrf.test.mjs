@@ -114,9 +114,18 @@ function loadRouteWithFakeDb() {
     "@/server/db/client": { prisma: db },
     "node:crypto": require("node:crypto"),
   });
+  const auditDigest = loadTsModule(
+    path.join(root, "src", "server", "conversation", "orchestration-audit-event-digest.ts"),
+    { "node:crypto": require("node:crypto") },
+  );
+  const ingressRoute = loadTsModule(
+    path.join(root, "src", "server", "workbench", "orchestration-ingress-route.ts"),
+    { "../../../config/orchestration-write-operations.json": require(path.join(root, "config", "orchestration-write-operations.json")) },
+  );
   const audit = loadTsModule(path.join(root, "src", "server", "workbench", "orchestration-ingress-audit.ts"), {
     "@/server/db/client": { prisma: db },
-    "../../../config/orchestration-write-operations.json": require(path.join(root, "config", "orchestration-write-operations.json")),
+    "@/server/conversation/orchestration-audit-event-digest": auditDigest,
+    "./orchestration-ingress-route": ingressRoute,
     "node:crypto": require("node:crypto"),
   });
   const route = loadTsModule(path.join(root, "src", "server", "auth", "workbench-route.ts"), {

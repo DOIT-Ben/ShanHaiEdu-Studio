@@ -1,3 +1,4 @@
+import type { Artifact } from "@/generated/prisma/client";
 import type { ArtifactRecord } from "@/server/workbench/types";
 import { hasForbiddenArtifactTruthMarker, hasVerifiedArtifactApprovalEvidence } from "./artifact-truth-boundary";
 
@@ -35,6 +36,37 @@ export function isArtifactTrustedForDownstream(artifact: ArtifactRecord) {
       isArtifactStructuredContentDownstreamEligible(artifact.structuredContent);
   }
   return hasVerifiedArtifactApprovalEvidence(artifact) || isArtifactDownstreamEligible(artifact);
+}
+
+export function isPersistedArtifactTrustedForDownstream(artifact: Artifact) {
+  let structuredContent: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(artifact.structuredContentJson) as unknown;
+    if (!isRecord(parsed)) return false;
+    structuredContent = parsed;
+  } catch {
+    return false;
+  }
+  return isArtifactTrustedForDownstream({
+    id: artifact.id,
+    projectId: artifact.projectId,
+    taskId: artifact.taskId,
+    taskBriefDigest: artifact.taskBriefDigest,
+    intentEpoch: artifact.intentEpoch,
+    planRevision: artifact.planRevision,
+    origin: artifact.origin as ArtifactRecord["origin"],
+    nodeKey: artifact.nodeKey as ArtifactRecord["nodeKey"],
+    title: artifact.title,
+    kind: artifact.kind as ArtifactRecord["kind"],
+    status: artifact.status as ArtifactRecord["status"],
+    summary: artifact.summary,
+    markdownContent: artifact.markdownContent,
+    structuredContent,
+    version: artifact.version,
+    isApproved: artifact.isApproved,
+    createdAt: artifact.createdAt.toISOString(),
+    updatedAt: artifact.updatedAt.toISOString(),
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
