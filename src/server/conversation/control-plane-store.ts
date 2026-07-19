@@ -1,17 +1,19 @@
-import { randomUUID } from "node:crypto";
-
 import type { PrismaClient, ToolInvocationRecord } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
 import type { SaveArtifactInput } from "@/server/workbench/types";
 
 import {
-  AGENT_EVENT_VERSION,
   replayAgentEvents,
   type AgentEventEnvelope,
   type AgentEventKind,
   type AgentEventVisibility,
 } from "./agent-event-envelope";
 import { notifyProjectAgentEvent } from "./agent-event-notifier";
+import { createControlPlaneMessageCommitOperations } from "./control-plane-message-commit";
+import {
+  appendEventInTransaction,
+  saveSemanticSnapshotInTransaction,
+} from "./control-plane-transaction-operations";
 import {
   restoreSemanticContextSnapshot,
   type SemanticContextPlan,
@@ -216,35 +218,7 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
       });
       return row ? mapTaskAggregate(row) : null;
     },
-
-    async commitIntentGrantWithMessage(input: {
-      taskBrief: TaskBrief;
-      intentGrant: IntentGrant;
-      messageId: string;
-      messageMetadata: Record<string, unknown>;
-    }): Promise<void> {
-      assertTaskScope(input.taskBrief, input.intentGrant);
-      await client.$transaction(async (tx) => {
-        const aggregate = await tx.taskAggregate.updateMany({
-          where: {
-            projectId: input.taskBrief.projectId,
-            taskId: input.taskBrief.taskId,
-            intentEpoch: input.taskBrief.intentEpoch,
-          },
-          data: { intentGrantJson: JSON.stringify(input.intentGrant) },
-        });
-        if (aggregate.count !== 1) {
-          throw new Error("Task aggregate not found for IntentGrant commit.");
-        }
-        const message = await tx.conversationMessage.updateMany({
-          where: { id: input.messageId, projectId: input.taskBrief.projectId },
-          data: { metadataJson: JSON.stringify(input.messageMetadata) },
-        });
-        if (message.count !== 1) {
-          throw new Error("Conversation message not found for IntentGrant commit.");
-        }
-      });
-    },
+    ...createControlPlaneMessageCommitOperations(client),
 
     async appendEvent(input: AgentEventInput): Promise<AgentEventEnvelope> {
       const event = await client.$transaction((tx) => appendEventInTransaction(tx, input));
@@ -273,35 +247,8 @@ export function createControlPlaneStore(client: PrismaClient = prisma) {
     },
 
     async saveSemanticSnapshot(snapshot: SemanticContextSnapshot, lastEventSequence: number) {
-      const state = restoreSemanticContextSnapshot(snapshot);
-      if (!Number.isInteger(lastEventSequence) || lastEventSequence < 0) {
-        throw new Error("Semantic snapshot lastEventSequence is invalid.");
-      }
-      const row = await client.semanticContextSnapshotRecord.upsert({
-        where: {
-          projectId_taskId_intentEpoch_planRevision: {
-            projectId: state.taskBrief.projectId,
-            taskId: state.taskBrief.taskId,
-            intentEpoch: state.taskBrief.intentEpoch,
-            planRevision: state.plan.revision,
-          },
-        },
-        update: {
-          snapshotDigest: snapshot.snapshotDigest,
-          payloadJson: JSON.stringify(snapshot),
-          lastEventSequence,
-        },
-        create: {
-          snapshotId: randomUUID(),
-          projectId: state.taskBrief.projectId,
-          taskId: state.taskBrief.taskId,
-          intentEpoch: state.taskBrief.intentEpoch,
-          planRevision: state.plan.revision,
-          snapshotDigest: snapshot.snapshotDigest,
-          payloadJson: JSON.stringify(snapshot),
-          lastEventSequence,
-        },
-      });
+      const row = await client.$transaction((tx) =>
+        saveSemanticSnapshotInTransaction(tx, snapshot, lastEventSequence));
       return mapSemanticSnapshot(row);
     },
 
@@ -508,72 +455,6 @@ const toolResultCommitOperations: ToolResultCommitOperations = {
   appendEvent: appendEventInTransaction,
   advancePlanRevision: advanceTaskPlanRevision,
 };
-
-async function appendEventInTransaction(tx: TransactionClient, input: AgentEventInput): Promise<AgentEventEnvelope> {
-  const latest = await tx.agentEventRecord.findFirst({
-    where: { projectId: input.projectId },
-    orderBy: { sequence: "desc" },
-    select: { sequence: true },
-  });
-  const envelope: AgentEventEnvelope = {
-    schemaVersion: AGENT_EVENT_VERSION,
-    ...structuredClone(input),
-    sequence: (latest?.sequence ?? 0) + 1,
-  };
-  replayAgentEvents([envelope], { projectId: envelope.projectId });
-  await tx.agentEventRecord.create({
-    data: {
-      eventId: envelope.eventId,
-      projectId: envelope.projectId,
-      taskId: envelope.taskId,
-      runId: envelope.runId,
-      intentEpoch: envelope.intentEpoch,
-      sequence: envelope.sequence,
-      kind: envelope.kind,
-      visibility: envelope.visibility,
-      envelopeJson: JSON.stringify(envelope),
-      payloadJson: JSON.stringify(envelope.payload),
-      occurredAt: new Date(envelope.occurredAt),
-    },
-  });
-  return envelope;
-}
-
-async function saveSemanticSnapshotInTransaction(
-  tx: TransactionClient,
-  snapshot: SemanticContextSnapshot,
-  lastEventSequence: number,
-) {
-  const state = restoreSemanticContextSnapshot(snapshot);
-  if (!Number.isInteger(lastEventSequence) || lastEventSequence < 0) {
-    throw new Error("Semantic snapshot lastEventSequence is invalid.");
-  }
-  return tx.semanticContextSnapshotRecord.upsert({
-    where: {
-      projectId_taskId_intentEpoch_planRevision: {
-        projectId: state.taskBrief.projectId,
-        taskId: state.taskBrief.taskId,
-        intentEpoch: state.taskBrief.intentEpoch,
-        planRevision: state.plan.revision,
-      },
-    },
-    update: {
-      snapshotDigest: snapshot.snapshotDigest,
-      payloadJson: JSON.stringify(snapshot),
-      lastEventSequence,
-    },
-    create: {
-      snapshotId: randomUUID(),
-      projectId: state.taskBrief.projectId,
-      taskId: state.taskBrief.taskId,
-      intentEpoch: state.taskBrief.intentEpoch,
-      planRevision: state.plan.revision,
-      snapshotDigest: snapshot.snapshotDigest,
-      payloadJson: JSON.stringify(snapshot),
-      lastEventSequence,
-    },
-  });
-}
 
 async function saveArtifactInTransaction(
   tx: TransactionClient,

@@ -32,7 +32,7 @@
 仍存在的问题：
 
 - 复杂度债务为29个文件，源码字符串合同债务为21个文件；Lint与构建动态追踪warning已清零并锁入门禁。
-- `conversation-turn-service.ts`为1415行，`main-agent-tool-loop-config.ts`为2062行，workbench repository为2081行，仍混合多项职责。
+- `conversation-turn-service.ts`为1321行，`main-agent-tool-loop-config.ts`为2062行，workbench repository为2058行，仍混合多项职责。
 - PendingDecision状态更新的消息、事件和语义快照尚未形成单事务或等价可恢复提交，中途写失败的恢复合同需在阶段C先关闭。
 
 尚未实现：
@@ -102,7 +102,7 @@
 
 ### 阶段C：拆分两个核心巨型模块
 
-状态：**唯一下一阶段**。
+状态：**进行中**。C0阶段合同与C1 PendingDecision一致性已完成；唯一下一切片为C2 turn service拆分。
 
 目标：让turn协调和Tool执行各自只做一件事。
 
@@ -110,14 +110,16 @@
 
 执行顺序只有一条：
 
-1. **C0 阶段合同**：推进`active-stage.json`、离线Provider延期精确绑定和门禁测试到固定基线；先独立提交，不修改生产业务代码。
-2. **C1 PendingDecision一致性**：先为事件或语义快照中途失败写失败注入测试，再实现消息、事件、语义快照的同事务提交；同一`actionId`重复提交必须返回同一业务结果，冲突payload必须失败关闭。不得用补偿性“再写一次”掩盖已对外可见的部分确认。
+1. **C0 阶段合同（已完成）**：推进`active-stage.json`、离线Provider延期精确绑定和门禁测试到固定基线；已独立提交，未修改生产业务代码。
+2. **C1 PendingDecision一致性（已完成）**：失败注入证明旧实现会先暴露`confirmed`消息；现已把TaskAggregate、授权元数据、匹配消息、决策事件和SemanticSnapshot纳入同一Prisma事务。同一`actionId`同payload重放复用原事件，冲突终态失败关闭。
 3. **C2 turn service拆分**：保持`createConversationTurnService`公开入口不变，把输入与任务边界、turn协调、流式事件投影、持久化提交和失败恢复迁到职责模块；`conversation-turn-service.ts`降到500行以内。
 4. **C3 tool loop拆分**：保持`createMainAgentToolLoopOptions`公开入口不变，把Tool目录、参数归一化、ExecutionEnvelope准备、单Tool执行、结果归一化、Observation与重试策略迁到职责模块；`main-agent-tool-loop-config.ts`降到500行以内。
 
 每个切片都必须先保留外部行为测试，再迁移实现，最后删除原位置的竞争实现。单文件不超过500行、函数不超过150行；不得通过转发层套转发层、提高阈值、扩大排除目录或源码字符串测试制造通过。
 
 验收：PendingDecision不存在部分确认；两个公开工厂签名和Provider语义不变；讨论零Tool、单Tool范围、HumanGate确认/取消/改道、迟到结果隔离、Invocation/Observation/Event/Artifact终态矩阵和恢复行为均通过；Stage C结束时两个目标文件均不超过500行。
+
+C1完成后，`control-plane-store.ts`由758降至639行、最大函数由406降至351行；`conversation-turn-service.ts`由1415降至1321行、最大函数由491降至424行；workbench repository由2081降至2058行。债务基线只按实际下降值收紧，债务文件总数仍为29，未上推为阶段D完成。
 
 ### 阶段D：清零剩余工程债务
 

@@ -115,17 +115,17 @@
       },
       {
         "path": "src/server/conversation/control-plane-store.ts",
-        "lines": 758,
+        "lines": 639,
         "violatingFunctions": 1,
-        "maxFunctionLines": 406,
-        "totalFunctionLines": 406
+        "maxFunctionLines": 351,
+        "totalFunctionLines": 351
       },
       {
         "path": "src/server/conversation/conversation-turn-service.ts",
-        "lines": 1415,
+        "lines": 1321,
         "violatingFunctions": 2,
-        "maxFunctionLines": 491,
-        "totalFunctionLines": 718
+        "maxFunctionLines": 424,
+        "totalFunctionLines": 651
       },
       {
         "path": "src/server/conversation/external-audit-evidence-ingress.ts",
@@ -227,7 +227,7 @@
       },
       {
         "path": "src/server/workbench/repository.ts",
-        "lines": 2081,
+        "lines": 2058,
         "violatingFunctions": 1,
         "maxFunctionLines": 1428,
         "totalFunctionLines": 1428

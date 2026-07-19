@@ -76,6 +76,14 @@ node scripts/development-gates/source-contracts.mjs
 - C3：main agent tool loop、Tool registry、ExecutionEnvelope、terminal replay、Observation/Artifact提交和GenerationJob恢复回归。
 - 每个切片再运行TypeScript、零warning ESLint、complexity gate、source-contract gate和development gate。
 
+C1新鲜证据：
+
+- 失败注入红测先观察到Snapshot失败后消息错误变为`confirmed`，修复后同一故障会回滚Aggregate、授权元数据、消息和事件，旧快照保持`pending`。
+- 同一`actionId`同payload重放只保留一个事件；改为不同终态时失败关闭且不覆盖首次事实。
+- Node测试`427/427`；Vitest隔离分片`793/793`与`777/777`。
+- TypeScript、ESLint `0 warning`、生产构建、standalone敏感文件检查和development gate通过。
+- Provider保持离线延期、`passed=false`且请求数为0；复杂度债务仍为29个文件、源码字符串合同债务仍为21个文件。
+
 ## 7. 最终全量验证
 
 ```powershell

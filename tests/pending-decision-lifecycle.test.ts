@@ -72,7 +72,7 @@ describe("PendingDecision lifecycle", () => {
     }).some((part) => part.type === "human-input" || part.type === "next-actions")).toBe(false);
   });
 
-  it("updates every matching message and binds the resolved snapshot to a new task event", async () => {
+  it("delegates the resolved decision, event and snapshot to one atomic commit", async () => {
     const taskBrief = createTaskBrief({
       taskId: "task-1",
       projectId: "project-1",
@@ -84,42 +84,42 @@ describe("PendingDecision lifecycle", () => {
       generationIntensity: "standard",
       sourceMessageId: "teacher-origin",
     });
-    const pendingMessage = message("assistant-pending", "assistant", { pendingDecision: decision });
     const triggerMessage = message("teacher-confirm", "teacher", { confirmedActionId: decision.actionId });
-    const updateMessageMetadata = vi.fn(async (_projectId: string, id: string, metadata: Record<string, unknown>) =>
-      ({ ...message(id, id === triggerMessage.id ? "teacher" : "assistant", metadata) }));
-    const saveSemanticSnapshot = vi.fn(async () => undefined);
-    const appendEvent = vi.fn(async (event: Record<string, unknown>) => ({ ...event, sequence: 7 }));
+    const aggregate = {
+      taskBrief,
+      intentGrant: {},
+      plan: { planId: "plan-1", revision: 3, status: "active" },
+      status: "active",
+      checkpoint: null,
+    } as never;
+    const commitPendingDecisionStatus = vi.fn(async (input: { event: Record<string, unknown> }) => ({
+      aggregate,
+      event: { ...input.event, sequence: 7 },
+    }));
 
-    const sequence = await persistPendingDecisionStatus({
-      service: { getMessages: vi.fn(async () => [pendingMessage, triggerMessage]), updateMessageMetadata } as never,
-      controlPlaneStore: { appendEvent, saveSemanticSnapshot } as never,
+    const committed = await persistPendingDecisionStatus({
+      service: {} as never,
+      controlPlaneStore: { commitPendingDecisionStatus } as never,
       projectId: "project-1",
       triggerMessage,
       taskBrief,
-      aggregate: {
-        taskBrief,
-        intentGrant: {},
-        plan: { planId: "plan-1", revision: 3, status: "active" },
-        status: "active",
-        checkpoint: null,
-      } as never,
+      aggregate,
       decision,
       status: "confirmed",
     });
 
-    expect(sequence).toBe(7);
-    expect(updateMessageMetadata).toHaveBeenCalledTimes(2);
-    expect(updateMessageMetadata.mock.calls.map((call) => call[2].pendingDecision))
-      .toEqual([expect.objectContaining({ status: "confirmed" }), expect.objectContaining({ status: "confirmed" })]);
-    expect(appendEvent).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "task_updated",
-      payload: expect.objectContaining({ decisionId: decision.decisionId, decisionStatus: "confirmed" }),
+    expect(committed).toEqual({ sequence: 7, aggregate });
+    expect(commitPendingDecisionStatus).toHaveBeenCalledWith(expect.objectContaining({
+      triggerMessageId: triggerMessage.id,
+      status: "confirmed",
+      event: expect.objectContaining({
+        kind: "task_updated",
+        payload: expect.objectContaining({ decisionId: decision.decisionId, decisionStatus: "confirmed" }),
+      }),
+      semanticSnapshot: expect.objectContaining({
+        pendingDecision: expect.objectContaining({ status: "confirmed" }),
+      }),
     }));
-    expect(saveSemanticSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ pendingDecision: expect.objectContaining({ status: "confirmed" }) }),
-      7,
-    );
   });
 });
 

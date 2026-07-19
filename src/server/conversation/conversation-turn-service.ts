@@ -39,6 +39,7 @@ import { resolvePreAgentControl, type PreAgentControlDecision } from "./turn-int
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
 import type { MainAgentProgressEvent, MainAgentProgressSink } from "./main-agent-stream-projection";
 import { createControlPlaneStore } from "./control-plane-store";
+import { commitConversationTurnTaskState } from "./conversation-turn-task-state";
 import {
   createConfiguredBusinessToolSkillRuntime,
   type BusinessToolSkillRuntime,
@@ -515,88 +516,21 @@ async function executeTeacherMessageTurn(input: {
   let taskAggregate: Awaited<ReturnType<ControlPlaneStore["getTaskAggregate"]>> = null;
   let taskEventSequence = 0;
   if (taskBrief) {
-    const existingAggregate = await input.controlPlaneStore.getTaskAggregate(taskBrief.projectId, taskBrief.intentEpoch);
-    const resumesSameTask = existingAggregate?.status === "paused_recovery" &&
-      existingAggregate.taskBrief.taskId === taskBrief.taskId &&
-      existingAggregate.taskBrief.digest === taskBrief.digest;
-    const resumesReActCheckpoint = resumesSameTask &&
-      existingAggregate?.checkpoint?.schemaVersion === "react-checkpoint.v1";
-    const nextPlan = existingAggregate ? {
-      ...existingAggregate.plan,
-      status: resumesSameTask ? "active" : existingAggregate.plan.status,
-    } : {
-      planId: `plan:${taskBrief.taskId}`,
-      revision: 0,
-      status: "active",
-    };
-    taskAggregate = resumesSameTask && !resumesReActCheckpoint
-      ? await input.controlPlaneStore.resumeTaskAggregate({ taskBrief, intentGrant: intentGrant!, plan: nextPlan })
-      : await input.controlPlaneStore.upsertTaskAggregate({
-          taskBrief,
-          intentGrant: intentGrant!,
-          plan: nextPlan,
-          status: resumesSameTask ? "active" : existingAggregate?.status ?? "active",
-          checkpoint: existingAggregate?.checkpoint ?? null,
-        });
-    const taskEvent = await input.controlPlaneStore.appendEvent({
-      eventId: crypto.randomUUID(),
-      projectId: taskBrief.projectId,
-      taskId: taskBrief.taskId,
-      runId: `turn:${input.triggerMessage.id}`,
-      intentEpoch: taskBrief.intentEpoch,
-      kind: existingAggregate ? "task_updated" : "task_created",
-      visibility: "internal",
-      occurredAt: new Date().toISOString(),
-      payload: {
-        taskBriefDigest: taskBrief.digest,
-        planRevision: taskAggregate.plan.revision,
-      },
-    });
-    taskEventSequence = taskEvent.sequence;
-    if (!existingAggregate) {
-      const scopeProjection = taskScopeTeacherProjection(taskBrief);
-      const scopeOccurredAt = new Date().toISOString();
-      const scopeEvent = await input.controlPlaneStore.appendEvent({
-        eventId: crypto.randomUUID(),
-        projectId: taskBrief.projectId,
-        taskId: taskBrief.taskId,
-        runId: `turn:${input.triggerMessage.id}`,
-        intentEpoch: taskBrief.intentEpoch,
-        kind: "activity_updated",
-        visibility: "teacher",
-        occurredAt: scopeOccurredAt,
-        payload: {
-          activityId: `turn:${input.triggerMessage.id}:task-scope`,
-          label: "本轮目标已明确",
-          status: "completed",
-          purpose: taskBrief.goal,
-          inputSummary: scopeProjection.inputSummary,
-          expectedOutput: scopeProjection.expectedOutput,
-          finishedAt: scopeOccurredAt,
-        },
-      });
-      taskEventSequence = scopeEvent.sequence;
-    }
-    input.triggerMessage = await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
-      ...input.triggerMessage.metadata,
+    const committedTaskState = await commitConversationTurnTaskState({
+      service: input.service,
+      controlPlaneStore: input.controlPlaneStore,
+      projectId: input.projectId,
+      triggerMessage: input.triggerMessage,
       taskBrief,
-      intentGrant,
+      intentGrant: intentGrant!,
+      confirmedPendingDecision,
+      previousSnapshot: previousSnapshot?.snapshot,
     });
+    taskAggregate = committedTaskState.taskAggregate;
+    taskEventSequence = committedTaskState.taskEventSequence;
+    input.triggerMessage = committedTaskState.triggerMessage;
     const triggerMessageIndex = messages.findIndex((message) => message.id === input.triggerMessage.id);
     if (triggerMessageIndex >= 0) messages[triggerMessageIndex] = input.triggerMessage;
-    if (confirmedPendingDecision) {
-      taskEventSequence = await persistPendingDecisionStatus({
-        service: input.service,
-        controlPlaneStore: input.controlPlaneStore,
-        projectId: input.projectId,
-        triggerMessage: input.triggerMessage,
-        taskBrief,
-        aggregate: taskAggregate,
-        previousSnapshot: previousSnapshot?.snapshot,
-        decision: confirmedPendingDecision,
-        status: "confirmed",
-      });
-    }
   }
   const artifacts = await input.service.getArtifacts(input.projectId);
   const generationJobs = await input.service.getGenerationJobs(input.projectId);
@@ -1025,34 +959,6 @@ export function capabilityTeacherLabel(toolName: string) {
     return getCapabilityDefinitions().find((definition) => definition.id === toolName)?.userLabel
       ?? "执行当前步骤";
   }
-}
-
-const taskOutputTeacherLabels: Record<string, string> = {
-  requirement_spec: "需求规格",
-  lesson_plan: "公开课教案",
-  ppt: "可编辑 PPTX",
-  ppt_outline: "PPT 结构候选",
-  video_script: "视频脚本",
-  image: "图片资产",
-  video: "视频成片",
-  package: "完整材料包",
-};
-
-function taskScopeTeacherProjection(taskBrief: TaskBrief) {
-  const requested = [...new Set(taskBrief.requestedOutputs.map(taskOutputTeacherLabel))];
-  const excluded = [...new Set(taskBrief.excludedOutputs.map(taskOutputTeacherLabel))];
-  const requestedLabel = requested.join("、") || "当前任务成果";
-  return {
-    inputSummary: [
-      `交付范围：${requestedLabel}`,
-      ...(excluded.length ? [`明确不包含：${excluded.join("、")}`] : []),
-    ],
-    expectedOutput: `可继续审阅的${requestedLabel}`,
-  };
-}
-
-function taskOutputTeacherLabel(output: string) {
-  return taskOutputTeacherLabels[output] ?? output;
 }
 
 function toolObservationLabel(

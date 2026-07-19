@@ -7,8 +7,8 @@ import { canonicalizeRunInput, hashRunInput } from "@/server/execution/run-input
 import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import type { ValidationReport } from "@/server/quality/quality-types";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
-import { normalizeMessageParts, type MessagePart } from "@/lib/conversation-message-contract";
 import { isPendingDecision, withPendingDecisionStatus } from "@/server/conversation/task-contract";
+import { removeResolvedDecisionParts } from "@/server/conversation/pending-decision-message-parts";
 import { attachVerifiedArtifactApprovalEvidence, hasVerifiedArtifactApprovalEvidence } from "@/server/quality/artifact-truth-boundary";
 import { validatePptKeySampleSet, validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-validator";
 import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleSet, PptSampleApproval } from "@/server/ppt-quality/ppt-asset-types";
@@ -2009,21 +2009,6 @@ function parseRecoveryRecord(value: unknown): Record<string, unknown> {
   }
 }
 
-function removeResolvedDecisionParts(partsJson: string, decision: { decisionId: string; actionId: string }): MessagePart[] {
-  const retained: MessagePart[] = [];
-  for (const part of normalizeMessageParts(parseJsonValue(partsJson))) {
-    if (part.type === "human-input" && part.decisionId === decision.decisionId) continue;
-    if (part.type !== "next-actions") {
-      retained.push(part);
-      continue;
-    }
-    const actions = part.actions.filter((action) =>
-      action.actionId !== decision.actionId && !action.id.startsWith(`decision:${decision.decisionId}:`));
-    if (actions.length > 0) retained.push({ ...part, actions });
-  }
-  return retained;
-}
-
 async function updatePendingDecisionsForControl(
   tx: TransactionClient,
   projectId: string,
@@ -2050,14 +2035,6 @@ async function updatePendingDecisionsForControl(
         }),
       },
     });
-  }
-}
-
-function parseJsonValue(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return [];
   }
 }
 

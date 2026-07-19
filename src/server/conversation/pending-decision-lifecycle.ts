@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { createWorkbenchService } from "@/server/workbench/service";
 import type { ConversationMessageRecord } from "@/server/workbench/types";
 
@@ -66,55 +64,43 @@ export async function persistPendingDecisionStatus(input: {
   previousSnapshot?: SemanticContextSnapshot;
   decision: PendingDecision;
   status: Exclude<PendingDecisionStatus, "pending">;
-}): Promise<number> {
+}): Promise<{ sequence: number; aggregate: PersistedTaskAggregate }> {
   assertDecisionScope(input);
   const updatedDecision = withPendingDecisionStatus(input.decision, input.status);
-  const messages = await input.service.getMessages(input.projectId);
-  let triggerUpdated = false;
-
-  for (const message of messages) {
-    const existing = message.metadata.pendingDecision;
-    if (!isPendingDecision(existing) || existing.decisionId !== input.decision.decisionId ||
-        existing.actionId !== input.decision.actionId) continue;
-    await input.service.updateMessageMetadata(input.projectId, message.id, {
-      ...message.metadata,
-      pendingDecision: updatedDecision,
-    });
-    triggerUpdated ||= message.id === input.triggerMessage.id;
-  }
-
-  if (!triggerUpdated) {
-    await input.service.updateMessageMetadata(input.projectId, input.triggerMessage.id, {
-      ...input.triggerMessage.metadata,
-      pendingDecision: updatedDecision,
-    });
-  }
-
-  const event = await input.controlPlaneStore.appendEvent({
-    eventId: randomUUID(),
-    projectId: input.projectId,
-    taskId: input.taskBrief.taskId,
-    runId: `turn:${input.triggerMessage.id}`,
-    intentEpoch: input.taskBrief.intentEpoch,
-    kind: "task_updated",
-    visibility: "internal",
-    occurredAt: new Date().toISOString(),
-    payload: {
-      decisionId: input.decision.decisionId,
-      actionId: input.decision.actionId,
-      decisionStatus: input.status,
-    },
-  });
-  const previous = input.previousSnapshot;
-  await input.controlPlaneStore.saveSemanticSnapshot(buildSemanticContextSnapshot({
+  const semanticSnapshot = buildSemanticContextSnapshot({
     taskBrief: input.taskBrief,
     plan: input.aggregate.plan,
     pendingDecision: updatedDecision,
-    trustedArtifactRefs: previous?.trustedArtifactRefs ?? [],
-    observationRefs: previous?.observationRefs ?? [],
-    recentMessages: previous?.recentMessages ?? [],
-  }), event.sequence);
-  return event.sequence;
+    trustedArtifactRefs: input.previousSnapshot?.trustedArtifactRefs ?? [],
+    observationRefs: input.previousSnapshot?.observationRefs ?? [],
+    recentMessages: input.previousSnapshot?.recentMessages ?? [],
+  });
+  const committed = await input.controlPlaneStore.commitPendingDecisionStatus({
+    taskBrief: input.taskBrief,
+    intentGrant: input.aggregate.intentGrant,
+    plan: input.aggregate.plan,
+    triggerMessageId: input.triggerMessage.id,
+    triggerMessageMetadata: input.triggerMessage.metadata,
+    decision: input.decision,
+    status: input.status,
+    semanticSnapshot,
+    event: {
+      eventId: `pending-decision:${input.decision.actionId}`,
+      projectId: input.projectId,
+      taskId: input.taskBrief.taskId,
+      runId: `turn:${input.triggerMessage.id}`,
+      intentEpoch: input.taskBrief.intentEpoch,
+      kind: "task_updated",
+      visibility: "internal",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        decisionId: input.decision.decisionId,
+        actionId: input.decision.actionId,
+        decisionStatus: input.status,
+      },
+    },
+  });
+  return { sequence: committed.event.sequence, aggregate: committed.aggregate };
 }
 
 function assertDecisionScope(input: {
