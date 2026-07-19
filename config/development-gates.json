@@ -80,10 +80,10 @@
       },
       {
         "path": "src/hooks/useWorkbenchController.ts",
-        "lines": 760,
+        "lines": 734,
         "violatingFunctions": 1,
-        "maxFunctionLines": 671,
-        "totalFunctionLines": 671
+        "maxFunctionLines": 662,
+        "totalFunctionLines": 662
       },
       {
         "path": "src/lib/conversation-message-contract.ts",
@@ -98,13 +98,6 @@
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
-      },
-      {
-        "path": "src/lib/workbench-api.ts",
-        "lines": 499,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 237,
-        "totalFunctionLines": 237
       },
       {
         "path": "src/server/agent-runtime/openai-runtime.ts",
@@ -213,10 +206,10 @@
       },
       {
         "path": "src/server/workbench/service.ts",
-        "lines": 674,
+        "lines": 667,
         "violatingFunctions": 1,
-        "maxFunctionLines": 458,
-        "totalFunctionLines": 458
+        "maxFunctionLines": 452,
+        "totalFunctionLines": 452
       }
     ]
   },

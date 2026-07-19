@@ -7,7 +7,6 @@
   { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/image", "operation": "artifact_route_image", "controlImpact": "artifact_route" },
   { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/ppt-full-deck-review", "operation": "ppt_full_deck_review_submit", "controlImpact": "teacher_write" },
   { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/ppt-sample-review", "operation": "ppt_sample_review_submit", "controlImpact": "teacher_write" },
-  { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/regenerate", "operation": "artifact_regenerate", "controlImpact": "teacher_write" },
   { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/artifacts/:artifactId/video", "operation": "artifact_route_video", "controlImpact": "artifact_route" },
   { "method": "PATCH", "routeTemplate": "/api/workbench/projects/:projectId/generation-intensity", "operation": "generation_intensity_update", "controlImpact": "teacher_write" },
   { "method": "POST", "routeTemplate": "/api/workbench/projects/:projectId/members", "operation": "project_member_add", "controlImpact": "teacher_write" },

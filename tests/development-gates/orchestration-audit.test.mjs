@@ -19,7 +19,6 @@ const expectedOperations = [
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/image",
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/ppt-full-deck-review",
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/ppt-sample-review",
-  "POST /api/workbench/projects/:projectId/artifacts/:artifactId/regenerate",
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/video",
   "PATCH /api/workbench/projects/:projectId/generation-intensity",
   "POST /api/workbench/projects/:projectId/members",

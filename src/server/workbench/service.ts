@@ -20,7 +20,6 @@ import type {
   ProjectLifecycleMutation,
   ProjectLifecycleState,
   ProjectSnapshot,
-  RegenerateArtifactInput,
   RecoverConversationTurnInput,
   RecoverConversationTurnAfterProviderHealthInput,
   RecoverConversationTurnAfterContractRepairInput,
@@ -235,12 +234,6 @@ export function createWorkbenchService(
       const artifact = mapArtifact(stored);
       const saved = await repository.saveArtifact(projectId, buildPptFullDeckReviewArtifact(artifact, input));
       return mapArtifact(saved);
-    },
-
-    async regenerateArtifact(projectId: string, artifactId: string, input: RegenerateArtifactInput): Promise<ArtifactRecord> {
-      await ensureProjectAccess(projectId, "write");
-      const artifact = await repository.regenerateArtifact(projectId, artifactId, input);
-      return mapArtifact(artifact);
     },
 
     async getApprovedInputs(projectId: string, capabilityId: CapabilityId, taskBrief: TaskBrief): Promise<ArtifactRecord[]> {

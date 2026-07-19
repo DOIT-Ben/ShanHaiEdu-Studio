@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { POST as postApproveArtifact } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/approve/route";
 import { GET as getArtifactRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/route";
-import { POST as postRegenerateRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/regenerate/route";
 import { POST as postArtifactRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/route";
 import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
 import { GET as getSnapshotRoute } from "@/app/api/workbench/projects/[projectId]/snapshot/route";
@@ -100,18 +99,19 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     const artifactDetailResponse = await getArtifactRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId, artifactId }),
     });
-    const regenerateResponse = await postRegenerateRoute(
+    const regenerateResponse = await postMessageRoute(
       new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({
-          expectedLatestVersion: 1,
-          title: "需求规格 v2",
-          summary: "百分数公开课需求 v2",
-          markdownContent: "# 需求规格 v2",
+          role: "teacher",
+          content: "请基于当前任务重新生成「需求规格」，保留旧版本供我对比。",
+          artifactRefs: [artifactId],
+          idempotencyKey: `regenerate:${projectId}:${artifactId}`,
         }),
       }),
-      { params: Promise.resolve({ projectId, artifactId }) },
+      { params: Promise.resolve({ projectId }) },
     );
+    const regenerateBody = await regenerateResponse.json();
     const snapshotResponse = await getSnapshotRoute(new Request("http://localhost"), {
       params: Promise.resolve({ projectId }),
     });
@@ -122,17 +122,27 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(artifactResponse.status).toBe(201);
     expect(approveResponse.status).toBe(200);
     await expect(artifactDetailResponse.json()).resolves.toMatchObject({ artifact: { id: artifactId, version: 1 } });
-    expect(regenerateResponse.status).toBe(201);
-    expect(snapshot).toMatchObject({ project: { id: projectId, title: "Stage 7 合同项目" } });
+    expect(regenerateResponse.status).toBe(202);
+    expect(regenerateBody).toMatchObject({
+      message: {
+        role: "teacher",
+        content: "请基于当前任务重新生成「需求规格」，保留旧版本供我对比。",
+        artifactRefs: [artifactId],
+      },
+      job: { status: "queued", teacherMessageId: regenerateBody.message.id },
+    });
+    expect(regenerateBody).not.toHaveProperty("artifact");
+    expect(snapshot).toMatchObject({ project: { id: projectId, title: "Stage 7 合同项目", intentEpoch: 0 } });
     expect(snapshot).not.toHaveProperty("nodes");
     expect(snapshot).not.toHaveProperty("agentRuns");
     expect(snapshot.messages).toEqual(
       expect.arrayContaining([expect.objectContaining({ role: "teacher", content: "我要做百分数公开课", artifactRefs: [], metadata: {} })]),
     );
-    expect(snapshot.artifacts.map((artifact: { nodeKey: string; version: number }) => [artifact.nodeKey, artifact.version])).toEqual([
-      ["requirement_spec", 1],
-      ["requirement_spec", 2],
-    ]);
+    expect(snapshot.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: regenerateBody.message.content, artifactRefs: [artifactId] }),
+    ]));
+    expect(snapshot.artifacts.map((artifact: { nodeKey: string; version: number }) => [artifact.nodeKey, artifact.version]))
+      .toEqual([["requirement_spec", 1]]);
   });
 
   it("stores direct Artifact POSTs as reviewable teacher input without accepting forged authority", async () => {
@@ -171,38 +181,29 @@ describe("Backend Workflow Lite Stage 7 mainline contract", () => {
     expect(body.artifact.structuredContent).not.toHaveProperty("providerStatus");
   });
 
-  it("keeps Artifact conflict route envelopes stable", async () => {
+  it("keeps Artifact versions project-scoped and switches the single approved pointer", async () => {
     const service = createWorkbenchService();
-    const project = await service.createProject({ title: "Stage 7 冲突合同项目" });
-    const v1 = await service.saveArtifact(project.id, {
-      nodeKey: "requirement_spec",
-      kind: "requirement_spec",
-      title: "需求规格",
-      status: "needs_review",
-      summary: "v1",
-      markdownContent: "# v1",
+    const projectA = await service.createProject({ title: "Stage 7 版本 A" });
+    const projectB = await service.createProject({ title: "Stage 7 版本 B" });
+    const first = await service.saveArtifact(projectA.id, {
+      nodeKey: "requirement_spec", kind: "requirement_spec", title: "A v1",
+      status: "needs_review", summary: "A v1", markdownContent: "# A v1",
     });
-    await service.regenerateArtifact(project.id, v1.id, {
-      expectedLatestVersion: 1,
-      title: "需求规格 v2",
-      summary: "v2",
-      markdownContent: "# v2",
+    await service.approveArtifact(projectA.id, first.id);
+    const second = await service.saveArtifact(projectA.id, {
+      nodeKey: "requirement_spec", kind: "requirement_spec", title: "A v2",
+      status: "needs_review", summary: "A v2", markdownContent: "# A v2",
     });
-    const staleRegenerateResponse = await postRegenerateRoute(
-      new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({
-          expectedLatestVersion: 1,
-          title: "过期重做",
-          summary: "stale",
-          markdownContent: "# stale",
-        }),
-      }),
-      { params: Promise.resolve({ projectId: project.id, artifactId: v1.id }) },
-    );
+    const projectBFirst = await service.saveArtifact(projectB.id, {
+      nodeKey: "requirement_spec", kind: "requirement_spec", title: "B v1",
+      status: "needs_review", summary: "B v1", markdownContent: "# B v1",
+    });
 
-    expect(staleRegenerateResponse.status).toBe(409);
-    await expect(staleRegenerateResponse.json()).resolves.toMatchObject({ error: expect.stringContaining("Artifact version conflict") });
+    expect(second.version).toBe(2);
+    expect(projectBFirst.version).toBe(1);
+    await service.approveArtifact(projectA.id, second.id);
+    const snapshot = await service.getProjectSnapshot(projectA.id);
+    expect(snapshot.artifacts.map((artifact) => [artifact.version, artifact.isApproved])).toEqual([[1, false], [2, true]]);
   });
 
   it("keeps project snapshots isolated across messages and Artifacts", async () => {

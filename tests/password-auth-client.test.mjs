@@ -193,7 +193,6 @@ function loadAuthApiModule(csrfStore) {
 function loadWorkbenchApiModule(csrfStore) {
   return loadTsModule(path.join(root, "src", "lib", "workbench-api.ts"), {
     "@/lib/csrf-token": csrfStore,
-    "@/lib/mock-data": { projects: [], chatMessages: [], artifacts: [] },
     "@/lib/workbench-mappers": {
       normalizeProjects: (value) => value,
       normalizeSnapshot: (value) => value,

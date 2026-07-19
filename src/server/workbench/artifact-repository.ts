@@ -22,7 +22,6 @@ import type {
   ArtifactKind,
   ArtifactOrigin,
   ArtifactStatus,
-  RegenerateArtifactInput,
   SaveArtifactInput,
 } from "./types";
 
@@ -33,7 +32,6 @@ export function createArtifactRepository(client: PrismaClient = prisma) {
     saveArtifact: saveArtifact.bind(null, client),
     approveArtifact: approveArtifact.bind(null, client),
     getArtifact: getArtifact.bind(null, client),
-    regenerateArtifact: regenerateArtifact.bind(null, client),
     getArtifactsByKinds: getArtifactsByKinds.bind(null, client),
     getArtifacts: getArtifacts.bind(null, client),
   };
@@ -162,62 +160,6 @@ async function approveArtifact(client: PrismaClient, projectId: string, artifact
 async function getArtifact(client: PrismaClient, projectId: string, artifactId: string) {
   return client.artifact.findFirst({
     where: { id: artifactId, projectId },
-  });
-}
-
-async function regenerateArtifact(
-  client: PrismaClient,
-  projectId: string,
-  artifactId: string,
-  input: RegenerateArtifactInput,
-) {
-  return client.$transaction(async (tx) => {
-    const project = await assertActiveProjectForWrite(tx, projectId);
-    const existing = await tx.artifact.findFirst({
-      where: { id: artifactId, projectId },
-    });
-
-    if (!existing) {
-      throw new Error(`Artifact not found: ${artifactId}`);
-    }
-
-    const latest = await tx.artifact.findFirst({
-      where: { projectId, nodeKey: existing.nodeKey },
-      orderBy: { version: "desc" },
-    });
-
-    if (input.expectedLatestVersion !== undefined && latest?.version !== input.expectedLatestVersion) {
-      throw new Error(
-        `Artifact version conflict: expected latest version ${input.expectedLatestVersion}, received ${latest?.version ?? "none"}`,
-      );
-    }
-
-    const artifact = await tx.artifact.create({
-      data: {
-        projectId,
-        taskId: null,
-        taskBriefDigest: null,
-        intentEpoch: project.intentEpoch + 1,
-        planRevision: null,
-        origin: "teacher_input",
-        nodeKey: existing.nodeKey,
-        kind: existing.kind,
-        title: input.title ?? existing.title,
-        status: "needs_review",
-        summary: input.summary,
-        markdownContent: input.markdownContent,
-        structuredContentJson: JSON.stringify(input.structuredContent ?? {}),
-        version: latest ? latest.version + 1 : existing.version + 1,
-        isApproved: false,
-      },
-    });
-
-    await tx.project.update({
-      where: { id: projectId },
-      data: { intentEpoch: { increment: 1 } },
-    });
-
-    return artifact;
   });
 }
 

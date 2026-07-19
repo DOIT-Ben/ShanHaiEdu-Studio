@@ -163,7 +163,6 @@ function createEnvironment(baseURL, port) {
     DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: artifactRoot,
     M67_E2E_EVIDENCE_DIR: evidenceRoot,
-    NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
     NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
     SHANHAI_AUTH_MODE: "password",
     NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",

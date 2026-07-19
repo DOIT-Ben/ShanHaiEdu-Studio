@@ -117,14 +117,3 @@ test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfa
   assert.doesNotMatch(composerSource, /更多操作暂未开放|稍后开放/);
   assert.doesNotMatch(actionsSource, /更多操作暂未开放|aria-label="更多操作"|MoreHorizontal/);
 });
-
-test("M70 workbench send requests include a client idempotency key", () => {
-  const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
-  const apiSource = readSource("src/lib/workbench-api.ts");
-
-  assert.match(controllerSource, /messageIdempotencyRef/);
-  assert.match(controllerSource, /getRetrySafeMessageIdempotencyKey\(messageIdempotencyRef, messageSignature\)/);
-  assert.match(controllerSource, /messageIdempotencyRef\.current = null/);
-  assert.match(controllerSource, /crypto\.randomUUID/);
-  assert.match(apiSource, /idempotencyKey: options\.idempotencyKey/);
-});

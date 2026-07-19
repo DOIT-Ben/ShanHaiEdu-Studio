@@ -12,10 +12,13 @@ import {
   normalizeQuickReplies,
 } from "@/components/conversation/composer/composer-contracts";
 import {
-  buildClientMessageSignature,
-  getRetrySafeMessageIdempotencyKey,
   resolveBoundConfirmationActionId,
 } from "@/hooks/useWorkbenchController";
+import {
+  buildClientMessageSignature,
+  clearRetrySafeMessageIdempotencyKey,
+  getRetrySafeMessageIdempotencyKey,
+} from "@/lib/workbench-message-idempotency";
 
 describe("M54-A frontend workbench contracts", () => {
   it("plans textarea height with a stable max threshold", () => {
@@ -158,16 +161,31 @@ describe("M54-A frontend workbench contracts", () => {
   });
 
   it("reuses message idempotency keys for the same failed send retry only", () => {
-    const ref: { current: { signature: string; key: string } | null } = { current: null };
+    const store = { current: new Map<string, string>() };
     const firstSignature = buildClientMessageSignature("project-a", "继续生成教案", "资料《lesson.md》", null);
     const secondSignature = buildClientMessageSignature("project-a", "继续生成教案，补充活动", "资料《lesson.md》", null);
 
-    const firstKey = getRetrySafeMessageIdempotencyKey(ref, firstSignature);
-    const retryKey = getRetrySafeMessageIdempotencyKey(ref, firstSignature);
-    const changedKey = getRetrySafeMessageIdempotencyKey(ref, secondSignature);
+    const firstKey = getRetrySafeMessageIdempotencyKey(store, firstSignature);
+    const retryKey = getRetrySafeMessageIdempotencyKey(store, firstSignature);
+    const changedKey = getRetrySafeMessageIdempotencyKey(store, secondSignature);
 
     expect(retryKey).toBe(firstKey);
     expect(changedKey).not.toBe(firstKey);
+  });
+
+  it("keeps failed Artifact and composer retries isolated when their requests interleave", () => {
+    const store = { current: new Map<string, string>() };
+    const artifactSignature = buildClientMessageSignature("project-a", "重新生成需求规格", null, null, "pragmatic", ["artifact-a"]);
+    const composerSignature = buildClientMessageSignature("project-a", "补充课堂活动", null, null);
+    const artifactKey = getRetrySafeMessageIdempotencyKey(store, artifactSignature);
+    const composerKey = getRetrySafeMessageIdempotencyKey(store, composerSignature);
+
+    clearRetrySafeMessageIdempotencyKey(store, composerSignature);
+
+    expect(getRetrySafeMessageIdempotencyKey(store, artifactSignature)).toBe(artifactKey);
+    expect(getRetrySafeMessageIdempotencyKey(store, composerSignature)).not.toBe(composerKey);
+    clearRetrySafeMessageIdempotencyKey(store, artifactSignature);
+    expect(getRetrySafeMessageIdempotencyKey(store, artifactSignature)).not.toBe(artifactKey);
   });
 
   it("keeps a HumanGate action only for the unchanged bound quick reply", () => {

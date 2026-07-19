@@ -127,7 +127,6 @@ function startStandaloneServer() {
       ...commandEnv,
       HOSTNAME: "127.0.0.1",
       PORT: port,
-      NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE ?? "api",
     },
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,

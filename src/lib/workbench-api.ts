@@ -1,8 +1,13 @@
-import { artifacts as seedArtifacts, chatMessages as seedMessages, projects as seedProjects } from "@/lib/mock-data";
 import { getWorkbenchCsrfToken, isWorkbenchCsrfRequired } from "@/lib/csrf-token";
 import { normalizeProjects, normalizeSnapshot, type BackendProjectRecord } from "@/lib/workbench-mappers";
 import type { RealAssetKind } from "@/lib/artifact-real-assets";
-import type { ArtifactItem, ChatMessage, ConversationMessageSubmission, GenerationIntensity, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchDataSource, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import type {
+  ArtifactItem,
+  ConversationMessageSubmission,
+  WorkbenchDataSource,
+  WorkbenchSendMessageOptions,
+  WorkbenchSnapshot,
+} from "@/lib/types";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -11,20 +16,12 @@ type WorkbenchApiClientOptions = {
   fetcher?: Fetcher;
 };
 
-type DevelopmentAdapterOptions = {
-  seed?: {
-    projects: ProjectItem[];
-    messages: ChatMessage[];
-    artifacts: ArtifactItem[];
-  };
-};
-
 type MessageTurnResponse = {
   assistantMessage?: {
     id: string;
   };
   agentTurn?: {
-    quickReplies?: ChatMessage["quickReplies"];
+    quickReplies?: WorkbenchSnapshot["messages"][number]["quickReplies"];
   };
 };
 
@@ -40,11 +37,6 @@ export class WorkbenchApiError extends Error {
     this.status = status;
     this.userMessage = userMessage;
   }
-}
-
-function clone<T>(value: T): T {
-  if (typeof structuredClone === "function") return structuredClone(value);
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function endpoint(baseUrl: string, path: string) {
@@ -145,15 +137,6 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
         body: JSON.stringify(review),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
-    regenerateArtifact(projectId, artifactKey) {
-      return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactKey}/regenerate`, {
-        method: "POST",
-        body: JSON.stringify({
-          summary: "请重新生成这一版内容。",
-          markdownContent: "# 重做草稿\n\n- 已保留旧版本。\n- 新版本完成后请重新确认是否采用。",
-        }),
-      }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
-    },
     generateRealAsset(projectId, artifactId, assetKind, options) {
       const confirmedActionId = normalizedConfirmedActionId(options);
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactId}/${realAssetRouteSegment(assetKind)}`, {
@@ -244,256 +227,7 @@ export function artifactText(item: ArtifactItem) {
   return `${item.title}｜${item.summary}｜${fields}`;
 }
 
-function preferredActiveArtifactKey(artifacts: ArtifactItem[], fallbackKey?: string) {
-  return artifacts.find((item) => item.key === "intro-video-plan")?.key ?? artifacts.find((item) => item.status === "needs_review")?.key ?? fallbackKey ?? artifacts[0]?.key ?? "";
-}
-
-export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOptions = {}): WorkbenchDataSource {
-  const source = options.seed ?? {
-    projects: seedProjects,
-    messages: seedMessages,
-    artifacts: seedArtifacts,
-  };
-  const projects = clone(source.projects).map((project) => ({
-    ...project,
-    lifecycleState: project.lifecycleState ?? "active",
-    lifecycleVersion: project.lifecycleVersion ?? 0,
-    archivedAt: project.archivedAt ?? null,
-    deletedAt: project.deletedAt ?? null,
-  }));
-  const snapshots = new Map<string, Omit<WorkbenchSnapshot, "project">>();
-
-  function ensureSnapshot(projectId: string) {
-    if (!snapshots.has(projectId)) {
-      snapshots.set(projectId, {
-        messages: clone(source.messages),
-        artifacts: clone(source.artifacts),
-        turnJobs: [],
-        activeArtifactKey: preferredActiveArtifactKey(source.artifacts),
-        agentEventSequence: 0,
-      });
-    }
-    return snapshots.get(projectId);
-  }
-
-  function projectById(projectId: string) {
-    const project = projects.find((entry) => entry.id === projectId);
-    if (!project) throw new WorkbenchApiError("Project was not found.", "没有找到这个项目，请重新选择。", 404);
-    return project;
-  }
-
-  function snapshot(projectId: string): WorkbenchSnapshot {
-    const project = projectById(projectId);
-    const current = ensureSnapshot(projectId);
-    if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-    return clone({ project, ...current });
-  }
-
-  function touchProject(projectId: string, currentStep: string) {
-    const project = projectById(projectId);
-    project.updatedAt = "刚刚";
-    project.meta = "刚刚";
-    project.currentStep = currentStep;
-    project.status = "active";
-  }
-
-  async function submitDevelopmentConversationMessage(projectId: string, submission: ConversationMessageSubmission) {
-    const current = ensureSnapshot(projectId);
-    if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-    const timestamp = Date.now();
-    current.messages.push({
-      id: `${projectId}-teacher-${timestamp}`,
-      speaker: "teacher",
-      body: submission.reference ? `${submission.body}\n\n引用：${submission.reference}` : submission.body,
-      artifactRefs: submission.artifactRefs,
-      turnStatus: "running",
-      turnStatusLabel: "正在生成",
-    });
-    current.messages.push({
-      id: `${projectId}-assistant-${timestamp}`,
-      speaker: "assistant",
-      title: "已收到，我会把它整理进当前备课链路。",
-      body: "下一步会同步更新右侧产物节点。请先确认生成内容是否适合作为后续输入。",
-      tone: "focus",
-    });
-    current.artifacts = current.artifacts.map((item, index) =>
-      index === 0 || item.key === "intro-video-plan" ? { ...item, status: "needs_review", updatedAt: "刚刚" } : item,
-    );
-    current.activeArtifactKey = preferredActiveArtifactKey(current.artifacts, current.activeArtifactKey);
-    touchProject(projectId, "等待确认");
-    return snapshot(projectId);
-  }
-
-  return {
-    async listProjects(view: ProjectLifecycleState = "active") {
-      return clone(projects.filter((project) => project.lifecycleState === view));
-    },
-    async createProject() {
-      const project: ProjectItem = {
-        id: `dev-project-${Date.now()}`,
-        title: "新的公开课项目",
-        meta: "刚刚",
-        status: "active",
-        currentStep: "需求澄清",
-        updatedAt: "刚刚",
-        lifecycleState: "active",
-        lifecycleVersion: 0,
-        archivedAt: null,
-        deletedAt: null,
-      };
-      projects.unshift(project);
-      snapshots.set(project.id, {
-        messages: [
-          {
-            id: `${project.id}-welcome`,
-            speaker: "assistant",
-            title: "我们先确认公开课目标",
-            body: "请直接描述年级、课题、教材版本和希望生成的材料，我会整理成可确认的备课链路。",
-          },
-        ],
-        artifacts: clone(source.artifacts).map((item) => ({ ...item, status: item.key === "textbook-evidence" ? "needs_review" : "not_started" })),
-        turnJobs: [],
-        activeArtifactKey: source.artifacts[0]?.key ?? "",
-        agentEventSequence: 0,
-      });
-      return snapshot(project.id);
-    },
-    async getProjectSnapshot(projectId) {
-      return snapshot(projectId);
-    },
-    async recoverConversationTurn(projectId) {
-      return snapshot(projectId);
-    },
-    async mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
-      const project = projectById(projectId);
-      if (project.lifecycleVersion !== mutation.expectedLifecycleVersion) {
-        throw new WorkbenchApiError("Project lifecycle version conflict.", "项目状态已变化，请刷新后再操作。", 409);
-      }
-
-      const active = project.lifecycleState === "active";
-      if (mutation.action === "rename") {
-        const title = mutation.title?.trim() ?? "";
-        if (!active || !title || title.length > 80) {
-          throw new WorkbenchApiError("Project lifecycle mutation rejected.", "该项目当前不能执行这个操作。", 409);
-        }
-        if (title === project.title) return { changed: false, project: clone(project) };
-        project.title = title;
-      } else if (mutation.action === "archive") {
-        if (project.lifecycleState === "archived") return { changed: false, project: clone(project) };
-        if (!active) throw new WorkbenchApiError("Project lifecycle mutation rejected.", "该项目当前不能执行这个操作。", 409);
-        project.lifecycleState = "archived";
-        project.archivedAt = new Date().toISOString();
-      } else if (mutation.action === "trash") {
-        if (project.lifecycleState === "trash") return { changed: false, project: clone(project) };
-        project.lifecycleState = "trash";
-        project.deletedAt = new Date().toISOString();
-      } else {
-        if (active) return { changed: false, project: clone(project) };
-        project.lifecycleState = "active";
-        project.archivedAt = null;
-        project.deletedAt = null;
-      }
-      project.lifecycleVersion += 1;
-      project.updatedAt = "刚刚";
-      project.meta = "刚刚";
-      return { changed: true, project: clone(project) };
-    },
-    async updateGenerationIntensity(projectId: string, intensity: GenerationIntensity, expectedVersion: number, confirmationActionId?: string) {
-      const project = projectById(projectId);
-      if ((project.intensityVersion ?? 0) !== expectedVersion) throw new WorkbenchApiError("Generation intensity version conflict.", "生成强度已变化，请刷新后再操作。", 409);
-      if (intensity === "extreme" && !confirmationActionId) {
-        return { project: clone(project), confirmationRequired: true, actionId: `intensity:${encodeURIComponent(projectId)}:${expectedVersion}:extreme` };
-      }
-      project.generationIntensity = intensity;
-      project.intensityVersion = expectedVersion + 1;
-      return { project: clone(project) };
-    },
-    submitConversationMessage: submitDevelopmentConversationMessage,
-    async sendMessage(projectId, body, reference, options) {
-      return submitDevelopmentConversationMessage(projectId, {
-        body,
-        reference,
-        artifactRefs: [],
-        ...messageSubmissionOptions(options),
-      });
-    },
-    async setMessageReaction(projectId, messageId, value) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.messages = current.messages.map((message) => message.id === messageId ? { ...message, ...(value ? { reaction: value } : { reaction: undefined }) } : message);
-      return snapshot(projectId);
-    },
-    async approveArtifact(projectId, artifactKey) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.artifacts = current.artifacts.map((item) =>
-        item.key === artifactKey ? { ...item, status: "approved", updatedAt: "刚刚" } : item,
-      );
-      current.activeArtifactKey = artifactKey;
-      touchProject(projectId, "已确认");
-      return snapshot(projectId);
-    },
-    async submitPptSampleReview(projectId, artifactKey, review) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.artifacts = current.artifacts.map((item) => item.key === artifactKey && item.pptSampleReview
-        ? { ...item, pptSampleReview: { ...item.pptSampleReview, reviewStatus: review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0) ? "passed" : "failed" } }
-        : item);
-      return snapshot(projectId);
-    },
-    async submitPptFullDeckReview(projectId, artifactKey, review) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.artifacts = current.artifacts.map((item) => item.key === artifactKey && item.pptFullDeckReview
-        ? { ...item, pptFullDeckReview: { ...item.pptFullDeckReview, reviewStatus: review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0) ? "passed" : "failed" } }
-        : item);
-      return snapshot(projectId);
-    },
-    async regenerateArtifact(projectId, artifactKey) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.artifacts = current.artifacts.map((item) =>
-        item.key === artifactKey
-          ? {
-              ...item,
-              status: "needs_review",
-              updatedAt: "刚刚",
-              summary: `${item.summary} 已保留旧版，新的版本完成后再确认采用。`,
-            }
-          : item,
-      );
-      current.activeArtifactKey = artifactKey;
-      touchProject(projectId, "等待确认");
-      return snapshot(projectId);
-    },
-    async generateRealAsset(projectId, artifactKey, assetKind) {
-      const current = ensureSnapshot(projectId);
-      if (!current) throw new WorkbenchApiError("Snapshot was not created.");
-      current.artifacts = current.artifacts.map((item) =>
-        item.key === artifactKey || item.artifactId === artifactKey
-          ? {
-              ...item,
-              status: "needs_review",
-              updatedAt: "刚刚",
-              summary: `${item.summary} 已请求生成真实素材，完成后请核对再用于授课。`,
-            }
-          : item,
-      );
-      current.activeArtifactKey = artifactKey;
-      touchProject(projectId, assetKind === "video" ? "生成导入视频" : "生成课堂素材");
-      return snapshot(projectId);
-    },
-  };
-}
-
 function realAssetRouteSegment(assetKind: RealAssetKind) {
   if (assetKind === "pptx") return "coze-ppt";
   return assetKind;
-}
-
-export function createDefaultWorkbenchDataSource(): WorkbenchDataSource {
-  if (process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE === "mock") {
-    return createDevelopmentWorkbenchAdapter();
-  }
-  return createWorkbenchApiClient();
 }

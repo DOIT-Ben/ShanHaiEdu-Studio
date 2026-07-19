@@ -241,7 +241,7 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
         onConfirm={controller.confirmArtifact}
         onPptSampleReview={controller.submitPptSampleReview}
         onPptFullDeckReview={controller.submitPptFullDeckReview}
-        onRegenerate={controller.regenerateArtifact}
+        onRegenerate={controller.requestArtifactRegeneration}
         onGenerateRealAsset={controller.generateRealAsset}
         realAssetGenerationKey={controller.realAssetGenerationKey}
       />

@@ -20,6 +20,7 @@
 - `ToolExecutionGateway`强制ExecutionEnvelope、ActionPolicy、幂等和实际参数对账。
 - ToolInvocation、ValidationReport、Observation、Artifact、GenerationJob和事件按同一结果原子提交。
 - Workbench repository只组合按聚合拆分的持久化职责；业务Tool结果只由control-plane原子提交。无生产消费者的staged promotion不得作为第二条Artifact晋升路径恢复。
+- Workbench前端只使用真实API client；Artifact重做是带真实Artifact引用的教师消息，不存在专用regenerate写路由、生产mock selector或seed数据源。
 - TaskBrief冻结目标、canonical输出范围、课程上下文、初始可信输入引用和质量目标；IntentGrant独占预算与授权；TaskAggregate/ExecutionEnvelope绑定plan revision；checkpoint与SemanticSnapshot保存动态可信Artifact、Observation和恢复事实。
 - assistant-ui只消费项目自有MessagePart和AgentEventEnvelope，不成为业务真源；`agentTimeline`按真实sequence持久化并在queue终态后回写，历史completed不能替代当前turn活动。
 - Provider和Skill通过Adapter与Binding Policy接入，不进入React组件，不取得编排权。

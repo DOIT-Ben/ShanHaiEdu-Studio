@@ -113,6 +113,14 @@ D1新鲜证据：
 - `npm test`通过：Node`427/427`，Vitest隔离分片`801/801`与`773/773`；匹配ValidationReport与Artifact原子保存、摘要不匹配时零新增事实的迁移测试已恢复；TypeScript和ESLint `0 warning`通过。
 - 当前source gate仍报告21文件/301次，但该数字已确认有漏报和误报，只能作为旧检测器输出，不能作为最终债务总数。
 
+D2新鲜证据：
+
+- 红测先证明repository/service仍暴露直接`regenerateArtifact`、前端仍导出mock选择器且按钮缺少标准消息转换。
+- 重做提交使用真实Artifact ID和标准`POST /messages`；路由行为验证提交后只有教师消息与queued ConversationTurn，Artifact版本保持1、IntentEpoch保持0；产物动作策略不清空composer草稿，也不绑定待确认HumanGate。
+- 专用regenerate写入口、development adapter、mock selector和四份seed已删除；旧阶段测试中的版本递增、项目隔离和唯一批准指针合同已迁入当前主线行为测试，错误直接regenerate断言已删除；写操作registry由16降至15。
+- `npm test`通过：Node`424/424`，Vitest隔离分片`782/782`与`786/786`；TypeScript和development gate通过，复杂度债务由26降至25。
+- 按用户要求未运行PPT浏览器验收；Provider请求数为0。
+
 ## 7. 最终全量验证
 
 ```powershell

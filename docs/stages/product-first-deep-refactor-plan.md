@@ -31,7 +31,7 @@
 
 仍存在的问题：
 
-- 复杂度债务已由27降至26个文件；当前源码合同门仍报告21个文件、301次命中，但已证实该检测器同时漏报wrapper读取并跨作用域误报，不能再把该数字当作完整债务。
+- 复杂度债务已由27降至25个文件；当前源码合同门仍报告21个文件、301次命中，但已证实该检测器同时漏报wrapper读取并跨作用域误报，不能再把该数字当作完整债务。
 - `conversation-turn-service.ts`为115行，`main-agent-tool-loop-config.ts`为97行，workbench repository已由2058行降至29行；三个公开门面只负责组合内部职责。
 
 尚未实现：
@@ -65,7 +65,7 @@
 
 完成事实：
 
-- 阶段A当时的18个项目写入口统一到registry、外层wrapper和AST门；阶段B删除两条旧AgentRun路由后，当前活动registry为16条。
+- 阶段A当时的18个项目写入口统一到registry、外层wrapper和AST门；阶段B删除两条旧AgentRun路由后为16条，D2删除错误regenerate入口后当前为15条。
 - `resultMode`由服务端Tool registry冻结并在终态与summary中独立复核。
 - terminal replay复核attempted/resolved audit、Observation、Event和Artifact完整矩阵。
 - authority summary保留历史IntentEpoch违规，按消息身份处理幂等提交，并明确降级旧v1证据。
@@ -137,23 +137,29 @@ D1已完成：
 - 删除无生产消费者且会生成`legacy/null`废Artifact的staged promotion出口；GenerationJob不再自动创建无人消费的StagedArtifactCommit。当前唯一Tool结果晋升仍在control-plane原子事务。
 - 全量测试为Node`427/427`、Vitest`801/801 + 773/773`；未调用Provider。
 
-D1后的唯一执行顺序：
+D2已完成：
 
-1. **D2 错误产品出口**：regenerate改走消息/Main Agent并删除直接写路由；删除生产mock adapter和mock seed选择。
-2. **D3 假完成与孤立PoC**：删除Stage41 local substitute、无生产消费者的runtime A/B和orchestrator runtime；核验现有数据库兼容边界后，退役`StagedArtifactCommit` Prisma模型、初始化SQL和健康检查残留。
-3. **D4 检测器纠偏**：修复跨作用域误报、属性名污染和TypeScript表达式解析；此时只校准当前直接读取，不提前把隐藏债务写成0。
-4. **D5 workbench service**：按项目/消息、Artifact、Generation、VideoShot、TurnJob、snapshot与Guard拆分，保持工厂参数和授权/映射合同。
-5. **D6 消息与事件合同**：先把Provider敏感路径从精确文件扩为新目录glob，再拆MessagePart和TeacherEvent合同。
-6. **D7 control plane与外部审计**：拆store后拆唯一external-audit ingress，保持原子提交和authority事实。
-7. **D8 Skill**：bindings、output contract、registry叶子先行，runtime最后组合。
-8. **D9 Tool**：agent router、package/provider adapters、tool-router依次迁移；Provider请求和响应语义只允许机械保持。
-9. **D10 Runtime与模型Agent**：OpenAI runtime、controlled ReAct loop、model agent依次迁移；任何请求/重试/晋升语义变化都退出离线阶段。
-10. **D11 Feedback**：repository、service、controller、dialog按依赖顺序拆分。
-11. **D12 真实前端**：删除无生产消费者的PromptComposer并把必要能力/测试绑定到assistant-ui，再处理controller和MediaWorkbench。
-12. **D13 视频route**：保留GET/POST、外层wrapper、Envelope、任务隔离和错误码，只做机械拆分。
-13. **D14 Ops源码合同**：container、deploy、desktop、auth和video smoke改为结构化配置或可注入行为测试。
-14. **D15 Runner源码合同**：先M67后V1-9，改验冻结树、child process、shutdown和manifest/state行为。
-15. **D16 最终检测**：启用wrapper/常量表/属性传播检测，清完最后漏项后同时置空complexity与source baseline。
+- “调整后重做”改为带真实Artifact ID的标准教师消息，复用现有幂等提交和Main Agent队列；提交当下不创建新Artifact、不提升IntentEpoch，并与composer草稿及待确认HumanGate隔离。
+- 删除专用regenerate route/service/repository/type和对应写操作registry项；Stage3/Stage6中的通用版本递增、项目隔离和唯一批准指针合同已迁入当前主线行为测试，只删除错误直接regenerate合同。
+- 删除development adapter、mock selector和四份生产seed；`workbench-api.ts`由499降至233行并退出复杂度baseline，债务由26降至25。
+- 全量测试为Node`424/424`、Vitest`782/782 + 786/786`；未运行PPT浏览器验收，未调用Provider。
+
+D2后的唯一执行顺序：
+
+1. **D3 假完成与孤立PoC**：删除Stage41 local substitute、无生产消费者的runtime A/B和orchestrator runtime；核验现有数据库兼容边界后，退役`StagedArtifactCommit` Prisma模型、初始化SQL和健康检查残留。
+2. **D4 检测器纠偏**：修复跨作用域误报、属性名污染和TypeScript表达式解析；此时只校准当前直接读取，不提前把隐藏债务写成0。
+3. **D5 workbench service**：按项目/消息、Artifact、Generation、VideoShot、TurnJob、snapshot与Guard拆分，保持工厂参数和授权/映射合同。
+4. **D6 消息与事件合同**：先把Provider敏感路径从精确文件扩为新目录glob，再拆MessagePart和TeacherEvent合同。
+5. **D7 control plane与外部审计**：拆store后拆唯一external-audit ingress，保持原子提交和authority事实。
+6. **D8 Skill**：bindings、output contract、registry叶子先行，runtime最后组合。
+7. **D9 Tool**：agent router、package/provider adapters、tool-router依次迁移；Provider请求和响应语义只允许机械保持。
+8. **D10 Runtime与模型Agent**：OpenAI runtime、controlled ReAct loop、model agent依次迁移；任何请求/重试/晋升语义变化都退出离线阶段。
+9. **D11 Feedback**：repository、service、controller、dialog按依赖顺序拆分。
+10. **D12 真实前端**：删除无生产消费者的PromptComposer并把必要能力/测试绑定到assistant-ui，再处理controller和MediaWorkbench。
+11. **D13 视频route**：保留GET/POST、外层wrapper、Envelope、任务隔离和错误码，只做机械拆分。
+12. **D14 Ops源码合同**：container、deploy、desktop、auth和video smoke改为结构化配置或可注入行为测试，并删除已无消费者的旧数据源环境变量赋值。
+13. **D15 Runner源码合同**：先M67后V1-9，改验冻结树、child process、shutdown和manifest/state行为。
+14. **D16 最终检测**：启用wrapper/常量表/属性传播检测，清完最后漏项后同时置空complexity与source baseline。
 
 验收：
 

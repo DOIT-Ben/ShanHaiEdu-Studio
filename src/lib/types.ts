@@ -201,7 +201,6 @@ export type WorkbenchDataSource = {
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   submitPptSampleReview: (projectId: string, artifactKey: string, review: PptSampleReviewSubmission) => Promise<WorkbenchSnapshot>;
   submitPptFullDeckReview: (projectId: string, artifactKey: string, review: PptFullDeckReviewSubmission) => Promise<WorkbenchSnapshot>;
-  regenerateArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
 };
 

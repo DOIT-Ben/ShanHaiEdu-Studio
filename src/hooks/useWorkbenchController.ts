@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
-import { resolveArtifactActionKey } from "@/lib/workbench-actions";
-import { artifactText, createDefaultWorkbenchDataSource } from "@/lib/workbench-api";
+import { buildArtifactRegenerationSubmission, resolveArtifactActionKey, resolveConversationSubmissionPolicy, type ConversationSubmissionOrigin } from "@/lib/workbench-actions";
+import { artifactText, createWorkbenchApiClient } from "@/lib/workbench-api";
+import { buildClientMessageSignature, clearRetrySafeMessageIdempotencyKey, getRetrySafeMessageIdempotencyKey } from "@/lib/workbench-message-idempotency";
 import type { ArtifactItem, ChatMessage, ConversationTurnJob, GenerationIntensity, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-execution-feedback";
 import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
@@ -20,12 +21,10 @@ export type SubmitConversationMessageInput = {
   artifactRefs: string[];
   confirmedActionId?: string;
 };
-
 const activeProjectStorageKey = "shanhai.activeProjectId";
 const xiaokuResponseStyleStorageKey = "shanhai.xiaoku.responseStyle";
 const xiaokuResponseStyleChangeEvent = "shanhai:xiaoku-response-style-change";
 const snapshotPollingIntervalMs = 1200;
-
 type SnapshotCommitWatermark = {
   begin: (projectId: string) => ProjectSnapshotCommitToken;
   commit: (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => boolean;
@@ -44,7 +43,7 @@ function snapshotHasPendingTurn(snapshot: WorkbenchSnapshot) {
 }
 
 export function useWorkbenchController(options: { eventDrivenMessages?: boolean } = {}) {
-  const dataSource = useMemo(() => createDefaultWorkbenchDataSource(), []);
+  const dataSource = useMemo(() => createWorkbenchApiClient(), []);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [projectView, setProjectView] = useState<ProjectLifecycleState>("active");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -88,7 +87,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     [messages, turnJobs],
   );
   const composerSubmittingRef = useRef(false);
-  const messageIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
+  const messageIdempotencyRef = useRef(new Map<string, string>());
   const composerNoticeTimer = useRef<number | null>(null);
   const intensityVersionRef = useRef(new Map<string, number>());
   const activeProjectIdRef = useRef("");
@@ -464,24 +463,15 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
       setNotice(`「${item.title}」暂时没有确认成功，请稍后再试。`);
     }
   }
-
-  async function regenerateArtifact(item: ArtifactItem) {
-    if (!activeProjectId) return;
-    const artifactKey = resolveArtifactActionKey(item, "regenerate");
-    if (!artifactKey) {
+  async function requestArtifactRegeneration(item: ArtifactItem) {
+    const submission = buildArtifactRegenerationSubmission(item);
+    if (!activeProjectId || !submission) {
       setNotice(`「${item.title}」暂时没有开始重做，请稍后再试。`);
       return;
     }
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.regenerateArtifact(activeProjectId, artifactKey);
-      applySnapshot(snapshot, snapshotRequest);
-      setNotice(`已保留「${item.title}」旧内容，新的版本完成后再由你确认是否采用。`);
-    } catch {
-      setNotice(`「${item.title}」暂时没有开始重做，请稍后再试。`);
-    }
+    setDetailOpen(false);
+    await submitConversationMessage(submission, "artifact_action");
   }
-
   async function generateRealAsset(item: ArtifactItem, assetKind: RealAssetKind) {
     if (!activeProjectId || !item.artifactId) {
       setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
@@ -492,7 +482,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
       setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
       return;
     }
-
     const nextGenerationKey = `${item.artifactId}:${assetKind}`;
     setRealAssetGenerationKey(nextGenerationKey);
     try {
@@ -507,7 +496,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     }
   }
 
-  async function submitConversationMessage(submission: SubmitConversationMessageInput) {
+  async function submitConversationMessage(submission: SubmitConversationMessageInput, origin: ConversationSubmissionOrigin = "composer") {
     if (composerSubmittingRef.current || composerSubmitting) {
       flashComposerNotice("正在发送，请稍候。");
       return;
@@ -521,12 +510,13 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     }
     let targetProjectId = activeProjectId;
     let snapshotRequest = targetProjectId ? beginSnapshotRequest(targetProjectId) : null;
-    const confirmationActionId = resolveBoundConfirmationActionId({
+    const policy = resolveConversationSubmissionPolicy(origin);
+    const confirmationActionId = policy.bindPendingConfirmation ? resolveBoundConfirmationActionId({
       submittedActionId: submission.confirmedActionId,
       pendingActionId: pendingConfirmationActionId,
       submittedBody: body,
       boundBody: input,
-    });
+    }) : null;
     const displayBody = submittedReference ? `${body || "请参考这份资料继续。"}\n\n引用：${submittedReference}` : body;
     const optimisticMessage: ChatMessage = {
       id: `optimistic-teacher-${Date.now()}`,
@@ -536,10 +526,10 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
       turnStatus: projectBusy ? "queued" : "running",
       turnStatusLabel: projectBusy ? "排队中" : "正在生成",
     };
-    setInput("");
-    setPendingConfirmationActionId(null);
-    setReference(null);
-    setComposerArtifactRefs([]);
+    if (policy.clearComposer) {
+      setInput(""); setPendingConfirmationActionId(null);
+      setReference(null); setComposerArtifactRefs([]);
+    }
     composerSubmittingRef.current = true;
     setComposerSubmitting(true);
     setMessages((current) => [...current, optimisticMessage]);
@@ -572,14 +562,14 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
       });
       if (!snapshotRequest) throw new Error("Conversation snapshot commit token is missing.");
       applySnapshot(snapshot, snapshotRequest);
-      messageIdempotencyRef.current = null;
+      clearRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature);
       flashComposerNotice("已发送");
     } catch {
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
-      setInput(body);
-      setPendingConfirmationActionId(confirmationActionId);
-      setReference(submittedReference);
-      setComposerArtifactRefs(artifactRefs);
+      if (policy.restoreOnFailure) {
+        setInput(body); setPendingConfirmationActionId(confirmationActionId);
+        setReference(submittedReference); setComposerArtifactRefs(artifactRefs);
+      }
       flashComposerNotice("发送没有成功，请稍后再试。");
     } finally {
       composerSubmittingRef.current = false;
@@ -700,7 +690,7 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
     confirmArtifact,
     submitPptSampleReview,
     submitPptFullDeckReview,
-    regenerateArtifact,
+    requestArtifactRegeneration,
     generateRealAsset,
     realAssetGenerationKey,
     xiaokuResponseStyle,
@@ -715,10 +705,6 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   };
 }
 
-export function buildClientMessageSignature(projectId: string, body: string, reference: string | null, confirmationActionId: string | null, responseStyle = "pragmatic", artifactRefs: string[] = []) {
-  return JSON.stringify({ projectId, body, reference: reference ?? "", artifactRefs: [...artifactRefs].sort(), confirmationActionId: confirmationActionId ?? "", responseStyle });
-}
-
 export function resolveBoundConfirmationActionId(input: {
   submittedActionId?: string;
   pendingActionId: string | null;
@@ -728,13 +714,6 @@ export function resolveBoundConfirmationActionId(input: {
   const submittedActionId = input.submittedActionId?.trim() || null;
   if (!submittedActionId || submittedActionId !== input.pendingActionId?.trim()) return null;
   return input.submittedBody.trim() === input.boundBody.trim() ? submittedActionId : null;
-}
-
-export function getRetrySafeMessageIdempotencyKey(ref: { current: { signature: string; key: string } | null }, signature: string) {
-  if (ref.current?.signature === signature) return ref.current.key;
-  const key = buildClientMessageIdempotencyKey(signature);
-  ref.current = { signature, key };
-  return key;
 }
 
 function subscribeXiaoKuResponseStyle(onStoreChange: () => void) {
@@ -752,9 +731,4 @@ function readXiaoKuResponseStyle(): XiaoKuResponseStyle {
 
 function getServerXiaoKuResponseStyle(): XiaoKuResponseStyle {
   return "pragmatic";
-}
-
-function buildClientMessageIdempotencyKey(signature: string) {
-  const randomPart = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `message:${randomPart}:${signature.length}`;
 }

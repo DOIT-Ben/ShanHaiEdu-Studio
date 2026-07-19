@@ -13,7 +13,6 @@ export type OrchestrationIngressOperation =
   | "project_member_remove"
   | "teacher_artifact_create"
   | "artifact_approve"
-  | "artifact_regenerate"
   | "ppt_sample_review_submit"
   | "ppt_full_deck_review_submit"
   | "artifact_route_coze_ppt"

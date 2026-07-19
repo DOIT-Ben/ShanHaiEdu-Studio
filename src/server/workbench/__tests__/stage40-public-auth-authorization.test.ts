@@ -107,9 +107,6 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async approveArtifact() {
       return makeArtifact("artifactA", "projectA", "approved");
     },
-    async regenerateArtifact() {
-      return makeArtifact("artifactB", "projectA", "needs_review");
-    },
     async getArtifactsByKinds(projectId: string) {
       return [makeArtifact("artifactA", projectId, "approved")];
     },

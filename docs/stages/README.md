@@ -4,7 +4,7 @@
 
 `docs\stages\`当前唯一活动阶段是 **产品优先深度重构**。目标不是继续增加证明机制，而是删除旧控制面、修复核心合同漏洞、拆分巨型模块，并让教师主链路只依赖一套可维护实现。
 
-当前进度：阶段A、阶段B、阶段C以及阶段D的D1 workbench repository切片已完成离线行为回归；repository已退出复杂度基线，ConversationTurn幂等与并发claim、GenerationJob状态降级、VideoShot计划与片段血缘漏洞已关闭。阶段D仍在进行，唯一下一切片是D2：删除绕过Main Agent的直接regenerate写入口和生产源码中的mock adapter。整个活动阶段仍未关闭。
+当前进度：阶段A、阶段B、阶段C以及阶段D的D1、D2切片已完成离线行为回归；repository与workbench API已退出复杂度基线，队列/GenerationJob/VideoShot漏洞已关闭，Artifact重做只走标准Main Agent消息，生产mock adapter与seed已删除。阶段D仍在进行，唯一下一切片是D3：删除Stage41假完成、孤立runtime PoC和休眠staged commit结构。整个活动阶段仍未关闭。
 
 ## 活动文件
 

@@ -11,34 +11,6 @@ const apiSourcePath = path.join(root, "src", "lib", "workbench-api.ts");
 const actionsSourcePath = path.join(root, "src", "lib", "workbench-actions.ts");
 const realAssetActionsSourcePath = path.join(root, "src", "lib", "artifact-real-assets.ts");
 
-const seedProjects = [
-  {
-    id: "project-a",
-    title: "五年级百分数公开课",
-    meta: "五年级数学",
-    status: "active",
-    currentStep: "需求澄清",
-    updatedAt: "刚刚",
-  },
-  {
-    id: "project-b",
-    title: "二年级表内乘法",
-    meta: "二年级数学",
-    status: "review",
-    currentStep: "教案确认",
-    updatedAt: "昨天",
-  },
-];
-
-const seedMessages = [
-  {
-    id: "m1",
-    speaker: "assistant",
-    title: "我们先确认公开课目标",
-    body: "请告诉我年级、课题和需要的产物。",
-  },
-];
-
 const seedArtifacts = [
   {
     key: "textbook-evidence",
@@ -140,13 +112,6 @@ function loadWorkbenchApiModule(options = {}) {
   }).outputText;
 
   const requireStub = (id) => {
-    if (id === "@/lib/mock-data") {
-      return {
-        projects: seedProjects,
-        chatMessages: seedMessages,
-        artifacts: seedArtifacts,
-      };
-    }
     if (id === "@/lib/csrf-token") {
       return {
         getWorkbenchCsrfToken: () => null,
@@ -643,31 +608,6 @@ test("API client approves by artifact id and refreshes the project snapshot", as
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
-test("API client regenerates artifacts through the backend route and refreshes the project snapshot", async () => {
-  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
-  const calls = [];
-  const client = createWorkbenchApiClient({
-    fetcher: async (url, init) => {
-      calls.push({ url: String(url), init });
-      return {
-        ok: true,
-        json: async () =>
-          init?.method === "POST"
-            ? { artifact: { ...backendArtifact, status: "needs_review", isApproved: false, version: 2 } }
-            : backendSnapshot,
-      };
-    },
-  });
-
-  const snapshot = await client.regenerateArtifact("project-a", "artifact-requirement-v1");
-
-  assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-requirement-v1/regenerate");
-  assert.equal(calls[0].init.method, "POST");
-  assert.equal(JSON.parse(calls[0].init.body).summary, "请重新生成这一版内容。");
-  assert.equal(calls[1].url, "/api/workbench/projects/project-a/snapshot");
-  assert.equal(snapshot.project.id, "backend-project-a");
-});
-
 test("API client triggers real asset generation through backend routes with HumanGate confirmation and refreshes the snapshot", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const calls = [];
@@ -726,7 +666,33 @@ test("artifact action resolver blocks placeholders and prefers real artifact ids
 
   assert.equal(resolveArtifactActionKey(placeholder, "confirm"), null);
   assert.equal(resolveArtifactActionKey(backendArtifactItem, "confirm"), "artifact-requirement-v1");
-  assert.equal(resolveArtifactActionKey(developmentArtifactItem, "confirm"), "intro-video-plan");
+  assert.equal(resolveArtifactActionKey(developmentArtifactItem, "confirm"), null);
+});
+
+test("artifact regeneration becomes one standard Main Agent message bound to a real Artifact", () => {
+  const { buildArtifactRegenerationSubmission, resolveConversationSubmissionPolicy } = loadWorkbenchActionsModule();
+  const artifact = {
+    ...seedArtifacts[1],
+    artifactId: "artifact-intro-plan-v3",
+  };
+  const placeholder = {
+    ...artifact,
+    artifactId: undefined,
+  };
+
+  const submission = buildArtifactRegenerationSubmission(artifact);
+  assert.equal(submission.body, "请基于当前任务重新生成「导入视频方案」，保留旧版本供我对比。");
+  assert.equal(submission.reference, null);
+  assert.deepEqual(Array.from(submission.artifactRefs), ["artifact-intro-plan-v3"]);
+  assert.equal(buildArtifactRegenerationSubmission(placeholder), null);
+  assert.deepEqual(
+    { ...resolveConversationSubmissionPolicy("artifact_action") },
+    { bindPendingConfirmation: false, clearComposer: false, restoreOnFailure: false },
+  );
+  assert.deepEqual(
+    { ...resolveConversationSubmissionPolicy("composer") },
+    { bindPendingConfirmation: true, clearComposer: true, restoreOnFailure: true },
+  );
 });
 
 test("real asset generation actions are teacher-facing and scoped to supported artifacts", () => {
@@ -826,73 +792,11 @@ test("API client normalizes failed responses to teacher-facing errors", async ()
   );
 });
 
-test("development adapter updates snapshots without pretending to be production state", async () => {
-  const { createDevelopmentWorkbenchAdapter } = loadWorkbenchApiModule();
-  const adapter = createDevelopmentWorkbenchAdapter({
-    seed: {
-      projects: seedProjects,
-      messages: seedMessages,
-      artifacts: seedArtifacts,
-    },
-  });
+test("production workbench API exposes neither mock selection nor direct Artifact regeneration", () => {
+  const api = loadWorkbenchApiModule();
+  const client = api.createWorkbenchApiClient({ fetcher: async () => ({ ok: true, json: async () => ({}) }) });
 
-  const projects = await adapter.listProjects();
-  assert.deepEqual(projects.map((project) => project.id), ["project-a", "project-b"]);
-
-  const before = await adapter.getProjectSnapshot("project-a");
-  const afterSend = await adapter.sendMessage("project-a", "我想做百分数公开课", null);
-  assert.equal(afterSend.messages.length, before.messages.length + 2);
-  assert.equal(afterSend.messages.at(-2).speaker, "teacher");
-  assert.equal(afterSend.messages.at(-1).speaker, "assistant");
-  assert.equal(afterSend.artifacts[0].status, "needs_review");
-  assert.equal(afterSend.activeArtifactKey, "intro-video-plan");
-
-  const afterApprove = await adapter.approveArtifact("project-a", "intro-video-plan");
-  assert.equal(afterApprove.artifacts.find((item) => item.key === "intro-video-plan").status, "approved");
-
-  const afterRegenerate = await adapter.regenerateArtifact("project-a", "intro-video-plan");
-  const regeneratedIntro = afterRegenerate.artifacts.find((item) => item.key === "intro-video-plan");
-  assert.equal(regeneratedIntro.status, "needs_review");
-  assert.match(regeneratedIntro.updatedAt, /刚刚/);
-
-  const afterGenerate = await adapter.generateRealAsset("project-a", "intro-video-plan", "video");
-  const generatedIntro = afterGenerate.artifacts.find((item) => item.key === "intro-video-plan");
-  assert.equal(generatedIntro.status, "needs_review");
-  assert.match(generatedIntro.summary, /真实素材/);
-});
-
-test("default workbench data source uses the real API client unless mock is explicit", async () => {
-  const calls = [];
-  const { createDefaultWorkbenchDataSource } = loadWorkbenchApiModule({
-    fetch: async (url) => {
-      calls.push(String(url));
-      return {
-        ok: true,
-        json: async () => ({ projects: [backendProject] }),
-      };
-    },
-  });
-
-  const dataSource = createDefaultWorkbenchDataSource();
-  const projects = await dataSource.listProjects();
-
-  assert.deepEqual(calls, ["/api/workbench/projects"]);
-  assert.equal(projects[0].id, "backend-project-a");
-});
-
-test("mock workbench data source is available only through an explicit local switch", async () => {
-  const calls = [];
-  const { createDefaultWorkbenchDataSource } = loadWorkbenchApiModule({
-    env: { NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "mock" },
-    fetch: async (url) => {
-      calls.push(String(url));
-      throw new Error("mock data source should not call fetch");
-    },
-  });
-
-  const dataSource = createDefaultWorkbenchDataSource();
-  const projects = await dataSource.listProjects();
-
-  assert.deepEqual(calls, []);
-  assert.deepEqual(projects.map((project) => project.id), ["project-a", "project-b"]);
+  assert.equal(api.createDevelopmentWorkbenchAdapter, undefined);
+  assert.equal(api.createDefaultWorkbenchDataSource, undefined);
+  assert.equal(client.regenerateArtifact, undefined);
 });

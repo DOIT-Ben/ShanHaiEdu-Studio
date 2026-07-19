@@ -15,7 +15,6 @@ const env = {
   ...process.env,
   DATABASE_URL: `file:./${databaseRelativePath}`,
   E2E_PORT: e2ePort,
-  NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
   PLAYWRIGHT_WORKERS: process.env.PLAYWRIGHT_WORKERS ?? "1",
 };
 

@@ -10,7 +10,6 @@ const port = process.env.E2E_PORT ?? "3117";
 const env = {
   ...process.env,
   DATABASE_URL: `file:./${databaseRelativePath}`,
-  NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
   E2E_BASE_URL: process.env.E2E_BASE_URL ?? `http://localhost:${port}`,
   E2E_PORT: port,
   PLAYWRIGHT_WORKERS: process.env.PLAYWRIGHT_WORKERS ?? "1",

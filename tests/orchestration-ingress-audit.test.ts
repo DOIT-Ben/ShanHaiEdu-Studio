@@ -20,7 +20,6 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/image", "artifact_route_image"],
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/ppt-full-deck-review", "ppt_full_deck_review_submit"],
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/ppt-sample-review", "ppt_sample_review_submit"],
-      ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/regenerate", "artifact_regenerate"],
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/video", "artifact_route_video"],
       ["PATCH", "/api/workbench/projects/project_1/generation-intensity", "generation_intensity_update"],
       ["POST", "/api/workbench/projects/project_1/members", "project_member_add"],
@@ -30,7 +29,7 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
       ["POST", "/api/workbench/projects/project_1/messages/message_1/reaction", "message_reaction_set"],
     ] as const;
 
-    expect(known).toHaveLength(16);
+    expect(known).toHaveLength(15);
     for (const [method, pathname, operation] of known) {
       expect(resolveOrchestrationIngressOperation(new Request(`https://localhost${pathname}`, { method })))
         .toMatchObject({ operation, claimedProjectId: pathname === "/api/workbench/projects" ? null : "project_1" });

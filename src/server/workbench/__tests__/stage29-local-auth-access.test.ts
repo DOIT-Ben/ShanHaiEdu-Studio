@@ -49,12 +49,6 @@ describe("Local Real MVP M29 local auth access", () => {
     await expect(serviceB.addMessage(project.id, { role: "teacher", content: "越权消息" })).rejects.toThrow(/Project not found|access denied/i);
     await expect(serviceB.getArtifact(project.id, artifact.id)).rejects.toThrow(/Artifact not found|Project not found|access denied/i);
     await expect(serviceB.approveArtifact(project.id, artifact.id)).rejects.toThrow(/Artifact not found|Project not found|access denied/i);
-    await expect(
-      serviceB.regenerateArtifact(project.id, artifact.id, {
-        summary: "越权重做",
-        markdownContent: "# 越权重做",
-      }),
-    ).rejects.toThrow(/Artifact not found|Project not found|access denied/i);
   });
 
   it("keeps ownerless legacy projects readable for local upgrade compatibility", async () => {

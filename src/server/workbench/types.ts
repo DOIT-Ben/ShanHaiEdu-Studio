@@ -265,14 +265,6 @@ export type SubmitPptFullDeckReviewInput = {
   }>;
 };
 
-export type RegenerateArtifactInput = {
-  title?: string;
-  expectedLatestVersion?: number;
-  summary: string;
-  markdownContent: string;
-  structuredContent?: Record<string, unknown>;
-};
-
 export type CreateGenerationJobInput = {
   kind: GenerationJobKind;
   sourceArtifactId: string;

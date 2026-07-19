@@ -9,7 +9,6 @@ const databasePath = path.join(root, databaseRelativePath);
 const env = {
   ...process.env,
   DATABASE_URL: `file:./${databaseRelativePath}`,
-  NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
   PLAYWRIGHT_WORKERS: process.env.PLAYWRIGHT_WORKERS ?? "1",
 };
 

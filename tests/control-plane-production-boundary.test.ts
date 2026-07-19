@@ -18,6 +18,7 @@ describe("production control-plane boundaries", () => {
       "promoteStagedGenerationResult",
       "commitGenerationResult",
       "resumeStagedGenerationResult",
+      "regenerateArtifact",
     ]) {
       expect(repository).not.toHaveProperty(retiredMethod);
       expect(service).not.toHaveProperty(retiredMethod);
