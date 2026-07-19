@@ -25,6 +25,7 @@
     "docs/roadmap/**",
     "docs/runbooks/provider-continuity-live.md",
     "docs/stages/**",
+    "docs/ui/README.md",
     "docs/archive/README.md",
     "docs/archive/2026-07-19-provider-continuity-paused/**",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/**",

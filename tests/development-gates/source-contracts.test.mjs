@@ -111,6 +111,147 @@ test("does not flag assertions over data parsed through a structured JSON or YAM
   assert.deepEqual(actual, []);
 });
 
+test("resolves shadowed variables by lexical scope instead of file-wide name", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/lexical-scope-contract.test.ts",
+      content: `
+        const source = readFileSync("src/feature.ts", "utf8");
+        {
+          const source = "teacher-facing";
+          expect(source).toBe("teacher-facing");
+        }
+      `,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
+test("does not treat an object property name as a tainted variable reference", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/property-name-contract.test.ts",
+      content: `
+        const source = readFileSync("src/feature.ts", "utf8");
+        const view = { source: "teacher-facing" };
+        expect(view.source).toBe("teacher-facing");
+      `,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
+test("does not treat getter or JSX attribute names as tainted variable references", () => {
+  const actual = analyzeSourceStringContracts(
+    [
+      {
+        path: "tests/named-member-contract.test.ts",
+        content: `
+          const source = readFileSync("src/feature.ts", "utf8");
+          const view = { get source() { return "teacher-facing"; } };
+          expect(view.source).toBe("teacher-facing");
+        `,
+      },
+      {
+        path: "tests/jsx-attribute-contract.test.tsx",
+        content: `
+          const source = readFileSync("src/feature.ts", "utf8");
+          expect(<Widget source="teacher-facing" />).toBe(true);
+          expect(<Widget source:label="teacher-facing" />).toBe(true);
+        `,
+      },
+    ],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
+test("resolves var declarations in the nearest function scope", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/var-scope-contract.test.ts",
+      content: `
+        var source = "teacher-facing";
+        if (flag) {
+          var source = readFileSync("src/feature.ts", "utf8");
+        }
+        expect(source).toContain("internalFunction");
+      `,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, [
+    { path: "tests/var-scope-contract.test.ts", occurrences: 1 },
+  ]);
+});
+
+test("recognizes implementation markers in template literal paths", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/template-path-contract.test.ts",
+      content: [
+        'const fileName = "feature.ts";',
+        'const source = readFileSync(`src/${fileName}`, "utf8");',
+        'expect(source).toContain("internalFunction");',
+      ].join("\n"),
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, [
+    { path: "tests/template-path-contract.test.ts", occurrences: 1 },
+  ]);
+});
+
+test("unwraps TypeScript expressions before deciding whether structured data was parsed", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/typescript-wrapper-contract.test.ts",
+      content: `
+        const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: object };
+        assert.deepEqual(packageJson.scripts, {});
+      `,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
+test("does not crash on a new expression without an argument list", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/new-expression-contract.test.ts",
+      content: `expect(new PublicValue).toBe(true);`,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
+test("does not use a later source assignment to classify an earlier assertion", () => {
+  const actual = analyzeSourceStringContracts(
+    [{
+      path: "tests/assignment-order-contract.test.ts",
+      content: `
+        let source = "teacher-facing";
+        expect(source).toBe("teacher-facing");
+        source = readFileSync("src/feature.ts", "utf8");
+      `,
+    }],
+    policy(),
+  );
+
+  assert.deepEqual(actual, []);
+});
+
 test("fails closed for added, increased, or decreased unratcheted debt", () => {
   const files = [{ path: "tests/source-contract.test.ts", content: suspiciousSource }];
 

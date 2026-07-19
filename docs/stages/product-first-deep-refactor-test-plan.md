@@ -129,6 +129,13 @@ D3新鲜证据：
 - TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过；复杂度债务保持25，源码合同门由21文件/301次收缩为20文件/293次。
 - Provider保持离线延期、`passed=false`且请求数为0；未运行PPT浏览器验收、390px或任何真实媒体/整包流程。
 
+D4新鲜证据：
+
+- source-contract detector的回归覆盖词法作用域遮蔽、对象属性、getter/JSX名称、TypeScript表达式解包、无参数`new`、赋值顺序、`var`函数作用域和模板路径；共14项检测器测试全部通过。
+- 当前直接读取报告为19个文件、219次命中；D4只修正直接读取的检测语义，不启用wrapper、import alias、解构、参数默认值、闭包或完整控制流传播扫描。相关漏报及多次重赋值误判保持显式未完成，留给D16增强扫描。
+- `wiring.test.mjs`的活动归档例外清单已与2026-07-20归档目录三项文件同步；Provider保持离线延期、`passed=false`且请求数为0。
+- 开发门禁测试`119/119`，另有1项Windows符号链接能力跳过；`npm test`通过Node`423/423`与Vitest`778/778 + 773/773`，TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`、development gate和工作树绑定`verify:local`通过。
+
 ## 7. 最终全量验证
 
 ```powershell

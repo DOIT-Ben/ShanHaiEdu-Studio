@@ -8,7 +8,7 @@
 
 - `frontend-workbench\README.md`：当前工作台边界与验证入口。
 - `frontend-workbench\assets\references\README.md`：脱敏视觉参考与浏览器证据规则。
-- `..\architecture\decisions\2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md`：消息和控制面边界。
+- `..\architecture\README.md`：当前消息、assistant-ui和Main Agent控制面边界。
 
 ## 固定体验边界
 

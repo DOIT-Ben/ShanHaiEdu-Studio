@@ -72,6 +72,9 @@ test("the active stage is the product-first refactor and permits only the exact 
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/AGENTS_20260719-120150.bak",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/README.md",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/archive-manifest.json",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/README.md",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/archive-manifest.json",
+    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
   ]);
 });
 

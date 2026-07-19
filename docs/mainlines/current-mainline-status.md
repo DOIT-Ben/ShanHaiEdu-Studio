@@ -6,7 +6,7 @@
 
 - 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
 - 唯一活动阶段：`product-first-deep-refactor`。
-- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3切片已完成离线行为回归；阶段D继续清理复杂度和源码字符串合同债务。
+- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4切片已完成离线行为回归；阶段D继续清理复杂度和源码字符串合同债务。
 - 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
 - 本轮未调用真实Provider，未创建V1-9 runId，未生成或测试图片、视频、PPTX、ZIP，未运行390px真实黑盒，未部署或发布。
 
@@ -37,7 +37,7 @@
 ## 当前问题
 
 - 复杂度债务仍有25个文件，尚未达到清零目标。
-- 当前源码合同门报告20个文件、293次命中，但审查已证实它漏检至少21个wrapper读取文件，同时把约68次普通状态断言误报为源码合同；该报告不能再表述为全部债务。
+- 当前源码合同门报告19个文件、219次命中，但它仍只追踪直接文件读取；至少21个wrapper读取文件以及import alias、解构、参数默认值、闭包和完整控制流传播尚未纳入。当前数字不能表述为全部债务或清零。
 - `desktop/electron-main.mjs`和`playwright.config.ts`仍赋值已失效的`NEXT_PUBLIC_WORKBENCH_DATA_SOURCE`；当前阶段路径门禁止修改这两个文件，且生产代码已无读取者，D14必须删除这两处无效配置。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
 
@@ -64,6 +64,7 @@
 - D1全量回归：Node测试`427/427`，Vitest隔离分片`801/801`与`773/773`；TypeScript、ESLint `0 warning`、生产构建和development gate通过。repository由2058行降至29行并退出复杂度基线，复杂度债务降至26；D1未调用Provider。
 - D2全量回归：Node测试`424/424`，Vitest隔离分片`782/782`与`786/786`；标准重做消息、真实Artifact引用、交错失败幂等重试、Artifact版本/批准指针、零直接Artifact写入、零IntentEpoch绕行和15条写入口合同通过。`workbench-api.ts`降至233行并退出复杂度基线，债务降至25；未运行PPT浏览器验收，未调用Provider。
 - D3全量回归：数据库退役红测先以`2`项失败证明新库仍创建staging结构且旧表会触发初始化失败，修复后定向`92/92`、Node`423/423`、Vitest隔离分片`778/778`与`773/773`通过；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过。复杂度债务保持25，源码合同门收缩为20文件/293次；Provider保持离线延期、`passed=false`且请求数为0。
+- D4全量回归：source-contract detector新增作用域、属性名、TypeScript wrapper、`var`作用域和模板路径回归，原有6项加新增8项、共`14/14`通过；开发门禁测试`119/119`，另有1项Windows符号链接能力跳过。`npm test`通过Node`423/423`和Vitest`778/778 + 773/773`；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`、development gate和工作树绑定`verify:local`通过。门禁报告由20文件/293次校准为19文件/219次；Provider保持离线延期、`passed=false`且请求数为0，wrapper与完整控制流漏报仍明确保留，未上推为源码合同清零。
 
 ## 当前验收边界
 
@@ -77,4 +78,4 @@
 
 ## 唯一下一动作
 
-执行D4检测器纠偏：修复跨作用域误报、属性名污染和TypeScript表达式解析，只校准当前直接源码读取，不提前把尚未迁移的wrapper隐藏债务写成0。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+执行D5 workbench service职责拆分：按项目/消息、Artifact、Generation、VideoShot、TurnJob、snapshot与Guard拆分，保持唯一工厂参数、授权和映射合同；Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
