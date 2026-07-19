@@ -106,6 +106,8 @@ test("discovers non-TypeScript route handlers and rejects unknown writes", () =>
     const result = evaluateOrchestrationAuditGate({ root });
     assert.equal(result.ok, false);
     assert.match(result.errors.join("\n"), /unknown write operation.*bulk/i);
+    const operation = result.operations.find((entry) => entry.routeTemplate.endsWith("/bulk"));
+    assert.equal(operation?.scriptKind, "JS");
   });
 });
 

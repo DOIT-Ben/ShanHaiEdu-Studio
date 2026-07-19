@@ -61,7 +61,13 @@ export async function generateImageWithMiniMaxCli(input: { cliScript: string; pr
 function waitForMiniMaxOutput(input: { workingDir: string; cliScript: string; prompt: string; aspectRatio: string; timeoutMs: number }) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", input.cliScript, "image", "generate", "--prompt", input.prompt, "--aspect-ratio", input.aspectRatio, "--n", "1", "--out-dir", input.workingDir, "--out-prefix", "provider", "--non-interactive", "--timeout", String(Math.max(1, Math.ceil(input.timeoutMs / 1000))), "--output", "json"], { windowsHide: true, stdio: "ignore" });
-    const finish = (error?: Error) => { clearInterval(poll); clearTimeout(timeout); child.kill(); error ? reject(error) : resolve(); };
+    const finish = (error?: Error) => {
+      clearInterval(poll);
+      clearTimeout(timeout);
+      child.kill();
+      if (error) reject(error);
+      else resolve();
+    };
     let previousSize = 0;
     const poll = setInterval(async () => {
       const files = await readdir(input.workingDir).catch(() => [] as string[]);

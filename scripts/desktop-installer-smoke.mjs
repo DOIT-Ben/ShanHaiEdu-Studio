@@ -320,22 +320,6 @@ function execFileAsync(file, args, options) {
   });
 }
 
-function waitForFiles(filePaths, timeoutMs) {
-  const startedAt = Date.now();
-  return new Promise((resolve) => {
-    const attempt = () => {
-      if (filePaths.every((filePath) => existsSync(filePath))) {
-        resolve(true);
-      } else if (Date.now() - startedAt > timeoutMs) {
-        resolve(false);
-      } else {
-        setTimeout(attempt, 500);
-      }
-    };
-    attempt();
-  });
-}
-
 function waitForProcessExit(child, timeoutMs) {
   if (child.exitCode !== null) {
     return Promise.resolve(true);

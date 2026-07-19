@@ -68,7 +68,19 @@ export function hasValidAgentToolInvocationEnvelope(
 function hashAgentToolInvocationInput(
   input: Omit<AgentToolInvocationEnvelope, "inputHash" | "actionDigest">,
 ): string {
-  const { requestedAt: _requestedAt, ...semantic } = input;
+  const semantic = {
+    schemaVersion: input.schemaVersion,
+    invocationId: input.invocationId,
+    toolId: input.toolId,
+    identity: input.identity,
+    projectId: input.projectId,
+    intentEpoch: input.intentEpoch,
+    sourceMessageId: input.sourceMessageId,
+    generationIntensity: input.generationIntensity,
+    reviewTargetRef: input.reviewTargetRef,
+    approvedArtifactRefs: input.approvedArtifactRefs,
+    arguments: input.arguments,
+  };
   return hashRunInput(semantic);
 }
 

@@ -7,14 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { getArtifactStatusMeta } from "@/components/artifacts/artifact-status";
 
 type ArtifactPreviewCardProps = {
-  projectId: string;
   item: ArtifactItem;
-  onCopy: (item: ArtifactItem) => boolean | void | Promise<boolean | void>;
-  onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
 };
 
-export function ArtifactPreviewCard({ projectId, item, onCopy, onUseAsInput, onOpen }: ArtifactPreviewCardProps) {
+export function ArtifactPreviewCard({ item, onOpen }: ArtifactPreviewCardProps) {
   const meta = getArtifactStatusMeta(item.status);
 
   return (

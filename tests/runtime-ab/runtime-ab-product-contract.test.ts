@@ -316,7 +316,7 @@ function grant(brief: ReturnType<typeof taskBrief>): IntentGrant {
 function repeatedAgentsModel(toolName: RuntimeAbToolName, brief: ReturnType<typeof taskBrief>) {
   let requests = 0;
   const model: Model = {
-    async getResponse(_request: ModelRequest): Promise<ModelResponse> {
+    async getResponse(): Promise<ModelResponse> {
       requests += 1;
       return {
         usage: new Usage({ requests: 0 }),

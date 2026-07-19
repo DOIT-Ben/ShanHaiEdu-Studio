@@ -4,6 +4,7 @@ import type { PptDeckCompositionResult } from "./ppt-key-sample-composer";
 import type { PptFullDeckRenderEvidence } from "./ppt-full-deck-renderer";
 import type { PptFullDeckCandidate, PptFullDeckPackage } from "./ppt-production-types";
 import type { PptDesignPackage } from "./ppt-quality-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 
@@ -48,7 +49,7 @@ export function validatePptFullDeckCandidate(candidate: PptFullDeckCandidate): b
   if (![candidate.pptx.sha256, candidate.pdf.sha256, candidate.contactSheet.sha256, ...candidate.pages.map((page) => page.renderSha256)].every((value) => SHA256.test(value))) return false;
   if (!sameSet(candidate.pageIds, candidate.pages.map((page) => page.pageId)) || !sameSet(candidate.pageIds, candidate.contactSheet.pageIds)) return false;
   if (candidate.pages.some((page) => page.rasterizedExactContent !== false || page.editableTextLayerIds.length === 0 || page.editableMathLayerIds.length === 0)) return false;
-  const { candidateDigest: _digest, ...semantic } = candidate;
+  const semantic = omitObjectKeys(candidate, ["candidateDigest"]);
   return hashRunInput(semantic) === candidate.candidateDigest;
 }
 
@@ -58,7 +59,7 @@ export function sealPptFullDeckCandidate(candidate: PptFullDeckCandidate, qa: Pp
   if (qa.some((entry) => entry.design !== "passed" || entry.visual !== "passed" || entry.provenance !== "passed" || entry.readability !== "passed" || entry.findings.length > 0)) {
     throw new Error("ppt_full_deck_qa_failed");
   }
-  const { reviewStatus: _review, candidateDigest: _candidateDigest, ...base } = candidate;
+  const base = omitObjectKeys(candidate, ["reviewStatus", "candidateDigest"]);
   const semantic: Omit<PptFullDeckPackage, "packageDigest"> = { ...base, qa: qa.map((entry) => ({ ...entry, findings: [...entry.findings] })), finalEligible: true };
   return { ...semantic, packageDigest: hashRunInput(semantic) };
 }
@@ -68,7 +69,7 @@ export function validatePptFullDeckPackage(value: PptFullDeckPackage): boolean {
   if (value.pptx.slideCount !== value.pageIds.length || value.pdf.pageCount !== value.pageIds.length) return false;
   if (!sameSet(value.pageIds, value.qa.map((entry) => entry.pageId))) return false;
   if (value.qa.some((entry) => entry.design !== "passed" || entry.visual !== "passed" || entry.provenance !== "passed" || entry.readability !== "passed" || entry.findings.length > 0)) return false;
-  const { packageDigest: _digest, ...semantic } = value;
+  const semantic = omitObjectKeys(value, ["packageDigest"]);
   return hashRunInput(semantic) === value.packageDigest;
 }
 

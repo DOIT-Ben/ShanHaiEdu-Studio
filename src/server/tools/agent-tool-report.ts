@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 import type { AgentToolArtifactRef, AgentToolInvocationEnvelope } from "./agent-tool-invocation";
 import type { AgentToolRouterResult } from "./agent-tool-router";
@@ -25,6 +26,23 @@ export type PersistedAgentToolReport = {
 };
 
 const metadataKey = "agentToolReports";
+const persistedReportKeys = new Set<keyof PersistedAgentToolReport>([
+  "reportId",
+  "reportDigest",
+  "projectId",
+  "intentEpoch",
+  "sourceMessageId",
+  "invocationId",
+  "toolId",
+  "status",
+  "assistantSummary",
+  "structuredOutput",
+  "policyOutcome",
+  "approvedArtifactRefs",
+  "inputHash",
+  "actionDigest",
+  "createdAt",
+]);
 
 export function createPersistedAgentToolReport(
   envelope: AgentToolInvocationEnvelope,
@@ -80,6 +98,7 @@ export function readAgentToolReportsFromMessages(messages: Array<{ metadata?: un
 
 function isPersistedAgentToolReport(value: unknown): value is PersistedAgentToolReport {
   if (!isRecord(value) ||
+      !hasOnlyPersistedReportKeys(value) ||
       typeof value.reportId !== "string" ||
       typeof value.reportDigest !== "string" ||
       typeof value.projectId !== "string" ||
@@ -95,8 +114,14 @@ function isPersistedAgentToolReport(value: unknown): value is PersistedAgentTool
       !Number.isFinite(Date.parse(value.createdAt))) {
     return false;
   }
-  const { reportId: _reportId, reportDigest, createdAt: _createdAt, ...payload } = value;
-  return hashRunInput(payload) === reportDigest;
+  const payload = omitObjectKeys(value, ["reportId", "reportDigest", "createdAt"]);
+  return hashRunInput(payload) === value.reportDigest;
+}
+
+function hasOnlyPersistedReportKeys(value: Record<string, unknown>): boolean {
+  return Reflect.ownKeys(value).every(
+    (key) => typeof key === "string" && persistedReportKeys.has(key as keyof PersistedAgentToolReport),
+  );
 }
 
 function isStatus(value: unknown): value is PersistedAgentToolReport["status"] {

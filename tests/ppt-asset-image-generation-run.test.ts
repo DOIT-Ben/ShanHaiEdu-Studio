@@ -34,7 +34,7 @@ describe("V1 Stage 3B PPT asset image generation bridge", () => {
     vi.stubEnv("MINIMAX_BASE_URL", "https://legacy.invalid");
     vi.stubEnv("MINIMAX_IMAGE_MODEL", "legacy-model");
     const png = minimalPng(1920, 1080, 2);
-    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response(JSON.stringify({
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       base_resp: { status_code: 0 },
       data: { image_base64: [png.toString("base64")] },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -96,7 +96,7 @@ describe("V1 Stage 3B PPT asset image generation bridge", () => {
     vi.stubEnv("MINIMAX_API_KEY", "test-key");
     vi.stubEnv("MINIMAX_BASE_URL", "https://image.example.test");
     vi.stubEnv("MINIMAX_IMAGE_MODEL", "image-01");
-    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response());
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response());
     vi.stubGlobal("fetch", fetchMock);
     const { requestBatch } = validPptSampleFixtures();
     const request = { ...requestBatch.requests[0], referenceAssetIds: ["reference-a"] };
@@ -112,7 +112,7 @@ describe("V1 Stage 3B PPT asset image generation bridge", () => {
     vi.stubEnv("MINIMAX_BASE_URL", "https://minimax.example");
     vi.stubEnv("MINIMAX_IMAGE_MODEL", "image-01");
     const png = minimalPng(1920, 1080, 2);
-    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response(JSON.stringify({
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       base_resp: { status_code: 0, status_msg: "success" },
       data: { image_base64: [png.toString("base64")] },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -204,7 +204,7 @@ describe("V1 Stage 3B PPT asset image generation bridge", () => {
     vi.stubEnv("MINIMAX_BASE_URL", "https://minimax.example");
     vi.stubEnv("MINIMAX_IMAGE_MODEL", "image-01");
     const png = minimalPng(1920, 1080, 2);
-    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response(JSON.stringify({
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       base_resp: { status_code: 0, status_msg: "success" },
       data: { image_base64: [png.toString("base64")] },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));

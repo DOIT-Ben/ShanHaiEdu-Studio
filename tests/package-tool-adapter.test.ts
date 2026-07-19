@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { resolveLocalArtifactOutput, writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { executePackageTool } from "@/server/tools/package-tool-adapter";
 import { getToolDefinition } from "@/server/tools/tool-registry";
@@ -314,7 +315,7 @@ describe("M68 PackageToolAdapter", () => {
           },
         });
       }
-      const { manifestDigest: _digest, ...semanticManifest } = fixtures.manifest;
+      const semanticManifest = omitFixtureFields(fixtures.manifest, "manifestDigest");
       fixtures.manifest.manifestDigest = createPptAssetManifestDigest(semanticManifest);
       const design = artifact("ppt_design_draft", "design-real", { structuredContent: { pptDesignPackage: fixtures.designPackage } });
       const assets = artifact("image_prompts", "assets-real", {
@@ -374,7 +375,7 @@ describe("M68 PackageToolAdapter", () => {
       composition: {
         pptxBuffer: Buffer.from("PK candidate"),
         pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+        pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
       },
       renderEvidence: {
         samplePptx: fixtures.sampleSet.samplePptx,

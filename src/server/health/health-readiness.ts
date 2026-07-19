@@ -74,7 +74,11 @@ function artifactStorageReady(storageRoot: string | undefined) {
     if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
     const root = realpathSync(configured);
     probePath = path.join(root, `.health-${randomUUID()}`);
-    descriptor = openSync(probePath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    descriptor = openSync(
+      /*turbopackIgnore: true*/ probePath,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+      0o600,
+    );
     writeSync(descriptor, "ok");
     fsyncSync(descriptor);
     closeSync(descriptor);

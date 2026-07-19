@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ChangeEvent, type ClipboardEvent } from "react";
+import Image from "next/image";
 import { Check, CheckCircle2, ImagePlus, Loader2, Maximize2, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type { FeedbackController } from "@/hooks/useFeedbackController";
 import { feedbackCategoryOptions, feedbackSeverityOptions } from "@/lib/feedback-contracts";
 import { cn } from "@/lib/utils";
-
 export function FeedbackDialog({ controller }: { controller: FeedbackController }) {
   const submitting = controller.status === "submitting";
   const canSubmit = Boolean(controller.category && controller.title.trim() && controller.description.trim());
@@ -248,7 +248,7 @@ export function FeedbackDialog({ controller }: { controller: FeedbackController 
         <Dialog open={Boolean(previewImage)} onOpenChange={(open) => { if (!open) setPreviewImage(null); }}>
           <DialogContent className="w-[calc(100%-32px)] max-w-4xl p-3">
             <DialogTitle className="sr-only">图片预览</DialogTitle>
-            {previewImage && <img src={previewImage.previewUrl} alt={previewImage.file.name || "反馈图片预览"} className="max-h-[78vh] w-full rounded-md object-contain" />}
+            {previewImage && <Image unoptimized src={previewImage.previewUrl} alt={previewImage.file.name || "反馈图片预览"} width={1600} height={900} className="max-h-[78vh] w-full rounded-md object-contain" />}
           </DialogContent>
         </Dialog>
       </DialogContent>
@@ -293,7 +293,7 @@ function FeedbackImageSection({
           {images.map((image) => (
             <div key={image.id} data-feedback-image className="group relative overflow-hidden rounded-md border bg-muted/30">
               <button type="button" onClick={() => onPreview(image)} className="relative block w-full overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#367d6d]" aria-label={`放大查看图片 ${image.file.name || "截图"}`}>
-                <img src={image.previewUrl} alt={image.file.name || "待提交图片"} className="aspect-video w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
+                <Image unoptimized src={image.previewUrl} alt={image.file.name || "待提交图片"} width={640} height={360} className="aspect-video w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
                 <span className="absolute inset-0 flex items-center justify-center bg-foreground/0 text-white opacity-0 transition group-hover:bg-foreground/25 group-hover:opacity-100"><Maximize2 className="h-5 w-5" /></span>
               </button>
               <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground">

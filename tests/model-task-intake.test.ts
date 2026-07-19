@@ -4,7 +4,9 @@ import { OpenAIMainConversationAgent } from "@/server/conversation/model-main-co
 
 describe("Main Agent task intake", () => {
   it("submits a task proposal through a dedicated function call while leaving conversation text natural", async () => {
-    const create = vi.fn(async (_payload: Record<string, unknown>) => ({
+    const create = vi.fn<
+      (payload: Record<string, unknown>) => Promise<Record<string, unknown>>
+    >(async () => ({
       output_text: "",
       output: [{
         id: "task-brief-item",
@@ -56,7 +58,9 @@ describe("Main Agent task intake", () => {
   });
 
   it("returns plain conversational text without a control function call", async () => {
-    const create = vi.fn(async (_payload: Record<string, unknown>) => ({ output_text: "你好，我是小酷。今天想准备哪节课？", output: [] }));
+    const create = vi.fn<
+      (payload: Record<string, unknown>) => Promise<Record<string, unknown>>
+    >(async () => ({ output_text: "你好，我是小酷。今天想准备哪节课？", output: [] }));
     const agent = new OpenAIMainConversationAgent({
       client: { responses: { create } } as never,
       model: "offline-task-intake-model",
@@ -78,7 +82,9 @@ describe("Main Agent task intake", () => {
   });
 
   it("does not short-circuit a junior-high delivery request before task intake", async () => {
-    const create = vi.fn(async () => ({
+    const create = vi.fn<
+      (payload: Record<string, unknown>) => Promise<Record<string, unknown>>
+    >(async () => ({
       output_text: "",
       output: [{
         id: "task-brief-junior-high",

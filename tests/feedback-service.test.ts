@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, utimes } from "node:fs/promises";
+import { rm, utimes } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetRateLimits } from "@/server/auth/rate-limit";

@@ -55,9 +55,11 @@ export function restoreSemanticContextSnapshot(snapshot: SemanticContextSnapshot
   if (!snapshot || snapshot.schemaVersion !== SEMANTIC_CONTEXT_SNAPSHOT_VERSION) {
     throw new Error("Semantic context snapshot version is invalid.");
   }
-  const { schemaVersion: _schemaVersion, snapshotDigest, ...rawState } = snapshot;
-  const state = normalizeSemanticContextState(rawState);
-  if (snapshotDigest !== digest(state)) {
+  const rawState: Record<string, unknown> = { ...snapshot };
+  delete rawState.schemaVersion;
+  delete rawState.snapshotDigest;
+  const state = normalizeSemanticContextState(rawState as SemanticContextState);
+  if (snapshot.snapshotDigest !== digest(state)) {
     throw new Error("Semantic context snapshot digest does not match its content.");
   }
   return structuredClone(state);

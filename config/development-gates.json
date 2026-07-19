@@ -59,10 +59,10 @@
       },
       {
         "path": "src/components/layout/MediaWorkbench.tsx",
-        "lines": 266,
+        "lines": 262,
         "violatingFunctions": 1,
-        "maxFunctionLines": 218,
-        "totalFunctionLines": 218
+        "maxFunctionLines": 214,
+        "totalFunctionLines": 214
       },
       {
         "path": "src/components/layout/ProjectListItem.tsx",
@@ -101,7 +101,7 @@
       },
       {
         "path": "src/lib/workbench-api.ts",
-        "lines": 553,
+        "lines": 552,
         "violatingFunctions": 1,
         "maxFunctionLines": 237,
         "totalFunctionLines": 237
@@ -136,10 +136,10 @@
       },
       {
         "path": "src/server/conversation/conversation-turn-service.ts",
-        "lines": 3498,
+        "lines": 3476,
         "violatingFunctions": 5,
         "maxFunctionLines": 687,
-        "totalFunctionLines": 1868
+        "totalFunctionLines": 1867
       },
       {
         "path": "src/server/conversation/external-audit-evidence-ingress.ts",
@@ -159,8 +159,8 @@
         "path": "src/server/conversation/main-agent-tool-loop-config.ts",
         "lines": 2336,
         "violatingFunctions": 2,
-        "maxFunctionLines": 1297,
-        "totalFunctionLines": 2257
+        "maxFunctionLines": 1296,
+        "totalFunctionLines": 2255
       },
       {
         "path": "src/server/conversation/model-main-conversation-agent.ts",
@@ -220,7 +220,7 @@
       },
       {
         "path": "src/server/tools/package-tool-adapter.ts",
-        "lines": 817,
+        "lines": 796,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
@@ -286,7 +286,6 @@
       { "path": "tests/m67-auth-readiness.test.mjs", "occurrences": 3 },
       { "path": "tests/m67-e2e-runner.test.mjs", "occurrences": 29 },
       { "path": "tests/m74-branded-auth-page.test.mjs", "occurrences": 46 },
-      { "path": "tests/next-tracing-readiness.test.mjs", "occurrences": 5 },
       { "path": "tests/ppt-asset-image-generation-run.test.ts", "occurrences": 2 },
       { "path": "tests/production-preflight.test.mjs", "occurrences": 6 },
       { "path": "tests/stage41-delivery-demo-script.test.mjs", "occurrences": 8 },
@@ -298,7 +297,7 @@
     ]
   },
   "lint": {
-    "maxWarnings": 150
+    "maxWarnings": 0
   },
   "providerContinuity": {
     "sensitivePaths": [
@@ -383,7 +382,7 @@
       {
         "id": "lint",
         "program": "npm",
-        "args": ["run", "lint", "--", "--max-warnings", "150"]
+        "args": ["run", "lint", "--", "--max-warnings", "0"]
       },
       {
         "id": "test",

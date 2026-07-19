@@ -1,5 +1,6 @@
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import type { EvidenceBinding } from "./ppt-quality-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 export type PptDesignCandidatePagePlan = {
   pageNumber: number;
@@ -200,7 +201,7 @@ export function validatePptDesignCandidate(input: PptDesignCandidate): PptDesign
     issues.push("evidence_binding_version_invalid");
   }
 
-  const { candidateDigest: _digest, ...semantic } = input;
+  const semantic = omitObjectKeys(input, ["candidateDigest"]);
   if (!digestPattern.test(input.candidateDigest) || hashRunInput(semantic) !== input.candidateDigest) {
     issues.push("candidate_digest_invalid");
   }

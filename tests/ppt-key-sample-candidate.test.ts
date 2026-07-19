@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import {
   buildPptKeySampleCandidate,
   sealPptKeySampleCandidate,
@@ -67,7 +68,7 @@ function candidateFromFixtures(fixtures: ReturnType<typeof validPptSampleFixture
     composition: {
       pptxBuffer: Buffer.from("PK candidate"),
       pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-      pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+      pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
     },
     renderEvidence: {
       samplePptx: fixtures.sampleSet.samplePptx,

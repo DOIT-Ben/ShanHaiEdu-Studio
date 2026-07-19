@@ -5,7 +5,7 @@
   "main": "desktop/electron-main.mjs",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build && node scripts/verify-next-build-output.mjs --sanitize",
     "preflight:production": "node scripts/production-preflight.mjs",
     "preflight:container-runtime": "node scripts/container-runtime-preflight.mjs",
     "release:data:backup": "node scripts/release-data-recovery.mjs backup",

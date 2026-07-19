@@ -49,7 +49,7 @@ test("deploy demo preflight exposes a production-like one-command readiness gate
   assert.doesNotMatch(script, /console\.log\(process\.env/);
 
   const releaseRoadmap = readFileSync(path.join(root, "docs", "roadmap", "release", "README.md"), "utf8");
-  assert.match(releaseRoadmap, /当前V1\.0智能体原子Tool重构关闭、重新规划并通过唯一V1-9真实全链路后/);
+  assert.match(releaseRoadmap, /当前产品优先深度重构关闭、重新规划并通过唯一V1-9真实全链路后/);
   assert.match(releaseRoadmap, /不得提前启动/);
   assert.match(releaseRoadmap, /部署、生产写入、教师签收或公网切流/);
 });

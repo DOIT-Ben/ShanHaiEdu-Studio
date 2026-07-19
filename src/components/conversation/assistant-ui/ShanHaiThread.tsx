@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, type ChangeEvent } from "react";
+import Image from "next/image";
 import {
   ArrowUp,
   ChevronRight,
@@ -320,5 +321,5 @@ function WelcomeEmptyState({ onSelect }: { onSelect: (prompt: string) => void })
 }
 
 function XiaoKuMark({ active = false }: { active?: boolean }) {
-  return <span data-assistant-logo className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce2e0] bg-card", active && "shadow-[0_10px_24px_rgba(24,64,55,0.14)]")} aria-hidden="true"><img src="/brand/xiaoku-avatar.png" alt="" className="h-full w-full object-cover" /></span>;
+  return <span data-assistant-logo className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce2e0] bg-card", active && "shadow-[0_10px_24px_rgba(24,64,55,0.14)]")} aria-hidden="true"><Image src="/brand/xiaoku-avatar.png" alt="" width={36} height={36} className="h-full w-full object-cover" /></span>;
 }

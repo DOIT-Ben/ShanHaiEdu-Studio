@@ -14,7 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import type { DataMessagePartProps, TextMessagePartProps } from "@assistant-ui/react";
+import type { DataMessagePartProps } from "@assistant-ui/react";
 import remarkGfm from "remark-gfm";
 
 import type {
@@ -23,7 +23,6 @@ import type {
   DialogueCheckpointMessagePart,
   ErrorRecoveryMessagePart,
   HumanInputMessagePart,
-  MessagePart,
   NextActionsMessagePart,
   PlanMessagePart,
   QualitySummaryMessagePart,
@@ -60,7 +59,7 @@ export function createShanHaiMessagePartComponents(actions: MessagePartRendererA
   };
 }
 
-export function SafeMarkdownText(_props: TextMessagePartProps) {
+export function SafeMarkdownText() {
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
@@ -71,7 +70,12 @@ export function SafeMarkdownText(_props: TextMessagePartProps) {
   );
 }
 
-function SafeMarkdownLink({ href, children, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
+function SafeMarkdownLink(input: ComponentProps<"a"> & { node?: unknown }) {
+  const { href, children } = input;
+  const props = { ...input };
+  delete props.href;
+  delete props.children;
+  delete props.node;
   const safeHref = resolveSafeMarkdownHref(href);
   if (!safeHref) return <span>{children}</span>;
   return (
@@ -331,7 +335,7 @@ function ErrorRecoveryPart({ data, actions }: DataMessagePartProps<ErrorRecovery
   );
 }
 
-function UnknownDataPart(_props: DataMessagePartProps<MessagePart>) {
+function UnknownDataPart() {
   return <div data-message-part="unsupported" className="mt-2 text-xs text-muted-foreground">这部分消息暂时无法安全显示，请重新加载后继续。</div>;
 }
 

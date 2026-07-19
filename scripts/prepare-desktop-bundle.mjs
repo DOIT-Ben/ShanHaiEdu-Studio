@@ -1,6 +1,12 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  inspectNextBuildOutput,
+  isForbiddenRuntimePath,
+  removePhysicalGeneratedDirectory,
+} from "./verify-next-build-output.mjs";
 
 const forbiddenTopLevel = new Set([
   ".env",
@@ -28,7 +34,18 @@ export async function prepareDesktopBundle({ cwd = process.cwd() } = {}) {
     };
   }
 
-  rmSync(output, { recursive: true, force: true });
+  const sourceInspection = inspectNextBuildOutput({ cwd, standaloneRoot: source, inspectNft: false });
+  if (!sourceInspection.ok) {
+    return {
+      ok: false,
+      stage: "m34_prepare_desktop_bundle",
+      message: "Next standalone output failed the runtime file safety contract.",
+      output: "desktop-bundle",
+      missing: sourceInspection.missing,
+    };
+  }
+
+  removePhysicalGeneratedDirectory({ cwd, target: output });
   mkdirSync(output, { recursive: true });
   cpSync(source, output, {
     recursive: true,
@@ -40,7 +57,7 @@ export async function prepareDesktopBundle({ cwd = process.cwd() } = {}) {
   if (existsSync(staticSource)) {
     cpSync(staticSource, path.join(output, ".next", "static"), {
       recursive: true,
-      dereference: true,
+      dereference: false,
     });
   }
 
@@ -48,8 +65,29 @@ export async function prepareDesktopBundle({ cwd = process.cwd() } = {}) {
   if (existsSync(publicSource)) {
     cpSync(publicSource, path.join(output, "public"), {
       recursive: true,
-      dereference: true,
+      dereference: false,
     });
+  }
+
+  const inspection = inspectNextBuildOutput({ cwd, standaloneRoot: output, inspectNft: false });
+  if (!inspection.ok) {
+    return {
+      ok: false,
+      stage: "m34_prepare_desktop_bundle",
+      message: "Desktop bundle failed the runtime file safety contract.",
+      output: "desktop-bundle",
+      missing: inspection.missing,
+    };
+  }
+  const dependencyIssue = inspectBundledRuntimeDependencies(output);
+  if (dependencyIssue) {
+    return {
+      ok: false,
+      stage: "m34_prepare_desktop_bundle",
+      message: "Desktop bundle is missing an isolated runtime dependency.",
+      output: "desktop-bundle",
+      missing: [dependencyIssue],
+    };
   }
 
   return {
@@ -63,16 +101,30 @@ export async function prepareDesktopBundle({ cwd = process.cwd() } = {}) {
 function shouldCopy(cwd, standaloneRoot, sourcePath) {
   const relative = path.relative(standaloneRoot, sourcePath);
   if (!relative) return true;
+  if (isForbiddenRuntimePath(relative)) return false;
   const firstSegment = relative.split(path.sep)[0];
   if (forbiddenTopLevel.has(firstSegment)) return false;
-  if (relative.includes(`${path.sep}.env`)) return false;
-  if (relative.split(path.sep).includes("node_modules")) return false;
-  if (path.basename(sourcePath).endsWith(".db")) return false;
-  if (path.basename(sourcePath).endsWith(".db-journal")) return false;
 
   const projectRelative = path.relative(cwd, sourcePath);
   if (projectRelative.startsWith(`node_modules${path.sep}`)) return false;
   return true;
+}
+
+function inspectBundledRuntimeDependencies(bundleRoot) {
+  const requireFromBundle = createRequire(path.join(bundleRoot, "server.js"));
+  for (const dependency of ["next", "better-sqlite3", "@prisma/client/runtime/client"]) {
+    let resolved;
+    try {
+      resolved = requireFromBundle.resolve(dependency);
+    } catch {
+      return dependency;
+    }
+    const relative = path.relative(path.resolve(bundleRoot), path.resolve(resolved));
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return dependency;
+    }
+  }
+  return null;
 }
 
 function isMainModule() {

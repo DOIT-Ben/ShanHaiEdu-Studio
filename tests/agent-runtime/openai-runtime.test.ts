@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAgentRuntimeFromEnv } from "../../src/server/agent-runtime/runtime-factory";
-import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
 import { OpenAIRuntime } from "../../src/server/agent-runtime/openai-runtime";
-import type { AgentRuntime, AgentRuntimeInput } from "../../src/server/agent-runtime/types";
+import type { AgentRuntimeInput } from "../../src/server/agent-runtime/types";
 import type { ToolCallIntent } from "../../src/server/gpt-protocol/tool-call-intent";
 import type { ToolRouterInput } from "../../src/server/tools/tool-router";
 import type { ToolExecutionResult } from "../../src/server/tools/tool-types";
@@ -380,7 +379,9 @@ describe("OpenAIRuntime", () => {
         },
       },
     };
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
     const runtimeInput = input();
     const runtime = new OpenAIRuntime({
       client,
@@ -447,7 +448,9 @@ describe("OpenAIRuntime", () => {
         }),
       },
     };
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
     const runtime = new OpenAIRuntime({
       client,
       model: "gpt-test",
@@ -758,10 +761,14 @@ function structuredStoryboardOutput(manifest: ReturnType<typeof validStoryboardM
     artifactDraft: {
       title: "机械谜题导入视频分镜", summary: "三镜头推进独立悬念，只在结尾回到课程问题。",
       videoStoryboardManifest: manifest ? (() => {
-        const { manifestDigest: _digest, ...semantic } = manifest;
+        const semantic = Object.fromEntries(
+          Object.entries(manifest).filter(([key]) => key !== "manifestDigest"),
+        ) as Omit<typeof manifest, "manifestDigest">;
         return {
           ...semantic,
-          shots: semantic.shots.map(({ referenceAssetIds: _serverDerived, ...shot }) => shot),
+          shots: semantic.shots.map((shot) => Object.fromEntries(
+            Object.entries(shot).filter(([key]) => key !== "referenceAssetIds"),
+          ) as Omit<typeof shot, "referenceAssetIds">),
         };
       })() : null,
     },

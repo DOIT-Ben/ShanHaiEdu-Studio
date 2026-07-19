@@ -22,7 +22,7 @@ export class ProviderLedgerManifestContractError extends Error {
 
 export function resolveProviderLedgerManifestRoot({ cwd = process.cwd(), env = process.env, explicitRoot } = {}) {
   const candidate = explicitRoot?.trim() || env.SHANHAI_PROVIDER_LEDGER_ROOT?.trim() || path.resolve(cwd, "API台账系统");
-  return path.resolve(candidate);
+  return path.resolve(/*turbopackIgnore: true*/ candidate);
 }
 
 export function readProviderLedgerManifest({ ledgerRoot }) {
@@ -31,7 +31,7 @@ export function readProviderLedgerManifest({ ledgerRoot }) {
   assertWithin(root, manifestPath);
   let value;
   try {
-    value = JSON.parse(readFileSync(manifestPath, "utf8"));
+    value = JSON.parse(readFileSync(/*turbopackIgnore: true*/ manifestPath, "utf8"));
   } catch {
     throw contractError("LEDGER_MANIFEST_INVALID", "Provider ledger manifest is missing or invalid.");
   }
@@ -250,7 +250,7 @@ function readPrivateLedgerEnv(ledgerRoot) {
   const envPath = path.resolve(ledgerRoot, privateEnvRelativePath);
   assertWithin(ledgerRoot, envPath);
   if (!existsSync(envPath)) return {};
-  return parseEnv(readFileSync(envPath, "utf8"));
+  return parseEnv(readFileSync(/*turbopackIgnore: true*/ envPath, "utf8"));
 }
 
 function parseEnv(text) {

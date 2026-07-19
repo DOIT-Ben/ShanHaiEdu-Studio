@@ -207,7 +207,7 @@ function isMainModule() {
 if (isMainModule()) {
   try {
     await runCozePptSmoke();
-  } catch (error) {
+  } catch {
     console.log(
       JSON.stringify({
         ok: false,

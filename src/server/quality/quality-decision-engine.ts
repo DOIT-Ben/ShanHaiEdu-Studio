@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { hasValidValidationReportDigest } from "@/server/contracts/contract-validator";
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import { hasValidCriticReportDigest } from "./critic-report";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 import type {
   CriticReport,
   EffectiveRubric,
@@ -141,8 +142,8 @@ export function decideQuality(input: {
 }
 
 export function hasValidQualityDecisionDigest(decision: QualityDecision): boolean {
-  const { decisionId: _decisionId, decisionDigest, createdAt: _createdAt, ...semanticPayload } = decision;
-  return hashRunInput(semanticPayload) === decisionDigest;
+  const semanticPayload = omitObjectKeys(decision, ["decisionId", "decisionDigest", "createdAt"]);
+  return hashRunInput(semanticPayload) === decision.decisionDigest;
 }
 
 function criticValidationRefsMatch(critic: CriticReport, validations: ValidationReport[]) {

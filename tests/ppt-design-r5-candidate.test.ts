@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { OpenAIRuntime, buildOpenAIResponseRequest } from "@/server/agent-runtime/openai-runtime";
 import {
   createPptDesignCandidateProjection,
@@ -358,11 +359,12 @@ function candidateInput(): PptDesignCandidateInput {
 }
 
 function modelCandidateInput() {
-  const { taskBriefDigest: _taskBriefDigest, evidenceBindings, ...semantic } = candidateInput();
+  const input = candidateInput();
+  const semantic = omitFixtureFields(input, "taskBriefDigest", "evidenceBindings");
   return {
     ...semantic,
     schemaVersion: "ppt-design-semantic-candidate.v1" as const,
-    evidenceBindings: evidenceBindings.map(({ sourceArtifactId: _sourceArtifactId, digest: _digest, ...binding }) => binding),
+    evidenceBindings: input.evidenceBindings.map((binding) => omitFixtureFields(binding, "sourceArtifactId", "digest")),
   };
 }
 

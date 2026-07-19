@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { createPptAssetManifestDigest, validatePptAssetManifest } from "@/server/ppt-quality/ppt-asset-validator";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 
@@ -68,6 +69,6 @@ describe("V1 Stage 3B PPT asset provenance manifest", () => {
 });
 
 function refreshDigest(manifest: ReturnType<typeof validPptSampleFixtures>["manifest"]): void {
-  const { manifestDigest: _digest, ...semantic } = manifest;
+  const semantic = omitFixtureFields(manifest, "manifestDigest");
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);
 }

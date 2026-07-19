@@ -16,6 +16,8 @@
 - TaskBrief、IntentGrant、IntentEpoch、ExecutionEnvelope、ToolInvocation、ValidationReport、Observation、Artifact和事件已有持久化基础。
 - 局部真实桌面证据曾证明：模糊讨论不调用Tool；“只做需求规格”只调用`create_requirement_spec`并产生一个真实文本Artifact。
 - Provider调用事实、验证manifest、release receipt和SQLite readiness已有失败关闭基础。
+- ESLint已收紧为`0 error / 0 warning`硬门，生产构建动态追踪warning已从13条清零。
+- Next standalone与桌面包现在拒绝环境文件、SQLite/WAL/SHM、测试资料和Provider私有台账；生产instrumentation不再加载V1-9文件型恢复控制面。
 
 ## 当前问题
 
@@ -23,8 +25,8 @@
 - Observation、Event、Invocation和authority audit终态缺少唯一一致性矩阵；authority summary没有完整重算这些关系。
 - succeeded被错误推断为必须带Artifact，Observation-only成功可能被误判。
 - 项目写入口与机器门仍需证明最外层统一wrapper、完整route扩展覆盖和无提前返回旁路。
-- 31个复杂度债务文件、23个源码字符串合同债务文件、149条Lint warning和13条构建动态追踪warning尚未清零。
-- `conversation-turn-service.ts`为3498行，`main-agent-tool-loop-config.ts`为2336行；workbench repository等模块也混合多个职责。
+- 31个复杂度债务文件和22个源码字符串合同债务文件尚未清零；Lint与构建动态追踪warning已清零。
+- `conversation-turn-service.ts`为3476行，`main-agent-tool-loop-config.ts`为2336行；workbench repository等模块也混合多个职责。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
 
 ## 尚未实现
@@ -51,4 +53,4 @@
 
 ## 唯一下一动作
 
-按`..\stages\product-first-deep-refactor-plan.md`依次完成：合同正确性、旧控制面删除、两个核心模块拆分、全部工程债务清零和最终HEAD验证。Provider连续性在本阶段结束后从`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+按`..\stages\product-first-deep-refactor-plan.md`依次完成：合同正确性、旧控制面删除、两个核心模块拆分、31项复杂度与22项源码字符串合同债务清零和最终HEAD验证。Provider连续性在本阶段结束后从`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。

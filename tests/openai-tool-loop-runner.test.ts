@@ -21,7 +21,9 @@ describe("OpenAI tool-call loop runner", () => {
   const tools = [{ type: "function", name: "createSlides" }];
   it("returns final assistant text without calling toolRouter when the response has no function_call", async () => {
     const adapter = fakeAdapter([response({ assistantText: "老师可读最终回复。", rawText: "老师可读最终回复。" })]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
 
     const result = await runOpenAIToolCallLoop({
       adapter,
@@ -62,7 +64,9 @@ describe("OpenAI tool-call loop runner", () => {
       }),
       response({ assistantText: "课件已经生成，请检查。", rawText: "课件已经生成，请检查。" }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
 
     const result = await runOpenAIToolCallLoop({
       adapter,
@@ -106,7 +110,9 @@ describe("OpenAI tool-call loop runner", () => {
       }),
       response({ assistantText: "课件已经生成，请检查。", rawText: "课件已经生成，请检查。" }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
 
     await runOpenAIToolCallLoop({
       adapter,
@@ -192,7 +198,9 @@ describe("OpenAI tool-call loop runner", () => {
       }),
       response({ assistantText: "我已生成课件。", rawText: "我已生成课件。" }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => nonSucceededToolResult(toolStatus));
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => nonSucceededToolResult(toolStatus));
 
     const result = await runOpenAIToolCallLoop({
       adapter,
@@ -235,7 +243,9 @@ describe("OpenAI tool-call loop runner", () => {
       }),
       response({ assistantText: "已继续。", rawText: "已继续。" }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
 
     await runOpenAIToolCallLoop({
       adapter,
@@ -268,7 +278,9 @@ describe("OpenAI tool-call loop runner", () => {
         ],
       }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
 
     const result = await runOpenAIToolCallLoop({
       adapter,
@@ -291,7 +303,9 @@ describe("OpenAI tool-call loop runner", () => {
       [{ callId: "call_unsupported", name: "deleteProject", argumentsText: "{}", argumentsJsonParseStatus: "parsed" as const, argumentsJson: {} }],
     ]) {
       const adapter = fakeAdapter([response({ functionCalls })]);
-      const toolRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+      const toolRouter = vi.fn<
+        (input: ToolRouterInput) => Promise<ToolExecutionResult>
+      >(async () => succeededToolResult());
 
       const result = await runOpenAIToolCallLoop({
         adapter,
@@ -316,7 +330,9 @@ describe("OpenAI tool-call loop runner", () => {
     const secondToolCall = { callId: "call_2", name: "createSlides", argumentsText: "{}", argumentsJsonParseStatus: "parsed" as const, argumentsJson: {} };
 
     const zeroRoundAdapter = fakeAdapter([response({ functionCalls: [firstToolCall] })]);
-    const zeroRoundRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const zeroRoundRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
     const zeroRoundResult = await runOpenAIToolCallLoop({
       adapter: zeroRoundAdapter,
       request,
@@ -336,7 +352,9 @@ describe("OpenAI tool-call loop runner", () => {
       response({ functionCalls: [firstToolCall], outputItems: [{ type: "function_call", call_id: "call_1", name: "createSlides", arguments: "{}" }] }),
       response({ functionCalls: [secondToolCall], outputItems: [{ type: "function_call", call_id: "call_2", name: "createSlides", arguments: "{}" }] }),
     ]);
-    const overLimitRouter = vi.fn(async (_input: ToolRouterInput) => succeededToolResult());
+    const overLimitRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => succeededToolResult());
     const overLimitResult = await runOpenAIToolCallLoop({
       adapter: overLimitAdapter,
       request,
@@ -363,7 +381,9 @@ describe("OpenAI tool-call loop runner", () => {
       }),
       response({ assistantText: "已继续。", rawText: "已继续。" }),
     ]);
-    const toolRouter = vi.fn(async (_input: ToolRouterInput) =>
+    const toolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () =>
       succeededToolResult({ assistantSummary: "课件已生成 provider schema debug API token=abc123 C:\\Users\\HB\\secret.pptx https://secret.example/v1" }),
     );
 

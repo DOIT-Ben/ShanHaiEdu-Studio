@@ -52,7 +52,7 @@ import type { PptDirectorPlanBinding } from "@/server/ppt-quality/ppt-director-d
 import { createDeterministicMainConversationAgent, type MainAgentTaskIntakeDecision, type MainConversationAgent, type MainConversationAgentInput } from "./main-conversation-agent";
 import { createMainAgentToolLoopOptions } from "./main-agent-tool-loop-config";
 import { resolveMainAgentToolDefinition } from "@/server/tools/main-agent-tool-registry";
-import { createExecutionEnvelope, createTaskBrief, hasValidTaskBrief, isPendingDecision, withPendingDecisionStatus, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
+import { createExecutionEnvelope, hasValidTaskBrief, isPendingDecision, withPendingDecisionStatus, type IntentGrant, type PendingDecision, type TaskBrief } from "./task-contract";
 import { createTaskBriefFromProposal, proposeDeterministicTaskBriefFixture } from "./task-intake";
 import { resolvePreAgentControl, type PreAgentControlDecision } from "./turn-intake-control";
 import type { GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
@@ -1310,7 +1310,6 @@ async function commitPreAgentControlTurn(input: {
   const nextIntentEpoch = input.control.advanceIntentEpoch
     ? await input.service.advanceProjectIntentEpoch(input.project.id, previousIntentEpoch)
     : previousIntentEpoch;
-  const nextProject = { ...input.project, intentEpoch: nextIntentEpoch };
   const controlArtifacts = input.control.kind === "redirect"
     ? await input.service.getArtifacts(input.project.id)
     : [];
@@ -2918,10 +2917,6 @@ function isRepairablePptArtifact(artifact: ArtifactRecord): boolean {
   return artifact.kind === "pptx_artifact" && artifact.nodeKey === "pptx_artifact" && artifact.status === "needs_review" && artifact.isApproved === false && Boolean(artifact.structuredContent.pptFullDeckCandidate);
 }
 
-function isApprovedArtifact(artifact: ArtifactRecord) {
-  return artifact.isApproved && artifact.status === "approved";
-}
-
 function createToolRouterBudgetMetadata(result: ToolExecutionResult, toolPlan: CapabilityToolPlan): Record<string, unknown> {
   return {
     agentHarnessBudgetEvent: normalizeToolRouterBudgetEvent(result, toolPlan),
@@ -3460,23 +3455,6 @@ function applyConfirmedPendingDecision(grant: IntentGrant, taskBrief: TaskBrief,
 function isGenericContinuationRequest(text: string) {
   const normalized = text.trim().replace(/\s+/g, "").replace(/[。.!！]+$/g, "");
   return /^(继续|继续下一步|接着做|继续推进|往下做|按计划继续)$/.test(normalized);
-}
-
-function toMainAgentConversationContext(messages: ConversationMessageRecord[], pendingPlan: PendingDeliveryPlanSnapshot | null) {
-  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-  return {
-    recentMessages: messages.slice(-8).map((message) => ({ role: message.role, content: message.content })),
-    latestAssistantContent: latestAssistant?.content,
-    ...(pendingPlan
-      ? {
-          pendingDeliveryPlan: {
-            teacherRequest: pendingPlan.teacherRequest,
-            toolPlan: pendingPlan.toolPlan,
-            ...(pendingPlan.deliveryPlan ? { deliveryPlan: pendingPlan.deliveryPlan } : {}),
-          },
-        }
-      : {}),
-  };
 }
 
 function toMainAgentProjectContext(project: ProjectRecord) {

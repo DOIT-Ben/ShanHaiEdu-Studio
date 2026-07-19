@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 import type { ArtifactItem, ChatDeliveryPlan, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -98,7 +99,7 @@ function AssistantMessage({
   onOpenFeedback?: OpenFeedback;
   onSetMessageReaction?: (messageId: string, value: ChatMessage["reaction"] | null) => void | Promise<void>;
 }) {
-  const quickReplies = getQuickReplyChoices(message, artifact);
+  const quickReplies = getQuickReplyChoices(message);
 
   return (
     <article
@@ -184,7 +185,7 @@ type QuickReplyChoice = {
   recommended?: boolean;
 };
 
-function getQuickReplyChoices(message: ChatMessage, _artifact: ArtifactItem | null): QuickReplyChoice[] {
+function getQuickReplyChoices(message: ChatMessage): QuickReplyChoice[] {
   if (message.quickReplies?.length) {
     return message.quickReplies.map((reply) => ({
       label: reply.label,
@@ -290,7 +291,7 @@ function XiaoKuMark({ active = false }: { active?: boolean }) {
       className={cn("mt-5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dce2e0] bg-card", active && "shadow-[0_10px_24px_rgba(24,64,55,0.14)]")}
       aria-hidden="true"
     >
-      <img src="/brand/xiaoku-avatar.png" alt="" className="h-full w-full object-cover" />
+      <Image src="/brand/xiaoku-avatar.png" alt="" width={36} height={36} className="h-full w-full object-cover" />
     </div>
   );
 }

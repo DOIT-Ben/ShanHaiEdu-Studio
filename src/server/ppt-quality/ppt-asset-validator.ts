@@ -5,6 +5,7 @@ import type {
   PptAssetRequestBatch,
   PptAssetValidationIssue,
 } from "./ppt-asset-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const FORBIDDEN_FILE_MARKER = /(?:^|[-_.])(placeholder|stand[-_]?in|mock|temp|temporary)(?:[-_.]|$)/i;
@@ -50,7 +51,7 @@ export function validatePptAssetManifest(
     if (!entriesById.has(request.assetId)) issue(issues, "requested_asset_missing", "A requested asset is missing from the manifest.", request.assetId);
   }
 
-  const { manifestDigest: _digest, ...semanticManifest } = manifest;
+  const semanticManifest = omitObjectKeys(manifest, ["manifestDigest"]);
   if (createPptAssetManifestDigest(semanticManifest) !== manifest.manifestDigest) {
     issue(issues, "asset_manifest_digest_mismatch", "Asset manifest digest does not match its semantic content.");
   }

@@ -4,6 +4,7 @@ import type { PptKeySampleCompositionResult } from "./ppt-key-sample-composer";
 import type { PptKeySampleRenderEvidence } from "./ppt-key-sample-renderer";
 import type { PptDesignPackage } from "./ppt-quality-types";
 import { buildPptKeySampleSet } from "./ppt-key-sample-set-builder";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 export function createPptKeySampleCandidateDigest(input: Omit<PptKeySampleCandidate, "candidateDigest">): string {
   return hashRunInput(input);
@@ -47,7 +48,7 @@ export function validatePptKeySampleCandidate(candidate: PptKeySampleCandidate):
   if (candidate.samplePageIds.length < 3 || candidate.samplePageIds.length > 4) return false;
   if (candidate.assembledPages.length !== candidate.samplePageIds.length || candidate.overviews.length !== 3) return false;
   if (new Set(candidate.overviews.map((item) => item.kind)).size !== 3) return false;
-  const { candidateDigest: _digest, ...semantic } = candidate;
+  const semantic = omitObjectKeys(candidate, ["candidateDigest"]);
   return createPptKeySampleCandidateDigest(semantic) === candidate.candidateDigest;
 }
 
@@ -71,7 +72,7 @@ export function sealPptKeySampleCandidate(input: {
     composition: {
       pptxBuffer: Buffer.alloc(0),
       pptxSha256: input.candidate.samplePptx.sha256,
-      pageEvidence: input.candidate.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+      pageEvidence: input.candidate.assembledPages.map((page) => omitObjectKeys(page, ["renderRef", "renderSha256"])),
     },
     renderEvidence: {
       samplePptx: input.candidate.samplePptx,

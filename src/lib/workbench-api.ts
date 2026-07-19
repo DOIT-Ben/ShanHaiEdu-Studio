@@ -45,7 +45,6 @@ type BackendDeliveryPlanStep = {
 };
 
 const teacherFacingLoadError = "项目内容暂时没有取回，请稍后再试。";
-const teacherFacingRegeneratePendingError = "这个内容暂时还不能重做，请稍后再试。";
 
 export class WorkbenchApiError extends Error {
   readonly status?: number;
@@ -415,7 +414,7 @@ export function createDevelopmentWorkbenchAdapter(options: DevelopmentAdapterOpt
     async getProjectSnapshot(projectId) {
       return snapshot(projectId);
     },
-    async recoverConversationTurn(projectId, _checkpointId) {
+    async recoverConversationTurn(projectId) {
       return snapshot(projectId);
     },
     async mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {

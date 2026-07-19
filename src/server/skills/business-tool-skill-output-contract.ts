@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
 import type { LoadedSkillContractSchema } from "./skill-runtime-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 type SucceededToolExecutionResult = Extract<ToolExecutionResult, { status: "succeeded" }>;
 
@@ -122,8 +123,7 @@ const registrations: readonly AdapterRegistration[] = Object.freeze([
 const registrationById = new Map(registrations.map((registration) => [registration.adapterId, registration]));
 
 export function listFormalBusinessToolOutputAdapters(): FormalBusinessToolOutputAdapterRegistration[] {
-  return registrations.map(({ expectedArtifactKinds: _kinds, project: _project, ...registration }) =>
-    structuredClone(registration));
+  return registrations.map((registration) => structuredClone(omitObjectKeys(registration, ["expectedArtifactKinds", "project"])));
 }
 
 export function hasFormalBusinessToolOutputAdapter(adapterId: string, businessToolName?: string): boolean {

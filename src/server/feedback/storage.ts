@@ -79,7 +79,7 @@ export class FeedbackStorage {
     const filePath = containedPath(directory, `${ref.storageKey}.${ref.extension}`);
     const stat = await lstat(filePath);
     if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Attachment is not an ordinary file.");
-    const resolved = await realpath(filePath);
+    const resolved = await realpath(/*turbopackIgnore: true*/ filePath);
     assertContained(root.feedback, resolved);
     return readFile(resolved);
   }

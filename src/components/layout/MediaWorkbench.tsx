@@ -209,8 +209,6 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
             <ArtifactRail
               items={controller.artifacts}
               activeKey={controller.activeArtifact?.key ?? ""}
-              onCopy={controller.copyArtifact}
-              onUseAsInput={controller.useAsInput}
               onOpen={controller.openSidePanel}
               onOpenGroup={openArtifactDrawer}
             />
@@ -225,8 +223,6 @@ function AuthenticatedMediaWorkbench({ currentUser, onLogout }: { currentUser: P
             initialGroup={artifactDrawerGroup}
             items={controller.artifacts}
             activeKey={controller.activeArtifact?.key ?? ""}
-            onCopy={controller.copyArtifact}
-            onUseAsInput={controller.useAsInput}
             onOpen={openDetailFromRail}
           />
         </SheetContent>

@@ -51,7 +51,7 @@ function collectRouteFiles(routesRoot) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolutePath = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(absolutePath);
-      else if (entry.isFile() && /^route\.(?:js|jsx|ts|tsx|mjs|cjs)$/.test(entry.name)) files.push(absolutePath);
+      else if (entry.isFile() && (entry.name === "route.ts" || entry.name === "route.js")) files.push(absolutePath);
     }
   };
   visit(routesRoot);
@@ -59,12 +59,15 @@ function collectRouteFiles(routesRoot) {
 }
 
 function analyzeRouteFile({ filePath, routesRoot, repoRoot }) {
+  const scriptKind = path.extname(filePath).toLowerCase() === ".js"
+    ? { compiler: ts.ScriptKind.JS, label: "JS" }
+    : { compiler: ts.ScriptKind.TS, label: "TS" };
   const sourceFile = ts.createSourceFile(
     filePath,
     fs.readFileSync(filePath, "utf8"),
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TS,
+    scriptKind.compiler,
   );
   const wrapperBindings = collectWorkbenchActorWrapperBindings(sourceFile);
   const localDeclarations = collectLocalDeclarations(sourceFile);
@@ -76,6 +79,7 @@ function analyzeRouteFile({ filePath, routesRoot, repoRoot }) {
     method,
     routeTemplate,
     filePath: relativePath,
+    scriptKind: scriptKind.label,
     handlerResolved: Boolean(handler),
     fullyWrappedByWorkbenchActor: Boolean(handler) && returnsImportedWrapper(handler, wrapperBindings),
   }));

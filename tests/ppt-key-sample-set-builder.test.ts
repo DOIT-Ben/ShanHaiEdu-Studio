@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { buildPptKeySampleSet } from "@/server/ppt-quality/ppt-key-sample-set-builder";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 
@@ -12,7 +13,7 @@ describe("V1 Stage 3B key sample set builder", () => {
       composition: {
         pptxBuffer: Buffer.from("PK sample"),
         pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha, ...page }) => page),
+        pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
       },
       renderEvidence: {
         samplePptx: fixtures.sampleSet.samplePptx,
@@ -37,7 +38,7 @@ describe("V1 Stage 3B key sample set builder", () => {
       composition: {
         pptxBuffer: Buffer.from("PK sample"),
         pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha, ...page }) => page),
+        pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
       },
       renderEvidence: {
         samplePptx: fixtures.sampleSet.samplePptx,

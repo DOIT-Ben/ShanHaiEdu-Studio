@@ -5,7 +5,6 @@ import {
 } from "@/server/agent-runtime/native-tool-loop-config";
 import type { AgentRuntime, AgentRuntimeInput } from "@/server/agent-runtime/types";
 import type { ToolCallIntent } from "@/server/gpt-protocol/tool-call-intent";
-import type { ToolRouterInput } from "@/server/tools/tool-router";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
 
 describe("OpenAIRuntime native tool loop config", () => {
@@ -162,7 +161,7 @@ function fakeRuntime(): AgentRuntime {
 }
 
 function fakeToolRouter() {
-  return vi.fn(async (_input: ToolRouterInput): Promise<ToolExecutionResult> => ({
+  return vi.fn(async (): Promise<ToolExecutionResult> => ({
     status: "succeeded",
     toolId: "test-tool",
     capabilityId: "lesson_plan",

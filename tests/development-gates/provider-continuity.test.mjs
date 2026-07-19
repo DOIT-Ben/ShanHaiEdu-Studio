@@ -73,10 +73,25 @@ const OFFLINE_REFACTOR_IMPLEMENTATION_PATHS = [
   "src/server/conversation/**",
   "src/server/agent-runtime/**",
   "src/server/tools/**",
+  "src/server/provider-ledger/provider-ledger-adapter.ts",
+  "src/server/provider-ledger/provider-ledger-contract.mjs",
   "src/app/api/**/route.ts",
   "src/lib/conversation-message-contract.ts",
   "prisma/schema.prisma",
 ];
+const OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS = [
+  {
+    path: "src/server/provider-ledger/provider-ledger-adapter.ts",
+    sha256: "19b51b48a91da8964d34505e99ff739ab857f79554d879d1004d52e6857e8a4e",
+  },
+  {
+    path: "src/server/provider-ledger/provider-ledger-contract.mjs",
+    sha256: "e7ad5590c28ac4eb21e8a9d5ec9979dbbd953988d32965b3a076e04a0494907d",
+  },
+];
+const OFFLINE_REFACTOR_PINNED_IMPLEMENTATION_PATHS = OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS.map(
+  (entry) => entry.path,
+);
 
 test("test database initialization removes stale WAL and shared-memory sidecars", () => {
   const removed = [];
@@ -235,6 +250,7 @@ function writeOfflineRefactorStage(root, continuityOverrides = {}, stageOverride
       trustedCaptureKeyIds: [],
       trustedLedgerAuthorityKeyIds: [],
       allowedImplementationPaths: OFFLINE_REFACTOR_IMPLEMENTATION_PATHS,
+      pinnedImplementationSha256: OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS,
       ...continuityOverrides,
     },
   });
@@ -251,6 +267,11 @@ function setupRepository(t) {
     "export const provider = 'real';\n",
     { encoding: "utf8", flag: "w" },
   );
+  for (const { path: relativePath } of OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS) {
+    const absolutePath = path.join(root, ...relativePath.split("/"));
+    mkdirSync(path.dirname(absolutePath), { recursive: true });
+    writeFileSync(absolutePath, readFileSync(path.join(process.cwd(), ...relativePath.split("/"))), "utf8");
+  }
   writeJson(path.join(root, "docs/stages/active-stage.json"), {
     schemaVersion: "shanhai-active-stage.v1",
     stageId: "project-development-gates",
@@ -294,6 +315,7 @@ function computeBundle(root) {
     "config/development-gates.json",
     "docs/stages/active-stage.json",
     "src/server/conversation/provider.ts",
+    ...OFFLINE_REFACTOR_PINNED_IMPLEMENTATION_PATHS,
   ];
   const digest = createHash("sha256");
   for (const relativePath of files) {
@@ -562,11 +584,34 @@ test("offline product refactor is exact, expiring, development-only, and never p
     ["liveAuthorization", { liveAuthorization: { authorizationDigest: "a".repeat(64) } }, {}],
     ["requiredReceiptSchema", { requiredReceiptSchema: "shanhai-provider-continuity-receipt.v1" }, {}],
     ["allowedImplementationPaths", { allowedImplementationPaths: [...OFFLINE_REFACTOR_IMPLEMENTATION_PATHS, "src/server/gpt-protocol/**"] }, {}],
+    ["pinnedImplementationSha256", { pinnedImplementationSha256: [] }, {}],
   ];
   for (const [label, continuityOverrides, stageOverrides] of driftCases) {
     writeOfflineRefactorStage(root, continuityOverrides, stageOverrides);
     assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i, label);
   }
+
+  writeOfflineRefactorStage(root);
+  writeFileSync(
+    path.join(root, ...OFFLINE_REFACTOR_PINNED_IMPLEMENTATION_PATHS[0].split("/")),
+    "export const fixture = 'semantic-drift';\n",
+    "utf8",
+  );
+  assert.throws(() => verify(root, { changedPaths }), /receipt.*missing/i, "pinned file content drift");
+
+  writeOfflineRefactorStage(root, {
+    pinnedImplementationSha256: OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS.map((entry, index) => ({
+      ...entry,
+      sha256: index === 0
+        ? sha256(readFileSync(path.join(root, ...entry.path.split("/"))))
+        : entry.sha256,
+    })),
+  });
+  assert.throws(
+    () => verify(root, { changedPaths }),
+    /receipt.*missing/i,
+    "file drift with synchronized stage self-report",
+  );
 });
 
 test("offline product refactor rejects legacy or unsigned receipts in release mode", (t) => {

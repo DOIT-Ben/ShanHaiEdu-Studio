@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 
 import { createValidationReport, hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { resolveRuntimeContract } from "@/server/contracts/runtime-contract";
@@ -241,7 +242,7 @@ async function createFixture(input: { jobCapabilityId?: string; startJob?: boole
 }
 
 function reissue(report: ValidationReport, patch: Partial<ValidationReport>): ValidationReport {
-  const { authority: _authority, reportDigest: _reportDigest, ...input } = report;
+  const input = omitFixtureFields(report, "authority", "reportDigest");
   return createValidationReport({
     ...input,
     ...patch,

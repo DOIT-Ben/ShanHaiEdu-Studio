@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { createStoryboardManifest, resolveStoryboardShotDurations, validateStoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { buildResolvedShotVideoRequest, buildShotVideoRequestBody } from "@/server/video-generation/video-generation-run";
 import { buildVideoShotGenerationJobs } from "@/server/video-quality/video-shot-job-planner";
@@ -21,7 +22,7 @@ describe("V1 Stage 4A video production contract", () => {
     const value = validManifest();
     value.shots = value.shots.slice(0, 2);
     value.shots[0].referenceAssetIds = [];
-    const { manifestDigest: _digest, ...semantic } = value;
+    const semantic = omitFixtureFields(value, "manifestDigest");
     const invalid = { ...semantic, manifestDigest: JSON.parse(JSON.stringify(semantic)) && value.manifestDigest };
     const result = validateStoryboardManifest(invalid);
     expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["full_intro_minimum_three_shots", "required_reference_missing", "manifest_digest_invalid"]));
@@ -37,7 +38,7 @@ describe("V1 Stage 4A video production contract", () => {
   it("allocates only enough per-shot duration to reach the Full Intro minimum", () => {
     const value = validManifest();
     value.intent.targetDurationRange = { minSeconds: 45, maxSeconds: 60 };
-    const { manifestDigest: _digest, ...semantic } = value;
+    const semantic = omitFixtureFields(value, "manifestDigest");
     const resealed = createStoryboardManifest(semantic);
     expect([...resolveStoryboardShotDurations(resealed).values()]).toEqual([20, 15, 10]);
   });

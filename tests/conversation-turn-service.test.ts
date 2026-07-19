@@ -3254,7 +3254,10 @@ describe("M54-B3 ConversationTurnService route contract", () => {
     const planningBody = await turnService.createTurn(projectId, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
     const messages = await service.getMessages(projectId);
     const assistantPlanMessage = messages.find((message: { id: string }) => message.id === planningBody.assistantMessage?.id);
-    const { actionId: _actionId, ...pendingWithoutActionId } = pendingDeliveryPlanOf(assistantPlanMessage);
+    const pendingPlan = pendingDeliveryPlanOf(assistantPlanMessage);
+    const pendingWithoutActionId = Object.fromEntries(
+      Object.entries(pendingPlan).filter(([key]) => key !== "actionId"),
+    ) as Omit<typeof pendingPlan, "actionId">;
     await service.updateMessageMetadata(projectId, assistantPlanMessage!.id, {
       ...assistantPlanMessage!.metadata,
       pendingDeliveryPlan: pendingWithoutActionId,
@@ -3270,7 +3273,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
   });
 
   it("executes the unique safe internal pending plan from explicit natural-language confirmation", async () => {
-    const { service, turnService, projectId } = await createServiceProject({
+    const { turnService, projectId } = await createServiceProject({
       title: "MVP1 当前确认缺失项目",
       grade: "五年级",
       subject: "数学",
@@ -3356,7 +3359,7 @@ describe("M54-B3 ConversationTurnService route contract", () => {
   });
 
   it("returns a delivery plan for complete material package requests before confirmation", async () => {
-    const { service, turnService, projectId } = await createServiceProject({
+    const { turnService, projectId } = await createServiceProject({
       title: "M55-A 完整材料包项目",
       grade: "五年级",
       subject: "数学",

@@ -24,7 +24,7 @@ export async function renderPptFullDeck(input: {
 }): Promise<PptFullDeckRenderEvidence> {
   if (input.pageIds.length !== input.slideCount) throw new Error("ppt_full_render_slide_count_mismatch");
   const runId = randomUUID();
-  const outputDir = path.join(process.cwd(), ".tmp", "ppt-full-deck-render", runId);
+  const outputDir = path.join(/*turbopackIgnore: true*/ process.cwd(), ".tmp", "ppt-full-deck-render", runId);
   mkdirSync(outputDir, { recursive: true });
   const pptxPath = path.join(outputDir, "full-deck.pptx");
   writeFileSync(pptxPath, input.pptxBuffer);

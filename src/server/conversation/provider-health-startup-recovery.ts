@@ -70,7 +70,7 @@ export function resolveV1_9ProviderHealthRecoveryAuthority(input: {
   env?: RecoveryEnv;
   dependencies?: Partial<V1_9ProviderHealthRecoveryAuthorityDependencies>;
 }): V1_9ProviderHealthRecoveryAuthority {
-  const cwd = path.resolve(input.cwd ?? process.cwd());
+  const cwd = path.resolve(/*turbopackIgnore: true*/ input.cwd ?? process.cwd());
   const env = input.env ?? process.env;
   const dependencies = { ...defaultAuthorityDependencies, ...input.dependencies };
   try {

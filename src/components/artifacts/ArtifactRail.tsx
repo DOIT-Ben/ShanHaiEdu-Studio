@@ -23,8 +23,6 @@ type ArtifactRailProps = {
   activeKey: string;
   variant?: "rail" | "drawer";
   initialGroup?: DrawerFilter;
-  onCopy: (item: ArtifactItem) => void;
-  onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
   onOpenGroup?: (group: DrawerFilter) => void;
 };
@@ -42,8 +40,6 @@ export function ArtifactRail({
   activeKey,
   variant = "rail",
   initialGroup = "all",
-  onCopy,
-  onUseAsInput,
   onOpen,
   onOpenGroup,
 }: ArtifactRailProps) {
@@ -87,8 +83,6 @@ export function ArtifactRail({
                 item={item}
                 active={item.key === activeKey}
                 variant="drawer"
-                onCopy={onCopy}
-                onUseAsInput={onUseAsInput}
                 onOpen={onOpen}
               />
             ))}

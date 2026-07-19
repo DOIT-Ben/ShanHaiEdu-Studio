@@ -7,7 +7,6 @@ import {
   getGlobalTraceProvider,
   setTracingDisabled,
   type Model,
-  type ModelRequest,
   type ModelResponse,
 } from "@openai/agents";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -301,7 +300,7 @@ function scriptedResponsesClient(turns: Array<Array<ReturnType<typeof toolDecisi
 
 function agentsModel(calls: ReturnType<typeof toolDecision>[]): Model {
   return {
-    async getResponse(_request: ModelRequest): Promise<ModelResponse> {
+    async getResponse(): Promise<ModelResponse> {
       return {
         usage: new Usage({ requests: 0 }),
         output: calls,

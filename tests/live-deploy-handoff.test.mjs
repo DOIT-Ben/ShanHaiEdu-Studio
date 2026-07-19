@@ -13,7 +13,7 @@ test("release roadmap defers live deployment while preserving real readiness and
 
   const roadmap = readFileSync(roadmapPath, "utf8");
   const runbook = readFileSync(runbookPath, "utf8");
-  assert.match(roadmap, /当前V1\.0智能体原子Tool重构关闭、重新规划并通过唯一V1-9真实全链路后/);
+  assert.match(roadmap, /当前产品优先深度重构关闭、重新规划并通过唯一V1-9真实全链路后/);
   assert.match(roadmap, /不得提前启动/);
   assert.match(roadmap, /V1-9通过后仍需当次授权/);
   assert.match(runbook, /npm run preflight:production/);

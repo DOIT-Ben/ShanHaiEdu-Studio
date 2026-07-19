@@ -27,7 +27,6 @@ import {
   createV1_9RunManifestV2Digest,
   createV1_9RunState,
   normalizeV1_9RunState,
-  type V1_9RunState,
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
 import { projectReadyV1_9Authority } from "./support/v1-9-authority-summary";
 

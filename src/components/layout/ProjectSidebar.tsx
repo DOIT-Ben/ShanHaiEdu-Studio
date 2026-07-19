@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { Archive, ChevronDown, ChevronLeft, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import type { PasswordAuthUser } from "@/lib/auth-api";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
@@ -81,7 +82,7 @@ export function ProjectSidebar({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md border bg-card text-muted-foreground">
-                  <img src="/brand/shanhai-education-logo.png" alt="山海课伴" className="h-full w-full scale-[1.38] object-cover object-[center_33%]" />
+                  <Image src="/brand/shanhai-education-logo.png" alt="山海课伴" width={32} height={32} className="h-full w-full scale-[1.38] object-cover object-[center_33%]" />
                 </div>
                 <h2 className="truncate text-sm font-medium text-foreground">山海课伴</h2>
               </div>

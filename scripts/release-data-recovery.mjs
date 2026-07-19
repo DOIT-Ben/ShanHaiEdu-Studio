@@ -351,7 +351,7 @@ async function runCli() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runCli().catch((error) => {
+  runCli().catch(() => {
     console.error(JSON.stringify({ ok: false, error: "Release data operation failed." }));
     process.exit(2);
   });

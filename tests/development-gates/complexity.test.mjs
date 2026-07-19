@@ -124,6 +124,26 @@ test("fails closed for new, grown, or reduced unratcheted complexity debt", () =
   );
   assert.equal(reduced.ok, false);
   assert.match(reduced.errors.join("\n"), /no longer exists in actual debt/i);
+
+  const reducedStillOverLimit = evaluateComplexityDebt(
+    [{ path: "src/large-file.ts", content: fileWithLines(501) }],
+    policy({ baseline: [{ ...baseline, lines: 502 }] }),
+  );
+  assert.equal(reducedStillOverLimit.ok, false);
+  assert.match(reducedStillOverLimit.errors.join("\n"), /lines changed from 502 to 501/i);
+
+  const explicitlyRatcheted = evaluateComplexityDebt(
+    [{ path: "src/large-file.ts", content: fileWithLines(501) }],
+    policy({ baseline: [baseline] }),
+  );
+  assert.equal(explicitlyRatcheted.ok, true);
+
+  const reintroduced = evaluateComplexityDebt(
+    [{ path: "src/large-file.ts", content: fileWithLines(502) }],
+    policy({ baseline: [baseline] }),
+  );
+  assert.equal(reintroduced.ok, false);
+  assert.match(reintroduced.errors.join("\n"), /lines changed from 501 to 502/i);
 });
 
 test("rejects missing, duplicate, or inconsistent complexity policy", () => {

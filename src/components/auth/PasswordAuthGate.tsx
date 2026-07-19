@@ -64,7 +64,7 @@ export function PasswordAuthGate({ errorMessage, submitting, registrationEnabled
 
         <div className="mx-auto w-full max-w-[420px] px-5 py-7 sm:px-8 lg:px-6 lg:py-8">
           <div data-auth-brand-signature className="mb-6 flex items-center gap-5 border-b border-border/70 pb-5">
-            <img src="/brand/shanhai-education-logo.png" alt="山海教育" width={92} height={92} className="h-[92px] w-[92px] shrink-0 object-contain" />
+            <Image src="/brand/shanhai-education-logo.png" alt="山海教育" width={92} height={92} className="h-[92px] w-[92px] shrink-0 object-contain" />
             <div className="min-w-0">
               <p className="text-[23px] font-semibold leading-tight tracking-[-0.035em] text-[#0d2940]">山海课伴</p>
               <p className="mt-2 text-xs tracking-[0.08em] text-muted-foreground">山海教育 · AI 备课工作台</p>

@@ -310,8 +310,8 @@ function parseStructuredContent(
   if (task === "video_script_generate") {
     const script = parsed.videoNarrationScript;
     if (!isRecord(script)) throw new RuntimeFailureError("missing_field", true, "video_script_candidate_missing");
-    const { scriptDigest: _untrustedDigest, ...semantic } = script as unknown as VideoNarrationScript;
-    return { ...parsed, videoNarrationScript: createVideoNarrationScript(semantic) };
+    const semantic = { ...script }; delete semantic.scriptDigest;
+    return { ...parsed, videoNarrationScript: createVideoNarrationScript(semantic as Omit<VideoNarrationScript, "scriptDigest">) };
   }
   if (task !== "ppt_design") return parsed;
 
@@ -690,7 +690,7 @@ const storyboardRuntimeOutputJsonSchema = {
 
 function normalizeStoryboardManifestCandidate(value: unknown): StoryboardManifest {
   if (!isRecord(value)) throw new RuntimeFailureError("missing_field", true, "storyboard_candidate_missing");
-  const { manifestDigest: _untrustedDigest, ...candidate } = value;
+  const candidate = { ...value }; delete candidate.manifestDigest;
   const references = Array.isArray(candidate.references)
     ? candidate.references.map((reference) => {
         if (!isRecord(reference)) return reference;

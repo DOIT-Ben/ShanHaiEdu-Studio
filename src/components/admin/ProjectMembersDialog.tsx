@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,11 +26,7 @@ export function ProjectMembersDialog({ open, projectId, currentUser, onOpenChang
   const [status, setStatus] = useState<string | null>(null);
   const canManage = currentUser?.role === "admin" || members.some((member) => member.userId === currentUser?.id && member.role === "owner");
 
-  useEffect(() => {
-    if (open && projectId) void loadMembers();
-  }, [open, projectId]);
-
-  async function loadMembers() {
+  const loadMembers = useCallback(async () => {
     if (!projectId) return;
     setBusy(true);
     setStatus(null);
@@ -42,7 +38,13 @@ export function ProjectMembersDialog({ open, projectId, currentUser, onOpenChang
     } finally {
       setBusy(false);
     }
-  }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!open || !projectId) return;
+    const timeout = window.setTimeout(() => void loadMembers(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadMembers, open, projectId]);
 
   async function runAction(action: () => Promise<unknown>, success: string) {
     if (!projectId) return;

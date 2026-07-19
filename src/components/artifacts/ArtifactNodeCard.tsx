@@ -22,8 +22,6 @@ type ArtifactNodeCardProps = {
   item: ArtifactItem;
   active?: boolean;
   variant?: "rail" | "drawer";
-  onCopy: (item: ArtifactItem) => void;
-  onUseAsInput: (item: ArtifactItem) => void;
   onOpen: (item: ArtifactItem) => void;
   onPreviewStart?: (item: ArtifactItem) => void;
   onPreviewEnd?: () => void;
@@ -33,8 +31,6 @@ export function ArtifactNodeCard({
   item,
   active,
   variant = "rail",
-  onCopy,
-  onUseAsInput,
   onOpen,
   onPreviewStart,
   onPreviewEnd,

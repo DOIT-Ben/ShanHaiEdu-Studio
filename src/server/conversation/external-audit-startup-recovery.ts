@@ -58,7 +58,7 @@ export function resolveV1_9ExternalAuditRecoveryAuthority(input: {
   env?: V1_9ExternalAuditRecoveryEnv;
   dependencies?: Partial<V1_9ExternalAuditAuthorityDependencies>;
 }): V1_9ExternalAuditRecoveryAuthority | null {
-  const cwd = path.resolve(input.cwd ?? process.cwd());
+  const cwd = path.resolve(/*turbopackIgnore: true*/ input.cwd ?? process.cwd());
   const env = input.env ?? process.env;
   const dependencies = { ...defaultAuthorityDependencies, ...input.dependencies };
   try {

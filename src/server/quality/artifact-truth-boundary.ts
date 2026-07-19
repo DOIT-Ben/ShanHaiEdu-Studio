@@ -1,6 +1,7 @@
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import type { TaskBrief } from "@/server/conversation/task-contract";
 import type { ArtifactRecord } from "@/server/workbench/types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 export const ARTIFACT_APPROVAL_EVIDENCE_VERSION = "artifact-approval-evidence.v1" as const;
 export const LEGACY_ARTIFACT_APPROVAL_MIGRATION_VERSION = "legacy-artifact-approval-migration.v1" as const;
@@ -183,15 +184,13 @@ function artifactDraftDigest(
 }
 
 function withoutApprovalEvidence(value: Record<string, unknown>) {
-  const {
-    artifactApprovalEvidence: _approval,
-    pptSampleApproval: _pptSampleApproval,
-    routeGenerationActions: _routeGenerationActions,
-    videoCourseAnchorApproval: _videoCourseAnchorApproval,
-    videoFinalApproval: _videoFinalApproval,
-    ...rest
-  } = value;
-  return rest;
+  return omitObjectKeys(value, [
+    "artifactApprovalEvidence",
+    "pptSampleApproval",
+    "routeGenerationActions",
+    "videoCourseAnchorApproval",
+    "videoFinalApproval",
+  ]);
 }
 
 function isSha256(value: unknown): value is string {

@@ -799,14 +799,12 @@ function hasValidLegacyReapprovalEvidence(artifact, structuredContent) {
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) ||
       evidence.schemaVersion !== "artifact-approval-evidence.v1" || evidence.sourceAuthority !== "legacy_reapproved" ||
       !isSha256(evidence.artifactDigest) || !isIsoDate(evidence.approvedAt)) return false;
-  const {
-    artifactApprovalEvidence: _approval,
-    pptSampleApproval: _pptSampleApproval,
-    routeGenerationActions: _routeGenerationActions,
-    videoCourseAnchorApproval: _videoCourseAnchorApproval,
-    videoFinalApproval: _videoFinalApproval,
-    ...contentWithoutApproval
-  } = structuredContent;
+  const contentWithoutApproval = { ...structuredContent };
+  delete contentWithoutApproval.artifactApprovalEvidence;
+  delete contentWithoutApproval.pptSampleApproval;
+  delete contentWithoutApproval.routeGenerationActions;
+  delete contentWithoutApproval.videoCourseAnchorApproval;
+  delete contentWithoutApproval.videoFinalApproval;
   const expectedDigest = hashCanonicalJson({
     nodeKey: artifact.nodeKey,
     kind: artifact.kind,

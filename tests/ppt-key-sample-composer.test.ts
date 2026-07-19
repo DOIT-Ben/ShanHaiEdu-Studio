@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { composePptKeySamplePptx } from "@/server/ppt-quality/ppt-key-sample-composer";
 import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
@@ -94,6 +95,6 @@ async function materializeManifestImages(manifest: ReturnType<typeof validPptSam
 }
 
 function refreshManifestDigest(manifest: ReturnType<typeof validPptSampleFixtures>["manifest"]): void {
-  const { manifestDigest: _digest, ...semantic } = manifest;
+  const semantic = omitFixtureFields(manifest, "manifestDigest");
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);
 }

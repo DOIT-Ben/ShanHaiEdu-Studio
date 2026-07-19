@@ -1044,16 +1044,6 @@ function extractFunction(name) {
   return match[0];
 }
 
-function createFakeSpawn() {
-  const fakeSpawn = () => {
-    assert.ok(fakeSpawn.nextChild, "A controlled child must be supplied before runCommand");
-    const child = fakeSpawn.nextChild;
-    fakeSpawn.nextChild = undefined;
-    return child;
-  };
-  return fakeSpawn;
-}
-
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

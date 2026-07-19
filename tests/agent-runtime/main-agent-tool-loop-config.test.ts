@@ -1218,7 +1218,9 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
-    const businessToolRouter = vi.fn(async (_input: ToolRouterInput): Promise<ToolExecutionResult> => ({
+    const businessToolRouter = vi.fn<
+      (input: ToolRouterInput) => Promise<ToolExecutionResult>
+    >(async () => ({
       status: "failed" as const,
       toolId: "generate_video_storyboard",
       capabilityId: "storyboard_generate",

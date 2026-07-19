@@ -75,9 +75,21 @@ const OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS = [
   "src/server/conversation/**",
   "src/server/agent-runtime/**",
   "src/server/tools/**",
+  "src/server/provider-ledger/provider-ledger-adapter.ts",
+  "src/server/provider-ledger/provider-ledger-contract.mjs",
   "src/app/api/**/route.ts",
   "src/lib/conversation-message-contract.ts",
   "prisma/schema.prisma",
+];
+const OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS = [
+  {
+    path: "src/server/provider-ledger/provider-ledger-adapter.ts",
+    sha256: "19b51b48a91da8964d34505e99ff739ab857f79554d879d1004d52e6857e8a4e",
+  },
+  {
+    path: "src/server/provider-ledger/provider-ledger-contract.mjs",
+    sha256: "e7ad5590c28ac4eb21e8a9d5ec9979dbbd953988d32965b3a076e04a0494907d",
+  },
 ];
 const PRODUCTION_PROVIDER_PATHS = [
   "src/server/conversation/**",
@@ -356,6 +368,18 @@ function inspectOfflineRefactor(root, matchedPaths, productionMatched, now) {
   }
   const continuity = stage?.providerContinuity;
   const expiresAt = parseExpiry(continuity?.expiresOn);
+  const pinnedImplementations = continuity?.pinnedImplementationSha256;
+  const exactPinnedImplementations = Array.isArray(pinnedImplementations) &&
+    pinnedImplementations.length === OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS.length &&
+    pinnedImplementations.every((entry, index) => {
+      const expected = OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS[index];
+      return entry?.path === expected.path && entry?.sha256 === expected.sha256;
+    });
+  const pinnedImplementationsMatch = exactPinnedImplementations && OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS.every((entry) => {
+    const absolute = path.join(root, ...entry.path.split("/"));
+    return existsSync(absolute) && !lstatSync(absolute).isSymbolicLink() && lstatSync(absolute).isFile() &&
+      sha256(readFileSync(absolute)) === entry.sha256;
+  });
   const exactStage = stage?.schemaVersion === "shanhai-active-stage.v1" &&
     stage?.stageId === OFFLINE_REFACTOR_STAGE_ID && stage?.status === "active" &&
     stage?.baselineSha === OFFLINE_REFACTOR_BASELINE && stage?.plan === OFFLINE_REFACTOR_PLAN &&
@@ -368,7 +392,8 @@ function inspectOfflineRefactor(root, matchedPaths, productionMatched, now) {
     Array.isArray(continuity?.trustedCaptureKeyIds) && continuity.trustedCaptureKeyIds.length === 0 &&
     Array.isArray(continuity?.trustedLedgerAuthorityKeyIds) && continuity.trustedLedgerAuthorityKeyIds.length === 0 &&
     continuity?.expiresOn === OFFLINE_REFACTOR_EXPIRES_ON &&
-    isDeepStrictEqual(continuity?.allowedImplementationPaths, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS);
+    isDeepStrictEqual(continuity?.allowedImplementationPaths, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS) &&
+    pinnedImplementationsMatch;
   const allowedSensitivePaths = matchedPaths.every((entry) =>
     matchesAny(entry, OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS));
   const allowedProductionPaths = productionMatched.every((entry) =>

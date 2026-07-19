@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,25 +23,32 @@ export function AdminUserManagementDialog({ open, currentUserId, onOpenChange }:
   const [busy, setBusy] = useState(false);
   const [invite, setInvite] = useState({ email: "", displayName: "", initialPassword: "", role: "teacher" as "teacher" | "admin" });
   const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
+  const queryRef = useRef(query);
 
   const filteredUsers = useMemo(() => users, [users]);
 
-  useEffect(() => {
-    if (open) void loadUsers();
-  }, [open]);
-
-  async function loadUsers(nextQuery = query) {
+  const loadUsers = useCallback(async (nextQuery?: string) => {
     setBusy(true);
     setStatus(null);
     try {
-      const result = await client.listUsers(nextQuery);
+      const result = await client.listUsers(nextQuery ?? queryRef.current);
       setUsers(result.items);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "用户列表暂时没有取回。");
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timeout = window.setTimeout(() => void loadUsers(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadUsers, open]);
 
   async function runAction(action: () => Promise<unknown>, success: string) {
     setBusy(true);

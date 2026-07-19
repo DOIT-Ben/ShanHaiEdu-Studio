@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { InteractiveListRow } from "@/components/ui/interactive-list-row";
 import { Input } from "@/components/ui/input";
 import { MenuItem } from "@/components/ui/menu-item";
-import type { ProjectItem, ProjectLifecycleAction, ProjectLifecycleMutation } from "@/lib/types";
+import type { ProjectItem, ProjectLifecycleMutation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const projectTone = {

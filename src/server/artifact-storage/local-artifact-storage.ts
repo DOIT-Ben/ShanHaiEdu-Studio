@@ -22,7 +22,7 @@ export function writeLocalArtifact(input: WriteLocalArtifactInput) {
   const fileName = safeFileName(input.fileName);
   const configuredRoot = configuredStorageRoot(env);
   const storageRoot = configuredRoot ?? defaultStorageRoot();
-  const outputPath = path.join(storageRoot, input.category, fileName);
+  const outputPath = path.join(/*turbopackIgnore: true*/ storageRoot, input.category, fileName);
 
   mkdirSync(path.dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, input.buffer);
@@ -42,13 +42,16 @@ export function resolveLocalArtifactOutput(localOutput: string, env: LocalArtifa
   if (normalized.startsWith(".tmp/")) {
     const relativeUnderTmp = normalized.slice(".tmp/".length);
     if (!isSafeRelativePath(relativeUnderTmp)) return null;
-    return path.join(defaultStorageRoot(), ...relativeUnderTmp.split("/"));
+    return path.join(/*turbopackIgnore: true*/ defaultStorageRoot(), ...relativeUnderTmp.split("/"));
   }
 
   if (normalized.startsWith(`${logicalStoragePrefix}/`)) {
     const relativeUnderStorage = normalized.slice(logicalStoragePrefix.length + 1);
     if (!isSafeRelativePath(relativeUnderStorage)) return null;
-    return path.join(configuredStorageRoot(env) ?? defaultStorageRoot(), ...relativeUnderStorage.split("/"));
+    return path.join(
+      /*turbopackIgnore: true*/ configuredStorageRoot(env) ?? defaultStorageRoot(),
+      ...relativeUnderStorage.split("/"),
+    );
   }
 
   return null;

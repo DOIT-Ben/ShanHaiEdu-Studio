@@ -28,7 +28,7 @@ function providerEnv(): NodeJS.ProcessEnv {
 describe("V1-9C MiniMax controlled narration provider", () => {
   it("returns same-run audio and subtitle timing evidence", async () => {
     const audio = Buffer.alloc(2048, 9);
-    const fetchImpl = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       if (String(url).includes("/v1/t2a_v2")) return new Response(JSON.stringify({ data: { audio: audio.toString("hex"), subtitle_file: "https://files.example/subtitles.json" }, extra_info: { audio_length: 6500 }, base_resp: { status_code: 0 } }), { status: 200 });
       return new Response(JSON.stringify([{ text: "装置为什么会连续发生三次变化？", time_begin: 0, time_end: 3000 }, { text: "带着这个问题回到课堂。", time_begin: 3200, time_end: 6200 }]), { status: 200 });
     });

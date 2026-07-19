@@ -1,3 +1,5 @@
+import { omitObjectKeys } from "@/server/contracts/object-projection";
+
 export const SHANHAI_SKILL_REGISTRY_VERSION = "shanhai-skill-registry/v1" as const;
 export const SHANHAI_SKILL_PROTOCOL_VERSION = "shanhai-skill-protocol/v1" as const;
 export const SHANHAI_SKILL_INVOCATION_VERSION = "shanhai-skill-invocation/v1" as const;
@@ -142,12 +144,5 @@ export type SkillRuntimeEvent = {
 };
 
 export function toSkillDescriptor(skill: RegisteredSkill): SkillDescriptor {
-  const {
-    directory: _directory,
-    entrypoint: _entrypoint,
-    skillRoot: _skillRoot,
-    entrypointPath: _entrypointPath,
-    ...descriptor
-  } = skill;
-  return structuredClone(descriptor);
+  return structuredClone(omitObjectKeys(skill, ["directory", "entrypoint", "skillRoot", "entrypointPath"]));
 }

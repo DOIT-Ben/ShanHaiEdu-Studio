@@ -120,7 +120,7 @@ export function assembleVideoTimeline(input: {
     });
     if (Math.abs(finalProbe.durationMs - cursorMs) > Math.max(250, normalized.length * 100)) throw new Error("video_timeline_duration_mismatch");
 
-    const finalBuffer = readFileSync(finalPath);
+    const finalBuffer = readFileSync(/*turbopackIgnore: true*/ finalPath);
     const finalName = `concat-${safeSegment(input.projectId)}-${randomUUID()}.mp4`;
     const finalStored = writeLocalArtifact({ category: "video-artifacts", fileName: finalName, buffer: finalBuffer, env: input.env });
     const sampledFrames = entries.map((entry) => {

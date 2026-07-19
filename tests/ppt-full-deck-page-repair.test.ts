@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { buildPptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import { composePptFullDeckPptx } from "@/server/ppt-quality/ppt-full-deck-composer";
@@ -73,7 +74,7 @@ async function materialize(manifest: ReturnType<typeof validPptFullProductionFix
       },
     });
   }
-  const { manifestDigest: _digest, ...semantic } = manifest;
+  const semantic = omitFixtureFields(manifest, "manifestDigest");
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);
 }
 

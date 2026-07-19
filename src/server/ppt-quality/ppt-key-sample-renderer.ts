@@ -28,7 +28,7 @@ export async function renderPptKeySamples(input: {
   convertPptxToPngs?: (input: { pptxPath: string; outputDir: string }) => Promise<string[]>;
 }): Promise<PptKeySampleRenderEvidence> {
   const runId = randomUUID();
-  const outputDir = path.join(process.cwd(), ".tmp", "ppt-sample-render", runId);
+  const outputDir = path.join(/*turbopackIgnore: true*/ process.cwd(), ".tmp", "ppt-sample-render", runId);
   mkdirSync(outputDir, { recursive: true });
   const pptxPath = path.join(outputDir, "key-samples.pptx");
   writeFileSync(pptxPath, input.pptxBuffer);

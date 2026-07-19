@@ -110,7 +110,7 @@ export function resolveProviderLedgerRoot(
   explicitRoot?: string,
 ): string {
   const candidate = explicitRoot?.trim() || env.SHANHAI_PROVIDER_LEDGER_ROOT?.trim() || path.resolve(process.cwd(), "API台账系统");
-  return path.resolve(candidate);
+  return path.resolve(/*turbopackIgnore: true*/ candidate);
 }
 
 export function resolveProviderLedgerConfig(input: ResolveProviderLedgerConfigInput): ProviderLedgerConfig {
@@ -376,10 +376,6 @@ function trimOptional(value: string | undefined): string | undefined {
 
 function safeLabel(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 128);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

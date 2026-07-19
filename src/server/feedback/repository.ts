@@ -3,7 +3,7 @@ import type { FeedbackAttachment, FeedbackRecord, PrismaClient } from "@/generat
 import { prisma } from "@/server/db/client";
 import type { FeedbackCategory, FeedbackOrigin, FeedbackSeverity } from "./contract";
 import type { FeedbackAttachmentKind } from "@/lib/feedback-contracts";
-
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 export type FeedbackStatus = "processing" | "submitted" | "failed";
 
 export type FeedbackAttachmentEntity = {
@@ -149,7 +149,7 @@ export function createPrismaFeedbackRepository(client: PrismaClient = prisma): F
           data: {
             ...input.record,
             attachments: {
-              create: input.attachments.map(({ feedbackId: _feedbackId, ...attachment }) => attachment),
+              create: input.attachments.map((attachment) => omitObjectKeys(attachment, ["feedbackId"])),
             },
           },
           include: { attachments: { orderBy: { createdAt: "asc" } } },

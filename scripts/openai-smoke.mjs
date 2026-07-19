@@ -140,7 +140,7 @@ try {
       summaryLength: parsed.summary.length,
     }),
   );
-} catch (error) {
+} catch {
   console.log(
     JSON.stringify({
       ok: false,

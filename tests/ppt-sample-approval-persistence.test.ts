@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { createPptKeySampleSetDigest } from "@/server/ppt-quality/ppt-sample-validator";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
@@ -16,7 +17,7 @@ describe("V1 Stage 3B sample approval persistence", () => {
       composition: {
         pptxBuffer: Buffer.from("PK candidate"),
         pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+        pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
       },
       renderEvidence: {
         samplePptx: fixtures.sampleSet.samplePptx,
@@ -84,7 +85,7 @@ describe("V1 Stage 3B sample approval persistence", () => {
       composition: {
         pptxBuffer: Buffer.from("PK candidate"),
         pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-        pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+        pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
       },
       renderEvidence: {
         samplePptx: fixtures.sampleSet.samplePptx,
@@ -142,7 +143,7 @@ describe("V1 Stage 3B sample approval persistence", () => {
     const fixtures = validPptSampleFixtures();
     fixtures.sampleSet.qa[0].visual = "failed";
     fixtures.sampleSet.qa[0].findings = ["视觉遮挡"];
-    const { sampleSetDigest: _digest, ...semantic } = fixtures.sampleSet;
+    const semantic = omitFixtureFields(fixtures.sampleSet, "sampleSetDigest");
     fixtures.sampleSet.sampleSetDigest = createPptKeySampleSetDigest(semantic);
     const artifact = await service.saveArtifact(project.id, {
       nodeKey: "image_prompts",

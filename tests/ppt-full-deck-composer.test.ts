@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { composePptFullDeckPptx } from "@/server/ppt-quality/ppt-full-deck-composer";
 import { createPptAssetManifestDigest } from "@/server/ppt-quality/ppt-asset-validator";
@@ -90,6 +91,6 @@ async function materialize(manifest: ReturnType<typeof validPptFullProductionFix
       mime: "image/png",
     };
   }
-  const { manifestDigest: _digest, ...semantic } = manifest;
+  const semantic = omitFixtureFields(manifest, "manifestDigest");
   manifest.manifestDigest = createPptAssetManifestDigest(semantic);
 }

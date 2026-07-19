@@ -625,27 +625,6 @@ function buildBudgetEvent(tool: ToolDefinition, status: "succeeded" | "failed", 
   });
 }
 
-function validateMp4Buffer(buffer: Buffer) {
-  if (buffer.length < 1024) return false;
-  const ftypLimit = Math.min(buffer.length - 4, 64);
-  let hasFtyp = false;
-  for (let index = 0; index <= ftypLimit; index += 1) {
-    if (buffer.subarray(index, index + 4).toString("ascii") === "ftyp") {
-      hasFtyp = true;
-      break;
-    }
-  }
-  const moovLimit = Math.min(buffer.length - 4, 1024 * 1024);
-  let hasMoov = false;
-  for (let index = 0; index <= moovLimit; index += 1) {
-    if (buffer.subarray(index, index + 4).toString("ascii") === "moov") {
-      hasMoov = true;
-      break;
-    }
-  }
-  return hasFtyp && hasMoov;
-}
-
 function safeFileSegment(value: string) {
   return (
     value

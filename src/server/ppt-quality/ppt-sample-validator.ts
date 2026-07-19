@@ -8,6 +8,7 @@ import type {
   PptSampleApproval,
 } from "./ppt-asset-types";
 import { validatePptAssetManifest } from "./ppt-asset-validator";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const OVERVIEW_KINDS = ["scene_and_primary_props", "micro_assets", "assembled_samples"] as const;
@@ -84,7 +85,7 @@ export function validatePptKeySampleSet(input: {
     }
   }
 
-  const { sampleSetDigest: _digest, ...semanticSampleSet } = sampleSet;
+  const semanticSampleSet = omitObjectKeys(sampleSet, ["sampleSetDigest"]);
   if (createPptKeySampleSetDigest(semanticSampleSet) !== sampleSet.sampleSetDigest) issue(issues, "sample_set_digest_mismatch", "Sample set digest does not match its semantic content.");
   return { valid: issues.length === 0, issues };
 }

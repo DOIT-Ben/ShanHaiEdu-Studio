@@ -23,7 +23,7 @@
 - Tool终态允许Observation、Event、Invocation和审计结果互相矛盾；权威摘要也未完整重算该关系。
 - succeeded被错误等同于必须产生Artifact，合法的Observation-only成功会被误判。
 - 部分项目写入口可以绕过统一actor/CSRF/orchestration wrapper，入口门只检查“出现过调用”，不能证明最外层统一包裹。
-- 31个复杂度债务文件、23个源码字符串合同债务文件、149条Lint warning和13条构建动态追踪warning仍是活动事实。
+- 31个复杂度债务文件和22个源码字符串合同债务文件仍是活动事实；Lint与构建动态追踪warning已清零并锁入门禁。
 - `conversation-turn-service.ts`、`main-agent-tool-loop-config.ts`、workbench repository等巨型模块同时承载多项职责。
 - 当前状态文档保存了大量阶段流水账，掩盖当前事实。
 
@@ -79,7 +79,7 @@
 
 ### 阶段D：清零剩余工程债务
 
-目标：31项复杂度债务和23项源码字符串债务全部归零。
+目标：31项复杂度债务和22项源码字符串债务全部归零。
 
 修改范围：按职责拆分其余前端、workbench、skills、tool adapters和共享合同；清理无用变量、未处理Promise和不稳定依赖；把动态文件追踪改为显式受限根与静态入口。
 

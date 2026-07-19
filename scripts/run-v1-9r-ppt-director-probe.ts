@@ -9,7 +9,6 @@ import { validatePptDesignPackage, validatePptDesignPackageForProviderProduction
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { createAgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { createAgentToolExecutorFromEnv } from "@/server/tools/openai-agent-tool-executor";
-import { getAgentToolDefinition } from "@/server/tools/agent-tool-registry";
 import { routeAgentToolCall } from "@/server/tools/agent-tool-router";
 
 const evidencePath = path.join(process.cwd(), "test-results", "v1-9r-ppt-director-probe.json");
@@ -147,7 +146,8 @@ function readPreviousAttempts(): Record<string, unknown>[] {
       return parsed.attempts.filter((entry): entry is Record<string, unknown> =>
         typeof entry === "object" && entry !== null && !Array.isArray(entry));
     }
-    const { attempts: _attempts, ...entry } = parsed;
+    const entry = { ...parsed };
+    delete entry.attempts;
     return [entry];
   } catch {
     return [];

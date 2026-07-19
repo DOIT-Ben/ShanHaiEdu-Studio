@@ -18,6 +18,7 @@
     "docs/archive/README.md",
     "docs/archive/2026-07-19-provider-continuity-paused/**",
     "docs/archive/2026-07-19-project-rule-before-offline-refactor/**",
+    "eslint.config.mjs",
     "next.config.ts",
     "package.json",
     "prisma/schema.prisma",
@@ -60,9 +61,21 @@
       "src/server/conversation/**",
       "src/server/agent-runtime/**",
       "src/server/tools/**",
+      "src/server/provider-ledger/provider-ledger-adapter.ts",
+      "src/server/provider-ledger/provider-ledger-contract.mjs",
       "src/app/api/**/route.ts",
       "src/lib/conversation-message-contract.ts",
       "prisma/schema.prisma"
+    ],
+    "pinnedImplementationSha256": [
+      {
+        "path": "src/server/provider-ledger/provider-ledger-adapter.ts",
+        "sha256": "19b51b48a91da8964d34505e99ff739ab857f79554d879d1004d52e6857e8a4e"
+      },
+      {
+        "path": "src/server/provider-ledger/provider-ledger-contract.mjs",
+        "sha256": "e7ad5590c28ac4eb21e8a9d5ec9979dbbd953988d32965b3a076e04a0494907d"
+      }
     ],
     "forbiddenUntilAuthorized": [
       "network-provider-call",

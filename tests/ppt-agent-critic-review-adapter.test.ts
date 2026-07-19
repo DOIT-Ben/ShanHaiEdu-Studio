@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import { adaptPptAgentCriticReview } from "@/server/ppt-quality/ppt-agent-critic-review-adapter";
 import { buildPptKeySampleCandidate } from "@/server/ppt-quality/ppt-key-sample-candidate";
@@ -74,7 +75,7 @@ function sampleArtifact(): ArtifactRecord {
     composition: {
       pptxBuffer: Buffer.from("PK candidate"),
       pptxSha256: fixtures.sampleSet.samplePptx.sha256,
-      pageEvidence: fixtures.sampleSet.assembledPages.map(({ renderRef: _renderRef, renderSha256: _renderSha256, ...page }) => page),
+      pageEvidence: fixtures.sampleSet.assembledPages.map((page) => omitFixtureFields(page, "renderRef", "renderSha256")),
     },
     renderEvidence: {
       samplePptx: fixtures.sampleSet.samplePptx,

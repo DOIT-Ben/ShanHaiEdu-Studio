@@ -424,7 +424,7 @@ export function resolveMainAgentTimeoutMs(env: OpenAICompatibleEnv = process.env
 }
 
 class ModelUnavailableMainConversationAgent implements MainConversationAgent {
-  async intakeTask(_input: MainAgentTaskIntakeInput): Promise<MainAgentTaskIntakeDecision> {
+  async intakeTask(): Promise<MainAgentTaskIntakeDecision> {
     return { kind: "failed", turn: modelUnavailableTurn() };
   }
 

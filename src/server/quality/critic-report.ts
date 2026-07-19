@@ -8,6 +8,7 @@ import type {
   EffectiveRubricTarget,
   TargetLocator,
 } from "./quality-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 const SCORE_VALUES = new Set<unknown>([95, 80, 60, 30, "not_scorable"]);
 const VALIDATOR_ONLY_FIELDS = new Set([
@@ -104,8 +105,8 @@ export function createCriticReport(input: CreateCriticReportInput): CriticReport
 }
 
 export function hasValidCriticReportDigest(report: CriticReport): boolean {
-  const { authority: _authority, reportDigest, ...input } = report;
-  return createCriticReport(input).reportDigest === reportDigest;
+  const input = omitObjectKeys(report, ["authority", "reportDigest"]);
+  return createCriticReport(input).reportDigest === report.reportDigest;
 }
 
 export function parseCriticReportPayload(value: unknown): CriticReport {

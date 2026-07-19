@@ -337,7 +337,16 @@ function foldRound(history: MainAgentReActCompactedHistory, record: MainAgentReA
 }
 
 function withCheckpointDigest(checkpoint: Omit<MainAgentReActCheckpoint, "checkpointDigest"> | MainAgentReActCheckpoint): MainAgentReActCheckpoint {
-  const { checkpointDigest: _ignored, ...unsigned } = checkpoint as MainAgentReActCheckpoint;
+  const unsigned: Omit<MainAgentReActCheckpoint, "checkpointDigest"> = {
+    schemaVersion: checkpoint.schemaVersion,
+    baseContextDigest: checkpoint.baseContextDigest,
+    ...(checkpoint.baseContextScope ? { baseContextScope: checkpoint.baseContextScope } : {}),
+    task: checkpoint.task,
+    currentToolNames: checkpoint.currentToolNames,
+    completedRounds: checkpoint.completedRounds,
+    ...(checkpoint.externalObservations ? { externalObservations: checkpoint.externalObservations } : {}),
+    compactedHistory: checkpoint.compactedHistory,
+  };
   return { ...unsigned, checkpointDigest: hashRunInput(unsigned) };
 }
 

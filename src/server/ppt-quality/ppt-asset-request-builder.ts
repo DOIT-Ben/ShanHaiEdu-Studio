@@ -1,6 +1,7 @@
 import { hashRunInput } from "@/server/execution/run-input-snapshot";
 import type { PptDesignPackage, PptPageSpec } from "./ppt-quality-types";
 import type { PptAssetRequest, PptAssetRequestBatch } from "./ppt-asset-types";
+import { omitObjectKeys } from "@/server/contracts/object-projection";
 
 const FORBIDDEN_EXACT_CONTENT = /\d|[%％=＝+＋×÷]|答案|公式|题干|精确数量/g;
 const NEGATIVE_CONSTRAINT = /不得(?:出现|包含)?|禁止(?:出现|包含)?|不要(?:出现|包含)?|不含|无(?:任何)?/;
@@ -133,6 +134,6 @@ function addRequest(byAssetId: Map<string, PptAssetRequest>, incoming: PptAssetR
 
   const pageIds = [...new Set([...existing.pageIds, ...incoming.pageIds])].sort();
   const merged = { ...existing, pageIds };
-  const { inputHash: _inputHash, ...semanticRequest } = merged;
+  const semanticRequest = omitObjectKeys(merged, ["inputHash"]);
   byAssetId.set(incoming.assetId, { ...merged, inputHash: hashRunInput(semanticRequest) });
 }

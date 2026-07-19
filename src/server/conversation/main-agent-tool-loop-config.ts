@@ -451,7 +451,6 @@ export function createMainAgentToolLoopOptions(
         selectedToolName: call.toolName,
       });
       await input.service.updateMessageMetadata(input.project.id, input.triggerMessage.id, currentMetadata);
-      const requestedActionKey = requestedDefinition.internalToolId ?? requestedDefinition.id;
       const currentProject = await input.service.getProject(input.project.id);
       if ((currentProject.intentEpoch ?? 0) !== (input.project.intentEpoch ?? 0)) {
         return {
@@ -1530,9 +1529,14 @@ function bindFailureValidationReportToInvocation(
   intentEpoch: number,
 ): ValidationReport | undefined {
   if (!report || report.overallStatus !== "failed" || !hasValidValidationReportDigest(report)) return undefined;
-  const { reportDigest: _reportDigest, reportId: _reportId, createdAt: _createdAt, ...semanticReport } = report;
   return createValidationReport({
-    ...semanticReport,
+    authority: report.authority,
+    domain: report.domain,
+    stage: report.stage,
+    contract: report.contract,
+    ...(report.inputHash !== undefined ? { inputHash: report.inputHash } : {}),
+    overallStatus: report.overallStatus,
+    gates: report.gates,
     reportId: randomUUID(),
     createdAt: new Date().toISOString(),
     target: { kind: "tool_invocation", targetId: invocationId },
@@ -1755,10 +1759,6 @@ function toArtifactRef(artifact: ArtifactRecord): AgentToolArtifactRef {
       structuredContent: artifact.structuredContent,
     }),
   };
-}
-
-function isApprovedArtifact(artifact: ArtifactRecord) {
-  return artifact.status === "approved" && artifact.isApproved;
 }
 
 function observationStatusForModel(observation: AgentObservation): "succeeded" | "failed" | "blocked" | "inconclusive" {

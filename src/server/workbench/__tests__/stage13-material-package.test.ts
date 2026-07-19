@@ -53,7 +53,7 @@ describe("Local Real MVP M13 final material package route", () => {
   });
 
   it.each([
-    ["has no Tool invocation lineage", async (_fixture: PackageArtifactFixture) => undefined],
+    ["has no Tool invocation lineage", async () => undefined],
     ["was persisted by another Tool", async (fixture: PackageArtifactFixture) => {
       await persistSuccessfulInvocation(fixture, { toolName: "legacy_package_builder" });
     }],

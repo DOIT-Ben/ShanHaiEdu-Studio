@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
 import { SkillInvocationGateway, type SkillGatewayInput } from "@/server/skills/skill-invocation-gateway";
-import type { RegisteredSkill, SkillInvocation, SkillResult } from "@/server/skills/skill-runtime-types";
+import type {
+  RegisteredSkill,
+  SkillInvocation,
+  SkillResult,
+} from "@/server/skills/skill-runtime-types";
 
 describe("ShanHai Skill invocation gateway", () => {
   it("constructs the protocol v1 invocation behind the existing ExecutionEnvelope", async () => {
@@ -405,5 +409,7 @@ function candidateSkillResult(): SkillResult {
 }
 
 function skillExecutor(factory: () => SkillResult = candidateSkillResult) {
-  return vi.fn(async (_invocation: SkillInvocation, _skill: RegisteredSkill): Promise<SkillResult> => factory());
+  return vi.fn<
+    (invocation: SkillInvocation, skill: RegisteredSkill) => Promise<SkillResult>
+  >(async () => factory());
 }

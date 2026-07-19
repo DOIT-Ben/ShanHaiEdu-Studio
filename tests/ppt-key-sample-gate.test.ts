@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { createPptKeySampleSetDigest, validatePptKeySampleSet, validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-validator";
 import { validPptSampleFixtures } from "./support/ppt-sample-fixture";
 
@@ -73,6 +74,6 @@ describe("V1 Stage 3B PPT key sample and approval gate", () => {
 });
 
 function refreshSampleDigest(sampleSet: ReturnType<typeof validPptSampleFixtures>["sampleSet"]): void {
-  const { sampleSetDigest: _digest, ...semantic } = sampleSet;
+  const semantic = omitFixtureFields(sampleSet, "sampleSetDigest");
   sampleSet.sampleSetDigest = createPptKeySampleSetDigest(semantic);
 }
