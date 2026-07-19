@@ -14,7 +14,7 @@ export type AgentRuntimeTask =
   | "concat_only_assemble"
   | "final_delivery_checklist";
 
-export type AgentRuntimeKind = "deterministic" | "openai";
+export type AgentRuntimeKind = "openai";
 
 export type AgentRunStatus = "succeeded" | "failed";
 
@@ -112,7 +112,7 @@ export type AgentArtifactDraft = {
   summary: string;
   markdown: string;
   contentType: "text/markdown";
-  generationMode: "deterministic_draft" | "model_generated";
+  generationMode: "model_generated";
   isReadyForTeacherReview: boolean;
   structuredContent?: Record<string, unknown>;
 };

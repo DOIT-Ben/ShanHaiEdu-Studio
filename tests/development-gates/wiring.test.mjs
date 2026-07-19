@@ -59,7 +59,7 @@ test("package exposes the single Provider live preflight and seal entrypoints", 
 test("the active stage is the product-first refactor and permits only the exact one-time archive migration", () => {
   const stage = JSON.parse(readFileSync(path.join(process.cwd(), "docs", "stages", "active-stage.json"), "utf8"));
   assert.equal(stage.stageId, "product-first-deep-refactor");
-  assert.equal(stage.baselineSha, "95b9b29d22553474ffe0c937d035bbe55924b157");
+  assert.equal(stage.baselineSha, "cbf73aa2a427125c763f1a27f344b44749ff58b6");
   assert.equal(stage.plan, "docs/stages/product-first-deep-refactor-plan.md");
   assert.equal(stage.testPlan, "docs/stages/product-first-deep-refactor-test-plan.md");
   assert.deepEqual(stage.protectedPathExceptions, [

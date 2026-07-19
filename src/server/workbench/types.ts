@@ -13,7 +13,7 @@ export type ProjectLifecycleMutation = {
 export type MessageRole = "teacher" | "assistant" | "system";
 export type MessageReactionValue = "helpful" | "unhelpful";
 
-export type WorkflowNodeKey =
+export type ArtifactKind =
   | "requirement_spec"
   | "textbook_evidence"
   | "lesson_plan"
@@ -36,17 +36,12 @@ export type WorkflowNodeKey =
   | "video_storyboard"
   | "final_delivery";
 
-export type WorkflowNodeStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale" | "failed";
-
-export type ArtifactKind = WorkflowNodeKey;
-
-export type ArtifactStatus = WorkflowNodeStatus;
+export type ArtifactStatus = "not_started" | "in_progress" | "needs_review" | "approved" | "blocked" | "stale" | "failed";
 
 export type ProjectRecord = {
   id: string;
   title: string;
   status: ProjectStatus;
-  currentNodeKey: WorkflowNodeKey;
   grade: string | null;
   subject: string | null;
   textbookVersion: string | null;
@@ -79,19 +74,6 @@ export type ConversationMessageRecord = {
   createdAt: string;
 };
 
-export type WorkflowNodeRecord = {
-  id: string;
-  projectId: string;
-  key: WorkflowNodeKey;
-  title: string;
-  status: WorkflowNodeStatus;
-  order: number;
-  upstreamNodeKeys: WorkflowNodeKey[];
-  approvedArtifactId: string | null;
-  staleReason: string | null;
-  updatedAt: string;
-};
-
 export type ArtifactRecord = {
   id: string;
   projectId: string;
@@ -100,7 +82,7 @@ export type ArtifactRecord = {
   intentEpoch?: number | null;
   planRevision?: number | null;
   origin?: ArtifactOrigin;
-  nodeKey: WorkflowNodeKey;
+  nodeKey: ArtifactKind;
   title: string;
   kind: ArtifactKind;
   status: ArtifactStatus;
@@ -114,19 +96,6 @@ export type ArtifactRecord = {
 };
 
 export type ArtifactOrigin = "teacher_input" | "tool_result" | "system_candidate" | "legacy";
-
-export type AgentRunRecord = {
-  id: string;
-  projectId: string;
-  nodeKey: WorkflowNodeKey;
-  status: string;
-  runtime: string;
-  startedAt: string;
-  finishedAt: string | null;
-  errorMessage: string | null;
-};
-
-export type AgentRunStatus = "running" | "succeeded" | "failed";
 
 export type GenerationJobKind = "pptx" | "image" | "audio" | "video";
 
@@ -225,9 +194,7 @@ export type ConversationTurnJobRecord = {
 export type ProjectSnapshot = {
   project: ProjectRecord;
   messages: ConversationMessageRecord[];
-  nodes: WorkflowNodeRecord[];
   artifacts: ArtifactRecord[];
-  agentRuns: AgentRunRecord[];
   generationJobs: GenerationJobRecord[];
   videoShots: VideoShotRecord[];
   turnJobs: ConversationTurnJobRecord[];
@@ -256,7 +223,7 @@ export type SetMessageReactionInput = {
 };
 
 export type SaveArtifactInput = {
-  nodeKey: WorkflowNodeKey;
+  nodeKey: ArtifactKind;
   kind: ArtifactKind;
   title: string;
   status: ArtifactStatus;
@@ -304,21 +271,6 @@ export type RegenerateArtifactInput = {
   summary: string;
   markdownContent: string;
   structuredContent?: Record<string, unknown>;
-};
-
-export type StartAgentRunInput = {
-  nodeKey: WorkflowNodeKey;
-  runtime: string;
-};
-
-export type FinishAgentRunInput = {
-  status: Exclude<AgentRunStatus, "running">;
-  errorMessage?: string;
-  evidence?: {
-    artifactId: string;
-    validationReportId: string;
-    qualityDecisionId: string;
-  };
 };
 
 export type CreateGenerationJobInput = {
@@ -369,7 +321,7 @@ export type EnqueueMessageAndConversationTurnInput = AddMessageInput & {
   preemptiveControl?: {
     kind: "pause" | "cancel" | "redirect";
     reasonCode: "teacher_requested_pause" | "teacher_requested_cancel" | "teacher_requested_redirect";
-    advanceIntentEpoch: true;
+    advanceIntentEpoch: boolean;
     userMessage: string;
   };
 };

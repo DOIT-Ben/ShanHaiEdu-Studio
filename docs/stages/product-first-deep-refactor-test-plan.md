@@ -1,6 +1,6 @@
 # 产品优先深度重构测试计划
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 1. 验收层级
 
@@ -23,6 +23,7 @@
 | DR-B01 | 生产路径尝试读取或执行`toolPlan`/`deliveryPlan` | 编译或行为合同失败 |
 | DR-B02 | deterministic结果尝试晋升为正式Artifact | 晋升失败 |
 | DR-B03 | native turn之外的组件选择下一业务Tool | 行为合同失败 |
+| DR-C01 | PendingDecision消息已更新，但事件或语义快照写入失败 | 不得对外形成部分确认；同一action可幂等恢复 |
 | DR-D01 | 新增或扩大复杂度债务 | complexity gate失败 |
 | DR-D02 | 债务减少但baseline尚未同步 | 报告可识别stale baseline，允许显式收缩 |
 | DR-D03 | 新增源码字符串合同 | source-contract gate失败 |
@@ -52,7 +53,18 @@ node scripts/development-gates/source-contracts.mjs
 
 最终预期：第一条无生产命中，复杂度报告为`[]`，源码字符串合同报告无债务。
 
-## 5. 最终全量验证
+## 5. 阶段B新鲜证据
+
+2026-07-20阶段B候选工作树已实际取得：
+
+- 生产旧控制面符号扫描为0，活动写操作registry为16条。
+- Node测试`427/427`，Vitest两个隔离分片`793/793`与`775/775`。
+- TypeScript、ESLint `0 warning`、生产构建、standalone敏感文件检查通过。
+- development gate通过，Provider结果为`deferred_provider_validation_during_offline_refactor`且`passed=false`。
+- `verify:local`生成绑定当前HEAD与工作树的manifest，`gate:manifest:verify`及`desktop:smoke`通过。
+- 复杂度债务为29个文件、源码字符串合同债务为21个文件，未上推为阶段D完成。
+
+## 6. 最终全量验证
 
 ```powershell
 npm test
@@ -67,7 +79,7 @@ npm run desktop:smoke
 
 随后从最终HEAD启动隔离本地实例，验证：health、登录、新建项目、普通讨论不触发Tool、单一需求规格只触发对应Tool、刷新后状态不漂移、失败只出现一次恢复入口。浏览器使用桌面视口。
 
-## 6. 明确不执行
+## 7. 明确不执行
 
 - 不运行`gate:provider:live`、Provider seal或release gate。
 - 不调用图片、视频、PPTX、ZIP或整包Provider。

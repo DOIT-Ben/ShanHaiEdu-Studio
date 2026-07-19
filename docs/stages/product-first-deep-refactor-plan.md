@@ -1,6 +1,6 @@
 # 产品优先深度重构计划
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 1. 目标
 
@@ -23,11 +23,17 @@
 - succeeded被错误等同于必须产生Artifact，合法的Observation-only成功会被误判。
 - 部分项目写入口可以绕过统一actor/CSRF/orchestration wrapper，入口门只检查“出现过调用”，不能证明最外层统一包裹。
 
+阶段B已经修复：
+
+- `WorkflowNode`、外层`toolPlan`/`deliveryPlan`、生产deterministic runtime及其fallback已退出生产源码。
+- 固定节点、AgentRun和approved-input写路由已删除；新库不再创建旧控制面表，既有库中的旧表不再由生产代码读取。
+- HumanGate改为`PendingDecision + TaskAggregate + SemanticSnapshot + ReAct checkpoint`，前端步骤从真实Artifact或项目状态派生。
+
 仍存在的问题：
 
-- `WorkflowNode`、`toolPlan`、`deliveryPlan`和deterministic runtime仍存在于生产源码，当前只是失去部分执行权，没有真正删除。
-- 31个复杂度债务文件和22个源码字符串合同债务文件仍是活动事实；Lint与构建动态追踪warning已清零并锁入门禁。
-- `conversation-turn-service.ts`、`main-agent-tool-loop-config.ts`、workbench repository等巨型模块同时承载多项职责。
+- 复杂度债务为29个文件，源码字符串合同债务为21个文件；Lint与构建动态追踪warning已清零并锁入门禁。
+- `conversation-turn-service.ts`为1415行，`main-agent-tool-loop-config.ts`为2062行，workbench repository为2081行，仍混合多项职责。
+- PendingDecision状态更新的消息、事件和语义快照尚未形成单事务或等价可恢复提交，中途写失败的恢复合同需在阶段C先关闭。
 
 尚未实现：
 
@@ -60,7 +66,7 @@
 
 完成事实：
 
-- 18个项目写入口统一到registry、外层wrapper和AST门。
+- 阶段A当时的18个项目写入口统一到registry、外层wrapper和AST门；阶段B删除两条旧AgentRun路由后，当前活动registry为16条。
 - `resultMode`由服务端Tool registry冻结并在终态与summary中独立复核。
 - terminal replay复核attempted/resolved audit、Observation、Event和Artifact完整矩阵。
 - authority summary保留历史IntentEpoch违规，按消息身份处理幂等提交，并明确降级旧v1证据。
@@ -72,7 +78,7 @@
 
 ### 阶段B：删除竞争控制面
 
-状态：**下一阶段，尚未开始**。
+状态：**已完成离线合同与执行验收**。不代表真实Provider、model orchestration、product E2E或release通过。
 
 目标：生产源码只剩Main Agent原子Tool控制循环。
 
@@ -85,9 +91,22 @@
 
 验收：`src`中旧控制面符号和生产deterministic入口为0；没有第二个Tool选择器；全量合同测试通过。
 
+完成事实：
+
+- 删除WorkflowNode、AgentRun、旧planner/orchestrator/control resolver、deterministic runtime及其生产消费者。
+- `toolPlan`、`deliveryPlan`、`pendingDeliveryPlan`和旧控制面开关不再由生产代码读写；活动E2E证据改读直接`PendingDecision`。
+- 错误HumanGate actionId保持任务暂停且零Tool；确认、取消和编辑改道分别处理，只有取消或改道提升IntentEpoch。
+- 项目列表和快照不再依赖固定节点，当前步骤由最新真实Artifact或项目状态派生。
+- 生产旧控制面符号扫描为0；复杂度债务由31降至29，源码字符串合同债务由22降至21。
+- 标准全量测试、TypeScript、零warning Lint、生产构建、development gate、SHA manifest和desktop smoke均在阶段B候选工作树通过；Provider保持0请求和`passed=false`。
+
 ### 阶段C：拆分两个核心巨型模块
 
+状态：**唯一下一阶段**。
+
 目标：让turn协调和Tool执行各自只做一件事。
+
+第一切片先为PendingDecision状态提交建立失败注入测试，并实现消息、事件、语义快照之间的原子提交或明确可重放恢复；不得把模块拆分建立在部分写成功的状态上。
 
 `conversation-turn-service.ts`拆为：输入与任务边界、turn协调、流式事件投影、持久化提交、失败恢复。
 
@@ -97,7 +116,7 @@
 
 ### 阶段D：清零剩余工程债务
 
-目标：31项复杂度债务和22项源码字符串债务全部归零。
+目标：把阶段B结束时剩余的29项复杂度债务和21项源码字符串债务全部归零。
 
 修改范围：按职责拆分其余前端、workbench、skills、tool adapters和共享合同；清理无用变量、未处理Promise和不稳定依赖；把动态文件追踪改为显式受限根与静态入口。
 

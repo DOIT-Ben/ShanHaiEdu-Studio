@@ -4,6 +4,7 @@ import {
   MESSAGE_PART_VERSION,
   legacyContentToMessageParts,
   normalizeMessageParts,
+  projectConversationMessageParts,
   projectMessagePartsToAssistantUi,
   type MessagePart,
 } from "@/lib/conversation-message-contract";
@@ -29,6 +30,45 @@ describe("conversation message contract", () => {
   it("maps legacy content to one text part without guessing business state", () => {
     expect(legacyContentToMessageParts("## 已完成\n请查看。"))
       .toEqual([{ type: "text", schemaVersion: MESSAGE_PART_VERSION, text: "## 已完成\n请查看。", format: "markdown" }]);
+  });
+
+  it("ignores legacy delivery-plan metadata and projects only a direct pending decision", () => {
+    const parts = projectConversationMessageParts({
+      role: "assistant",
+      content: "请确认是否继续。",
+      metadata: {
+        pendingDeliveryPlan: {
+          status: "pending",
+          toolPlan: { capabilityId: "lesson_plan" },
+          deliveryPlan: {
+            planId: "legacy-plan",
+            revision: 1,
+            title: "旧计划",
+            steps: [{ id: "lesson", title: "生成教案", status: "pending" }],
+          },
+          pendingDecision: {
+            decisionId: "legacy-decision",
+            actionId: "legacy-action",
+            question: "是否继续旧计划？",
+            options: [{ id: "continue", label: "继续" }],
+          },
+        },
+        pendingDecision: {
+          decisionId: "decision-1",
+          actionId: "action-1",
+          question: "是否允许外发？",
+          options: [{ id: "decline", label: "暂不外发", recommended: true }],
+        },
+      },
+    });
+
+    expect(parts.map((part) => part.type)).toEqual(["text", "human-input", "next-actions"]);
+    expect(parts).not.toContainEqual(expect.objectContaining({ type: "plan" }));
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: "human-input",
+      decisionId: "decision-1",
+      actionId: "action-1",
+    }));
   });
 
   it("rejects untrusted or malformed business references instead of dropping the whole message", () => {

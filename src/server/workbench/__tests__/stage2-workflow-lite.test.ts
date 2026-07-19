@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { GET as getApprovedInputs } from "@/app/api/workbench/projects/[projectId]/approved-inputs/route";
 import { POST as postApproveArtifact } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/approve/route";
+import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
+import { createTaskBrief, type IntentGrant, type TaskBrief } from "@/server/conversation/task-contract";
 import { createWorkbenchService } from "../service";
+import type { ProjectRecord } from "../types";
 
-describe("Backend Workflow Lite Stage 2 approve flow", () => {
-  it("approves an artifact and stores it on the workflow node", async () => {
+describe("Workbench Artifact approval and capability inputs", () => {
+  it("approves an Artifact without persisting a workflow-node mirror", async () => {
     const service = createWorkbenchService();
-    const project = await service.createProject({ title: "Stage 2 确认项目" });
+    const project = await service.createProject({ title: "Artifact approval" });
     const artifact = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec",
       kind: "requirement_spec",
@@ -19,79 +21,53 @@ describe("Backend Workflow Lite Stage 2 approve flow", () => {
 
     const approved = await service.approveArtifact(project.id, artifact.id);
     const snapshot = await service.getProjectSnapshot(project.id);
-    const node = snapshot.nodes.find((entry) => entry.key === "requirement_spec");
 
-    expect(approved).toMatchObject({
-      id: artifact.id,
-      status: "approved",
-      isApproved: true,
-    });
-    expect(node).toMatchObject({
-      status: "approved",
-      approvedArtifactId: artifact.id,
-    });
+    expect(approved).toMatchObject({ id: artifact.id, status: "approved", isApproved: true });
+    expect(snapshot.artifacts).toEqual([expect.objectContaining({ id: artifact.id, isApproved: true })]);
+    expect(snapshot).not.toHaveProperty("nodes");
   });
 
-  it("returns only approved upstream artifacts as downstream inputs", async () => {
+  it("resolves only current-task trusted inputs declared by the selected capability", async () => {
     const service = createWorkbenchService();
-    const project = await service.createProject({ title: "Stage 2 下游输入项目" });
-    const requirement = await service.saveArtifact(project.id, {
-      nodeKey: "requirement_spec",
-      kind: "requirement_spec",
-      title: "需求规格",
+    const project = await service.createProject({ title: "Capability inputs" });
+    const taskBrief = await seedTask(project, `task:ppt-design:${project.id}`, ["ppt_design"]);
+    const outline = await service.saveArtifact(project.id, {
+      nodeKey: "ppt_draft",
+      kind: "ppt_draft",
+      title: "PPT 大纲",
       status: "needs_review",
-      summary: "已确认需求",
-      markdownContent: "# 已确认需求",
+      summary: "当前任务大纲",
+      markdownContent: "# PPT 大纲",
     });
+    await service.approveArtifact(project.id, outline.id);
     await service.saveArtifact(project.id, {
-      nodeKey: "textbook_evidence",
-      kind: "textbook_evidence",
-      title: "教材证据",
-      status: "needs_review",
-      summary: "未确认教材",
-      markdownContent: "# 未确认教材",
-    });
-
-    await service.approveArtifact(project.id, requirement.id);
-
-    const inputs = await service.getApprovedInputs(project.id, "lesson_plan");
-
-    expect(inputs.map((artifact) => artifact.nodeKey)).toEqual(["requirement_spec"]);
-    expect(inputs.map((artifact) => artifact.summary)).toEqual(["已确认需求"]);
-  });
-
-  it("includes textbook evidence after it is approved for lesson planning", async () => {
-    const service = createWorkbenchService();
-    const project = await service.createProject({ title: "Stage 2 双上游项目" });
-    const requirement = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec",
       kind: "requirement_spec",
       title: "需求规格",
       status: "needs_review",
-      summary: "已确认需求",
-      markdownContent: "# 已确认需求",
-    });
-    const textbook = await service.saveArtifact(project.id, {
-      nodeKey: "textbook_evidence",
-      kind: "textbook_evidence",
-      title: "教材证据",
-      status: "needs_review",
-      summary: "已确认教材",
-      markdownContent: "# 已确认教材",
+      summary: "不是 ppt_design 的直接输入",
+      markdownContent: "# 需求规格",
     });
 
-    await service.approveArtifact(project.id, requirement.id);
-    await service.approveArtifact(project.id, textbook.id);
+    const inputs = await service.getApprovedInputs(project.id, "ppt_design", taskBrief);
 
-    const inputs = await service.getApprovedInputs(project.id, "lesson_plan");
-
-    expect(inputs.map((artifact) => artifact.nodeKey)).toEqual(["requirement_spec", "textbook_evidence"]);
+    expect(inputs.map((artifact) => artifact.id)).toEqual([outline.id]);
+    expect(inputs.every((artifact) => artifact.taskId === taskBrief.taskId)).toBe(true);
   });
 
-  it("rejects approving an artifact through another project", async () => {
+  it("rejects input resolution for a capability outside the TaskBrief scope", async () => {
     const service = createWorkbenchService();
-    const projectA = await service.createProject({ title: "Stage 2 项目 A" });
-    const projectB = await service.createProject({ title: "Stage 2 项目 B" });
+    const project = await service.createProject({ title: "Out-of-scope capability" });
+    const taskBrief = await seedTask(project, `task:lesson-only:${project.id}`, ["lesson_plan"]);
+
+    await expect(service.getApprovedInputs(project.id, "ppt_design", taskBrief))
+      .rejects.toThrow("outside the current task scope");
+  });
+
+  it("rejects approving an Artifact through another project", async () => {
+    const service = createWorkbenchService();
+    const projectA = await service.createProject({ title: "Project A" });
+    const projectB = await service.createProject({ title: "Project B" });
     const artifactA = await service.saveArtifact(projectA.id, {
       nodeKey: "requirement_spec",
       kind: "requirement_spec",
@@ -102,63 +78,61 @@ describe("Backend Workflow Lite Stage 2 approve flow", () => {
     });
 
     await expect(service.approveArtifact(projectB.id, artifactA.id)).rejects.toThrow("Artifact not found");
-
-    const snapshotB = await service.getProjectSnapshot(projectB.id);
-    expect(snapshotB.artifacts).toEqual([]);
   });
 
-  it("returns stable API envelopes for approve and approved inputs", async () => {
+  it("keeps the Artifact approval route envelope stable", async () => {
     const service = createWorkbenchService();
-    const project = await service.createProject({ title: "Stage 2 route 合同项目" });
+    const project = await service.createProject({ title: "Approval route" });
     const artifact = await service.saveArtifact(project.id, {
       nodeKey: "requirement_spec",
       kind: "requirement_spec",
       title: "需求规格",
       status: "needs_review",
-      summary: "route 已确认上游",
+      summary: "route approval",
       markdownContent: "# route",
     });
 
-    const approveResponse = await postApproveArtifact(new Request("http://localhost"), {
+    const response = await postApproveArtifact(new Request("http://localhost"), {
       params: Promise.resolve({ projectId: project.id, artifactId: artifact.id }),
     });
-    const approveBody = await approveResponse.json();
-    const inputsResponse = await getApprovedInputs(
-      new Request(`http://localhost/api/workbench/projects/${project.id}/approved-inputs?nodeKey=lesson_plan`),
-      { params: Promise.resolve({ projectId: project.id }) },
-    );
-    const inputsBody = await inputsResponse.json();
 
-    expect(approveResponse.status).toBe(200);
-    expect(approveBody.artifact).toMatchObject({ id: artifact.id, status: "approved", isApproved: true });
-    expect(inputsResponse.status).toBe(200);
-    expect(inputsBody.artifacts.map((entry: { nodeKey: string }) => entry.nodeKey)).toEqual(["requirement_spec"]);
-  });
-
-  it("returns route-level errors for invalid node keys and cross-project approve", async () => {
-    const service = createWorkbenchService();
-    const projectA = await service.createProject({ title: "Stage 2 route 项目 A" });
-    const projectB = await service.createProject({ title: "Stage 2 route 项目 B" });
-    const artifactA = await service.saveArtifact(projectA.id, {
-      nodeKey: "requirement_spec",
-      kind: "requirement_spec",
-      title: "A 需求规格",
-      status: "needs_review",
-      summary: "A route 专属",
-      markdownContent: "# A route",
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      artifact: { id: artifact.id, status: "approved", isApproved: true },
     });
-
-    const crossProjectResponse = await postApproveArtifact(new Request("http://localhost"), {
-      params: Promise.resolve({ projectId: projectB.id, artifactId: artifactA.id }),
-    });
-    const invalidNodeResponse = await getApprovedInputs(
-      new Request(`http://localhost/api/workbench/projects/${projectB.id}/approved-inputs?nodeKey=bad_node`),
-      { params: Promise.resolve({ projectId: projectB.id }) },
-    );
-
-    expect(crossProjectResponse.status).toBe(404);
-    await expect(crossProjectResponse.json()).resolves.toMatchObject({ error: expect.stringContaining("Artifact not found") });
-    expect(invalidNodeResponse.status).toBe(400);
-    await expect(invalidNodeResponse.json()).resolves.toMatchObject({ error: "Invalid nodeKey" });
   });
 });
+
+async function seedTask(project: ProjectRecord, taskId: string, requestedOutputs: string[]): Promise<TaskBrief> {
+  const taskBrief = createTaskBrief({
+    taskId,
+    projectId: project.id,
+    intentEpoch: project.intentEpoch ?? 0,
+    goal: "生成当前任务所需的 PPT 设计",
+    requestedOutputs,
+    constraints: ["offline_contract_test"],
+    excludedOutputs: [],
+    generationIntensity: project.generationIntensity ?? "standard",
+    sourceMessageId: `message:${taskId}`,
+  });
+  const intentGrant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId,
+    projectId: project.id,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: taskBrief.generationIntensity,
+    budgetPolicyVersion: "stage-b-workbench.v1",
+    maxCostCredits: 0,
+    maxExternalProviderCalls: 0,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  await createControlPlaneStore().upsertTaskAggregate({
+    taskBrief,
+    intentGrant,
+    plan: { planId: `plan:${taskId}`, revision: 0, status: "active" },
+    checkpoint: null,
+  });
+  return taskBrief;
+}

@@ -13,8 +13,6 @@ import {
 const expectedOperations = [
   "POST /api/workbench/projects",
   "PATCH /api/workbench/projects/:projectId",
-  "POST /api/workbench/projects/:projectId/agent-runs",
-  "POST /api/workbench/projects/:projectId/agent-runs/:runId/finish",
   "POST /api/workbench/projects/:projectId/artifacts",
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/approve",
   "POST /api/workbench/projects/:projectId/artifacts/:artifactId/coze-ppt",

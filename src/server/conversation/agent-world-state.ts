@@ -1,19 +1,16 @@
-import type { CapabilityToolPlan } from "@/server/capabilities/types";
 import type { ToolObservation } from "@/server/capabilities/tool-observation";
-import type { ContextPackage } from "@/server/conversation/context-package";
 import type { AgentObservation, RunCheckpoint } from "@/server/conversation/react-control";
 import type { PersistedAgentToolReport } from "@/server/tools/agent-tool-report";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
-import type { TaskBrief } from "@/server/conversation/task-contract";
+import type { PendingDecision, TaskBrief } from "@/server/conversation/task-contract";
 import type {
+  ArtifactKind,
   ArtifactRecord,
+  ArtifactStatus,
   ConversationTurnJobRecord,
   GenerationJobRecord,
   ProjectRecord,
-  WorkflowNodeKey,
-  WorkflowNodeRecord,
-  WorkflowNodeStatus,
 } from "@/server/workbench/types";
 
 export type AgentWorldStateArtifact = Pick<
@@ -22,9 +19,9 @@ export type AgentWorldStateArtifact = Pick<
 > & { downstreamEligible?: boolean };
 
 export type AgentWorldStateBlockedItem = {
-  nodeKey: WorkflowNodeKey;
+  artifactKind: ArtifactKind;
   title: string;
-  status: Extract<WorkflowNodeStatus, "blocked" | "failed">;
+  status: Extract<ArtifactStatus, "blocked" | "failed">;
   reason: string;
 };
 
@@ -36,17 +33,17 @@ export type AgentWorldStateFailedJob = {
   message: string;
 };
 
-export type AgentWorldStatePendingPlan = {
-  teacherRequest: string;
-  capabilityId: string;
-  expectedArtifactKind?: string;
+export type AgentWorldStatePendingDecision = Pick<
+  PendingDecision,
+  "decisionId" | "status" | "kind" | "reasonCode" | "question" | "impactSummary"
+> & {
   hasActionId: boolean;
 };
 
 export type AgentWorldStateRisk = {
-  nodeKey: WorkflowNodeKey;
+  artifactKind: ArtifactKind;
   title: string;
-  status: Extract<WorkflowNodeStatus, "stale" | "failed" | "blocked">;
+  status: Extract<ArtifactStatus, "stale" | "failed" | "blocked">;
   reason: string;
 };
 
@@ -87,7 +84,6 @@ export type AgentWorldStateAgentToolReport = Pick<
 
 export type AgentWorldState = {
   project: Pick<ProjectRecord, "id" | "title" | "grade" | "subject" | "textbookVersion" | "lessonTopic" | "status">;
-  currentNodeKey: WorkflowNodeKey;
   trustedInputs: AgentWorldStateArtifact[];
   draftArtifacts: AgentWorldStateArtifact[];
   blockedItems: AgentWorldStateBlockedItem[];
@@ -96,7 +92,7 @@ export type AgentWorldState = {
   agentObservations: AgentWorldStateObservation[];
   agentToolReports?: AgentWorldStateAgentToolReport[];
   runCheckpoint: RunCheckpoint | null;
-  pendingPlan: AgentWorldStatePendingPlan | null;
+  pendingDecision: AgentWorldStatePendingDecision | null;
   nextRisks: AgentWorldStateRisk[];
 };
 
@@ -104,19 +100,10 @@ export type BuildAgentWorldStateInput = {
   project: ProjectRecord;
   taskBrief: TaskBrief | null;
   taskPlanRevision: number | null;
-  workflowNodes: WorkflowNodeRecord[];
   artifacts: ArtifactRecord[];
   generationJobs: GenerationJobRecord[];
   turnJobs: ConversationTurnJobRecord[];
-  contextPackage: ContextPackage;
-  pendingPlan: {
-    status?: string;
-    teacherRequest: string;
-    toolPlan: CapabilityToolPlan;
-    deliveryPlan?: unknown;
-    runtimeKind?: unknown;
-    actionId?: string;
-  } | null;
+  pendingDecision: PendingDecision | null;
   toolObservations?: ToolObservation[];
   agentObservations?: AgentObservation[];
   agentToolReports?: PersistedAgentToolReport[];
@@ -146,22 +133,22 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
     .filter((artifact) => !isArtifactTrustedForDownstream(artifact))
     .map(toWorldStateArtifact);
 
-  const blockedItems = input.workflowNodes
-    .filter((node): node is WorkflowNodeRecord & { status: "blocked" | "failed" } => node.status === "blocked" || node.status === "failed")
-    .map((node) => ({
-      nodeKey: node.key,
-      title: node.title,
-      status: node.status,
-      reason: sanitizeTeacherMessage(node.staleReason) || blockedReasonByStatus[node.status],
+  const blockedItems = scopedArtifacts
+    .filter((artifact): artifact is ArtifactRecord & { status: "blocked" | "failed" } => artifact.status === "blocked" || artifact.status === "failed")
+    .map((artifact) => ({
+      artifactKind: artifact.kind,
+      title: artifact.title,
+      status: artifact.status,
+      reason: blockedReasonByStatus[artifact.status],
     }));
 
-  const staleRisks = input.workflowNodes
-    .filter((node): node is WorkflowNodeRecord & { status: "stale" } => node.status === "stale")
-    .map((node) => ({
-      nodeKey: node.key,
-      title: node.title,
-      status: node.status,
-      reason: sanitizeTeacherMessage(node.staleReason) || "这一步依赖的上游内容已变化，继续前需要重新核对。",
+  const staleRisks = scopedArtifacts
+    .filter((artifact): artifact is ArtifactRecord & { status: "stale" } => artifact.status === "stale")
+    .map((artifact) => ({
+      artifactKind: artifact.kind,
+      title: artifact.title,
+      status: artifact.status,
+      reason: "这项成果依赖的上游内容已变化，继续前需要重新核对。",
     }));
 
   return {
@@ -174,7 +161,6 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
       lessonTopic: input.project.lessonTopic,
       status: input.project.status,
     },
-    currentNodeKey: input.contextPackage.project.currentNodeKey ?? input.project.currentNodeKey,
     trustedInputs,
     draftArtifacts,
     blockedItems,
@@ -205,7 +191,7 @@ export function buildAgentWorldState(input: BuildAgentWorldStateInput): AgentWor
         createdAt: report.createdAt,
       })),
     runCheckpoint: resolveCurrentTaskCheckpoint(input),
-    pendingPlan: input.pendingPlan ? toPendingPlan(input.pendingPlan) : null,
+    pendingDecision: input.pendingDecision?.status === "pending" ? toPendingDecision(input.pendingDecision) : null,
     nextRisks: [...staleRisks, ...blockedItems],
   };
 }
@@ -290,12 +276,15 @@ function toWorldStateToolObservation(observation: ToolObservation): AgentWorldSt
   };
 }
 
-function toPendingPlan(input: { teacherRequest: string; toolPlan: CapabilityToolPlan; actionId?: string }): AgentWorldStatePendingPlan {
+function toPendingDecision(input: PendingDecision): AgentWorldStatePendingDecision {
   return {
-    teacherRequest: input.teacherRequest,
-    capabilityId: input.toolPlan.capabilityId,
-    expectedArtifactKind: input.toolPlan.expectedArtifactKind,
-    hasActionId: Boolean(input.actionId),
+    decisionId: input.decisionId,
+    status: input.status,
+    kind: input.kind,
+    reasonCode: input.reasonCode,
+    question: input.question,
+    impactSummary: input.impactSummary,
+    hasActionId: Boolean(input.actionId.trim()),
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 import { capabilityTeacherLabel, createConversationTurnService } from "@/server/conversation/conversation-turn-service";
@@ -52,7 +52,6 @@ describe("conversation streaming progress", () => {
             state: "chatting",
             quickReplies: [],
             recommendedOptions: [],
-            shouldRunToolNow: false,
             runtimeKind: "openai",
           },
         };
@@ -63,7 +62,7 @@ describe("conversation streaming progress", () => {
     };
     const turnService = createConversationTurnService({
       service,
-      runtime: new DeterministicRuntime(),
+      runtime: new FixtureAgentRuntime(),
       agent,
       controlPlaneStore: createControlPlaneStore(),
     });
@@ -118,7 +117,6 @@ describe("conversation streaming progress", () => {
           state: "succeeded",
           quickReplies: [],
           recommendedOptions: [],
-          shouldRunToolNow: false,
           runtimeKind: "openai",
         };
       },
@@ -126,10 +124,9 @@ describe("conversation streaming progress", () => {
     const controlPlaneStore = createControlPlaneStore();
     const turnService = createConversationTurnService({
       service,
-      runtime: new DeterministicRuntime(),
+      runtime: new FixtureAgentRuntime(),
       agent,
       controlPlaneStore,
-      enableTaskGrantAutonomy: true,
     });
 
     const result = await turnService.createTurn(project.id, {
@@ -204,17 +201,15 @@ describe("conversation streaming progress", () => {
           },
           quickReplies: [],
           recommendedOptions: [],
-          shouldRunToolNow: false,
           runtimeKind: "openai",
         };
       },
     };
     const turnService = createConversationTurnService({
       service,
-      runtime: new DeterministicRuntime(),
+      runtime: new FixtureAgentRuntime(),
       agent,
       controlPlaneStore: createControlPlaneStore(),
-      enableTaskGrantAutonomy: true,
     });
 
     const result = await turnService.createTurn(project.id, {

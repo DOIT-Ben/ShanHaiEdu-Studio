@@ -89,7 +89,6 @@ const backendProject = {
   id: "backend-project-a",
   title: "五年级百分数公开课",
   status: "active",
-  currentNodeKey: "requirement_spec",
   grade: "五年级",
   subject: "数学",
   textbookVersion: null,
@@ -97,33 +96,6 @@ const backendProject = {
   createdAt: "2026-07-07T00:00:00.000Z",
   updatedAt: "2026-07-07T00:01:00.000Z",
 };
-
-const backendNodes = [
-  {
-    id: "node-requirement",
-    projectId: backendProject.id,
-    key: "requirement_spec",
-    title: "需求规格",
-    status: "needs_review",
-    order: 1,
-    upstreamNodeKeys: [],
-    approvedArtifactId: null,
-    staleReason: null,
-    updatedAt: "2026-07-07T00:01:00.000Z",
-  },
-  {
-    id: "node-lesson",
-    projectId: backendProject.id,
-    key: "lesson_plan",
-    title: "教案",
-    status: "not_started",
-    order: 2,
-    upstreamNodeKeys: ["requirement_spec", "textbook_evidence"],
-    approvedArtifactId: null,
-    staleReason: null,
-    updatedAt: "2026-07-07T00:01:00.000Z",
-  },
-];
 
 const backendArtifact = {
   id: "artifact-requirement-v1",
@@ -153,9 +125,7 @@ const backendSnapshot = {
       createdAt: "2026-07-07T00:03:00.000Z",
     },
   ],
-  nodes: backendNodes,
   artifacts: [backendArtifact],
-  agentRuns: [],
 };
 
 function loadWorkbenchApiModule(options = {}) {
@@ -314,7 +284,7 @@ test("API client uses the shared workbench contract paths", async () => {
   assert.equal(calls[5].url, "https://example.test/api/workbench/projects/project-a/snapshot");
 });
 
-test("API client normalizes Backend Workflow Lite project lists and snapshots", async () => {
+test("API client normalizes artifact-backed project lists and snapshots", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const client = createWorkbenchApiClient({
     fetcher: async (url) => ({
@@ -325,14 +295,15 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
 
   const projects = await client.listProjects();
   assert.equal(projects[0].id, "backend-project-a");
-  assert.equal(projects[0].currentStep, "需求规格");
+  assert.equal(projects[0].currentStep, "进行中");
   assert.equal(projects[0].meta, "五年级 数学");
 
   const snapshot = await client.getProjectSnapshot("backend-project-a");
   assert.equal(snapshot.project.id, "backend-project-a");
+  assert.equal(snapshot.project.currentStep, "需求规格");
   assert.equal(snapshot.messages[0].speaker, "teacher");
   assert.equal(snapshot.messages[0].body, "我想做一节百分数公开课。");
-  assert.equal(snapshot.artifacts.length, 2);
+  assert.equal(snapshot.artifacts.length, 1);
 
   const requirement = snapshot.artifacts.find((item) => item.nodeKey === "requirement_spec");
   assert.equal(requirement.key, "artifact-requirement-v1");
@@ -341,10 +312,6 @@ test("API client normalizes Backend Workflow Lite project lists and snapshots", 
   assert.equal(requirement.actions.canConfirm, true);
   assert.equal(requirement.content["正文"], "# 需求规格说明书\n\n## 课题\n百分数");
 
-  const lesson = snapshot.artifacts.find((item) => item.nodeKey === "lesson_plan");
-  assert.equal(lesson.key, "node-lesson");
-  assert.equal(lesson.summary, "还没有生成内容。");
-  assert.equal(lesson.actions.canCopy, false);
   assert.equal(snapshot.activeArtifactKey, "artifact-requirement-v1");
 });
 
@@ -461,82 +428,9 @@ test("API client preserves backend quick replies from the message turn response"
   ]);
 });
 
-test("API client preserves backend delivery plans from the message turn response", async () => {
+test("API client restores explicit persisted plan parts", async () => {
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
-  const assistantMessage = {
-    id: "assistant-turn-plan-1",
-    projectId: backendProject.id,
-    role: "assistant",
-    content: "我理解你的任务\n\n确认后我会按计划推进完整材料包。",
-    artifactRefs: [],
-    createdAt: "2026-07-07T00:06:00.000Z",
-  };
-  const client = createWorkbenchApiClient({
-    fetcher: async (url, init) => {
-      if (String(url).endsWith("/messages") && init?.method === "POST") {
-        return {
-          ok: true,
-          json: async () => ({
-            assistantMessage,
-            agentTurn: {
-              quickReplies: [{ label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true }],
-              deliveryPlan: {
-                id: "delivery:full-package",
-                title: "公开课完整交付计划",
-                summary: "先确认需求，再推进教案、PPT、图片、视频和最终交付包。",
-                currentStepId: "requirement_spec",
-                steps: [
-                  {
-                    id: "requirement_spec",
-                    capabilityId: "requirement_spec",
-                    artifactKind: "requirement_spec",
-                    title: "整理备课需求",
-                    teacherDescription: "确认年级、课题、课堂目标和交付范围。",
-                    status: "awaiting_confirmation",
-                    requiresConfirmation: true,
-                  },
-                  {
-                    id: "lesson_plan",
-                    capabilityId: "lesson_plan",
-                    artifactKind: "lesson_plan",
-                    title: "生成公开课教案",
-                    teacherDescription: "形成可上课的教学流程和活动安排。",
-                    status: "pending",
-                    requiresConfirmation: true,
-                  },
-                ],
-              },
-            },
-          }),
-        };
-      }
-
-      return {
-        ok: true,
-        json: async () => ({
-          ...backendSnapshot,
-          messages: [...backendSnapshot.messages, assistantMessage],
-        }),
-      };
-    },
-  });
-
-  const snapshot = await client.sendMessage("backend-project-a", "帮我做完整材料包", null);
-  const lastAssistant = snapshot.messages.at(-1);
-
-  assert.equal(lastAssistant.speaker, "assistant");
-  assert.equal(lastAssistant.deliveryPlan.title, "公开课完整交付计划");
-  assert.equal(lastAssistant.deliveryPlan.steps[0].title, "整理备课需求");
-  assert.equal(lastAssistant.deliveryPlan.steps[0].teacherDescription, "确认年级、课题、课堂目标和交付范围。");
-  assert.equal(lastAssistant.deliveryPlan.steps[0].statusLabel, "等待确认");
-  assert.equal(lastAssistant.deliveryPlan.steps[0].capabilityId, undefined);
-  assert.equal(lastAssistant.deliveryPlan.steps[0].artifactKind, undefined);
-  assert.deepEqual(lastAssistant.quickReplies, [{ label: "确认开始", prompt: "确认开始，按这个计划推进。", recommended: true }]);
-});
-
-test("API client restores pending delivery plans from persisted assistant metadata", async () => {
-  const { createWorkbenchApiClient } = loadWorkbenchApiModule();
-  const snapshotWithPendingPlan = {
+  const snapshotWithPlanParts = {
     ...backendSnapshot,
     messages: [
       ...backendSnapshot.messages,
@@ -545,58 +439,40 @@ test("API client restores pending delivery plans from persisted assistant metada
         projectId: backendProject.id,
         role: "assistant",
         content: "我会先整理需求，再继续推进教案。",
+        parts: [
+          {
+            type: "text",
+            schemaVersion: "message-part.v1",
+            text: "我会先整理需求，再继续推进教案。",
+            format: "markdown",
+          },
+          {
+            type: "plan",
+            schemaVersion: "message-part.v1",
+            planId: "task-plan-1",
+            revision: 2,
+            title: "当前任务进展",
+            steps: [{ id: "lesson-plan", title: "形成教案", status: "running" }],
+          },
+        ],
         artifactRefs: [],
         createdAt: "2026-07-07T00:07:00.000Z",
-        metadata: {
-          pendingDeliveryPlan: {
-            status: "pending",
-            actionId: "human:backend-project-a:lesson_plan:assistant-pending-plan",
-            toolPlan: { capabilityId: "lesson_plan" },
-            deliveryPlan: {
-              id: "delivery:full-package",
-              title: "公开课完整交付计划",
-              summary: "先确认需求，再推进教案。",
-              currentStepId: "lesson_plan",
-              steps: [
-                {
-                  id: "requirement_spec",
-                  title: "整理备课需求",
-                  teacherDescription: "确认年级、课题、课堂目标和交付范围。",
-                  status: "succeeded",
-                  requiresConfirmation: true,
-                },
-                {
-                  id: "lesson_plan",
-                  title: "生成公开课教案",
-                  teacherDescription: "形成可上课的教学流程和活动安排。",
-                  status: "awaiting_confirmation",
-                  requiresConfirmation: true,
-                },
-              ],
-            },
-          },
-        },
       },
     ],
   };
   const client = createWorkbenchApiClient({
     fetcher: async () => ({
       ok: true,
-      json: async () => snapshotWithPendingPlan,
+      json: async () => snapshotWithPlanParts,
     }),
   });
 
   const snapshot = await client.getProjectSnapshot("backend-project-a");
   const lastAssistant = snapshot.messages.at(-1);
 
-  assert.equal(lastAssistant.deliveryPlan.title, "公开课完整交付计划");
-  assert.equal(lastAssistant.deliveryPlan.steps[1].statusLabel, "等待确认");
-  assert.equal(lastAssistant.quickReplies.length, 1);
-  assert.equal(lastAssistant.quickReplies[0].label, "继续下一步");
-  assert.equal(lastAssistant.quickReplies[0].prompt, "继续下一步");
-  assert.equal(lastAssistant.quickReplies[0].actionId, "human:backend-project-a:lesson_plan:assistant-pending-plan");
-  assert.equal(lastAssistant.quickReplies[0].recommended, true);
-  assert.equal(lastAssistant.deliveryPlan.actionId, "human:backend-project-a:lesson_plan:assistant-pending-plan");
+  assert.deepEqual(Array.from(lastAssistant.parts, (part) => part.type), ["text", "plan"]);
+  assert.equal(lastAssistant.parts[1].planId, "task-plan-1");
+  assert.equal(Object.hasOwn(lastAssistant, "quickReplies"), false);
 });
 
 test("API client posts confirmed action ids only for HumanGate confirmation messages", async () => {
@@ -660,10 +536,10 @@ test("API client does not expose backend-only structured labels in visible artif
           schema: "internal-schema",
           node_id: "node-requirement",
           provider: "internal-provider",
-          providerStatus: "deterministic_draft",
+          providerStatus: "succeeded",
           capabilityId: "requirement_spec",
-          runtimeKind: "deterministic",
-          generationMode: "deterministic_draft",
+          runtimeKind: "openai",
+          generationMode: "model_generated",
           nextSuggestedAction: "查看并确认这份草稿",
         },
       },
@@ -696,14 +572,6 @@ test("API client preserves backend route generation action ids as internal artif
   const { createWorkbenchApiClient } = loadWorkbenchApiModule();
   const snapshotWithRouteActions = {
     ...backendSnapshot,
-    nodes: [
-      {
-        ...backendNodes[0],
-        key: "ppt_design_draft",
-        title: "PPT 设计稿",
-        status: "approved",
-      },
-    ],
     artifacts: [
       {
         ...backendArtifact,

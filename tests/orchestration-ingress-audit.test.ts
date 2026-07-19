@@ -14,8 +14,6 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
     const known = [
       ["POST", "/api/workbench/projects", "project_create"],
       ["PATCH", "/api/workbench/projects/project_1", "project_lifecycle_update"],
-      ["POST", "/api/workbench/projects/project_1/agent-runs", "legacy_agent_run_start"],
-      ["POST", "/api/workbench/projects/project_1/agent-runs/run_1/finish", "legacy_agent_run_finish"],
       ["POST", "/api/workbench/projects/project_1/artifacts", "teacher_artifact_create"],
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/approve", "artifact_approve"],
       ["POST", "/api/workbench/projects/project_1/artifacts/artifact_1/coze-ppt", "artifact_route_coze_ppt"],
@@ -32,11 +30,19 @@ describe("VR-A13 authenticated workbench ingress audit", () => {
       ["POST", "/api/workbench/projects/project_1/messages/message_1/reaction", "message_reaction_set"],
     ] as const;
 
-    expect(known).toHaveLength(18);
+    expect(known).toHaveLength(16);
     for (const [method, pathname, operation] of known) {
       expect(resolveOrchestrationIngressOperation(new Request(`https://localhost${pathname}`, { method })))
         .toMatchObject({ operation, claimedProjectId: pathname === "/api/workbench/projects" ? null : "project_1" });
     }
+    expect(resolveOrchestrationIngressOperation(new Request(
+      "https://localhost/api/workbench/projects/project_1/agent-runs",
+      { method: "POST" },
+    ))).toMatchObject({
+      operation: "unclassified_external",
+      claimedProjectId: "project_1",
+      controlImpact: "unclassified_external",
+    });
     expect(resolveOrchestrationIngressOperation(new Request(
       "https://localhost/api/workbench/projects/project_1/new-write?source=main_agent",
       { method: "POST", headers: { "x-orchestration-source": "main_agent" } },

@@ -39,8 +39,7 @@ describe("legacy approved Artifact migration and reapproval", () => {
     let client = createClient(databaseUrl);
     let service = createWorkbenchService(createPrismaWorkbenchRepository(client));
     const migrated = await service.getArtifact("legacy-project", "legacy-artifact");
-    const migratedNode = (await service.getProjectSnapshot("legacy-project")).nodes
-      .find((node) => node.key === "requirement_spec");
+    const migratedSnapshot = await service.getProjectSnapshot("legacy-project");
 
     expect(migrated).toMatchObject({
       status: "needs_review",
@@ -56,9 +55,14 @@ describe("legacy approved Artifact migration and reapproval", () => {
         },
       },
     });
-    expect(migratedNode).toMatchObject({
-      status: "needs_review",
-      approvedArtifactId: null,
+    expect(migratedSnapshot).not.toHaveProperty("nodes");
+    expect(migratedSnapshot.artifacts).toEqual([
+      expect.objectContaining({ id: "legacy-artifact", status: "needs_review", isApproved: false }),
+    ]);
+    expect(readLegacyWorkflowNode(databasePath)).toEqual({
+      status: "approved",
+      approvedArtifactId: "legacy-artifact",
+      staleReason: null,
     });
     expect(isArtifactTrustedForDownstream(migrated)).toBe(false);
 
@@ -98,8 +102,7 @@ describe("legacy approved Artifact migration and reapproval", () => {
     client = createClient(databaseUrl);
     service = createWorkbenchService(createPrismaWorkbenchRepository(client));
     const afterSecondInitialization = await service.getArtifact("legacy-project", "legacy-artifact");
-    const finalNode = (await service.getProjectSnapshot("legacy-project")).nodes
-      .find((node) => node.key === "requirement_spec");
+    const finalSnapshot = await service.getProjectSnapshot("legacy-project");
 
     expect(afterSecondInitialization).toMatchObject({
       status: "approved",
@@ -107,7 +110,11 @@ describe("legacy approved Artifact migration and reapproval", () => {
       origin: "legacy",
       structuredContent: { artifactApprovalEvidence: approvalEvidence },
     });
-    expect(finalNode).toMatchObject({
+    expect(finalSnapshot).not.toHaveProperty("nodes");
+    expect(finalSnapshot.artifacts).toEqual([
+      expect.objectContaining({ id: "legacy-artifact", status: "approved", isApproved: true }),
+    ]);
+    expect(readLegacyWorkflowNode(databasePath)).toEqual({
       status: "approved",
       approvedArtifactId: "legacy-artifact",
       staleReason: null,
@@ -204,8 +211,24 @@ function createLegacyDatabase(databasePath: string) {
       'legacy-node', 'legacy-project', 'requirement_spec', '需求规格', 'approved', 1, '[]',
       'legacy-artifact', NULL, CURRENT_TIMESTAMP
     );
+    CREATE TRIGGER "legacy_workflow_node_update_forbidden"
+    BEFORE UPDATE ON "WorkflowNode"
+    BEGIN
+      SELECT RAISE(ABORT, 'retired WorkflowNode must not be updated');
+    END;
   `);
   db.close();
+}
+
+function readLegacyWorkflowNode(databasePath: string) {
+  const db = new Database(databasePath, { readonly: true });
+  const row = db.prepare(`
+    SELECT "status", "approvedArtifactId", "staleReason"
+    FROM "WorkflowNode"
+    WHERE "id" = 'legacy-node'
+  `).get();
+  db.close();
+  return row;
 }
 
 function initializeDatabase(databaseUrl: string) {

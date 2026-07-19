@@ -102,10 +102,7 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
     };
   }
 
-  const deterministic_runtime_blocked_real_asset =
-    result.artifactDraft.generationMode === "deterministic_draft" && capability.deterministicFallback === "blocked";
-
-  if (deterministic_runtime_blocked_real_asset) {
+  if (result.run.runtimeKind !== "openai" || result.artifactDraft.generationMode !== "model_generated") {
     return {
       status: "failed",
       userMessage: capability.failureRecovery.userMessage,
@@ -178,16 +175,16 @@ export async function runCapabilityWithAgentRuntime(input: AgentRuntimeCapabilit
       structuredContent: {
         ...result.artifactDraft.structuredContent,
         capabilityId: input.capabilityId,
-        generationMode: result.artifactDraft.generationMode,
-        providerStatus: result.artifactDraft.generationMode === "model_generated" ? "real" : "deterministic_draft",
-        runtimeKind: result.run.runtimeKind,
+        generationMode: "model_generated",
+        providerStatus: "real",
+        runtimeKind: "openai",
         nextSuggestedAction: result.nextSuggestedAction.label,
       },
     },
     assistantSummary: result.assistantMessage.title
       ? `${result.assistantMessage.title}\n\n${result.assistantMessage.body}`
       : result.assistantMessage.body,
-    providerStatus: result.artifactDraft.generationMode === "model_generated" ? "real" : "deterministic_draft",
+    providerStatus: "real",
   };
 }
 

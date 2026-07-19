@@ -24,16 +24,13 @@ test("M58 exposes one shared teacher-facing download action group across artifac
   assert.match(source, /downloadPackageLabel/);
 });
 
-test("M58 renders download actions in chat cards and full reading surfaces", () => {
-  const chatSource = readSource("src/components/conversation/ChatTranscript.tsx");
+test("M58 renders download actions in full reading surfaces", () => {
   const sidePanelSource = readSource("src/components/artifacts/ArtifactSidePanel.tsx");
   const previewSource = readSource("src/components/artifacts/ArtifactPreviewCard.tsx");
   const detailSource = readSource("src/components/artifacts/ArtifactDetailSheet.tsx");
   const mediaSource = readSource("src/components/layout/MediaWorkbench.tsx");
   const railSource = readSource("src/components/artifacts/ArtifactRail.tsx");
 
-  assert.match(chatSource, /projectId: string/);
-  assert.match(chatSource, /<ArtifactDownloadActions[\s\S]*variant="inline"/);
   assert.match(sidePanelSource, /projectId: string/);
   assert.match(sidePanelSource, /<ArtifactDownloadActions[\s\S]*variant="compact"/);
   assert.match(previewSource, /打开阅读/);

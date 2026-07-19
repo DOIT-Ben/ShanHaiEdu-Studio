@@ -34,7 +34,7 @@ test("M60 frontend separates short submit state from long project generation sta
 test("M60 frontend maps persisted turn jobs to teacher-readable queue labels", () => {
   const typesSource = readSource("src/lib/types.ts");
   const mapperSource = readSource("src/lib/workbench-mappers.ts");
-  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
+  const transcriptSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const indicatorSource = readSource("src/components/conversation/messages/GeneratingIndicator.tsx");
 
   assert.match(typesSource, /ConversationTurnJobStatus = "queued" \| "running" \| "succeeded" \| "failed" \| "canceled" \| "blocked"/);
@@ -45,7 +45,7 @@ test("M60 frontend maps persisted turn jobs to teacher-readable queue labels", (
   assert.match(mapperSource, /queued:\s*"排队中"/);
   assert.match(mapperSource, /running:\s*"正在生成"/);
 
-  assert.match(transcriptSource, /message\.turnStatusLabel/);
+  assert.match(transcriptSource, /custom\.turnStatusLabel/);
   assert.match(transcriptSource, /data-turn-status/);
   assert.match(indicatorSource, /排队中/);
   assert.match(indicatorSource, /正在生成/);
@@ -68,7 +68,7 @@ test("M60 teacher visible queue UI avoids internal engineering words", () => {
   const visibleSources = [
     "src/components/conversation/PromptComposer.tsx",
     "src/components/conversation/ConversationWorkbench.tsx",
-    "src/components/conversation/ChatTranscript.tsx",
+    "src/components/conversation/assistant-ui/ShanHaiThread.tsx",
     "src/components/conversation/messages/GeneratingIndicator.tsx",
   ];
 

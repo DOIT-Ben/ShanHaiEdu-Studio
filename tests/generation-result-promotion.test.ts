@@ -27,7 +27,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   await Promise.allSettled([clientA?.$disconnect(), clientB?.$disconnect()]);
-  rmSync(databasePath, { force: true });
+  removeSqliteFiles(databasePath);
 });
 
 describe("V1 Stage 1C atomic generation result promotion", () => {
@@ -74,7 +74,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     raw.close();
 
     await expect(repository.promoteStagedGenerationResult(fixture.projectId, job.id)).rejects.toThrow();
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "pptx_artifact" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "pptx_artifact" } })).toBe(0);
     expect(await clientA.validationReportRecord.findUniqueOrThrow({ where: { generationJobId: job.id } })).toMatchObject({
       overallStatus: "passed",
       artifactId: null,
@@ -87,10 +87,6 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
       state: "staged",
       resultArtifactId: null,
     });
-    expect(await clientA.workflowNode.findUniqueOrThrow({
-      where: { projectId_key: { projectId: fixture.projectId, key: "pptx_artifact" } },
-    })).toMatchObject({ status: "not_started" });
-
     const recoveryRaw = new Database(databasePath);
     recoveryRaw.exec('DROP TRIGGER "stage1c_fail_job_finish"');
     recoveryRaw.close();
@@ -101,7 +97,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     expect(second.status).toBe("committed");
     if (first.status !== "committed" || second.status !== "committed") throw new Error("Expected committed result.");
     expect(second.artifact.id).toBe(first.artifact.id);
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "pptx_artifact" } })).toBe(1);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "pptx_artifact" } })).toBe(1);
     expect(first.artifact.version).toBe(1);
     expect(await clientA.generationJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({
       status: "succeeded",
@@ -138,7 +134,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     );
 
     expect(result).toMatchObject({ status: "quarantined", reason: expectedReason });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "image_prompts" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "image_prompts" } })).toBe(0);
     expect(await clientA.validationReportRecord.findUniqueOrThrow({ where: { generationJobId: job.id } })).toMatchObject({
       overallStatus: "passed",
       artifactId: null,
@@ -162,7 +158,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     );
 
     expect(result).toMatchObject({ status: "quarantined", reason: "validation_report_missing" });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "image_prompts" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "image_prompts" } })).toBe(0);
     expect(await clientA.validationReportRecord.count({ where: { generationJobId: job.id } })).toBe(0);
   });
 
@@ -211,14 +207,16 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
       overallStatus: "passed",
       reportDigest: report.reportDigest,
     });
-    expect(await clientA.workflowNode.findUniqueOrThrow({
-      where: { projectId_key: { projectId: fixture.projectId, key: "lesson_plan" } },
-    })).toMatchObject({ status: "needs_review" });
+    expect(artifact).toMatchObject({
+      kind: "lesson_plan",
+      status: "needs_review",
+      isApproved: false,
+    });
 
     const mismatchedReport = internalValidationReport("lesson_plan", { ...draft, summary: "另一份内容" });
     await expect(repository.saveArtifact(fixture.projectId, { ...draft, validationReport: mismatchedReport }))
       .rejects.toThrow("validation_target_digest_mismatch");
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "lesson_plan" } })).toBe(1);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "lesson_plan" } })).toBe(1);
     expect(await clientA.validationReportRecord.count({ where: { projectId: fixture.projectId, stage: "lesson_plan" } })).toBe(1);
   });
 
@@ -237,7 +235,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     const result = await repository.promoteStagedGenerationResult(fixture.projectId, job.id);
 
     expect(result).toMatchObject({ status: "quarantined", reason: "stale_intent" });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "image_prompts" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "image_prompts" } })).toBe(0);
     expect(await clientA.generationJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({
       status: "quarantined",
       pollState: "stale_intent",
@@ -273,7 +271,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
     const result = await repository.promoteStagedGenerationResult(fixture.projectId, job.id, guardA);
 
     expect(result).toMatchObject({ status: "quarantined", reason: "execution_fence_rejected" });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, nodeKey: "video_segment_generate" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.projectId, kind: "video_segment_generate" } })).toBe(0);
   });
 
   it("lets a current fence recover a staged result for the exact same execution identity", async () => {
@@ -314,7 +312,7 @@ describe("V1 Stage 1C atomic generation result promotion", () => {
 });
 
 describe("V1 Stage 1C integration contracts", () => {
-  it("routes artifact endpoints through the control-plane atomic commit while retaining the conversation compatibility path", () => {
+  it("routes artifact endpoints through the control-plane atomic commit", () => {
     const routePaths = [
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route.ts",
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route.ts",
@@ -327,8 +325,6 @@ describe("V1 Stage 1C integration contracts", () => {
       expect(source).not.toMatch(/saveArtifact\([\s\S]{0,800}finishGenerationJob/);
       expect(source).toContain("runWithProjectExecutionLease");
     }
-    expect(readFileSync(path.join(root, "src/server/conversation/conversation-turn-service.ts"), "utf8"))
-      .toContain("commitGenerationResult");
   });
 
   it("upgrades an existing database additively and idempotently", () => {
@@ -370,7 +366,7 @@ describe("V1 Stage 1C integration contracts", () => {
         "ValidationReportRecord_projectId_stage_createdAt_idx",
       ]));
     } finally {
-      rmSync(upgradePath, { force: true });
+      removeSqliteFiles(upgradePath);
     }
   });
 });
@@ -473,4 +469,10 @@ function internalValidationReport(
     overallStatus: "passed",
     gates: [],
   });
+}
+
+function removeSqliteFiles(databasePath: string) {
+  for (const suffix of ["", "-shm", "-wal"]) {
+    rmSync(`${databasePath}${suffix}`, { force: true });
+  }
 }

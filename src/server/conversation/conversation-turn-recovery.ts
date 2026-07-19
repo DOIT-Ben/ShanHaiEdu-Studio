@@ -12,7 +12,7 @@ import {
   resolveV1_9ExternalAuditRecoveryAuthority,
   type V1_9ExternalAuditRecoveryAuthority,
 } from "./external-audit-startup-recovery";
-import { createMainConversationAgentFromEnv, resolveMainAgentToolControlPlane } from "./model-main-conversation-agent";
+import { createMainConversationAgentFromEnv } from "./model-main-conversation-agent";
 import {
   resolveV1_9ProviderHealthRecoveryAuthority,
   type RecoveryEnv,
@@ -306,15 +306,12 @@ async function drainRecoveredProject(
   const runtime = createAgentRuntimeFromEnv(env);
   const agent = createMainConversationAgentFromEnv(env);
   const agentToolExecutor = createAgentToolExecutorFromEnv(env);
-  const controlPlane = resolveMainAgentToolControlPlane(env);
   const result = await drainProjectConversationQueue(projectId, {
     service,
     expectedJobId,
     runtime,
     agent,
     agentToolExecutor,
-    enableTaskGrantAutonomy: true,
-    enableNativeToolControlPlane: controlPlane === "native",
   });
   if (result.started !== 1) throw new Error("v1_9_startup_recovery_claim_failed");
 }

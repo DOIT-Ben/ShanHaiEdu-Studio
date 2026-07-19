@@ -1,6 +1,5 @@
 {
   "id": "requirement_spec",
-  "workflowNodeKey": "requirement_spec",
   "artifactKind": "requirement_spec",
   "version": "v1",
   "displayName": "备课需求规格",

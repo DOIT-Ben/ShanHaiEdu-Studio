@@ -87,7 +87,7 @@
       },
       {
         "path": "src/lib/conversation-message-contract.ts",
-        "lines": 609,
+        "lines": 589,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
@@ -101,17 +101,10 @@
       },
       {
         "path": "src/lib/workbench-api.ts",
-        "lines": 552,
+        "lines": 499,
         "violatingFunctions": 1,
         "maxFunctionLines": 237,
         "totalFunctionLines": 237
-      },
-      {
-        "path": "src/lib/workbench-mappers.ts",
-        "lines": 569,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
       },
       {
         "path": "src/server/agent-runtime/openai-runtime.ts",
@@ -122,24 +115,17 @@
       },
       {
         "path": "src/server/conversation/control-plane-store.ts",
-        "lines": 762,
+        "lines": 758,
         "violatingFunctions": 1,
         "maxFunctionLines": 406,
         "totalFunctionLines": 406
       },
       {
-        "path": "src/server/conversation/conversation-control-resolver.ts",
-        "lines": 371,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 228,
-        "totalFunctionLines": 228
-      },
-      {
         "path": "src/server/conversation/conversation-turn-service.ts",
-        "lines": 3476,
-        "violatingFunctions": 5,
-        "maxFunctionLines": 687,
-        "totalFunctionLines": 1867
+        "lines": 1415,
+        "violatingFunctions": 2,
+        "maxFunctionLines": 491,
+        "totalFunctionLines": 718
       },
       {
         "path": "src/server/conversation/external-audit-evidence-ingress.ts",
@@ -157,14 +143,14 @@
       },
       {
         "path": "src/server/conversation/main-agent-tool-loop-config.ts",
-        "lines": 2083,
+        "lines": 2062,
         "violatingFunctions": 2,
-        "maxFunctionLines": 1293,
-        "totalFunctionLines": 2249
+        "maxFunctionLines": 1272,
+        "totalFunctionLines": 2207
       },
       {
         "path": "src/server/conversation/model-main-conversation-agent.ts",
-        "lines": 1089,
+        "lines": 516,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
@@ -227,7 +213,7 @@
       },
       {
         "path": "src/server/tools/provider-tool-adapter.ts",
-        "lines": 1075,
+        "lines": 1074,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
@@ -241,17 +227,17 @@
       },
       {
         "path": "src/server/workbench/repository.ts",
-        "lines": 2258,
+        "lines": 2081,
         "violatingFunctions": 1,
-        "maxFunctionLines": 1600,
-        "totalFunctionLines": 1600
+        "maxFunctionLines": 1428,
+        "totalFunctionLines": 1428
       },
       {
         "path": "src/server/workbench/service.ts",
-        "lines": 756,
+        "lines": 707,
         "violatingFunctions": 1,
-        "maxFunctionLines": 508,
-        "totalFunctionLines": 508
+        "maxFunctionLines": 489,
+        "totalFunctionLines": 489
       }
     ]
   },
@@ -280,7 +266,6 @@
       { "path": "tests/desktop-installer-smoke.test.mjs", "occurrences": 3 },
       { "path": "tests/feedback-contract.test.ts", "occurrences": 2 },
       { "path": "tests/feedback-sqlite-upgrade.test.ts", "occurrences": 1 },
-      { "path": "tests/generation-result-promotion.test.ts", "occurrences": 1 },
       { "path": "tests/m44-runtime-ui.test.mjs", "occurrences": 7 },
       { "path": "tests/m47-composer-api-wiring.test.mjs", "occurrences": 26 },
       { "path": "tests/m67-auth-readiness.test.mjs", "occurrences": 3 },

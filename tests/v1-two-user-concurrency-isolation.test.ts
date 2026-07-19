@@ -9,7 +9,7 @@ import { createWorkbenchActor } from "@/server/auth/actor";
 import { createPrismaWorkbenchRepository } from "@/server/workbench/repository";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { executeRecoverableVideoTask } from "@/server/video-generation/video-generation-run";
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
 
@@ -152,22 +152,27 @@ describe("V1-8 two invited users concurrency and recovery", () => {
         approvedPptDesign(serviceB, projectB.id, "乙"),
       ]);
       const providerAgent = {
+        async intakeTask(input: { userMessage: string }) {
+          return {
+            kind: "task" as const,
+            proposal: {
+              goal: input.userMessage,
+              requestedOutputs: ["ppt"],
+              constraints: [],
+              excludedOutputs: [],
+            },
+          };
+        },
         async respond() {
           return {
-            assistantMessage: { body: "我会生成可编辑 PPTX。" }, state: "running_tool" as const,
-            quickReplies: [], recommendedOptions: [], shouldRunToolNow: true, runtimeKind: "openai" as const,
-            toolPlan: {
-              planId: "coze_ppt:two-user", capabilityId: "coze_ppt" as const,
-              reasonForUser: "我会生成可编辑 PPTX。", internalReason: "test",
-              inputDraft: {}, missingInputs: [], upstreamPlan: [], nextSuggestedCapabilities: [],
-              requiresConfirmation: false, expectedArtifactKind: "pptx_artifact",
-            },
+            assistantMessage: { body: "PPT 任务范围已经明确。" }, state: "succeeded" as const,
+            quickReplies: [], recommendedOptions: [], runtimeKind: "openai" as const,
           };
         },
       };
       const controlPlaneStore = createControlPlaneStore(clientA);
-      const turnA = createConversationTurnService({ service: serviceA, runtime: new DeterministicRuntime(), agent: providerAgent, controlPlaneStore });
-      const turnB = createConversationTurnService({ service: serviceB, runtime: new DeterministicRuntime(), agent: providerAgent, controlPlaneStore });
+      const turnA = createConversationTurnService({ service: serviceA, runtime: new FixtureAgentRuntime(), agent: providerAgent, controlPlaneStore });
+      const turnB = createConversationTurnService({ service: serviceB, runtime: new FixtureAgentRuntime(), agent: providerAgent, controlPlaneStore });
 
       await Promise.all([
         turnA.createTurn(projectA.id, { role: "teacher", content: "生成真实 PPTX" }),
@@ -223,10 +228,9 @@ async function approvedPptDesign(service: ReturnType<typeof createWorkbenchServi
 }
 
 function latestPendingDecision(snapshot: Awaited<ReturnType<ReturnType<typeof createWorkbenchService>["getProjectSnapshot"]>>) {
-  const pendingPlan = [...snapshot.messages].reverse()
-    .map((message) => message.metadata.pendingDeliveryPlan)
+  return [...snapshot.messages].reverse()
+    .map((message) => message.metadata.pendingDecision)
     .find((value): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value)));
-  return pendingPlan?.pendingDecision;
 }
 
 function restoreEnv(key: string, value: string | undefined) {

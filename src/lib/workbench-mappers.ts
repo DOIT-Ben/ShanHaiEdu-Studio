@@ -4,7 +4,6 @@ import type {
   ArtifactItem,
   ArtifactKind,
   ArtifactStatus,
-  ChatDeliveryPlan,
   ChatMessage,
   ConversationTurnJob,
   ConversationTurnJobStatus,
@@ -17,7 +16,6 @@ export type BackendProjectRecord = {
   id: string;
   title: string;
   status: ProjectStatus;
-  currentNodeKey: ArtifactKind;
   grade: string | null;
   subject: string | null;
   textbookVersion: string | null;
@@ -56,44 +54,6 @@ type BackendConversationTurnJobRecord = {
   updatedAt: string;
 };
 
-type BackendPendingDeliveryPlan = {
-  status?: string;
-  actionId?: string;
-  toolPlan?: {
-    capabilityId?: string;
-  };
-  deliveryPlan?: BackendDeliveryPlan;
-};
-
-type BackendDeliveryPlan = {
-  id?: string;
-  title?: string;
-  summary?: string;
-  currentStepId?: string;
-  steps?: BackendDeliveryPlanStep[];
-};
-
-type BackendDeliveryPlanStep = {
-  id?: string;
-  title?: string;
-  teacherDescription?: string;
-  status?: ChatDeliveryPlan["steps"][number]["status"];
-  requiresConfirmation?: boolean;
-};
-
-export type BackendNodeRecord = {
-  id: string;
-  projectId: string;
-  key: ArtifactKind;
-  title: string;
-  status: ArtifactStatus | "failed";
-  order: number;
-  upstreamNodeKeys: ArtifactKind[];
-  approvedArtifactId: string | null;
-  staleReason: string | null;
-  updatedAt: string;
-};
-
 export type BackendArtifactRecord = {
   id: string;
   projectId: string;
@@ -113,9 +73,7 @@ export type BackendArtifactRecord = {
 export type BackendSnapshot = {
   project: BackendProjectRecord;
   messages: BackendMessageRecord[];
-  nodes: BackendNodeRecord[];
   artifacts: BackendArtifactRecord[];
-  agentRuns?: unknown[];
   turnJobs?: BackendConversationTurnJobRecord[];
   agentEventSequence?: number;
 };
@@ -145,13 +103,20 @@ const nodeTitleByKey: Record<ArtifactKind, string> = {
   final_delivery_checklist: "交付清单",
 };
 
+const projectStatusLabels: Record<ProjectStatus, string> = {
+  active: "进行中",
+  review: "等待确认",
+  blocked: "需要处理",
+  done: "已完成",
+};
+
 function isBackendProjectList(value: unknown): value is { projects: BackendProjectRecord[] } {
   return Boolean(value && typeof value === "object" && Array.isArray((value as { projects?: unknown }).projects));
 }
 
 function isBackendSnapshot(value: unknown): value is BackendSnapshot {
   const snapshot = value as Partial<BackendSnapshot>;
-  return Boolean(snapshot?.project && Array.isArray(snapshot.messages) && Array.isArray(snapshot.nodes) && Array.isArray(snapshot.artifacts));
+  return Boolean(snapshot?.project && Array.isArray(snapshot.messages) && Array.isArray(snapshot.artifacts));
 }
 
 function mapStatus(status: ArtifactStatus | "failed"): ArtifactStatus {
@@ -164,14 +129,14 @@ function formatDateLabel(value: string) {
   return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function mapBackendProject(project: BackendProjectRecord): ProjectItem {
+function mapBackendProject(project: BackendProjectRecord, currentArtifact?: BackendArtifactRecord): ProjectItem {
   const meta = [project.grade, project.subject].filter(Boolean).join(" ") || project.lessonTopic || formatDateLabel(project.updatedAt);
   return {
     id: project.id,
     title: project.title,
     meta,
     status: project.status,
-    currentStep: nodeTitleByKey[project.currentNodeKey] ?? "需求澄清",
+    currentStep: currentArtifact ? nodeTitleByKey[currentArtifact.kind] ?? currentArtifact.title : projectStatusLabels[project.status],
     updatedAt: formatDateLabel(project.updatedAt),
     lifecycleState: project.lifecycleState ?? (project.deletedAt ? "trash" : project.archivedAt ? "archived" : "active"),
     lifecycleVersion: typeof project.lifecycleVersion === "number" && Number.isInteger(project.lifecycleVersion) ? project.lifecycleVersion : 0,
@@ -188,9 +153,6 @@ function mapBackendMessage(
   turnJobsByTeacherMessageId = new Map<string, ConversationTurnJob>(),
   turnJobsByAssistantMessageId = new Map<string, ConversationTurnJob>(),
 ): ChatMessage {
-  const pendingPlan = pendingDeliveryPlanFromMessage(message);
-  const deliveryPlan = toChatDeliveryPlan(pendingPlan?.deliveryPlan, pendingActionId(pendingPlan));
-  const quickReplies = quickRepliesFromPendingPlan(pendingPlan, deliveryPlan);
   const turnJob = message.role === "teacher" ? turnJobsByTeacherMessageId.get(message.id) : undefined;
   const sourceTurnJob = message.role === "assistant" ? turnJobsByAssistantMessageId.get(message.id) : undefined;
 
@@ -203,8 +165,6 @@ function mapBackendMessage(
     timeLabel: formatDateLabel(message.createdAt),
     ...(turnJob && turnJob.status !== "succeeded" ? { turnStatus: turnJob.status, turnStatusLabel: turnJob.statusLabel } : {}),
     artifactRefs: message.artifactRefs,
-    ...(quickReplies.length ? { quickReplies } : {}),
-    ...(deliveryPlan ? { deliveryPlan } : {}),
     ...(message.reaction ? { reaction: message.reaction } : {}),
   };
 }
@@ -251,69 +211,6 @@ function turnStatusLabel(status: ConversationTurnJobStatus) {
     failed: "生成失败，可重试",
     canceled: "已取消",
     blocked: "未达标，需要处理",
-  };
-  return labels[status];
-}
-
-function pendingDeliveryPlanFromMessage(message: BackendMessageRecord): BackendPendingDeliveryPlan | null {
-  if (message.role !== "assistant") return null;
-  const value = message.metadata?.pendingDeliveryPlan;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const pendingPlan = value as BackendPendingDeliveryPlan;
-  return pendingPlan.status === "pending" ? pendingPlan : null;
-}
-
-function quickRepliesFromPendingPlan(pendingPlan: BackendPendingDeliveryPlan | null, deliveryPlan?: ChatDeliveryPlan): NonNullable<ChatMessage["quickReplies"]> {
-  if (!pendingPlan?.toolPlan?.capabilityId) return [];
-  const hasCompletedStep = Boolean(deliveryPlan?.steps.some((step) => step.status === "succeeded"));
-  const actionId = pendingActionId(pendingPlan);
-  return [
-    {
-      label: hasCompletedStep ? "继续下一步" : "确认开始",
-      prompt: hasCompletedStep ? "继续下一步" : "确认开始",
-      ...(actionId ? { actionId } : {}),
-      recommended: true,
-    },
-  ];
-}
-
-function toChatDeliveryPlan(plan?: BackendDeliveryPlan, actionId?: string): ChatDeliveryPlan | undefined {
-  const steps = plan?.steps?.map(toChatDeliveryPlanStep).filter((step): step is ChatDeliveryPlan["steps"][number] => Boolean(step));
-  if (!plan?.title || !plan.summary || !steps?.length) return undefined;
-
-  return {
-    id: plan.id ?? `delivery-plan-${plan.title}`,
-    ...(actionId ? { actionId } : {}),
-    title: plan.title,
-    summary: plan.summary,
-    steps,
-  };
-}
-
-function pendingActionId(pendingPlan: BackendPendingDeliveryPlan | null) {
-  return typeof pendingPlan?.actionId === "string" && pendingPlan.actionId.trim() ? pendingPlan.actionId.trim() : undefined;
-}
-
-function toChatDeliveryPlanStep(step: BackendDeliveryPlanStep): ChatDeliveryPlan["steps"][number] | null {
-  if (!step.id || !step.title || !step.teacherDescription || !step.status) return null;
-
-  return {
-    id: step.id,
-    title: step.title,
-    teacherDescription: step.teacherDescription,
-    status: step.status,
-    statusLabel: deliveryPlanStatusLabel(step.status),
-    requiresConfirmation: Boolean(step.requiresConfirmation),
-  };
-}
-
-function deliveryPlanStatusLabel(status: ChatDeliveryPlan["steps"][number]["status"]) {
-  const labels: Record<ChatDeliveryPlan["steps"][number]["status"], string> = {
-    awaiting_confirmation: "等待确认",
-    pending: "待推进",
-    running: "正在推进",
-    succeeded: "已完成",
-    failed: "需要处理",
   };
   return labels[status];
 }
@@ -374,26 +271,7 @@ function isVisibleStructuredLabel(label: string) {
   return !internalTerms.some((term) => lower.includes(term));
 }
 
-function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: BackendArtifactRecord): ArtifactItem {
-  if (!artifact) {
-    const title = nodeTitleByKey[node.key] ?? node.title;
-    return {
-      key: node.id,
-      nodeKey: node.key,
-      kind: node.key,
-      title,
-      status: mapStatus(node.status),
-      summary: "还没有生成内容。",
-      updatedAt: formatDateLabel(node.updatedAt),
-      reusable: false,
-      sourceTitles: node.upstreamNodeKeys.map((key) => nodeTitleByKey[key] ?? key),
-      previewFields: [{ label: "内容", value: "还没有生成内容" }],
-      actions: { canCopy: false, canUseAsInput: false, canOpenDetail: true, canConfirm: false, canRegenerate: false },
-      content: { 正文: "还没有生成内容。" },
-      realAssetDownloads: [],
-    };
-  }
-
+function mapBackendArtifactToItem(artifact: BackendArtifactRecord): ArtifactItem {
   const pptSampleReview = pptSampleReviewFromContent(artifact.structuredContent);
   const pptFullDeckReview = pptFullDeckReviewFromContent(artifact.structuredContent);
   const hasSealedSampleSet = isObjectRecord(artifact.structuredContent.pptKeySampleSet);
@@ -402,15 +280,15 @@ function mapBackendNodeToArtifactItem(node: BackendNodeRecord, artifact?: Backen
   return {
     key: artifact.id,
     artifactId: artifact.id,
-    nodeKey: node.key,
+    nodeKey: artifact.nodeKey,
     version: artifact.version,
     kind: artifact.kind,
-    title: artifact.title || nodeTitleByKey[node.key] || node.title,
+    title: artifact.title || nodeTitleByKey[artifact.kind],
     status: mapStatus(artifact.status),
     summary: sanitizeTeacherVisibleText(artifact.summary || "已生成内容。"),
     updatedAt: formatDateLabel(artifact.updatedAt),
     reusable: artifact.isApproved || artifact.status === "approved" || artifact.status === "needs_review",
-    sourceTitles: node.upstreamNodeKeys.map((key) => nodeTitleByKey[key] ?? key),
+    sourceTitles: [],
     previewFields: previewFieldsFromContent(artifact),
     actions: {
       canCopy: true,
@@ -520,7 +398,7 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function normalizeProjects(value: unknown): ProjectItem[] {
-  if (isBackendProjectList(value)) return value.projects.map(mapBackendProject);
+  if (isBackendProjectList(value)) return value.projects.map((project) => mapBackendProject(project));
   return value as ProjectItem[];
 }
 
@@ -536,27 +414,25 @@ export function normalizeSnapshot(value: unknown): WorkbenchSnapshot {
     const current = artifactsByNode.get(artifact.nodeKey);
     if (!current || artifact.version >= current.version) artifactsByNode.set(artifact.nodeKey, artifact);
   }
-  const artifacts = value.nodes
-    .slice()
-    .sort((left, right) => left.order - right.order)
-    .map((node) => mapBackendNodeToArtifactItem(node, artifactsByNode.get(node.key)));
+  const artifacts = [...artifactsByNode.values()]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .map(mapBackendArtifactToItem);
   const visibleArtifactIds = new Set(artifacts.flatMap((artifact) => artifact.artifactId ? [artifact.artifactId] : []));
   const referencedArtifactIds = new Set(value.messages.flatMap((message) => message.artifactRefs));
   const historicArtifacts = value.artifacts
     .filter((artifact) => referencedArtifactIds.has(artifact.id) && !visibleArtifactIds.has(artifact.id))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    .flatMap((artifact) => {
-      const node = value.nodes.find((candidate) => candidate.key === artifact.nodeKey);
-      return node ? [mapBackendNodeToArtifactItem(node, artifact)] : [];
-    });
+    .map(mapBackendArtifactToItem);
   artifacts.push(...historicArtifacts);
   const activeArtifact =
-    artifacts.find((item) => item.nodeKey === value.project.currentNodeKey && item.artifactId) ??
     artifacts.find((item) => item.status === "needs_review") ??
     artifacts[0];
+  const activeBackendArtifact = activeArtifact?.artifactId
+    ? value.artifacts.find((artifact) => artifact.id === activeArtifact.artifactId)
+    : undefined;
 
   return {
-    project: mapBackendProject(value.project),
+    project: mapBackendProject(value.project, activeBackendArtifact),
     messages: value.messages.filter((message) => message.role !== "system").map((message) =>
       mapBackendMessage(message, turnJobsByTeacherMessageId, turnJobsByAssistantMessageId)),
     artifacts,

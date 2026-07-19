@@ -1,6 +1,5 @@
 {
   "id": "coze_ppt",
-  "workflowNodeKey": "pptx_artifact",
   "artifactKind": "pptx_artifact",
   "version": "v1",
   "displayName": "PPTX 文件",

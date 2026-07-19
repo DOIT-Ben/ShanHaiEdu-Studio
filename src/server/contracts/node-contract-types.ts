@@ -6,7 +6,6 @@ export type NodeContractProviderPolicy = "internal" | "external" | "package";
 
 export type NodeContract = {
   id: string;
-  workflowNodeKey: string;
   artifactKind: string;
   version: string;
   displayName: string;

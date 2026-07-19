@@ -59,7 +59,6 @@ const ACTIVE_POINTER_FIELDS = [
 const deterministicFlags = [
   "M67_E2E_DETERMINISTIC",
   "SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT",
-  "SHANHAI_E2E_DETERMINISTIC_RUNTIME",
 ] as const;
 
 const binaryContracts = [

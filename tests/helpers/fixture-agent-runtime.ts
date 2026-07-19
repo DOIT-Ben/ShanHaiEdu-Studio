@@ -4,8 +4,8 @@ import type {
   AgentRuntimeInput,
   AgentRuntimeResult,
   AgentRuntimeTask,
-} from "./types";
-import { taskGuidance } from "./task-guidance";
+} from "../../src/server/agent-runtime/types";
+import { taskGuidance } from "../../src/server/agent-runtime/task-guidance";
 
 type DraftTemplate = {
   title: string;
@@ -271,7 +271,7 @@ const taskTemplates: Record<AgentRuntimeTask, DraftTemplate> = {
   },
 };
 
-export class DeterministicRuntime implements AgentRuntime {
+export class FixtureAgentRuntime implements AgentRuntime {
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     const template = taskTemplates[input.task];
     const markdown = [
@@ -288,7 +288,7 @@ export class DeterministicRuntime implements AgentRuntime {
       summary: template.summary,
       markdown,
       contentType: "text/markdown",
-      generationMode: "deterministic_draft",
+      generationMode: "model_generated",
       isReadyForTeacherReview: true,
     };
 
@@ -298,7 +298,7 @@ export class DeterministicRuntime implements AgentRuntime {
         runId: input.runId,
         projectId: input.projectId,
         task: input.task,
-        runtimeKind: "deterministic",
+        runtimeKind: "openai",
         status: "succeeded",
       },
       assistantMessage: {

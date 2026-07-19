@@ -12,6 +12,8 @@ describe("V1 Stage 3B PPT sample workbench mapping", () => {
       overviewKinds: ["scene_and_primary_props", "micro_assets", "assembled_samples"],
       reviewStatus: "awaiting_dvp_review",
     });
+    expect(snapshot.project.currentStep).toBe("图片");
+    expect(snapshot.activeArtifactKey).toBe("artifact-a");
     expect(item.actions.canConfirm).toBe(false);
     expect(JSON.stringify(item)).not.toContain("storageRef");
   });
@@ -29,7 +31,6 @@ function backendSnapshot(sealed: boolean): BackendSnapshot {
       id: "project-a",
       title: "样张审查",
       status: "active",
-      currentNodeKey: "image_prompts",
       grade: "五年级",
       subject: "数学",
       textbookVersion: "人教版",
@@ -38,18 +39,6 @@ function backendSnapshot(sealed: boolean): BackendSnapshot {
       updatedAt: now,
     },
     messages: [],
-    nodes: [{
-      id: "node-a",
-      projectId: "project-a",
-      key: "image_prompts",
-      title: "关键样张",
-      status: "needs_review",
-      order: 1,
-      upstreamNodeKeys: ["ppt_design_draft"],
-      approvedArtifactId: null,
-      staleReason: null,
-      updatedAt: now,
-    }],
     artifacts: [{
       id: "artifact-a",
       projectId: "project-a",

@@ -1,6 +1,5 @@
 {
   "id": "lesson_plan",
-  "workflowNodeKey": "lesson_plan",
   "artifactKind": "lesson_plan",
   "version": "v1",
   "displayName": "公开课教案",

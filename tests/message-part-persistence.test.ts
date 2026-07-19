@@ -8,7 +8,7 @@ import {
 import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("message part persistence", () => {
-  it("projects server-owned plan, Tool, Artifact, HumanGate and recovery facts into typed parts", () => {
+  it("projects Tool, Artifact, direct PendingDecision and recovery facts without reading a legacy plan", () => {
     const parts = projectConversationMessageParts({
       role: "assistant",
       content: "我已保存当前进度。",
@@ -23,17 +23,17 @@ describe("message part persistence", () => {
       metadata: {
         pendingDeliveryPlan: {
           deliveryPlan: {
-            planId: "plan-1",
+            planId: "legacy-plan",
             revision: 3,
-            title: "完成百分数课件",
+            title: "旧控制面计划",
             steps: [{ id: "outline", title: "形成逐页大纲", status: "succeeded" }],
           },
-          pendingDecision: {
-            decisionId: "decision-1",
-            actionId: "action-1",
-            question: "是否允许发布到外部平台？",
-            options: [{ id: "confirm", label: "允许发布", recommended: false }],
-          },
+        },
+        pendingDecision: {
+          decisionId: "decision-1",
+          actionId: "action-1",
+          question: "是否允许发布到外部平台？",
+          options: [{ id: "confirm", label: "允许发布", recommended: false }],
         },
         latestToolStatus: {
           invocationId: "invocation-1",
@@ -55,7 +55,6 @@ describe("message part persistence", () => {
 
     expect(parts.map((part) => part.type)).toEqual([
       "text",
-      "plan",
       "tool-status",
       "artifact-ref",
       "quality-summary",
@@ -70,6 +69,7 @@ describe("message part persistence", () => {
     const project = await service.createProject({ title: "消息Part持久化" });
     const parts: MessagePart[] = [
       { type: "text", schemaVersion: MESSAGE_PART_VERSION, text: "## 教学目标\n理解百分数。", format: "markdown" },
+      { type: "plan", schemaVersion: MESSAGE_PART_VERSION, planId: "plan-1", revision: 1, title: "备课事实投影", steps: [{ id: "goal", title: "确认教学目标", status: "completed" }] },
       { type: "error-recovery", schemaVersion: MESSAGE_PART_VERSION, errorId: "ERR-1", reasonCode: "timeout", summary: "生成超时。", recovery: { kind: "resume", label: "继续", checkpointId: "checkpoint-1" } },
     ];
 
@@ -180,12 +180,7 @@ describe("message part persistence", () => {
       },
     });
 
-    expect(saved.parts.map((part) => part.type)).toEqual([
-      "text",
-      "plan",
-      "artifact-ref",
-      "quality-summary",
-    ]);
+    expect(saved.parts.map((part) => part.type)).toEqual(["text", "artifact-ref", "quality-summary"]);
 
     const updated = await service.updateMessageMetadata(project.id, saved.id, {
       agentObservations: [{

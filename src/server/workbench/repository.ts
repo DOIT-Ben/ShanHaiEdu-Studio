@@ -5,16 +5,16 @@ import { ExecutionIdentityRejectedError, assertExecutionIdentityCanWriteProject 
 import { createProjectExecutionLeaseRepository, ProjectExecutionLeaseRejectedError } from "@/server/execution/project-execution-lease";
 import { canonicalizeRunInput, hashRunInput } from "@/server/execution/run-input-snapshot";
 import { hasValidValidationReportDigest, hashArtifactDraft } from "@/server/contracts/contract-validator";
-import { guardFinish } from "@/server/conversation/react-control";
-import type { QualityDecision, ValidationReport } from "@/server/quality/quality-types";
+import type { ValidationReport } from "@/server/quality/quality-types";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
+import { normalizeMessageParts, type MessagePart } from "@/lib/conversation-message-contract";
+import { isPendingDecision, withPendingDecisionStatus } from "@/server/conversation/task-contract";
 import { attachVerifiedArtifactApprovalEvidence, hasVerifiedArtifactApprovalEvidence } from "@/server/quality/artifact-truth-boundary";
 import { validatePptKeySampleSet, validatePptSampleApproval } from "@/server/ppt-quality/ppt-sample-validator";
 import type { PptAssetManifest, PptAssetRequestBatch, PptKeySampleSet, PptSampleApproval } from "@/server/ppt-quality/ppt-asset-types";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { validatePptFullDeckPackage } from "@/server/ppt-quality/ppt-full-deck-candidate";
 import type { PptFullDeckPackage } from "@/server/ppt-quality/ppt-production-types";
-import { DEFAULT_WORKFLOW_NODES, FIRST_WORKFLOW_NODE_KEY } from "./workflow-defaults";
 import { assertActiveProjectForWrite, ProjectLifecycleError } from "./project-lifecycle-service";
 import type {
   AddMessageInput,
@@ -28,10 +28,8 @@ import type {
   CreateGenerationJobInput,
   FailGenerationJobInput,
   FinishConversationTurnInput,
-  FinishAgentRunInput,
   RegenerateArtifactInput,
   SaveArtifactInput,
-  StartAgentRunInput,
   ProjectLifecycleState,
   ProjectExecutionFence,
   ProjectExecutionGuard,
@@ -100,24 +98,14 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
         const project = await tx.project.create({
           data: {
             title: input.title,
-            currentNodeKey: FIRST_WORKFLOW_NODE_KEY,
+            // Retained only for the legacy non-null SQLite column; it is not an orchestration cursor.
+            currentNodeKey: "requirement_spec",
             ownerUserId: input.ownerUserId,
             grade: input.grade,
             subject: input.subject,
             textbookVersion: input.textbookVersion,
             lessonTopic: input.lessonTopic,
           },
-        });
-
-        await tx.workflowNode.createMany({
-          data: DEFAULT_WORKFLOW_NODES.map((node) => ({
-            projectId: project.id,
-            key: node.key,
-            title: node.title,
-            status: node.status,
-            order: node.order,
-            upstreamNodeKeysJson: JSON.stringify(node.upstreamNodeKeys),
-          })),
         });
 
         if (input.ownerUserId) {
@@ -215,11 +203,6 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           },
         });
 
-        await tx.workflowNode.update({
-          where: { projectId_key: { projectId, key: input.nodeKey } },
-          data: { status: input.status },
-        });
-
         if (input.validationReport) {
           await tx.validationReportRecord.create({
             data: validationReportRecordData({
@@ -253,7 +236,7 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             intentEpoch: existing.intentEpoch,
             planRevision: existing.planRevision,
             origin: existing.origin as import("./types").ArtifactOrigin,
-            nodeKey: existing.nodeKey as import("./types").WorkflowNodeKey,
+            nodeKey: existing.nodeKey as import("./types").ArtifactKind,
             kind: existing.kind as import("./types").ArtifactKind,
             title: existing.title,
             status: existing.status as import("./types").ArtifactStatus,
@@ -267,24 +250,16 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           })) {
             throw new Error("artifact_truth_not_approvable:approval_evidence_missing");
           }
-          await tx.workflowNode.update({
-            where: { projectId_key: { projectId, key: existing.nodeKey } },
-            data: { status: "approved", approvedArtifactId: existing.id, staleReason: null },
-          });
           return existing;
         }
 
-        const previousApproved = await tx.artifact.findFirst({
-          where: { projectId, nodeKey: existing.nodeKey, isApproved: true },
-        });
-        const shouldPropagateStale = previousApproved?.id !== artifactId;
         const validation = await tx.validationReportRecord.findUnique({
           where: { artifactId: existing.id },
           select: { overallStatus: true, reportDigest: true, targetDigest: true },
         });
         const structuredContentWithSpecializedApproval = attachArtifactApprovalEvidence(existing);
         const structuredContentWithApproval = attachVerifiedArtifactApprovalEvidence({
-          nodeKey: existing.nodeKey as import("./types").WorkflowNodeKey,
+          nodeKey: existing.nodeKey as import("./types").ArtifactKind,
           kind: existing.kind as import("./types").ArtifactKind,
           title: existing.title,
           status: existing.status as import("./types").ArtifactStatus,
@@ -313,38 +288,6 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             })),
           },
         });
-
-        await tx.workflowNode.update({
-          where: { projectId_key: { projectId, key: existing.nodeKey } },
-          data: { status: "approved", approvedArtifactId: artifact.id, staleReason: null },
-        });
-        const upstreamNode = await tx.workflowNode.findUnique({
-          where: { projectId_key: { projectId, key: existing.nodeKey } },
-        });
-
-        const downstreamNodes = await tx.workflowNode.findMany({
-          where: {
-            projectId,
-            status: "approved",
-            approvedArtifactId: { not: null },
-          },
-        });
-        const staleNodeIds = downstreamNodes
-          .filter((node) => {
-            const upstreamNodeKeys = JSON.parse(node.upstreamNodeKeysJson) as unknown;
-            return Array.isArray(upstreamNodeKeys) && upstreamNodeKeys.includes(existing.nodeKey);
-          })
-          .map((node) => node.id);
-
-        if (shouldPropagateStale && staleNodeIds.length > 0) {
-          await tx.workflowNode.updateMany({
-            where: { id: { in: staleNodeIds } },
-            data: {
-              status: "stale",
-              staleReason: `「${upstreamNode?.title ?? existing.nodeKey}」已更新确认，需要重新检查相关内容。`,
-            },
-          });
-        }
 
         return artifact;
       });
@@ -398,11 +341,6 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           },
         });
 
-        await tx.workflowNode.update({
-          where: { projectId_key: { projectId, key: existing.nodeKey } },
-          data: { status: "needs_review" },
-        });
-
         await tx.project.update({
           where: { id: projectId },
           data: { intentEpoch: { increment: 1 } },
@@ -412,86 +350,13 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
-    async getNode(projectId: string, nodeKey: string) {
-      return client.workflowNode.findUnique({
-        where: { projectId_key: { projectId, key: nodeKey } },
-      });
-    },
-
-    async getApprovedArtifactsByNodeKeys(projectId: string, nodeKeys: string[]) {
+    async getArtifactsByKinds(projectId: string, artifactKinds: string[]) {
       return client.artifact.findMany({
         where: {
           projectId,
-          nodeKey: { in: nodeKeys },
-          isApproved: true,
+          kind: { in: artifactKinds },
         },
-        orderBy: [{ nodeKey: "asc" }, { version: "asc" }],
-      });
-    },
-
-    async startAgentRun(projectId: string, input: StartAgentRunInput) {
-      return client.$transaction(async (tx) => {
-        await assertActiveProjectForWrite(tx, projectId);
-        const run = await tx.agentRun.create({
-          data: {
-            projectId,
-            nodeKey: input.nodeKey,
-            runtime: input.runtime,
-            status: "running",
-          },
-        });
-
-        await tx.workflowNode.update({
-          where: { projectId_key: { projectId, key: input.nodeKey } },
-          data: { status: "in_progress" },
-        });
-
-        return run;
-      });
-    },
-
-    async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput) {
-      return client.$transaction(async (tx) => {
-        await assertActiveProjectForWrite(tx, projectId);
-        const existing = await tx.agentRun.findFirst({
-          where: { id: runId, projectId },
-        });
-
-        if (!existing) {
-          throw new Error(`AgentRun not found: ${runId}`);
-        }
-
-        if (existing.status !== "running") {
-          throw new Error(`AgentRun already finished: ${runId}`);
-        }
-
-        const latestRun = await tx.agentRun.findFirst({
-          where: { projectId, nodeKey: existing.nodeKey },
-          orderBy: [{ startedAt: "desc" }, { id: "desc" }],
-        });
-        const isLatestRun = latestRun?.id === runId;
-
-        if (input.status === "succeeded") {
-          await assertAgentRunFinishEvidence(tx, projectId, existing.nodeKey, input);
-        }
-
-        const run = await tx.agentRun.update({
-          where: { id: runId },
-          data: {
-            status: input.status,
-            finishedAt: new Date(),
-            errorMessage: input.errorMessage ?? null,
-          },
-        });
-
-        if (input.status === "failed" && isLatestRun) {
-          await tx.workflowNode.update({
-            where: { projectId_key: { projectId, key: existing.nodeKey } },
-            data: { status: "failed" },
-          });
-        }
-
-        return run;
+        orderBy: [{ kind: "asc" }, { version: "desc" }],
       });
     },
 
@@ -675,7 +540,8 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
               })
             : null;
           const preempted = Boolean(input.preemptiveControl && activeAggregate);
-          const nextIntentEpoch = preempted ? project.intentEpoch + 1 : project.intentEpoch;
+          const advancesIntent = Boolean(preempted && input.preemptiveControl!.advanceIntentEpoch);
+          const nextIntentEpoch = advancesIntent ? project.intentEpoch + 1 : project.intentEpoch;
           const messageMetadata = preempted
             ? {
                 ...(input.metadata ?? {}),
@@ -698,42 +564,20 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
           });
 
           if (preempted) {
-            await tx.project.update({ where: { id: projectId }, data: { intentEpoch: nextIntentEpoch } });
+            if (advancesIntent) {
+              await tx.project.update({ where: { id: projectId }, data: { intentEpoch: nextIntentEpoch } });
+            }
+            const aggregateStatus = input.preemptiveControl!.kind === "pause"
+              ? "paused_recovery"
+              : input.preemptiveControl!.kind === "cancel" ? "canceled" : "superseded";
             await tx.taskAggregate.update({
               where: { taskId: activeAggregate!.taskId },
-              data: { status: "paused_recovery", planRevision: { increment: 1 } },
+              data: {
+                status: aggregateStatus,
+                ...(input.preemptiveControl!.kind === "pause" ? {} : { planRevision: { increment: 1 } }),
+              },
             });
-            const pendingPlanStatus = input.preemptiveControl!.kind === "pause"
-              ? "paused"
-              : input.preemptiveControl!.kind === "cancel" ? "canceled" : "superseded";
-            const pendingDecisionStatus = input.preemptiveControl!.kind === "pause"
-              ? "pending"
-              : input.preemptiveControl!.kind === "cancel" ? "canceled" : "superseded";
-            const assistantMessages = await tx.conversationMessage.findMany({
-              where: { projectId, role: "assistant" },
-              select: { id: true, metadataJson: true },
-            });
-            for (const assistant of assistantMessages) {
-              const metadata = parseRecoveryRecord(assistant.metadataJson);
-              const pendingPlan = parseRecoveryRecord(metadata.pendingDeliveryPlan);
-              if (pendingPlan.status !== "pending" && pendingPlan.status !== "paused") continue;
-              const pendingDecision = parseRecoveryRecord(pendingPlan.pendingDecision);
-              await tx.conversationMessage.update({
-                where: { id: assistant.id },
-                data: {
-                  metadataJson: JSON.stringify({
-                    ...metadata,
-                    pendingDeliveryPlan: {
-                      ...pendingPlan,
-                      status: pendingPlanStatus,
-                      ...(Object.keys(pendingDecision).length > 0
-                        ? { pendingDecision: { ...pendingDecision, status: pendingDecisionStatus } }
-                        : {}),
-                    },
-                  }),
-                },
-              });
-            }
+            await updatePendingDecisionsForControl(tx, projectId, input.preemptiveControl!.kind);
           }
 
           const completesImmediately = preempted && input.preemptiveControl!.kind !== "redirect";
@@ -1456,10 +1300,6 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
             version: latest ? latest.version + 1 : 1,
           },
         });
-        await tx.workflowNode.update({
-          where: { projectId_key: { projectId, key: stage.nodeKey } },
-          data: { status: stage.artifactStatus },
-        });
         const updatedJob = await tx.generationJob.update({
           where: { id: job.id },
           data: {
@@ -1542,24 +1382,10 @@ export function createPrismaWorkbenchRepository(client: PrismaClient = prisma) {
       });
     },
 
-    async getNodes(projectId: string) {
-      return client.workflowNode.findMany({
-        where: { projectId },
-        orderBy: { order: "asc" },
-      });
-    },
-
     async getArtifacts(projectId: string) {
       return client.artifact.findMany({
         where: { projectId },
         orderBy: [{ nodeKey: "asc" }, { version: "asc" }],
-      });
-    },
-
-    async getAgentRuns(projectId: string) {
-      return client.agentRun.findMany({
-        where: { projectId },
-        orderBy: { startedAt: "asc" },
       });
     },
 
@@ -1855,61 +1681,6 @@ function parseValidationReport(value: string): ValidationReport | undefined {
     const parsed: unknown = JSON.parse(value);
     if (!isRecord(parsed)) return undefined;
     return parsed as ValidationReport;
-  } catch {
-    return undefined;
-  }
-}
-
-async function assertAgentRunFinishEvidence(
-  tx: TransactionClient,
-  projectId: string,
-  nodeKey: string,
-  input: FinishAgentRunInput,
-) {
-  if (!input.evidence) {
-    throw new Error("缺少当前材料、校验结果或质量结论，不能标记为完成。");
-  }
-  const [artifact, validationRecord, decisionRecord] = await Promise.all([
-    tx.artifact.findFirst({ where: { id: input.evidence.artifactId, projectId } }),
-    tx.validationReportRecord.findFirst({ where: { id: input.evidence.validationReportId, projectId, artifactId: input.evidence.artifactId } }),
-    tx.qualityDecisionRecord.findFirst({ where: { id: input.evidence.qualityDecisionId, projectId, artifactId: input.evidence.artifactId } }),
-  ]);
-  if (!artifact || !validationRecord || !decisionRecord || artifact.nodeKey !== nodeKey) {
-    throw new Error("完成证据与当前材料不匹配，不能标记为完成。");
-  }
-  const latestArtifact = await tx.artifact.findFirst({
-    where: { projectId, nodeKey },
-    orderBy: { version: "desc" },
-    select: { id: true },
-  });
-  if (latestArtifact?.id !== artifact.id) {
-    throw new Error("完成证据不是当前材料的最新版本，不能标记为完成。");
-  }
-  const validationReport = parseValidationReport(validationRecord.payloadJson);
-  const qualityDecision = parseQualityDecision(decisionRecord.payloadJson);
-  const artifactDigest = hashArtifactDraft({
-    nodeKey: artifact.nodeKey,
-    kind: artifact.kind,
-    title: artifact.title,
-    summary: artifact.summary,
-    markdownContent: artifact.markdownContent,
-    structuredContent: parseStructuredContent(artifact.structuredContentJson),
-  });
-  const finish = guardFinish({
-    artifact: { id: artifact.id, version: artifact.version, digest: artifactDigest },
-    validationReport,
-    qualityDecision,
-  });
-  if (!finish.allowed) {
-    throw new Error("当前材料的完成证据未通过校验，不能标记为完成。");
-  }
-}
-
-function parseQualityDecision(value: string): QualityDecision | undefined {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!isRecord(parsed)) return undefined;
-    return parsed as QualityDecision;
   } catch {
     return undefined;
   }
@@ -2235,6 +2006,58 @@ function parseRecoveryRecord(value: unknown): Record<string, unknown> {
     return isRecord(parsed) ? parsed : {};
   } catch {
     return {};
+  }
+}
+
+function removeResolvedDecisionParts(partsJson: string, decision: { decisionId: string; actionId: string }): MessagePart[] {
+  const retained: MessagePart[] = [];
+  for (const part of normalizeMessageParts(parseJsonValue(partsJson))) {
+    if (part.type === "human-input" && part.decisionId === decision.decisionId) continue;
+    if (part.type !== "next-actions") {
+      retained.push(part);
+      continue;
+    }
+    const actions = part.actions.filter((action) =>
+      action.actionId !== decision.actionId && !action.id.startsWith(`decision:${decision.decisionId}:`));
+    if (actions.length > 0) retained.push({ ...part, actions });
+  }
+  return retained;
+}
+
+async function updatePendingDecisionsForControl(
+  tx: TransactionClient,
+  projectId: string,
+  controlKind: "pause" | "cancel" | "redirect",
+) {
+  const status = controlKind === "pause" ? "pending" : controlKind === "cancel" ? "canceled" : "superseded";
+  const messages = await tx.conversationMessage.findMany({
+    where: { projectId },
+    select: { id: true, metadataJson: true, partsJson: true },
+  });
+  for (const message of messages) {
+    const metadata = parseRecoveryRecord(message.metadataJson);
+    const pendingDecision = metadata.pendingDecision;
+    if (!isPendingDecision(pendingDecision) || pendingDecision.status !== "pending") continue;
+    await tx.conversationMessage.update({
+      where: { id: message.id },
+      data: {
+        metadataJson: JSON.stringify({
+          ...metadata,
+          pendingDecision: withPendingDecisionStatus(pendingDecision, status),
+        }),
+        ...(status === "pending" ? {} : {
+          partsJson: JSON.stringify(removeResolvedDecisionParts(message.partsJson, pendingDecision)),
+        }),
+      },
+    });
+  }
+}
+
+function parseJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return [];
   }
 }
 

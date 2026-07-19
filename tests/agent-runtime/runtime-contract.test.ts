@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "../helpers/fixture-agent-runtime";
 import type { AgentRuntime, AgentRuntimeInput } from "../../src/server/agent-runtime/types";
 import { expectSucceeded } from "./test-helpers";
 
@@ -28,7 +28,7 @@ async function runRuntime(runtime: AgentRuntime) {
 
 describe("AgentRuntime contract", () => {
   it("returns assistant message, artifact draft, next action and run metadata", async () => {
-    const result = expectSucceeded(await runRuntime(new DeterministicRuntime()));
+    const result = expectSucceeded(await runRuntime(new FixtureAgentRuntime()));
 
     expect(result.status).toBe("succeeded");
     expect(result.assistantMessage).toEqual({
@@ -42,7 +42,7 @@ describe("AgentRuntime contract", () => {
       summary: expect.any(String),
       markdown: expect.stringContaining("##"),
       contentType: "text/markdown",
-      generationMode: "deterministic_draft",
+      generationMode: "model_generated",
       isReadyForTeacherReview: true,
     });
     expect(result.nextSuggestedAction).toEqual({
@@ -53,7 +53,7 @@ describe("AgentRuntime contract", () => {
       runId: "run-contract",
       projectId: "project-contract",
       task: "requirement_spec",
-      runtimeKind: "deterministic",
+      runtimeKind: "openai",
       status: "succeeded",
     });
   });

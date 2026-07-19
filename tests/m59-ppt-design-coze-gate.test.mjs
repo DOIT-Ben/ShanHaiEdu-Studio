@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { require as requireTypeScript } from "tsx/cjs/api";
 
 const root = process.cwd();
 
@@ -9,36 +10,44 @@ function readSource(relativePath) {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
-test("M59 keeps coze_ppt available while V1 full delivery uses the quality PPT path", () => {
-  const typesSource = readSource("src/server/capabilities/types.ts");
-  const registrySource = readSource("src/server/capabilities/capability-registry.ts");
-  const plannerSource = readSource("src/server/capabilities/capability-planner.ts");
+function loadTypeScriptModule(relativePath) {
+  return requireTypeScript(path.join(root, relativePath), import.meta.url);
+}
 
-  assert.match(typesSource, /\| "ppt_design"/);
-  assert.match(registrySource, /id: "ppt_design"/);
-  assert.match(registrySource, /artifactKind: "ppt_design_draft"/);
-  assert.match(registrySource, /workflowNodeKey: "ppt_design_draft"/);
-  assert.match(registrySource, /id: "coze_ppt"[\s\S]*upstreamCapabilities: \["ppt_design"\]/);
-  assert.match(registrySource, /id: "coze_ppt"[\s\S]*inputSchema: \{ required: \["ppt_design_draft"\] \}/);
-  assert.match(plannerSource, /"ppt_outline",\s*\n\s*"ppt_design",\s*\n\s*"ppt_sample_assets",\s*\n\s*"ppt_key_samples",\s*\n\s*"ppt_full_assets",\s*\n\s*"ppt_full_deck"/);
-  assert.match(plannerSource, /buildPlan\("coze_ppt"/);
+const { getCapabilityDefinitions } = loadTypeScriptModule("src/server/capabilities/capability-registry.ts");
+const { listToolDefinitions } = loadTypeScriptModule("src/server/tools/tool-registry.ts");
+
+test("M59 exposes the PPT quality path as independently callable capabilities and tools", () => {
+  const capabilities = new Map(getCapabilityDefinitions().map((definition) => [definition.id, definition]));
+  const tools = new Map(listToolDefinitions().map((definition) => [definition.id, definition]));
+  const pptDesign = capabilities.get("ppt_design");
+  const cozePpt = capabilities.get("coze_ppt");
+  const designTool = tools.get("create_ppt_design_draft");
+  const pptxTool = tools.get("generate_pptx_from_design");
+
+  assert.equal(pptDesign.artifactKind, "ppt_design_draft");
+  assert.deepEqual(pptDesign.upstreamCapabilities, ["ppt_outline"]);
+  assert.equal(cozePpt.artifactKind, "pptx_artifact");
+  assert.deepEqual(cozePpt.upstreamCapabilities, ["ppt_design"]);
+  assert.deepEqual(cozePpt.inputSchema.required, ["ppt_design_draft"]);
+  assert.equal(designTool.capabilityId, "ppt_design");
+  assert.deepEqual(designTool.requiredArtifactKinds, ["ppt_draft"]);
+  assert.equal(pptxTool.capabilityId, "coze_ppt");
+  assert.equal(pptxTool.adapterKind, "provider");
+  assert.deepEqual(pptxTool.requiredArtifactKinds, ["ppt_design_draft"]);
 });
 
-test("M59 adds a distinct ppt_design_draft workflow artifact and teacher mapping", () => {
-  const workbenchTypes = readSource("src/server/workbench/types.ts");
-  const clientTypes = readSource("src/lib/types.ts");
-  const workflowDefaults = readSource("src/server/workbench/workflow-defaults.ts");
-  const mapperSource = readSource("src/lib/workbench-mappers.ts");
-  const artifactRouteSource = readSource("src/app/api/workbench/projects/[projectId]/artifacts/route.ts");
+test("M59 publishes distinct data contracts for PPT design and real PPTX output", () => {
+  const designContract = JSON.parse(readSource("config/node-contracts/ppt_design.json"));
+  const pptxContract = JSON.parse(readSource("config/node-contracts/coze_ppt.json"));
 
-  assert.match(workbenchTypes, /\| "ppt_design_draft"/);
-  assert.match(clientTypes, /\| "ppt_design_draft"/);
-  assert.match(workflowDefaults, /key: "ppt_design_draft"/);
-  assert.match(workflowDefaults, /upstreamNodeKeys: \["ppt_draft"\]/);
-  assert.match(mapperSource, /ppt_design_draft/);
-  assert.match(mapperSource, /PPT 设计稿|课件设计稿/);
-  assert.match(artifactRouteSource, /"ppt_design_draft"/);
-  assert.match(artifactRouteSource, /"pptx_artifact"/);
+  assert.equal(designContract.id, "ppt_design");
+  assert.equal(designContract.artifactKind, "ppt_design_draft");
+  assert.equal(designContract.providerPolicy, "internal");
+  assert.equal(pptxContract.id, "coze_ppt");
+  assert.equal(pptxContract.artifactKind, "pptx_artifact");
+  assert.equal(pptxContract.providerPolicy, "external");
+  assert.ok(pptxContract.requiredInputs.includes("approved_ppt_design_draft"));
 });
 
 test("M59 keeps the R5 design candidate contract separate from the production four-layer gate", () => {
@@ -60,7 +69,7 @@ test("M59 keeps the R5 design candidate contract separate from the production fo
 test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer design", () => {
   const cozeSource = readSource("src/server/coze-ppt/coze-ppt-run.ts");
   const routeSource = readSource("src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route.ts");
-  const conversationSource = readSource("src/server/conversation/conversation-turn-service.ts");
+  const pptxTool = listToolDefinitions().find((definition) => definition.id === "generate_pptx_from_design");
 
   assert.match(cozeSource, /artifact\.kind !== "ppt_design_draft"/);
   assert.match(cozeSource, /需要先生成 PPT 设计稿|missing_ppt_design_draft/);
@@ -81,9 +90,9 @@ test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer
   assert.match(routeSource, /routeToolCall\([\s\S]*toolName: "generate_pptx_from_design"[\s\S]*executionEnvelope: executionClaim\.executionEnvelope/);
   assert.ok(routeSource.indexOf("claimArtifactRouteToolExecution({") < routeSource.indexOf("createGenerationJob(projectId"));
   assert.ok(routeSource.indexOf("createGenerationJob(projectId") < routeSource.indexOf("routeToolCall({"));
-  assert.match(conversationSource, /input\.toolRouter\([\s\S]*capabilityId: toolPlan\.capabilityId/);
-  assert.match(conversationSource, /findProviderSourceArtifact[\s\S]*ppt_design_draft/);
-  assert.match(conversationSource, /failGenerationJob[\s\S]*result\.observation\.teacherSafeSummary/);
+  assert.equal(pptxTool.capabilityId, "coze_ppt");
+  assert.equal(pptxTool.primarySourceArtifactKind, "ppt_design_draft");
+  assert.equal(pptxTool.producedArtifactKind, "pptx_artifact");
 });
 
 test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {
@@ -92,7 +101,7 @@ test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {
   const directorAdapterSource = readSource("src/server/ppt-quality/ppt-director-design-adapter.ts");
   const providerAdapterSource = readSource("src/server/tools/provider-tool-adapter.ts");
   const cozeSource = readSource("src/server/coze-ppt/coze-ppt-run.ts");
-  const deterministicSource = readSource("src/server/agent-runtime/deterministic-runtime.ts");
+  const fixtureSource = readSource("tests/helpers/fixture-agent-runtime.ts");
 
   assert.match(validationSource, /range_merged_pages/);
   assert.match(validationSource, /第\\s\*\(\\d\{1,2\}\)\\s\*\[-—~至到\]/);
@@ -102,7 +111,7 @@ test("M60 blocks merged PPT design ranges before Coze PPTX generation", () => {
   assert.doesNotMatch(directorAdapterSource, /validatePptDesignPackageForProviderProduction\(designPackage\)/);
   assert.match(providerAdapterSource, /validatePptDesignPackageForProviderProduction\(packageValue as PptDesignPackage\)/);
   assert.match(cozeSource, /validatePptDesignDraftForCoze\(input\.artifact\.markdownContent\)/);
-  const pptDesignBlock = deterministicSource.match(/ppt_design:[\s\S]*?intro_video_plan:/)?.[0] ?? deterministicSource;
+  const pptDesignBlock = fixtureSource.match(/ppt_design:[\s\S]*?intro_video_plan:/)?.[0] ?? fixtureSource;
   assert.doesNotMatch(pptDesignBlock, /第 4-8 页/);
   assert.doesNotMatch(pptDesignBlock, /第 9-12 页/);
   assert.doesNotMatch(pptDesignBlock, /第 3-12 页四层延展规则/);

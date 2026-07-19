@@ -1,33 +1,79 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
 
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
+import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
-import { readAgentObservationsFromMessages } from "@/server/conversation/react-control";
+import { OpenAIMainConversationAgent } from "@/server/conversation/model-main-conversation-agent";
+import { createTaskBrief } from "@/server/conversation/task-contract";
 import { createWorkbenchService } from "@/server/workbench/service";
 
 describe("production single orchestrator", () => {
-  it("keeps dormant Skill routers unreachable from non-test production source", async () => {
-    const sourceRoot = path.resolve("src");
-    const files = await listTypeScriptFiles(sourceRoot);
-    const forbiddenImport = /(?:from\s*|import\s*\(|require\s*\()\s*["'][^"']*(?:skill-resolver|skill-invocation-gateway)["']/;
-    const offenders: string[] = [];
+  it("lets the Main Agent native function-call loop choose and dispatch the business Tool", async () => {
+    const client = queuedClient([
+      {
+        output_text: "",
+        output: [{
+          id: "tool-item",
+          type: "function_call",
+          call_id: "tool-call",
+          name: "create_requirement_spec",
+          arguments: JSON.stringify({ revision: 1 }),
+        }],
+      },
+      { output_text: "需求规格已经生成，本轮没有扩张到其他材料。", output: [] },
+    ]);
+    const dispatch = vi.fn(async () => ({
+      status: "succeeded" as const,
+      observation: {
+        observationId: "observation-native-tool",
+        status: "succeeded" as const,
+        reasonCodes: ["business_tool_succeeded"],
+      },
+    }));
+    const agent = new OpenAIMainConversationAgent({ client, model: "test-model" });
 
-    for (const filePath of files) {
-      const normalized = filePath.replaceAll("\\", "/");
-      if (normalized.includes("/__tests__/") || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(normalized)) continue;
-      if (forbiddenImport.test(await readFile(filePath, "utf8"))) {
-        offenders.push(path.relative(process.cwd(), filePath).replaceAll("\\", "/"));
-      }
-    }
+    const turn = await agent.respond({
+      userMessage: "只做需求规格",
+      taskBrief: createTaskBrief({
+        taskId: "task-native-only",
+        projectId: "project-native-only",
+        intentEpoch: 0,
+        goal: "只做需求规格",
+        requestedOutputs: ["requirement_spec"],
+        constraints: ["五年级数学百分数"],
+        excludedOutputs: ["lesson_plan", "ppt", "image", "video", "package"],
+        generationIntensity: "standard",
+        sourceMessageId: "message-native-only",
+      }),
+      availableArtifactKinds: [],
+      agentToolLoop: {
+        tools: [{ type: "function", name: "create_requirement_spec" }],
+        allowedToolNames: ["create_requirement_spec"],
+        dispatch,
+      },
+    });
 
-    expect(offenders).toEqual([]);
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({
+      callId: "tool-call",
+      toolName: "create_requirement_spec",
+      arguments: { revision: 1 },
+    });
+    expect(client.payloads[0]).toMatchObject({
+      tool_choice: "auto",
+      parallel_tool_calls: false,
+      tools: [expect.objectContaining({ name: "create_requirement_spec" })],
+    });
+    expect(turn).toMatchObject({
+      assistantMessage: { body: expect.stringContaining("没有扩张") },
+      state: "succeeded",
+      runtimeKind: "openai",
+    });
   });
 
-  it("never lets an outer toolPlan execute when the native function-call loop owns the turn", async () => {
+  it("keeps native ownership when no business Tool remains qualified", async () => {
     const actor = createWorkbenchActor({
       userId: `teacher-${crypto.randomUUID()}`,
       displayName: "Teacher",
@@ -35,89 +81,7 @@ describe("production single orchestrator", () => {
     });
     const service = createWorkbenchService(undefined, actor);
     const project = await service.createProject({
-      title: "单一编排者",
-      grade: "五年级",
-      subject: "数学",
-      lessonTopic: "百分数",
-    });
-    const holderId = `worker-${crypto.randomUUID()}`;
-    const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
-    const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
-    const toolRouter = vi.fn();
-    let sawNativeLoop = false;
-    const agent = {
-      async intakeTask(input: { userMessage: string }) {
-        return {
-          kind: "task" as const,
-          proposal: {
-            goal: input.userMessage,
-            requestedOutputs: ["requirement_spec"],
-            constraints: ["五年级数学百分数"],
-            excludedOutputs: [],
-          },
-        };
-      },
-      async respond(input: MainConversationAgentInput) {
-        sawNativeLoop = Boolean(input.agentToolLoop);
-        return {
-          assistantMessage: { body: "兼容层不应执行这个计划。" },
-          state: "running_tool" as const,
-          quickReplies: [],
-          recommendedOptions: [],
-          shouldRunToolNow: true,
-          runtimeKind: "openai" as const,
-          toolPlan: {
-            planId: "legacy-outer-plan",
-            capabilityId: "requirement_spec" as const,
-            reasonForUser: "整理需求",
-            internalReason: "injected legacy plan",
-            inputDraft: {},
-            missingInputs: [],
-            upstreamPlan: [],
-            nextSuggestedCapabilities: [],
-            requiresConfirmation: false,
-            expectedArtifactKind: "requirement_spec" as const,
-          },
-        };
-      },
-    };
-
-    try {
-      const turnService = createConversationTurnService({
-        service,
-        runtime: new DeterministicRuntime(),
-        agent,
-        toolRouter,
-        agentToolExecutor: async () => { throw new Error("read-only Agent Tool must not run"); },
-        executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
-        executionFence: fence,
-        enableTaskGrantAutonomy: true,
-        enableNativeToolControlPlane: true,
-      });
-
-      const result = await turnService.createTurn(project.id, {
-        role: "teacher",
-        content: "请整理五年级数学百分数备课需求。",
-      });
-
-      expect(sawNativeLoop).toBe(true);
-      expect(toolRouter).not.toHaveBeenCalled();
-      expect(result.agentTurn).toMatchObject({ shouldRunToolNow: false, state: "failed_blocked" });
-      expect(await service.getArtifacts(project.id)).toEqual([]);
-    } finally {
-      await service.releaseProjectExecutionLease(fence);
-    }
-  });
-
-  it("keeps native ownership when the qualified business Tool set is empty", async () => {
-    const actor = createWorkbenchActor({
-      userId: `teacher-${crypto.randomUUID()}`,
-      displayName: "Teacher",
-      authMode: "local",
-    });
-    const service = createWorkbenchService(undefined, actor);
-    const project = await service.createProject({
-      title: "零 Tool 单一编排者",
+      title: "零业务 Tool 单一编排者",
       grade: "五年级",
       subject: "数学",
       lessonTopic: "百分数",
@@ -135,38 +99,37 @@ describe("production single orchestrator", () => {
     const holderId = `worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
-    const toolRouter = vi.fn(async () => { throw new Error("outer Tool router must not run"); });
-    let sawNativeLoop = false;
-    const agent = {
-      async intakeTask(input: { userMessage: string }) {
-        return {
-          kind: "task" as const,
-          proposal: {
-            goal: input.userMessage,
-            requestedOutputs: ["requirement_spec"],
-            constraints: ["五年级数学百分数"],
-            excludedOutputs: [],
-          },
-        };
-      },
-      async respond(input: MainConversationAgentInput) {
-        sawNativeLoop = Boolean(input.agentToolLoop);
-        expect(input.agentToolLoop?.allowedToolNames).toEqual(["request_teacher_decision"]);
-        return legacyOuterRequirementPlan();
-      },
-    };
+    let captured: MainConversationAgentInput | undefined;
 
     try {
       const turnService = createConversationTurnService({
         service,
-        runtime: new DeterministicRuntime(),
-        agent,
-        toolRouter,
-        agentToolExecutor: async () => { throw new Error("read-only Agent Tool must not run"); },
+        runtime: new FixtureAgentRuntime(),
         executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         executionFence: fence,
-        enableTaskGrantAutonomy: true,
-        enableNativeToolControlPlane: true,
+        agent: {
+          async intakeTask(input) {
+            return {
+              kind: "task",
+              proposal: {
+                goal: input.userMessage,
+                requestedOutputs: ["requirement_spec"],
+                constraints: ["五年级数学百分数"],
+                excludedOutputs: [],
+              },
+            };
+          },
+          async respond(input) {
+            captured = input;
+            return {
+              assistantMessage: { body: "当前需求规格已经存在，可以继续讨论。" },
+              state: "succeeded",
+              quickReplies: [],
+              recommendedOptions: [],
+              runtimeKind: "openai",
+            };
+          },
+        },
       });
 
       const result = await turnService.createTurn(project.id, {
@@ -174,103 +137,29 @@ describe("production single orchestrator", () => {
         content: "继续核对当前需求规格。",
       });
 
-      expect(sawNativeLoop).toBe(true);
-      expect(toolRouter).not.toHaveBeenCalled();
-      expect(result.agentTurn).toMatchObject({ shouldRunToolNow: false, state: "failed_blocked" });
+      expect(captured?.agentToolLoop?.allowedToolNames).toEqual(["request_teacher_decision"]);
+      expect(result.agentTurn).toMatchObject({ state: "succeeded", runtimeKind: "openai" });
       expect(await service.getArtifacts(project.id)).toHaveLength(1);
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }
   });
-
-  it("fails closed when native mode cannot construct its Tool loop configuration", async () => {
-    const actor = createWorkbenchActor({
-      userId: `teacher-${crypto.randomUUID()}`,
-      displayName: "Teacher",
-      authMode: "local",
-    });
-    const service = createWorkbenchService(undefined, actor);
-    const project = await service.createProject({
-      title: "缺失 native loop 配置",
-      grade: "五年级",
-      subject: "数学",
-      lessonTopic: "百分数",
-    });
-    const toolRouter = vi.fn(async () => { throw new Error("outer Tool router must not run"); });
-    const agentInputs: MainConversationAgentInput[] = [];
-    const agent = {
-      async intakeTask(input: { userMessage: string }) {
-        return {
-          kind: "task" as const,
-          proposal: {
-            goal: input.userMessage,
-            requestedOutputs: ["requirement_spec"],
-            constraints: ["五年级数学百分数"],
-            excludedOutputs: [],
-          },
-        };
-      },
-      async respond(input: MainConversationAgentInput) {
-        agentInputs.push(input);
-        return legacyOuterRequirementPlan();
-      },
-    };
-    const turnService = createConversationTurnService({
-      service,
-      runtime: new DeterministicRuntime(),
-      agent,
-      toolRouter,
-      enableTaskGrantAutonomy: true,
-      enableNativeToolControlPlane: true,
-    });
-
-    const result = await turnService.createTurn(project.id, {
-      role: "teacher",
-      content: "请整理五年级数学百分数备课需求。",
-    });
-    const observations = readAgentObservationsFromMessages(await service.getMessages(project.id));
-
-    expect(agentInputs).toHaveLength(1);
-    expect(agentInputs[0].toolControlPlane).toBe("native");
-    expect(agentInputs[0].agentToolLoop).toBeUndefined();
-    expect(toolRouter).not.toHaveBeenCalled();
-    expect(result.agentTurn).toMatchObject({ shouldRunToolNow: false, state: "failed_blocked" });
-    expect(observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ reasonCodes: expect.arrayContaining(["single_orchestrator_violation"]) }),
-    ]));
-    expect(await service.getArtifacts(project.id)).toEqual([]);
-  });
 });
 
-function legacyOuterRequirementPlan() {
+function queuedClient(responses: Array<Record<string, unknown>>): OpenAIResponsesClient & {
+  payloads: Array<Record<string, unknown>>;
+} {
+  const queue = [...responses];
+  const payloads: Array<Record<string, unknown>> = [];
   return {
-    assistantMessage: { body: "兼容层不应执行这个计划。" },
-    state: "running_tool" as const,
-    quickReplies: [],
-    recommendedOptions: [],
-    shouldRunToolNow: true,
-    runtimeKind: "openai" as const,
-    toolPlan: {
-      planId: "legacy-outer-plan",
-      capabilityId: "requirement_spec" as const,
-      reasonForUser: "整理需求",
-      internalReason: "injected legacy plan",
-      inputDraft: {},
-      missingInputs: [],
-      upstreamPlan: [],
-      nextSuggestedCapabilities: [],
-      requiresConfirmation: false,
-      expectedArtifactKind: "requirement_spec" as const,
+    payloads,
+    responses: {
+      async create(payload: Record<string, unknown>) {
+        payloads.push(payload);
+        const response = queue.shift();
+        if (!response) throw new Error("No fake response queued");
+        return response;
+      },
     },
-  };
-}
-
-async function listTypeScriptFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const entryPath = path.join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await listTypeScriptFiles(entryPath));
-    else if (/\.[cm]?[jt]sx?$/.test(entry.name)) files.push(entryPath);
-  }
-  return files;
+  } as OpenAIResponsesClient & { payloads: Array<Record<string, unknown>> };
 }

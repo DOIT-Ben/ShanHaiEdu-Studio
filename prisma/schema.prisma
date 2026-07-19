@@ -32,9 +32,7 @@ model Project {
   updatedAt             DateTime                        @updatedAt
   owner                 LocalUser?                      @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
   messages              ConversationMessage[]
-  nodes                 WorkflowNode[]
   artifacts             Artifact[]
-  agentRuns             AgentRun[]
   generationJobs        GenerationJob[]
   videoShots            VideoShot[]
   turnJobs              ConversationTurnJob[]
@@ -297,24 +295,6 @@ model ConversationMessage {
   @@index([projectId, createdAt])
 }
 
-model WorkflowNode {
-  id                   String    @id @default(cuid())
-  projectId            String
-  key                  String
-  title                String
-  status               String    @default("not_started")
-  order                Int
-  upstreamNodeKeysJson String    @default("[]")
-  approvedArtifactId   String?
-  staleReason          String?
-  updatedAt            DateTime  @updatedAt
-  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  approvedArtifact     Artifact? @relation("ApprovedArtifact", fields: [approvedArtifactId], references: [id])
-
-  @@unique([projectId, key])
-  @@index([projectId, order])
-}
-
 model Artifact {
   id                    String                  @id @default(cuid())
   projectId             String
@@ -335,7 +315,6 @@ model Artifact {
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
   project               Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  approvedByNodes       WorkflowNode[]          @relation("ApprovedArtifact")
   stagedCommit          StagedArtifactCommit?   @relation("StagedArtifactResult")
   validationReport      ValidationReportRecord?
   criticReports         CriticReportRecord[]
@@ -344,20 +323,6 @@ model Artifact {
   @@index([projectId, nodeKey, version])
   @@index([projectId, intentEpoch, kind])
   @@index([taskId])
-}
-
-model AgentRun {
-  id           String    @id @default(cuid())
-  projectId    String
-  nodeKey      String
-  status       String
-  runtime      String
-  startedAt    DateTime  @default(now())
-  finishedAt   DateTime?
-  errorMessage String?
-  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId, nodeKey, startedAt])
 }
 
 model GenerationJob {

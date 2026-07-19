@@ -389,8 +389,7 @@ function taskContractFromSnapshot(snapshot: ObserverSnapshot, actorUserId: strin
 
 function latestPendingDecision(snapshot: ObserverSnapshot, state: V1_9RunState) {
   for (const message of [...snapshot.messages].reverse()) {
-    const plan = recordValue(message.metadata.pendingDeliveryPlan);
-    const decision = recordValue(plan?.pendingDecision);
+    const decision = recordValue(message.metadata.pendingDecision);
     if (!decision || decision.status !== "pending") continue;
     if (state.identity.projectId && decision.projectId !== state.identity.projectId) continue;
     if (state.identity.taskId && decision.taskId !== state.identity.taskId) continue;

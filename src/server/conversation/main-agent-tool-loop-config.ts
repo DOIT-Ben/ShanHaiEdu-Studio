@@ -689,28 +689,7 @@ export function createMainAgentToolLoopOptions(
           });
           currentMetadata = {
             ...currentMetadata,
-            pendingDeliveryPlan: {
-              status: "pending",
-              teacherRequest: input.taskBrief.goal,
-              toolPlan: {
-                planId: activeHumanGateDecision.planId,
-                capabilityId,
-                reasonForUser: requestedDefinition.teacherDescription ?? requestedDefinition.description,
-                internalReason: `native_human_gate:${policy.reason}`,
-                inputDraft: structuredClone(call.arguments),
-                missingInputs: [],
-                upstreamPlan: [],
-                nextSuggestedCapabilities: [],
-                requiresConfirmation: true,
-                expectedArtifactKind: requestedDefinition.producedArtifactKind ?? capabilityId,
-              },
-              taskBrief: structuredClone(input.taskBrief),
-              ...(authoritativeIntentGrant ? { intentGrant: structuredClone(authoritativeIntentGrant) } : {}),
-              externalProviderCallsUsed,
-              runtimeKind: "openai",
-              actionId,
-              pendingDecision: structuredClone(activeHumanGateDecision),
-            },
+            pendingDecision: structuredClone(activeHumanGateDecision),
           };
           let policyObservation: AgentObservation | undefined;
           if (executionEnvelope) {

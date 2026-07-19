@@ -4,6 +4,7 @@ import { executeInternalCapabilityTool } from "@/server/tools/internal-capabilit
 import { getToolDefinition } from "@/server/tools/tool-registry";
 import { createTaskBrief } from "@/server/conversation/task-contract";
 import { validPptDirectorOutput } from "./support/ppt-director-output-fixture";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 
 const projectContext = {
   grade: "五年级",
@@ -24,37 +25,11 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
   it("delegates an internal tool to the capability runner and returns an artifact draft without saving it", async () => {
     const tool = getToolDefinition("create_requirement_spec");
     let runtimeCalledWith: unknown;
+    const fixtureRuntime = new FixtureAgentRuntime();
     const runtime: AgentRuntime = {
       async run(input) {
         runtimeCalledWith = input;
-        return {
-          status: "succeeded",
-          run: {
-            runId: input.runId,
-            projectId: input.projectId,
-            task: input.task,
-            runtimeKind: "deterministic",
-            status: "succeeded",
-          },
-          assistantMessage: {
-            title: "需求规格已生成",
-            body: "已生成一版可确认的需求规格。",
-          },
-          artifactDraft: {
-            nodeKey: "requirement_spec",
-            kind: "requirement_spec",
-            title: "需求规格",
-            summary: "已整理需求",
-            markdown: "# 需求规格",
-            contentType: "text/markdown",
-            generationMode: "deterministic_draft",
-            isReadyForTeacherReview: true,
-          },
-          nextSuggestedAction: {
-            type: "review_artifact",
-            label: "查看并确认这份需求规格",
-          },
-        };
+        return fixtureRuntime.run(input);
       },
     };
 
@@ -94,11 +69,15 @@ describe("M64-B InternalCapabilityToolAdapter", () => {
       artifactDraft: {
         nodeKey: "requirement_spec",
         kind: "requirement_spec",
-        title: "需求规格",
-        summary: "已整理需求",
-        markdownContent: "# 需求规格",
+        title: "需求规格说明书",
+        structuredContent: {
+          capabilityId: "requirement_spec",
+          generationMode: "model_generated",
+          providerStatus: "real",
+          runtimeKind: "openai",
+        },
       },
-      assistantSummary: "需求规格已生成\n\n已生成一版可确认的需求规格。",
+      assistantSummary: expect.stringContaining("需求规格说明书已生成"),
       budgetEvent: {
         capabilityId: "requirement_spec",
         status: "succeeded",

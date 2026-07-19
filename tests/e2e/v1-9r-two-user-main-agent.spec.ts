@@ -345,8 +345,7 @@ function pendingDecisionReasonCodes(snapshot: WorkbenchSnapshot) {
 
 function pendingDecisions(snapshot: WorkbenchSnapshot) {
   return snapshot.messages.flatMap((message) => {
-    const plan = isRecord(message.metadata.pendingDeliveryPlan) ? message.metadata.pendingDeliveryPlan : null;
-    const decision = plan && isRecord(plan.pendingDecision) ? plan.pendingDecision : null;
+    const decision = isRecord(message.metadata.pendingDecision) ? message.metadata.pendingDecision : null;
     return decision && decision.status === "pending" ? [decision] : [];
   });
 }
@@ -463,8 +462,7 @@ function summarizeRuntimeSnapshot(snapshot: WorkbenchSnapshot) {
         : null,
     })),
     messages: snapshot.messages.map((message) => {
-      const pendingPlan = isRecord(message.metadata.pendingDeliveryPlan) ? message.metadata.pendingDeliveryPlan : null;
-      const toolPlan = pendingPlan && isRecord(pendingPlan.toolPlan) ? pendingPlan.toolPlan : null;
+      const pendingDecision = isRecord(message.metadata.pendingDecision) ? message.metadata.pendingDecision : null;
       return {
         role: message.role,
         content: sanitizeEvidenceText(message.content),
@@ -488,15 +486,10 @@ function summarizeRuntimeSnapshot(snapshot: WorkbenchSnapshot) {
           maxExternalProviderCalls: message.metadata.intentGrant.maxExternalProviderCalls,
         } : null,
         orchestrationMode: typeof message.metadata.orchestrationMode === "string" ? message.metadata.orchestrationMode : null,
-        pendingPlan: pendingPlan ? {
-          status: typeof pendingPlan.status === "string" ? pendingPlan.status : null,
-          runtimeKind: typeof pendingPlan.runtimeKind === "string" ? pendingPlan.runtimeKind : null,
-          capabilityId: toolPlan && typeof toolPlan.capabilityId === "string" ? toolPlan.capabilityId : null,
-          pendingDecision: isRecord(pendingPlan.pendingDecision) ? {
-            kind: pendingPlan.pendingDecision.kind,
-            reasonCode: pendingPlan.pendingDecision.reasonCode,
-            status: pendingPlan.pendingDecision.status,
-          } : null,
+        pendingDecision: pendingDecision ? {
+          kind: pendingDecision.kind,
+          reasonCode: pendingDecision.reasonCode,
+          status: pendingDecision.status,
         } : null,
         completionContract: isRecord(message.metadata.completionContract) ? message.metadata.completionContract : null,
         mainAgentToolExposureTrace: Array.isArray(message.metadata.mainAgentToolExposureTrace)

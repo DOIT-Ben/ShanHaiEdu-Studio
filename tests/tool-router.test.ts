@@ -320,7 +320,6 @@ describe("M64-D ToolRouter Core", () => {
           id: "project-a",
           title: "真实项目上下文",
           status: "active",
-          currentNodeKey: "ppt_design_draft",
           grade: "五年级",
           subject: "数学",
           textbookVersion: "人教版",

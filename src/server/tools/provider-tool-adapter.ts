@@ -977,7 +977,6 @@ function buildProjectRecord(projectId: string): ProjectRecord {
     id: projectId,
     title: "ShanHaiEdu 项目",
     status: "active",
-    currentNodeKey: "ppt_design_draft",
     grade: null,
     subject: null,
     textbookVersion: null,

@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
-import {
-  createMainConversationAgentFromEnv,
-  resolveMainAgentToolControlPlane,
-} from "@/server/conversation/model-main-conversation-agent";
+import { createMainConversationAgentFromEnv } from "@/server/conversation/model-main-conversation-agent";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
 import { normalizeXiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
 import { createAgentToolExecutorFromEnv } from "@/server/tools/openai-agent-tool-executor";
@@ -14,7 +11,6 @@ import { resolvePreAgentControl } from "@/server/conversation/turn-intake-contro
 
 const runtime = createAgentRuntimeFromEnv();
 const mainAgent = createMainConversationAgentFromEnv();
-const mainAgentToolControlPlane = resolveMainAgentToolControlPlane();
 const agentToolExecutor = createAgentToolExecutorFromEnv();
 
 type RouteContext = {
@@ -71,7 +67,7 @@ export async function POST(request: Request, context: RouteContext) {
           ...(responseStyle ? { responseStyle } : {}),
         },
         idempotencyKey,
-        ...(preemptiveControl ? { preemptiveControl: { ...preemptiveControl, advanceIntentEpoch: true as const } } : {}),
+        ...(preemptiveControl ? { preemptiveControl } : {}),
       });
 
       if (job.status === "queued" && shouldAutoDrainConversationQueue()) {
@@ -94,8 +90,6 @@ function scheduleProjectQueueDrain(projectId: string, service: Parameters<Parame
     runtime,
     agent: mainAgent,
     agentToolExecutor,
-    enableTaskGrantAutonomy: true,
-    enableNativeToolControlPlane: mainAgentToolControlPlane === "native",
   }).catch(() => null);
 }
 

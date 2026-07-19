@@ -4,6 +4,7 @@ import type { AgentRuntime } from "@/server/agent-runtime/types";
 import { createStoryboardManifest } from "@/server/video-quality/video-production-contract";
 import { createVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import { createExecutionEnvelope, createTaskBrief } from "@/server/conversation/task-contract";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 
 describe("M54-B CapabilityRunner contract", () => {
   it("keeps failed tool results failed and user-readable", () => {
@@ -51,59 +52,93 @@ describe("M54-B CapabilityRunner contract", () => {
     });
   });
 
-  it("marks deterministic drafts instead of pretending they are real provider outputs", () => {
+  it("preserves current provenance on normalized successful results", () => {
     const result = normalizeCapabilityRunResult({
       status: "succeeded",
       artifactDraft: {
         nodeKey: "ppt_draft",
         kind: "ppt_draft",
         title: "PPT 大纲",
-        summary: "确定性草稿",
+        summary: "模型生成的大纲",
         markdownContent: "# PPT 大纲",
+        structuredContent: {
+          generationMode: "model_generated",
+          providerStatus: "real",
+          runtimeKind: "openai",
+        },
       },
       assistantSummary: "已生成一版可检查的大纲草稿。",
-      providerStatus: "deterministic_draft",
+      providerStatus: "real",
     });
 
     expect(result).toMatchObject({
       status: "succeeded",
-      providerStatus: "deterministic_draft",
+      providerStatus: "real",
+      artifactDraft: {
+        structuredContent: {
+          generationMode: "model_generated",
+          providerStatus: "real",
+          runtimeKind: "openai",
+        },
+      },
     });
   });
 
-  it("maps the ppt_outline runtime task into the ppt_draft workflow artifact", async () => {
-    let runtimeInput: Parameters<AgentRuntime["run"]>[0] | undefined;
-    const runtime: AgentRuntime = {
-      async run(input) {
-        runtimeInput = input;
+  it("fails closed when a runtime result lacks current model provenance", async () => {
+    const runtime = {
+      async run(input: Parameters<AgentRuntime["run"]>[0]) {
         return {
           status: "succeeded",
           run: {
             runId: input.runId,
             projectId: input.projectId,
             task: input.task,
-            runtimeKind: "deterministic",
+            runtimeKind: "fixture",
             status: "succeeded",
           },
-          assistantMessage: {
-            title: "PPT 大纲已生成",
-            body: "已生成一版 PPT 大纲草稿。",
-          },
+          assistantMessage: { title: "需求规格已生成", body: "未验证来源。" },
           artifactDraft: {
-            nodeKey: "ppt_outline",
-            kind: "ppt_outline",
-            title: "PPT 大纲",
-            summary: "确定性草稿",
-            markdown: "# PPT 大纲",
+            nodeKey: "requirement_spec",
+            kind: "requirement_spec",
+            title: "需求规格",
+            summary: "未验证来源",
+            markdown: "# 需求规格",
             contentType: "text/markdown",
-            generationMode: "deterministic_draft",
+            generationMode: "fixture_generated",
             isReadyForTeacherReview: true,
           },
-          nextSuggestedAction: {
-            type: "review_artifact",
-            label: "查看并确认这份草稿",
-          },
+          nextSuggestedAction: { type: "review_artifact", label: "查看" },
         };
+      },
+    } as unknown as AgentRuntime;
+
+    const result = await runCapabilityWithAgentRuntime({
+      runtime,
+      projectId: "project-untrusted",
+      capabilityId: "requirement_spec",
+      userMessage: "整理需求",
+      projectContext: {
+        grade: "五年级",
+        subject: "数学",
+        topic: "百分数",
+        requestedOutputs: ["需求规格"],
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCategory: "validation",
+    });
+    expect("artifactDraft" in result).toBe(false);
+  });
+
+  it("maps the ppt_outline runtime task into the current ppt_draft artifact kind", async () => {
+    let runtimeInput: Parameters<AgentRuntime["run"]>[0] | undefined;
+    const fixtureRuntime = new FixtureAgentRuntime();
+    const runtime: AgentRuntime = {
+      async run(input) {
+        runtimeInput = input;
+        return fixtureRuntime.run(input);
       },
     };
 
@@ -144,9 +179,12 @@ describe("M54-B CapabilityRunner contract", () => {
         kind: "ppt_draft",
         structuredContent: {
           capabilityId: "ppt_outline",
-          providerStatus: "deterministic_draft",
+          generationMode: "model_generated",
+          providerStatus: "real",
+          runtimeKind: "openai",
         },
       },
+      providerStatus: "real",
     });
   });
 

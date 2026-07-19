@@ -28,29 +28,12 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
     responsePayloads.length = 0;
   });
 
-  it("keeps the production native tool loop disabled unless the explicit env switch is enabled", async () => {
+  it("does not inject a Tool loop into the artifact runtime", async () => {
     const { createAgentRuntimeFromEnv } = await import("@/server/agent-runtime/runtime-factory");
     responseQueue.push({ output_text: structuredLessonPlanOutput() });
 
     const runtime = createAgentRuntimeFromEnv(openAIEnv());
     const result = await runtime.run(runtimeInput());
-
-    expect(result.status).toBe("succeeded");
-    expect(responsePayloads).toHaveLength(1);
-    expect(responsePayloads[0]).not.toHaveProperty("tools");
-    expect(responsePayloads[0]).not.toHaveProperty("tool_choice");
-    expect(responsePayloads[0]).not.toHaveProperty("parallel_tool_calls");
-  });
-
-  it("does not let the legacy env switch inject a second Tool loop into the production runtime", async () => {
-    const { createAgentRuntimeFromEnv } = await import("@/server/agent-runtime/runtime-factory");
-    responseQueue.push({ output_text: structuredLessonPlanOutput() });
-
-    const runtime = createAgentRuntimeFromEnv({
-      ...openAIEnv(),
-      SHANHAI_OPENAI_NATIVE_TOOL_LOOP: "1",
-    });
-    const result = await runtime.run(runtimeInput({ task: "lesson_plan" }));
 
     expect(result.status).toBe("succeeded");
     expect(responsePayloads).toHaveLength(1);

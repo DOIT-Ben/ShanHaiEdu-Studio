@@ -38,8 +38,6 @@ export type DrainProjectConversationQueueOptions = {
   workerId?: string;
   leaseMs?: number;
   agentToolExecutor?: AgentToolExecutor<AgentToolInvocationEnvelope>;
-  enableTaskGrantAutonomy?: boolean;
-  enableNativeToolControlPlane?: boolean;
 };
 
 export type DrainProjectConversationQueueResult = {
@@ -351,20 +349,23 @@ function startLeaseHeartbeat(service: WorkbenchService, fence: ProjectExecutionF
 }
 
 function createDefaultExecutor(options: DrainProjectConversationQueueOptions): ConversationTurnJobExecutor {
-  if (!options.runtime) {
+  const runtime = options.runtime;
+  const agent = options.agent;
+  if (!runtime) {
     throw new Error("Conversation turn queue drain requires an AgentRuntime when no executor is provided.");
+  }
+  if (!agent) {
+    throw new Error("Conversation turn queue drain requires a MainConversationAgent when no executor is provided.");
   }
   return async ({ projectId, job, service, fence }) => {
     const turnService = createConversationTurnService({
       service,
-      runtime: options.runtime!,
-      agent: options.agent,
+      runtime,
+      agent,
       agentToolExecutor: options.agentToolExecutor,
       executionIdentity: readJobExecutionIdentity(job),
       executionFence: fence,
       generationIntensityOverride: job.generationIntensity,
-      enableTaskGrantAutonomy: options.enableTaskGrantAutonomy,
-      enableNativeToolControlPlane: options.enableNativeToolControlPlane,
     });
     const response = await turnService.executeQueuedTurn(projectId, { teacherMessageId: job.teacherMessageId });
     if (isFailedTurn(response)) {

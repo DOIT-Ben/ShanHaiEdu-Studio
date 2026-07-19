@@ -110,17 +110,8 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async regenerateArtifact() {
       return makeArtifact("artifactB", "projectA", "needs_review");
     },
-    async getNode(projectId: string, nodeKey: string) {
-      return makeNode(projectId, nodeKey);
-    },
-    async getApprovedArtifactsByNodeKeys(projectId: string) {
+    async getArtifactsByKinds(projectId: string) {
       return [makeArtifact("artifactA", projectId, "approved")];
-    },
-    async startAgentRun() {
-      return makeAgentRun("runA", "projectA");
-    },
-    async finishAgentRun() {
-      return makeAgentRun("runA", "projectA", "succeeded");
     },
     async createGenerationJob() {
       return makeGenerationJob("jobA", "projectA");
@@ -166,14 +157,8 @@ function createAuthorizationFixture(): WorkbenchRepository {
     async getMessages(projectId: string) {
       return messages[projectId] ?? [];
     },
-    async getNodes(projectId: string) {
-      return [makeNode(projectId, "requirement_spec")];
-    },
     async getArtifacts(projectId: string) {
       return [makeArtifact("artifactA", projectId)];
-    },
-    async getAgentRuns(projectId: string) {
-      return [makeAgentRun("runA", projectId)];
     },
   } as unknown as WorkbenchRepository;
 }
@@ -205,21 +190,6 @@ function makeMessage(id: string, projectId: string, content = "需求") {
   };
 }
 
-function makeNode(projectId: string, key: string) {
-  return {
-    id: `${projectId}-${key}`,
-    projectId,
-    key,
-    title: "需求规格",
-    status: "needs_review",
-    order: 1,
-    upstreamNodeKeysJson: "[]",
-    approvedArtifactId: null,
-    staleReason: null,
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  };
-}
-
 function makeArtifact(id: string, projectId: string, status = "needs_review") {
   return {
     id,
@@ -235,19 +205,6 @@ function makeArtifact(id: string, projectId: string, status = "needs_review") {
     isApproved: status === "approved",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  };
-}
-
-function makeAgentRun(id: string, projectId: string, status = "running") {
-  return {
-    id,
-    projectId,
-    nodeKey: "requirement_spec",
-    status,
-    runtime: "deterministic",
-    startedAt: new Date("2026-01-01T00:00:00.000Z"),
-    finishedAt: status === "running" ? null : new Date("2026-01-01T00:01:00.000Z"),
-    errorMessage: null,
   };
 }
 

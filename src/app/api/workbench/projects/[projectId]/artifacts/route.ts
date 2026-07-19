@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { withLocalWorkbenchActor } from "@/server/auth/workbench-route";
 import { sanitizeTeacherArtifactStructuredContent } from "@/server/quality/artifact-truth-boundary";
-import type { ArtifactKind, WorkflowNodeKey } from "@/server/workbench/types";
+import type { ArtifactKind } from "@/server/workbench/types";
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
 };
 
-const nodeKeys = new Set<WorkflowNodeKey>([
+const artifactKinds = new Set<ArtifactKind>([
   "requirement_spec",
   "textbook_evidence",
   "lesson_plan",
@@ -69,9 +69,9 @@ export async function POST(request: Request, context: RouteContext) {
   });
 }
 
-function assertNodeKey(value: unknown): WorkflowNodeKey {
-  if (typeof value === "string" && nodeKeys.has(value as WorkflowNodeKey)) {
-    return value as WorkflowNodeKey;
+function assertNodeKey(value: unknown): ArtifactKind {
+  if (typeof value === "string" && artifactKinds.has(value as ArtifactKind)) {
+    return value as ArtifactKind;
   }
   throw new Error("Invalid nodeKey");
 }

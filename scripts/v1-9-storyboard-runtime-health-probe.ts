@@ -90,7 +90,6 @@ async function main() {
     skillReferenceCount: skill.provenance.references.length,
   };
 
-  process.env.SHANHAI_OPENAI_NATIVE_TOOL_LOOP = "";
   const runtime = createAgentRuntimeFromEnv(process.env);
   const result = await runtime.run(runtimeInput);
   const finishedAt = new Date();

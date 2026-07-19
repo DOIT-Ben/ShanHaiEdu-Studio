@@ -487,21 +487,18 @@ describe("OpenAIRuntime", () => {
     expect(result).not.toHaveProperty("artifactDraft");
   });
 
-  it("allows an explicit deterministic runtime fixture only outside production", async () => {
-    const fixtureRuntime = createAgentRuntimeFromEnv({
-      NODE_ENV: "development",
-      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
+  it("does not create a fixture runtime in test or production environments", async () => {
+    const testRuntime = createAgentRuntimeFromEnv({
+      NODE_ENV: "test",
+      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
     });
-    const fixtureResult = expectSucceeded(await fixtureRuntime.run(input()));
-    expect(fixtureResult).toMatchObject({
-      status: "succeeded",
-      run: { runtimeKind: "deterministic" },
-      artifactDraft: { generationMode: "deterministic_draft" },
+    expect(await testRuntime.run(input())).toMatchObject({
+      status: "failed",
+      run: { runtimeKind: "openai" },
     });
 
     const productionRuntime = createAgentRuntimeFromEnv({
       NODE_ENV: "production",
-      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
       SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
     });
     expect(await productionRuntime.run(input())).toMatchObject({

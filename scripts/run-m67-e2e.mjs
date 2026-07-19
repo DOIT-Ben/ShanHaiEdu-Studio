@@ -183,7 +183,6 @@ function createEnvironment(baseURL, port) {
     M67_E2E_SECOND_TEACHER_PASSWORD: secondTeacher.password,
     ...(deterministicFixture ? {
       SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT: "1",
-      SHANHAI_E2E_DETERMINISTIC_RUNTIME: "1",
     } : {}),
     CI: "1",
   };

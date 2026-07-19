@@ -29,14 +29,16 @@ const checks = [
       "Workbench API must expose project, message, artifact, and snapshot routes under src/app/api/workbench.",
   },
   {
-    id: "agent-runtime-deterministic",
+    id: "agent-runtime-production-boundary",
     owner: "Agent Runtime Adapter",
     ok:
       exists("src/server/agent-runtime/index.ts") &&
-      exists("src/server/agent-runtime/deterministic-runtime.ts") &&
-      includes("src/server/agent-runtime/index.ts", "Deterministic"),
+      exists("src/server/agent-runtime/openai-runtime.ts") &&
+      exists("src/server/agent-runtime/runtime-factory.ts") &&
+      !includes("src/server/agent-runtime/index.ts", "FixtureAgentRuntime") &&
+      !includes("src/server/agent-runtime/runtime-factory.ts", "FixtureAgentRuntime"),
     required:
-      "src/server/agent-runtime must expose DeterministicRuntime through the server boundary.",
+      "Production agent runtime must expose only the provider runtime; fixture runtimes stay under tests.",
   },
   {
     id: "frontend-api-backed-shell",

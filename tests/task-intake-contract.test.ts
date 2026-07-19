@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 import { createWorkbenchActor } from "@/server/auth/actor";
 import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createTaskBriefFromProposal } from "@/server/conversation/task-intake";
@@ -59,7 +59,6 @@ describe("task intake contract", () => {
         state: "chatting" as const,
         quickReplies: [],
         recommendedOptions: [],
-        shouldRunToolNow: false,
         runtimeKind: "openai" as const,
       };
     });
@@ -67,12 +66,10 @@ describe("task intake contract", () => {
     try {
       const turnService = createConversationTurnService({
         service,
-        runtime: new DeterministicRuntime(),
+        runtime: new FixtureAgentRuntime(),
         agent: { intakeTask, respond } as never,
         executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         executionFence: fence,
-        enableTaskGrantAutonomy: true,
-        enableNativeToolControlPlane: true,
       });
 
       await turnService.createTurn(project.id, {
@@ -93,7 +90,7 @@ describe("task intake contract", () => {
     }
   });
 
-  it("commits a no-pending-plan redirect before structured intake and never dispatches a business Tool", async () => {
+  it("atomically commits a structured redirect without dispatching a business Tool", async () => {
     const actor = createWorkbenchActor({
       userId: `task-redirect-${crypto.randomUUID()}`,
       displayName: "Task redirect teacher",
@@ -109,16 +106,9 @@ describe("task intake contract", () => {
     const holderId = `task-redirect-worker-${crypto.randomUUID()}`;
     const lease = await service.acquireProjectExecutionLease({ projectId: project.id, holderId, leaseMs: 60_000 });
     const fence = { projectId: project.id, holderId, fencingToken: lease!.fencingToken };
-    const intakeSnapshots: Array<{ intentEpoch: number; controlPersisted: boolean }> = [];
+    const respondSnapshots: Array<{ intentEpoch: number; controlPersisted: boolean }> = [];
     const intakeTask = vi.fn(async () => {
-      const currentProject = await service.getProject(project.id);
-      const latestTeacher = (await service.getMessages(project.id)).filter((message) => message.role === "teacher").at(-1)!;
-      intakeSnapshots.push({
-        intentEpoch: currentProject.intentEpoch ?? 0,
-        controlPersisted: (latestTeacher.metadata.conversationControlImpact as { persistedBeforeAgent?: unknown } | undefined)
-          ?.persistedBeforeAgent === true,
-      });
-      return intakeSnapshots.length === 1
+      return intakeTask.mock.calls.length === 1
         ? {
             kind: "task" as const,
             proposal: {
@@ -138,35 +128,39 @@ describe("task intake contract", () => {
             },
           };
     });
-    const respond = vi.fn(async () => ({
-      assistantMessage: { body: "任务范围已保存。" },
-      state: "chatting" as const,
-      quickReplies: [],
-      recommendedOptions: [],
-      shouldRunToolNow: false,
-      runtimeKind: "openai" as const,
-    }));
-    const toolRouter = vi.fn(async () => {
-      throw new Error("business Tool must not run during redirect intake");
+    const respond = vi.fn(async () => {
+      const currentProject = await service.getProject(project.id);
+      const latestTeacher = (await service.getMessages(project.id)).filter((message) => message.role === "teacher").at(-1)!;
+      respondSnapshots.push({
+        intentEpoch: currentProject.intentEpoch ?? 0,
+        controlPersisted: (latestTeacher.metadata.conversationControlImpact as { persistedBeforeAgent?: unknown } | undefined)
+          ?.persistedBeforeAgent === true,
+      });
+      return {
+        assistantMessage: { body: "任务范围已保存。" },
+        state: "chatting" as const,
+        quickReplies: [],
+        recommendedOptions: [],
+        runtimeKind: "openai" as const,
+      };
     });
 
     try {
       const turnService = createConversationTurnService({
         service,
-        runtime: new DeterministicRuntime(),
+        runtime: new FixtureAgentRuntime(),
         agent: { intakeTask, respond } as never,
-        toolRouter: toolRouter as never,
         executionIdentity: { actorUserId: actor.userId, actorAuthMode: "local", authSessionId: null },
         executionFence: fence,
-        enableTaskGrantAutonomy: true,
-        enableNativeToolControlPlane: true,
       });
 
       await turnService.createTurn(project.id, { role: "teacher", content: "先帮我准备一份百分数PPT。" });
       const redirect = await turnService.createTurn(project.id, { role: "teacher", content: "改道，只做视频脚本。" });
       const latestTeacher = (await service.getMessages(project.id)).filter((message) => message.role === "teacher").at(-1)!;
 
-      expect(intakeSnapshots).toEqual([
+      expect(intakeTask).toHaveBeenCalledTimes(2);
+      expect(respond).toHaveBeenCalledTimes(2);
+      expect(respondSnapshots).toEqual([
         { intentEpoch: 0, controlPersisted: false },
         { intentEpoch: 1, controlPersisted: true },
       ]);
@@ -183,8 +177,8 @@ describe("task intake contract", () => {
           excludedOutputs: ["image", "lesson_plan", "package", "ppt", "video"],
         },
       });
-      expect(redirect.agentTurn?.shouldRunToolNow).toBe(false);
-      expect(toolRouter).not.toHaveBeenCalled();
+      expect(redirect.agentTurn).toMatchObject({ state: "chatting", runtimeKind: "openai" });
+      expect(await service.getArtifacts(project.id)).toEqual([]);
     } finally {
       await service.releaseProjectExecutionLease(fence);
     }

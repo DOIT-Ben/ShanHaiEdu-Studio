@@ -4,7 +4,6 @@ import type { WorkbenchActor } from "@/server/auth/actor";
 import { canReadProject, canTriggerGeneration, canWriteProjectContent } from "@/server/auth/authorization";
 import type {
   AddMessageInput,
-  AgentRunRecord,
   ArtifactRecord,
   ConversationMessageRecord,
   ConversationTurnJobRecord,
@@ -15,7 +14,6 @@ import type {
   FailConversationTurnInput,
   FailGenerationJobInput,
   FinishConversationTurnInput,
-  FinishAgentRunInput,
   GenerationJobRecord,
   GenerationResultCommitRecord,
   ProjectRecord,
@@ -29,8 +27,6 @@ import type {
   SaveArtifactInput,
   SaveInteractiveCoursewareSpecInput,
   SetMessageReactionInput,
-  StartAgentRunInput,
-  WorkflowNodeRecord,
   ExecutionIdentitySnapshot,
   ProjectExecutionFence,
   ProjectExecutionGuard,
@@ -42,8 +38,10 @@ import type {
   VideoShotRecord,
 } from "./types";
 import { validateInteractiveCoursewareSpec } from "@/server/activities/interactive-courseware-spec";
+import { getCapabilityDefinition } from "@/server/capabilities/capability-registry";
+import type { CapabilityId } from "@/server/capabilities/types";
 import { deriveGenerationIntensitySuggestion, normalizeGenerationIntensity, type GenerationIntensity } from "@/server/generation-intensity/generation-intensity-policy";
-import type { AgentRun, Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot, WorkflowNode } from "@/generated/prisma/client";
+import type { Artifact, ConversationMessage, ConversationTurnJob, GenerationJob, Project, VideoShot } from "@/generated/prisma/client";
 import {
   legacyContentToMessageParts,
   normalizeMessageParts,
@@ -51,6 +49,7 @@ import {
 } from "@/lib/conversation-message-contract";
 import { hashArtifactDraft } from "@/server/contracts/contract-validator";
 import type { TaskBrief } from "@/server/conversation/task-contract";
+import { isCapabilityInTaskScope } from "@/server/conversation/task-output-scope";
 import { buildPptFullDeckReviewArtifact, buildPptSampleReviewArtifact } from "@/server/ppt-quality/ppt-review-artifact";
 import { isArtifactTrustedForDownstream } from "@/server/quality/artifact-quality-state";
 import { isArtifactBoundToRequestedOutput } from "@/server/quality/artifact-truth-boundary";
@@ -245,38 +244,29 @@ export function createWorkbenchService(
       return mapArtifact(artifact);
     },
 
-    async getApprovedInputs(
-      projectId: string,
-      nodeKey: WorkflowNodeRecord["key"],
-      taskBrief?: TaskBrief,
-    ): Promise<ArtifactRecord[]> {
+    async getApprovedInputs(projectId: string, capabilityId: CapabilityId, taskBrief: TaskBrief): Promise<ArtifactRecord[]> {
       await ensureProjectAccess(projectId);
-      const node = await repository.getNode(projectId, nodeKey);
-      if (!node) {
-        throw new Error(`Workflow node not found: ${nodeKey}`);
+      if (!isCapabilityInTaskScope(capabilityId, taskBrief)) {
+        throw new Error(`Capability ${capabilityId} is outside the current task scope.`);
       }
-
-      const upstreamNodeKeys = parseJsonArray(node.upstreamNodeKeysJson);
-      const artifacts = await repository.getApprovedArtifactsByNodeKeys(projectId, upstreamNodeKeys);
-      const mapped = artifacts
+      const upstreamArtifactKinds = Array.from(new Set(
+        getCapabilityDefinition(capabilityId).upstreamCapabilities
+          .map((upstreamCapabilityId) => getCapabilityDefinition(upstreamCapabilityId).artifactKind),
+      ));
+      if (upstreamArtifactKinds.length === 0) return [];
+      const artifacts = (await repository.getArtifactsByKinds(projectId, upstreamArtifactKinds))
         .map(mapArtifact)
-        .sort((left, right) => upstreamNodeKeys.indexOf(left.nodeKey) - upstreamNodeKeys.indexOf(right.nodeKey));
-      return taskBrief
-        ? mapped.filter((artifact) =>
-            isArtifactTrustedForDownstream(artifact) && isArtifactBoundToRequestedOutput(artifact, taskBrief))
-        : mapped;
-    },
-
-    async startAgentRun(projectId: string, input: StartAgentRunInput): Promise<AgentRunRecord> {
-      await ensureProjectAccess(projectId, "write");
-      const run = await repository.startAgentRun(projectId, input);
-      return mapAgentRun(run);
-    },
-
-    async finishAgentRun(projectId: string, runId: string, input: FinishAgentRunInput): Promise<AgentRunRecord> {
-      await ensureProjectAccess(projectId, "write");
-      const run = await repository.finishAgentRun(projectId, runId, input);
-      return mapAgentRun(run);
+        .filter((artifact) =>
+          isArtifactTrustedForDownstream(artifact) && isArtifactBoundToRequestedOutput(artifact, taskBrief));
+      const latestByKind = new Map<string, ArtifactRecord>();
+      for (const artifact of artifacts) {
+        const current = latestByKind.get(artifact.kind);
+        if (!current || artifact.version > current.version) latestByKind.set(artifact.kind, artifact);
+      }
+      return upstreamArtifactKinds.flatMap((kind) => {
+        const artifact = latestByKind.get(kind);
+        return artifact ? [artifact] : [];
+      });
     },
 
     async createGenerationJob(projectId: string, input: CreateGenerationJobInput): Promise<GenerationJobRecord> {
@@ -499,19 +489,11 @@ export function createWorkbenchService(
       return artifacts.map(mapArtifact);
     },
 
-    async getNodes(projectId: string): Promise<WorkflowNodeRecord[]> {
-      await ensureProjectAccess(projectId);
-      const nodes = await repository.getNodes(projectId);
-      return nodes.map(mapNode);
-    },
-
     async getProjectSnapshot(projectId: string): Promise<ProjectSnapshot> {
       const project = await ensureProjectAccess(projectId);
-      const [messages, nodes, artifacts, agentRuns, generationJobs, videoShots, turnJobs, reactions] = await Promise.all([
+      const [messages, artifacts, generationJobs, videoShots, turnJobs, reactions] = await Promise.all([
         repository.getMessages(projectId),
-        repository.getNodes(projectId),
         repository.getArtifacts(projectId),
-        repository.getAgentRuns(projectId),
         repository.getGenerationJobs(projectId),
         typeof repository.getVideoShots === "function"
           ? repository.getVideoShots(projectId)
@@ -533,9 +515,7 @@ export function createWorkbenchService(
       return {
         project: mappedProject,
         messages: messages.map((message) => mapMessage(message, reactionsByMessageId.get(message.id))),
-        nodes: nodes.map(mapNode),
         artifacts: artifacts.map(mapArtifact),
-        agentRuns: agentRuns.map(mapAgentRun),
         generationJobs: generationJobs.map(mapGenerationJob),
         videoShots: videoShots.map(mapVideoShot),
         turnJobs: mappedTurnJobs,
@@ -575,7 +555,6 @@ function mapProject(project: Project): ProjectRecord {
     id: project.id,
     title: project.title,
     status: project.status as ProjectRecord["status"],
-    currentNodeKey: project.currentNodeKey as ProjectRecord["currentNodeKey"],
     grade: project.grade,
     subject: project.subject,
     textbookVersion: project.textbookVersion,
@@ -611,21 +590,6 @@ function messagePartsFromRecord(message: ConversationMessage) {
   return raw.length > 0 ? normalizeMessageParts(raw) : legacyContentToMessageParts(message.content);
 }
 
-function mapNode(node: WorkflowNode): WorkflowNodeRecord {
-  return {
-    id: node.id,
-    projectId: node.projectId,
-    key: node.key as WorkflowNodeRecord["key"],
-    title: node.title,
-    status: node.status as WorkflowNodeRecord["status"],
-    order: node.order,
-    upstreamNodeKeys: parseJsonArray(node.upstreamNodeKeysJson) as WorkflowNodeRecord["upstreamNodeKeys"],
-    approvedArtifactId: node.approvedArtifactId,
-    staleReason: node.staleReason,
-    updatedAt: node.updatedAt.toISOString(),
-  };
-}
-
 function mapArtifact(artifact: Artifact): ArtifactRecord {
   const record: ArtifactRecord = {
     id: artifact.id,
@@ -650,19 +614,6 @@ function mapArtifact(artifact: Artifact): ArtifactRecord {
     origin: { value: artifact.origin as ArtifactRecord["origin"], enumerable: false },
   });
   return record;
-}
-
-function mapAgentRun(run: AgentRun): AgentRunRecord {
-  return {
-    id: run.id,
-    projectId: run.projectId,
-    nodeKey: run.nodeKey as AgentRunRecord["nodeKey"],
-    status: run.status,
-    runtime: run.runtime,
-    startedAt: run.startedAt.toISOString(),
-    finishedAt: run.finishedAt?.toISOString() ?? null,
-    errorMessage: run.errorMessage,
-  };
 }
 
 function mapGenerationJob(job: GenerationJob): GenerationJobRecord {

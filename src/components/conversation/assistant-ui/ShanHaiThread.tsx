@@ -23,7 +23,7 @@ import { MessageActions } from "@/components/conversation/messages/MessageAction
 import { QuickReplySuggestions } from "@/components/conversation/messages/QuickReplySuggestions";
 import { buildWelcomePromptSuggestions } from "@/components/conversation/composer/composer-contracts";
 import type { OpenFeedback } from "@/lib/feedback-contracts";
-import type { ArtifactItem, ChatDeliveryPlan, ChatMessage, WorkbenchLoadState } from "@/lib/types";
+import type { ArtifactItem, ChatMessage, WorkbenchLoadState } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-execution-feedback";
 import { cn } from "@/lib/utils";
 import { createShanHaiMessagePartComponents } from "@/components/conversation/assistant-ui/MessagePartRenderers";
@@ -130,7 +130,6 @@ function AssistantMessage(props: ShanHaiThreadProps & { partComponents?: ReturnT
   const liveResponse = custom.projectionKind === "agent-response";
   const messageContent = useAuiState((state) => state.message.content);
   const hasArtifactPart = messageContent.some((part) => part.type === "data" && part.name === "shanhai.artifact-ref");
-  const hasPlanPart = messageContent.some((part) => part.type === "data" && part.name === "shanhai.plan");
   const liveActivityStatuses = messageContent.flatMap((part) => {
     if (part.type !== "data" || part.name !== "shanhai.activity" || !isRecord(part.data)) return [];
     return typeof part.data.status === "string" ? [part.data.status] : [];
@@ -186,7 +185,6 @@ function AssistantMessage(props: ShanHaiThreadProps & { partComponents?: ReturnT
             <MessagePrimitive.Parts components={partComponents} />
             {liveResponse && <span data-agent-stream-caret aria-hidden="true" className="ml-1 inline-block h-4 w-[2px] translate-y-[3px] rounded-full bg-[#367d6d]" />}
           </div>
-          {!hasPlanPart && custom.deliveryPlan && <DeliveryPlanSummary plan={custom.deliveryPlan} />}
           {fallbackArtifact && <LegacyArtifactReference item={fallbackArtifact} onOpenArtifact={props.onOpenArtifact} />}
           {custom.quickReplies.length > 0 && <QuickReplySuggestions choices={custom.quickReplies.map((reply) => ({ label: reply.label, prompt: reply.prompt, actionId: reply.actionId, recommended: reply.recommended }))} onSelect={props.onSelectAction} />}
           <MessageActions
@@ -209,16 +207,6 @@ function useMessageCustom() {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function DeliveryPlanSummary({ plan }: { plan: ChatDeliveryPlan }) {
-  return (
-    <div data-delivery-plan className="mt-3 max-w-[720px] rounded-md border border-[#d7ebe5] bg-[#fbfefd] px-4 py-3 text-sm">
-      <p className="font-medium text-foreground">{plan.title}</p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{plan.summary}</p>
-      {plan.steps.length > 0 && <p className="mt-2 text-xs text-muted-foreground">{plan.steps.filter((step) => step.status === "succeeded").length} / {plan.steps.length} 项已完成</p>}
-    </div>
-  );
 }
 
 function LegacyArtifactReference({ item, onOpenArtifact }: { item: ArtifactItem; onOpenArtifact: (artifactId: string) => void }) {

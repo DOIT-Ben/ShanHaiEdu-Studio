@@ -1,6 +1,5 @@
 {
   "id": "final_package",
-  "workflowNodeKey": "final_delivery",
   "artifactKind": "final_delivery",
   "version": "v1",
   "displayName": "最终交付包",

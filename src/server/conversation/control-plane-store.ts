@@ -605,10 +605,6 @@ async function saveArtifactInTransaction(
       isApproved: input.status === "approved",
     },
   });
-  await tx.workflowNode.update({
-    where: { projectId_key: { projectId, key: input.nodeKey } },
-    data: { status: input.status },
-  });
   return artifact;
 }
 

@@ -273,17 +273,13 @@ describe("V1-3 Main Agent Agent Tool loop config", () => {
       });
       expect(await service.getArtifacts(project.id)).toHaveLength(0);
       const persistedTeacherMessage = (await service.getMessages(project.id)).find((entry) => entry.id === message.id);
-      expect(persistedTeacherMessage?.metadata.pendingDeliveryPlan).toMatchObject({
+      expect(persistedTeacherMessage?.metadata).not.toHaveProperty("pendingDeliveryPlan");
+      expect(persistedTeacherMessage?.metadata.pendingDecision).toMatchObject({
         status: "pending",
+        kind: "authorization",
         actionId: expect.any(String),
-        taskBrief: { taskId: taskBrief.taskId, digest: taskBrief.digest },
-        pendingDecision: {
-          status: "pending",
-          kind: "authorization",
-          actionId: expect.any(String),
-          actorUserId: actor.userId,
-          taskId: taskBrief.taskId,
-        },
+        actorUserId: actor.userId,
+        taskId: taskBrief.taskId,
       });
       expect((await controlPlaneStore.getLatestSemanticSnapshot({
         projectId: project.id,

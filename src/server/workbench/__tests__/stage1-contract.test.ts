@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createWorkbenchService } from "../service";
 
-describe("Backend Workflow Lite Stage 1 contract", () => {
-  it("creates a project with default workflow nodes and a restorable snapshot", async () => {
+describe("Workbench persistence contract", () => {
+  it("creates a project without exposing legacy orchestration projections", async () => {
     const service = createWorkbenchService();
 
     const project = await service.createProject({
@@ -16,30 +16,8 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
 
     expect(snapshot.project.id).toBe(project.id);
     expect(snapshot.project.title).toBe("五年级《百分数》公开课");
-    expect(snapshot.project.currentNodeKey).toBe("requirement_spec");
-    expect(snapshot.nodes.map((node) => node.key)).toEqual([
-      "requirement_spec",
-      "textbook_evidence",
-      "lesson_plan",
-      "ppt_draft",
-      "ppt_design_draft",
-      "pptx_artifact",
-      "intro_video_plan",
-      "knowledge_anchor_extract",
-      "creative_theme_generate",
-      "video_script_generate",
-      "storyboard_generate",
-      "asset_brief_generate",
-      "asset_image_generate",
-      "video_segment_plan",
-      "video_segment_generate",
-      "video_narration_generate",
-      "concat_only_assemble",
-      "image_prompts",
-      "video_storyboard",
-      "final_delivery",
-      "interactive_courseware_spec",
-    ]);
+    expect(snapshot).not.toHaveProperty("nodes");
+    expect(snapshot).not.toHaveProperty("agentRuns");
     expect(snapshot.messages).toEqual([]);
     expect(snapshot.artifacts).toEqual([]);
   });
@@ -90,7 +68,7 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
     });
   });
 
-  it("approves the latest artifact and exposes it through the node snapshot", async () => {
+  it("approves the latest artifact without a second node truth", async () => {
     const service = createWorkbenchService();
     const project = await service.createProject({ title: "确认产物项目" });
 
@@ -112,10 +90,7 @@ describe("Backend Workflow Lite Stage 1 contract", () => {
       status: "approved",
       isApproved: true,
     });
-    expect(snapshot.nodes.find((node) => node.key === "requirement_spec")).toMatchObject({
-      status: "approved",
-      approvedArtifactId: artifact.id,
-    });
+    expect(snapshot).not.toHaveProperty("nodes");
   });
 
   it("keeps two projects isolated in snapshots", async () => {

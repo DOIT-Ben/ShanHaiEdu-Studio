@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "./helpers/fixture-agent-runtime";
 import { generateCozePptFromArtifact, validatePptDesignDraftForCoze } from "@/server/coze-ppt/coze-ppt-run";
 
 function pageDesign(page: number) {
@@ -46,7 +46,7 @@ describe("M60 PPT 设计稿逐页门禁", () => {
   });
 
   it("deterministic runtime 生成的 PPT 设计稿通过逐页四层门禁", async () => {
-    const result = await new DeterministicRuntime().run({
+    const result = await new FixtureAgentRuntime().run({
       projectId: "project-m60-ppt-design",
       runId: "run-m60-ppt-design",
       task: "ppt_design",

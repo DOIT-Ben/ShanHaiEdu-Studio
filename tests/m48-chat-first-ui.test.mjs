@@ -16,11 +16,12 @@ test("ConversationWorkbench keeps the transcript free of timeline navigation", (
   assert.equal(source.includes("jumpToMessage"), false);
 });
 
-test("ChatTranscript renders model-chat style message bubbles with preserved multiline text", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+test("ShanHaiThread renders model-chat style message bubbles with preserved multiline text", () => {
+  const source = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
 
-  assert.match(source, /data-message-role=\{message\.speaker\}/);
+  assert.match(source, /data-message-role="assistant"/);
+  assert.match(source, /data-message-role="teacher"/);
   assert.match(source, /data-chat-bubble="assistant"/);
   assert.match(source, /data-chat-bubble="user"/);
   assert.match(source, /whitespace-pre-wrap/);

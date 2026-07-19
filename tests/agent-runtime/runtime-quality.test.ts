@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "../helpers/fixture-agent-runtime";
 import { buildOpenAIResponseRequest } from "../../src/server/agent-runtime/openai-runtime";
 import type { AgentRuntimeInput, AgentRuntimeTask } from "../../src/server/agent-runtime/types";
 import { expectSucceeded } from "./test-helpers";
@@ -34,14 +34,14 @@ function makeInput(task: AgentRuntimeTask): AgentRuntimeInput {
 
 describe("runtime output quality", () => {
   it.each(tasks)("adds a teacher-review checklist for %s", async (task) => {
-    const result = expectSucceeded(await new DeterministicRuntime().run(makeInput(task)));
+    const result = expectSucceeded(await new FixtureAgentRuntime().run(makeInput(task)));
 
     expect(result.status).toBe("succeeded");
     expect(result.artifactDraft.markdown).toContain("## 自检清单");
   });
 
   it("includes required lesson-plan fields", async () => {
-    const result = expectSucceeded(await new DeterministicRuntime().run(makeInput("lesson_plan")));
+    const result = expectSucceeded(await new FixtureAgentRuntime().run(makeInput("lesson_plan")));
 
     expect(result.status).toBe("succeeded");
     expect(result.artifactDraft.markdown).toContain("教学重点");
@@ -51,7 +51,7 @@ describe("runtime output quality", () => {
   });
 
   it("includes required PPT outline fields", async () => {
-    const result = expectSucceeded(await new DeterministicRuntime().run(makeInput("ppt_outline")));
+    const result = expectSucceeded(await new FixtureAgentRuntime().run(makeInput("ppt_outline")));
 
     expect(result.status).toBe("succeeded");
     expect(result.artifactDraft.markdown).toContain("建议页数");
@@ -60,7 +60,7 @@ describe("runtime output quality", () => {
   });
 
   it("includes intro-video fields without pretending to make a finished video", async () => {
-    const result = expectSucceeded(await new DeterministicRuntime().run(makeInput("intro_video_plan")));
+    const result = expectSucceeded(await new FixtureAgentRuntime().run(makeInput("intro_video_plan")));
 
     expect(result.status).toBe("succeeded");
     expect(result.artifactDraft.markdown).toContain("课程锚点");
@@ -71,7 +71,7 @@ describe("runtime output quality", () => {
   });
 
   it("keeps final delivery honest about unfinished files", async () => {
-    const result = expectSucceeded(await new DeterministicRuntime().run(makeInput("final_delivery_checklist")));
+    const result = expectSucceeded(await new FixtureAgentRuntime().run(makeInput("final_delivery_checklist")));
 
     expect(result.status).toBe("succeeded");
     expect(result.artifactDraft.markdown).toContain("PPTX");

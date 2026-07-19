@@ -4,14 +4,13 @@ type ConversationContext = NonNullable<MainConversationAgentInput["conversationC
 
 export function projectMainAgentRequestContext(context: ConversationContext | undefined) {
   const contextPackage = context?.contextPackage ?? null;
+  const semanticSnapshot = context?.semanticSnapshot ?? null;
   return {
     contextPackage,
     agentWorldState: context?.agentWorldState ?? null,
     capabilityAvailability: context?.capabilityAvailability ?? [],
-    semanticSnapshot: context?.semanticSnapshot ?? null,
-    conversationControl: {
-      pendingDeliveryPlan: context?.pendingDeliveryPlan ?? null,
-    },
+    semanticSnapshot,
+    pendingDecision: semanticSnapshot?.pendingDecision ?? null,
     conversationWindow: contextPackage
       ? null
       : {

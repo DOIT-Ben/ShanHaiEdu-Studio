@@ -14,54 +14,12 @@ function readOptionalSource(relativePath) {
   return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : "";
 }
 
-test("message route commits control first and gives the native model loop sole tool ownership", () => {
-  const routeSource = readSource("src/app/api/workbench/projects/[projectId]/messages/route.ts");
-  const queueSource = readSource("src/server/conversation/conversation-turn-queue.ts");
-  const serviceSource = readSource("src/server/conversation/conversation-turn-service.ts");
-
-  assert.match(routeSource, /drainProjectConversationQueue/);
-  assert.match(queueSource, /createConversationTurnService/);
-  assert.doesNotMatch(routeSource, /formatRequirementConfirmation/);
-  assert.doesNotMatch(routeSource, /runtime\.run/);
-  assert.doesNotMatch(routeSource, /saveArtifact/);
-
-  assert.match(serviceSource, /agent\.respond/);
-  assert.match(serviceSource, /conversationContext/);
-  assert.match(serviceSource, /findPendingDeliveryPlan/);
-  assert.match(serviceSource, /runPlannedArtifact/);
-  assert.match(serviceSource, /runCapabilityWithAgentRuntime/);
-  assert.match(serviceSource, /saveArtifact/);
-
-  const controlResolutionStart = serviceSource.indexOf("const preAgentControl =");
-  const controlCommitBranchStart = serviceSource.indexOf("if (preAgentControl)", controlResolutionStart);
-  const nativeOwnershipStart = serviceSource.indexOf("const nativeToolControlPlaneOwnsTurn = input.enableNativeToolControlPlane === true");
-  const modelResponseStart = serviceSource.indexOf("await input.agent.respond", nativeOwnershipStart);
-  const legacyPlanRejectionStart = serviceSource.indexOf("if (nativeToolControlPlaneOwnsTurn && agentTurn.shouldRunToolNow", modelResponseStart);
-  assert.notEqual(controlResolutionStart, -1);
-  assert.notEqual(controlCommitBranchStart, -1);
-  assert.notEqual(nativeOwnershipStart, -1);
-  assert.notEqual(modelResponseStart, -1);
-  assert.notEqual(legacyPlanRejectionStart, -1);
-  assert.ok(controlResolutionStart < controlCommitBranchStart);
-  assert.ok(controlCommitBranchStart < nativeOwnershipStart);
-  assert.ok(nativeOwnershipStart < modelResponseStart);
-  assert.match(serviceSource.slice(controlResolutionStart, controlCommitBranchStart), /resolvePreAgentControl/);
-  assert.match(serviceSource.slice(controlCommitBranchStart, nativeOwnershipStart), /return commitPreAgentControlTurn/);
-  assert.match(serviceSource.slice(nativeOwnershipStart), /toolControlPlane: nativeToolControlPlaneOwnsTurn \? "native" : "outer"/);
-  assert.match(serviceSource.slice(nativeOwnershipStart), /agentToolLoop: nativeToolLoop/);
-  const legacyPlanRejectionBranch = serviceSource.slice(legacyPlanRejectionStart);
-  assert.match(legacyPlanRejectionBranch, /single_orchestrator_violation/);
-  assert.match(legacyPlanRejectionBranch, /legacy_outer_tool_plan_rejected/);
-  assert.match(legacyPlanRejectionBranch, /shouldRunToolNow: false/);
-  assert.match(legacyPlanRejectionBranch, /toolPlan: undefined/);
-});
-
 test("conversation inline artifact is a teacher-facing result card without backend labels", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+  const source = readSource("src/components/conversation/assistant-ui/MessagePartRenderers.tsx");
 
-  assert.match(source, /TeacherArtifactCard/);
-  assert.match(source, /data-teacher-artifact-card/);
-  assert.match(source, /展开查看/);
+  assert.match(source, /ArtifactRefPart/);
+  assert.match(source, /data-message-part="artifact-ref"/);
+  assert.match(source, /打开成果/);
   assert.doesNotMatch(source, /GeneratedArtifactInline/);
   assert.doesNotMatch(source, /生成内容已进入产物链/);
   assert.doesNotMatch(source, /上游来源/);
@@ -109,12 +67,14 @@ test("workbench mappers do not expose Markdown or status as visible artifact lab
   assert.match(source, /provider.*status/);
 });
 
-test("chat transcript wraps long continuous teacher-facing text on narrow screens", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+test("assistant-ui thread wraps long continuous teacher-facing text on narrow screens", () => {
+  const source = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
+  const partSource = readSource("src/components/conversation/assistant-ui/MessagePartRenderers.tsx");
 
-  assert.match(source, /break-words whitespace-pre-wrap rounded-2xl bg/);
-  assert.match(source, /space-y-3 break-words whitespace-pre-wrap/);
-  assert.match(source, /break-words whitespace-pre-wrap text-xs/);
+  assert.match(source, /break-words rounded-2xl bg/);
+  assert.match(source, /whitespace-pre-wrap/);
+  assert.match(source, /space-y-3 break-words/);
+  assert.match(partSource, /break-words text-sm/);
 });
 
 test("assistant feedback actions persist a message-specific reaction", () => {
@@ -144,12 +104,12 @@ test("generating indicator keeps waiting text understandable for teachers", () =
   assert.doesNotMatch(generatingSource, /debug|provider|schema|manifest|node_id|storage/i);
 });
 
-test("delivery plan card uses teacher-facing step labels without backend fields", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+test("persisted plan parts use teacher-facing step labels without backend fields", () => {
+  const source = readSource("src/components/conversation/assistant-ui/MessagePartRenderers.tsx");
 
-  assert.match(source, /DeliveryPlanCard/);
-  assert.match(source, /备课推进计划|交付计划/);
-  assert.match(source, /statusLabel/);
+  assert.match(source, /function PlanPart/);
+  assert.match(source, /data-message-part="plan"/);
+  assert.match(source, /StatusLabel status=\{step\.status\}/);
   assert.doesNotMatch(source, /capabilityId|artifactKind|schema|manifest|provider|node_id|storage|API|debug|local path/i);
 });
 

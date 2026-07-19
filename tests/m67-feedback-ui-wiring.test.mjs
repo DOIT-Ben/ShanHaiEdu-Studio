@@ -156,7 +156,7 @@ test("M67 routes global, profile, and assistant message feedback into the single
   const sidebarSource = readSource("src/components/layout/ProjectSidebar.tsx");
   const topbarSource = readSource("src/components/conversation/WorkbenchTopbar.tsx");
   const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
-  const transcriptSource = readSource("src/components/conversation/ChatTranscript.tsx");
+  const transcriptSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(profileSource, /data-feedback-origin="profile"/);
@@ -166,9 +166,9 @@ test("M67 routes global, profile, and assistant message feedback into the single
   assert.match(topbarSource, /<ProfileMenu/);
   assert.match(topbarSource, /lg:hidden/);
   assert.match(conversationSource, /onOpenFeedback/);
-  assert.match(transcriptSource, /data-message-id=\{message\.id\}/);
-  assert.match(transcriptSource, /projectId=\{projectId\}/);
-  assert.match(transcriptSource, /messageId=\{message\.id\}/);
+  assert.match(transcriptSource, /<MessageActions/);
+  assert.match(transcriptSource, /projectId=\{props\.projectId\}/);
+  assert.match(transcriptSource, /messageId=\{custom\.projectMessageId\}/);
   assert.match(actionsSource, /const nextReaction = previousReaction === value \? null : value/);
   assert.match(actionsSource, /await onSetReaction\(messageId, nextReaction\)/);
   assert.match(actionsSource, /if \(nextReaction\) onOpenFeedback/);

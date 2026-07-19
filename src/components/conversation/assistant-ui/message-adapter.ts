@@ -4,7 +4,7 @@ import {
   legacyContentToMessageParts,
   projectMessagePartsToAssistantUi,
 } from "@/lib/conversation-message-contract";
-import type { ChatDeliveryPlan, ChatMessage } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 
 export type ShanHaiAssistantMessageCustom = {
   projectMessageId: string;
@@ -16,7 +16,6 @@ export type ShanHaiAssistantMessageCustom = {
   turnStatusLabel?: string;
   artifactRefs: string[];
   quickReplies: NonNullable<ChatMessage["quickReplies"]>;
-  deliveryPlan?: ChatDeliveryPlan;
   reaction?: ChatMessage["reaction"];
   projectionKind?: ChatMessage["projectionKind"];
 };
@@ -39,7 +38,6 @@ export function chatMessageToAssistantUi(message: ChatMessage): ThreadMessageLik
     ...(message.tone ? { tone: message.tone } : {}),
     ...(message.turnStatus ? { turnStatus: message.turnStatus } : {}),
     ...(message.turnStatusLabel ? { turnStatusLabel: message.turnStatusLabel } : {}),
-    ...(message.deliveryPlan ? { deliveryPlan: message.deliveryPlan } : {}),
     ...(message.reaction ? { reaction: message.reaction } : {}),
     ...(message.projectionKind ? { projectionKind: message.projectionKind } : {}),
   };

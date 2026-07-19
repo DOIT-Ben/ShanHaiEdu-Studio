@@ -37,7 +37,6 @@ describe("M54-B CapabilityRegistry", () => {
       expect(capability.userLabel.trim().length).toBeGreaterThan(0);
       expect(capability.description.trim().length).toBeGreaterThan(0);
       expect(capability.artifactKind.trim().length).toBeGreaterThan(0);
-      expect(capability.workflowNodeKey.trim().length).toBeGreaterThan(0);
 
       const serialized = JSON.stringify(capability).toLowerCase();
       for (const forbidden of ["secret", "token", "api_key", "apikey", "sk-", "credential"]) {

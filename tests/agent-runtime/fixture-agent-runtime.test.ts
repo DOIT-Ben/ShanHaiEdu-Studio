@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DeterministicRuntime } from "../../src/server/agent-runtime/deterministic-runtime";
+import { FixtureAgentRuntime } from "../helpers/fixture-agent-runtime";
 import type { AgentRuntimeInput, AgentRuntimeTask } from "../../src/server/agent-runtime/types";
 import { expectSucceeded } from "./test-helpers";
 
@@ -48,9 +48,9 @@ function makeInput(task: AgentRuntimeTask): AgentRuntimeInput {
   };
 }
 
-describe("DeterministicRuntime", () => {
-  it.each(tasks)("generates a stable deterministic draft for %s", async (task) => {
-    const runtime = new DeterministicRuntime();
+describe("FixtureAgentRuntime", () => {
+  it.each(tasks)("generates a stable fixture draft for %s", async (task) => {
+    const runtime = new FixtureAgentRuntime();
     const input = makeInput(task);
 
     const first = expectSucceeded(await runtime.run(input));
@@ -58,10 +58,10 @@ describe("DeterministicRuntime", () => {
 
     expect(first).toEqual(second);
     expect(first.status).toBe("succeeded");
-    expect(first.run.runtimeKind).toBe("deterministic");
+    expect(first.run.runtimeKind).toBe("openai");
     expect(first.artifactDraft).toMatchObject({
       contentType: "text/markdown",
-      generationMode: "deterministic_draft",
+      generationMode: "model_generated",
       isReadyForTeacherReview: true,
     });
     expect(first.artifactDraft.title.length).toBeGreaterThan(0);
@@ -70,7 +70,7 @@ describe("DeterministicRuntime", () => {
   });
 
   it("keeps teacher-facing text free of engineering terms", async () => {
-    const runtime = new DeterministicRuntime();
+    const runtime = new FixtureAgentRuntime();
     const result = expectSucceeded(await runtime.run(makeInput("lesson_plan")));
     const teacherText = [
       result.assistantMessage.title,
@@ -86,7 +86,7 @@ describe("DeterministicRuntime", () => {
   });
 
   it("keeps intro video as an independent hook connected by course anchor", async () => {
-    const runtime = new DeterministicRuntime();
+    const runtime = new FixtureAgentRuntime();
     const result = expectSucceeded(await runtime.run(makeInput("intro_video_plan")));
 
     expect(result.artifactDraft.markdown).toContain("课程锚点");

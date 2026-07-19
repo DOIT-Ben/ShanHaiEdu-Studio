@@ -18,7 +18,7 @@ function approvedArtifactFor(capabilityId: CapabilityId): ArtifactRecord {
   return {
     id: `artifact-${capabilityId}`,
     projectId: "project-a",
-    nodeKey: capability.workflowNodeKey as ArtifactRecord["nodeKey"],
+    nodeKey: capability.artifactKind as ArtifactRecord["nodeKey"],
     title: capability.userLabel,
     kind: capability.artifactKind as ArtifactRecord["kind"],
     status: "approved",
@@ -124,16 +124,30 @@ describe("CapabilityAvailability", () => {
     expect(["provider_unavailable", "needs_approved_inputs"]).toContain(entry.status);
   });
 
-  it("does not mark package capabilities with blocked fallback as available by default", () => {
-    const entry = entryFor("concat_only_assemble", [
+  it("requires every trusted input before package assembly becomes available", () => {
+    const incompleteEntry = entryFor("concat_only_assemble", [
+      approvedArtifactFor("video_segment_generate"),
+      approvedArtifactFor("storyboard_generate"),
+      approvedArtifactFor("video_script_generate"),
+    ]);
+
+    expect(incompleteEntry).toMatchObject({
+      status: "needs_approved_inputs",
+      missingApprovedInputs: ["video_narration_generate"],
+    });
+
+    const availableEntry = entryFor("concat_only_assemble", [
       approvedArtifactFor("video_segment_generate"),
       approvedArtifactFor("storyboard_generate"),
       approvedArtifactFor("video_script_generate"),
       approvedArtifactFor("video_narration_generate"),
     ]);
 
-    expect(entry.status).toBe("blocked");
-    expect(entry.reasonForUser.toLowerCase()).not.toMatch(/provider|schema|storage|debug|local path|token/);
+    expect(availableEntry).toMatchObject({
+      status: "available",
+      missingApprovedInputs: [],
+    });
+    expect(availableEntry.reasonForUser.toLowerCase()).not.toMatch(/provider|schema|storage|debug|local path|token/);
   });
 
   it("marks implemented external generation providers available only when matching runtime env exists", () => {

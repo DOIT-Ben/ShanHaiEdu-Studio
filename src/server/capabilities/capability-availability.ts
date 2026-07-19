@@ -69,16 +69,14 @@ export function buildCapabilityAvailability(input: BuildCapabilityAvailabilityIn
       });
     }
 
-    if (requiresUnavailableProvider(definition) && input.providerAvailability?.[definition.id] !== true) {
-      const status = definition.providerMode === "external" ? "provider_unavailable" : "blocked";
+    if (definition.providerMode === "external" && input.providerAvailability?.[definition.id] !== true) {
+      const status = "provider_unavailable";
       return buildEntry({
         definition,
         status,
         missingApprovedInputs,
-        reasonForModel: `status=${status}; capability=${definition.id}; providerMode=${definition.providerMode}; deterministicFallback=${definition.deterministicFallback}`,
-        reasonForUser: definition.providerMode === "external"
-          ? "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。"
-          : "这一步暂时不能执行，可以先继续完善已确认内容。",
+        reasonForModel: `status=${status}; capability=${definition.id}; providerMode=${definition.providerMode}`,
+        reasonForUser: "这项生成能力暂时不可用，可以稍后重试或先继续完善已确认内容。",
       });
     }
 
@@ -117,12 +115,8 @@ function hasApprovedArtifactForCapability(
     (artifact) =>
       isArtifactTrustedForDownstream(artifact) &&
       (!taskBrief || isArtifactBoundToTask(artifact, taskBrief)) &&
-      (artifact.kind === definition.artifactKind || artifact.nodeKey === definition.workflowNodeKey),
+      artifact.kind === definition.artifactKind,
   );
-}
-
-function requiresUnavailableProvider(definition: CapabilityDefinition): boolean {
-  return definition.providerMode !== "internal" && definition.deterministicFallback === "blocked";
 }
 
 function hasCozePptProvider(env: Partial<NodeJS.ProcessEnv>): boolean {

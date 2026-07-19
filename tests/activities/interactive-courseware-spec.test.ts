@@ -178,6 +178,14 @@ describe("interactive courseware spec", () => {
     expect(artifact.kind).toBe("interactive_courseware_spec");
     expect(artifact.nodeKey).toBe("interactive_courseware_spec");
     expect(artifact.structuredContent.interactiveCoursewareSpec).toMatchObject({ schemaVersion: "interactive-courseware.v1" });
-    expect(snapshot.nodes.find((node) => node.key === "interactive_courseware_spec")?.status).toBe("needs_review");
+    expect(snapshot).not.toHaveProperty("nodes");
+    expect(snapshot.artifacts).toEqual([
+      expect.objectContaining({
+        id: artifact.id,
+        kind: "interactive_courseware_spec",
+        status: "needs_review",
+        isApproved: false,
+      }),
+    ]);
   });
 });

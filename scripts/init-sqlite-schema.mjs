@@ -146,21 +146,6 @@ CREATE TABLE IF NOT EXISTS "SemanticContextSnapshotRecord" (
   CONSTRAINT "SemanticContextSnapshotRecord_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "WorkflowNode" (
-  "id" TEXT NOT NULL PRIMARY KEY,
-  "projectId" TEXT NOT NULL,
-  "key" TEXT NOT NULL,
-  "title" TEXT NOT NULL,
-  "status" TEXT NOT NULL DEFAULT 'not_started',
-  "order" INTEGER NOT NULL,
-  "upstreamNodeKeysJson" TEXT NOT NULL DEFAULT '[]',
-  "approvedArtifactId" TEXT,
-  "staleReason" TEXT,
-  "updatedAt" DATETIME NOT NULL,
-  CONSTRAINT "WorkflowNode_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "WorkflowNode_approvedArtifactId_fkey" FOREIGN KEY ("approvedArtifactId") REFERENCES "Artifact" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS "Artifact" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "projectId" TEXT NOT NULL,
@@ -181,18 +166,6 @@ CREATE TABLE IF NOT EXISTS "Artifact" (
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "Artifact_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS "AgentRun" (
-  "id" TEXT NOT NULL PRIMARY KEY,
-  "projectId" TEXT NOT NULL,
-  "nodeKey" TEXT NOT NULL,
-  "status" TEXT NOT NULL,
-  "runtime" TEXT NOT NULL,
-  "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "finishedAt" DATETIME,
-  "errorMessage" TEXT,
-  CONSTRAINT "AgentRun_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "GenerationJob" (
@@ -648,12 +621,9 @@ CREATE INDEX IF NOT EXISTS "SemanticContextSnapshotRecord_projectId_createdAt_id
 CREATE INDEX IF NOT EXISTS "Project_ownerUserId_updatedAt_idx" ON "Project"("ownerUserId", "updatedAt");
 CREATE INDEX IF NOT EXISTS "Project_archivedAt_deletedAt_updatedAt_idx" ON "Project"("archivedAt", "deletedAt", "updatedAt");
 CREATE UNIQUE INDEX IF NOT EXISTS "LocalUser_email_key" ON "LocalUser"("email");
-CREATE INDEX IF NOT EXISTS "WorkflowNode_projectId_order_idx" ON "WorkflowNode"("projectId", "order");
-CREATE UNIQUE INDEX IF NOT EXISTS "WorkflowNode_projectId_key_key" ON "WorkflowNode"("projectId", "key");
 CREATE INDEX IF NOT EXISTS "Artifact_projectId_nodeKey_version_idx" ON "Artifact"("projectId", "nodeKey", "version");
 CREATE INDEX IF NOT EXISTS "Artifact_projectId_intentEpoch_kind_idx" ON "Artifact"("projectId", "intentEpoch", "kind");
 CREATE INDEX IF NOT EXISTS "Artifact_taskId_idx" ON "Artifact"("taskId");
-CREATE INDEX IF NOT EXISTS "AgentRun_projectId_nodeKey_startedAt_idx" ON "AgentRun"("projectId", "nodeKey", "startedAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_status_createdAt_idx" ON "GenerationJob"("projectId", "status", "createdAt");
 CREATE INDEX IF NOT EXISTS "GenerationJob_sourceArtifactId_idx" ON "GenerationJob"("sourceArtifactId");
 CREATE INDEX IF NOT EXISTS "GenerationJob_projectId_kind_unitId_createdAt_idx" ON "GenerationJob"("projectId", "kind", "unitId", "createdAt");
@@ -766,12 +736,6 @@ function migrateUnprovenLegacyArtifactApprovals(db) {
     SET "status" = 'needs_review', "isApproved" = 0, "structuredContentJson" = ?, "updatedAt" = CURRENT_TIMESTAMP
     WHERE "id" = ? AND "origin" = 'legacy' AND "status" = 'approved' AND "isApproved" = 1
   `);
-  const updateNode = db.prepare(`
-    UPDATE "WorkflowNode"
-    SET "status" = 'needs_review', "approvedArtifactId" = NULL,
-      "staleReason" = '历史批准记录缺少当前可审计证据，请重新审核。', "updatedAt" = CURRENT_TIMESTAMP
-    WHERE "projectId" = ? AND "approvedArtifactId" = ?
-  `);
   const migrate = db.transaction(() => {
     for (const artifact of candidates) {
       const structuredContent = parseJsonObject(artifact.structuredContentJson);
@@ -786,8 +750,7 @@ function migrateUnprovenLegacyArtifactApprovals(db) {
             migratedFromApproved: true,
             migratedAt: new Date().toISOString(),
           };
-      const result = updateArtifact.run(JSON.stringify({ ...structuredContent, legacyApprovalMigration }), artifact.id);
-      if (result.changes > 0) updateNode.run(artifact.projectId, artifact.id);
+      updateArtifact.run(JSON.stringify({ ...structuredContent, legacyApprovalMigration }), artifact.id);
     }
   });
   migrate();

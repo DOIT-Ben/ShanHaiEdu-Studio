@@ -23,6 +23,7 @@ describe("assistant-ui message adapter", () => {
       body: "fallback body",
       parts,
       artifactRefs: ["artifact-1"],
+      quickReplies: [{ label: "确认", prompt: "确认继续", actionId: "action-1", recommended: true }],
       reaction: "helpful",
     });
 
@@ -42,8 +43,10 @@ describe("assistant-ui message adapter", () => {
     expect(projected.metadata?.custom).toMatchObject({
       projectMessageId: "message-1",
       artifactRefs: ["artifact-1"],
+      quickReplies: [{ label: "确认", prompt: "确认继续", actionId: "action-1", recommended: true }],
       reaction: "helpful",
     });
+    expect(projected.metadata?.custom).not.toHaveProperty("deliveryPlan");
   });
 
   it("keeps a malformed part visible as a safe recovery part instead of dropping the message", () => {

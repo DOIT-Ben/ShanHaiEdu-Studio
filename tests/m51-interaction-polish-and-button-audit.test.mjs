@@ -21,15 +21,13 @@ test("ProjectSidebar provides a real searchable project input", () => {
   assert.match(source, /没有找到匹配项目/);
 });
 
-test("ChatTranscript inline artifacts can expand and use the XiaoKu avatar asset", () => {
-  const source = readSource("src/components/conversation/ChatTranscript.tsx");
+test("assistant-ui renders persisted artifact references and uses the XiaoKu avatar asset", () => {
+  const threadSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
+  const partSource = readSource("src/components/conversation/assistant-ui/MessagePartRenderers.tsx");
 
-  assert.match(source, /data-inline-artifact-toggle/);
-  assert.match(source, /aria-expanded=\{expanded\}/);
-  assert.match(source, /data-inline-artifact-expanded/);
-  assert.match(source, /展开查看/);
-  assert.match(source, /收起/);
-  assert.match(source, /\/brand\/xiaoku-avatar\.png/);
+  assert.match(partSource, /data-message-part="artifact-ref"/);
+  assert.match(partSource, /onOpenArtifact\(data\.artifactId\)/);
+  assert.match(threadSource, /\/brand\/xiaoku-avatar\.png/);
   assert.equal(existsSync(path.join(root, "public/brand/xiaoku-avatar.png")), true);
 });
 

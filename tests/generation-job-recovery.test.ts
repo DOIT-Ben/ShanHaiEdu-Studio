@@ -35,7 +35,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   await Promise.allSettled([clientA?.$disconnect(), clientB?.$disconnect()]);
-  rmSync(databasePath, { force: true });
+  removeSqliteFiles(databasePath);
 });
 
 describe("V1 Stage 1B canonical run input", () => {
@@ -258,12 +258,21 @@ describe("V1 Stage 1B GenerationJob idempotency and recovery", () => {
     });
 
     expect(completed).toMatchObject({ status: "quarantined", reason: "stale_intent", job: { intentEpoch: 0 } });
-    expect(await clientA.artifact.count({ where: { projectId: fixture.project.id, nodeKey: "image_prompts" } })).toBe(0);
+    expect(await clientA.artifact.count({ where: { projectId: fixture.project.id, kind: "image_prompts" } })).toBe(0);
     expect((await clientA.project.findUniqueOrThrow({ where: { id: fixture.project.id } })).intentEpoch).toBe(1);
   });
 });
 
 describe("V1 Stage 1B SQLite upgrade", () => {
+  it("does not create retired orchestration tables in a new database", () => {
+    const inspected = new Database(databasePath, { readonly: true });
+    const tables = inspected.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    inspected.close();
+
+    expect(tables.map((table) => table.name)).not.toContain("WorkflowNode");
+    expect(tables.map((table) => table.name)).not.toContain("AgentRun");
+  });
+
   it("preserves a legacy GenerationJob while adding recovery columns and indexes", () => {
     const legacyPath = path.join(stageRoot, `legacy-${randomUUID()}.db`);
     const legacyUrl = `file:${legacyPath.replaceAll("\\", "/")}`;
@@ -332,7 +341,7 @@ describe("V1 Stage 1B SQLite upgrade", () => {
       expect(tables.map((table) => table.name)).toContain("RunInputSnapshot");
       expect(indexes.map((index) => index.name)).toContain("GenerationJob_projectId_idempotencyKey_key");
     } finally {
-      rmSync(legacyPath, { force: true });
+      removeSqliteFiles(legacyPath);
     }
   });
 });
@@ -358,15 +367,11 @@ async function createProjectArtifact(client: PrismaClient, label: string) {
       isApproved: true,
     },
   });
-  await client.workflowNode.create({
-    data: {
-      projectId: project.id,
-      key: "ppt_draft",
-      title: "PPT draft",
-      status: "approved",
-      order: 0,
-      approvedArtifactId: artifact.id,
-    },
-  });
   return { project, artifact };
+}
+
+function removeSqliteFiles(databasePath: string) {
+  for (const suffix of ["", "-shm", "-wal"]) {
+    rmSync(`${databasePath}${suffix}`, { force: true });
+  }
 }

@@ -63,7 +63,7 @@ const CAPTURE_BOOTSTRAP_ALLOWED_PATHS = [
   ...CAPTURE_BOOTSTRAP_TEST_PATHS,
 ];
 const OFFLINE_REFACTOR_STAGE_ID = "product-first-deep-refactor";
-const OFFLINE_REFACTOR_BASELINE = "95b9b29d22553474ffe0c937d035bbe55924b157";
+const OFFLINE_REFACTOR_BASELINE = "cbf73aa2a427125c763f1a27f344b44749ff58b6";
 const OFFLINE_REFACTOR_PLAN = "docs/stages/product-first-deep-refactor-plan.md";
 const OFFLINE_REFACTOR_TEST_PLAN = "docs/stages/product-first-deep-refactor-test-plan.md";
 const OFFLINE_REFACTOR_EXPIRES_ON = "2026-08-16";
@@ -72,6 +72,7 @@ const OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS = [
   "docs/stages/active-stage.json",
   "scripts/development-gates/provider-continuity.mjs",
   "scripts/development-gates/run-development-gates.mjs",
+  "scripts/run-v1-9-e2e.mjs",
   "src/server/conversation/**",
   "src/server/agent-runtime/**",
   "src/server/tools/**",

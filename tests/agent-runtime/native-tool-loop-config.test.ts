@@ -3,9 +3,10 @@ import {
   createOpenAIRuntimeNativeToolLoopOptions,
   nativeToolLoopTaskToolMap,
 } from "@/server/agent-runtime/native-tool-loop-config";
-import type { AgentRuntime, AgentRuntimeInput } from "@/server/agent-runtime/types";
+import type { AgentRuntimeInput } from "@/server/agent-runtime/types";
 import type { ToolCallIntent } from "@/server/gpt-protocol/tool-call-intent";
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
+import { FixtureAgentRuntime } from "../helpers/fixture-agent-runtime";
 
 describe("OpenAIRuntime native tool loop config", () => {
   it("exposes only the first-batch internal tool allowlist", () => {
@@ -103,7 +104,7 @@ describe("OpenAIRuntime native tool loop config", () => {
       projectId: "server-project",
       userInstruction: "请生成逐页 PPT 设计稿。",
       projectContext: expect.objectContaining({ topic: "百分数" }),
-      approvedArtifacts: [expect.objectContaining({ nodeKey: "ppt_draft" })],
+      approvedArtifacts: [expect.objectContaining({ kind: "ppt_draft", nodeKey: "ppt_draft" })],
       sourceMessageId: "teacher-message-1",
     });
     expect(routerInput?.runtime).toBe(toolExecutionRuntime);
@@ -131,6 +132,7 @@ function runtimeInput(overrides: Partial<AgentRuntimeInput> = {}): AgentRuntimeI
     },
     approvedArtifacts: [
       {
+        kind: "ppt_draft",
         nodeKey: "ppt_draft",
         title: "PPT 大纲",
         summary: "已确认逐页大纲。",
@@ -141,23 +143,8 @@ function runtimeInput(overrides: Partial<AgentRuntimeInput> = {}): AgentRuntimeI
   };
 }
 
-function fakeRuntime(): AgentRuntime {
-  return {
-    async run(input) {
-      return {
-        status: "failed",
-        run: {
-          runId: input.runId,
-          projectId: input.projectId,
-          task: input.task,
-          runtimeKind: "deterministic",
-          status: "failed",
-        },
-        assistantMessage: { title: "未执行", body: "测试替身。" },
-        nextSuggestedAction: { type: "retry", label: "重试" },
-      };
-    },
-  };
+function fakeRuntime() {
+  return new FixtureAgentRuntime();
 }
 
 function fakeToolRouter() {

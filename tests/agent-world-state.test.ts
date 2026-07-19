@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { buildAgentWorldState } from "@/server/conversation/agent-world-state";
 import { createAgentObservation, createRunCheckpoint } from "@/server/conversation/react-control";
-import { createTaskBrief } from "@/server/conversation/task-contract";
+import { createTaskBrief, type PendingDecision } from "@/server/conversation/task-contract";
 import type {
   ArtifactRecord,
   ConversationTurnJobRecord,
   GenerationJobRecord,
   ProjectRecord,
-  WorkflowNodeRecord,
 } from "@/server/workbench/types";
 
 describe("AgentWorldState", () => {
@@ -17,7 +16,6 @@ describe("AgentWorldState", () => {
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [nodeRecord({ key: "requirement_spec", status: "approved" })],
       artifacts: [
         artifactRecord({ id: "artifact-approved", title: "已确认需求", status: "approved", isApproved: true }),
         artifactRecord({
@@ -38,11 +36,9 @@ describe("AgentWorldState", () => {
       ],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
     });
 
-    expect(state.currentNodeKey).toBe("ppt_draft");
     expect(state.trustedInputs).toEqual([
       expect.objectContaining({ id: "artifact-approved", title: "已确认需求", status: "approved", isApproved: true }),
       expect.objectContaining({ id: "artifact-internally-eligible", status: "needs_review", isApproved: false, downstreamEligible: true }),
@@ -56,7 +52,6 @@ describe("AgentWorldState", () => {
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [],
       artifacts: [],
       generationJobs: [
         generationJobRecord({
@@ -72,8 +67,7 @@ describe("AgentWorldState", () => {
           errorMessage: "debug provider token leaked local path D:/tmp/file",
         }),
       ],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
     });
 
     expect(state.failedJobs).toHaveLength(2);
@@ -84,86 +78,74 @@ describe("AgentWorldState", () => {
     expect(JSON.stringify(state.failedJobs)).not.toMatch(/provider|schema|storage|local path|debug|token|C:\/|D:\//i);
   });
 
-  it("keeps blocked or failed nodes in blocked items and stale nodes in next risks", () => {
+  it("derives blocked items and stale risks directly from artifact facts", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [
-        nodeRecord({ key: "pptx_artifact", title: "生成 PPTX 文件", status: "blocked" }),
-        nodeRecord({ key: "video_segment_generate", title: "生成分镜视频片段", status: "failed" }),
-        nodeRecord({ key: "lesson_plan", title: "公开课教案", status: "stale", staleReason: "上游需求已更新，需要重新核对。" }),
+      artifacts: [
+        artifactRecord({ nodeKey: "pptx_artifact", kind: "pptx_artifact", title: "生成 PPTX 文件", status: "blocked" }),
+        artifactRecord({ nodeKey: "video_segment_generate", kind: "video_segment_generate", title: "生成分镜视频片段", status: "failed" }),
+        artifactRecord({ nodeKey: "lesson_plan", kind: "lesson_plan", title: "公开课教案", status: "stale" }),
       ],
-      artifacts: [],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
     });
 
-    expect(state.blockedItems.map((item) => item.nodeKey)).toEqual(["pptx_artifact", "video_segment_generate"]);
+    expect(state.blockedItems.map((item) => item.artifactKind)).toEqual(["pptx_artifact", "video_segment_generate"]);
     expect(state.nextRisks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ nodeKey: "lesson_plan", title: "公开课教案", status: "stale", reason: "上游需求已更新，需要重新核对。" }),
+      expect.objectContaining({ artifactKind: "lesson_plan", title: "公开课教案", status: "stale" }),
     ]));
+    expect(JSON.stringify(state.blockedItems)).not.toContain("nodeKey");
+    expect(JSON.stringify(state.nextRisks)).not.toContain("nodeKey");
   });
 
-  it("sanitizes blocked and stale node reasons before they enter world state", () => {
+  it("does not promote artifact summaries into blocked or stale reasons", () => {
     const state = buildAgentWorldState({
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [
-        nodeRecord({ key: "pptx_artifact", title: "生成 PPTX 文件", status: "blocked", staleReason: "OPENAI_API_KEY missing" }),
-        nodeRecord({ key: "lesson_plan", title: "公开课教案", status: "stale", staleReason: "COZE_API_TOKEN missing" }),
+      artifacts: [
+        artifactRecord({ kind: "pptx_artifact", status: "blocked", summary: "OPENAI_API_KEY missing" }),
+        artifactRecord({ id: "artifact-stale", kind: "lesson_plan", status: "stale", summary: "COZE_API_TOKEN missing" }),
       ],
-      artifacts: [],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
     });
 
     expect(JSON.stringify(state.blockedItems)).not.toMatch(/OPENAI_API_KEY/i);
     expect(JSON.stringify(state.nextRisks)).not.toMatch(/COZE_API_TOKEN/i);
   });
 
-  it("keeps only the safe pending plan fields", () => {
+  it("projects only teacher-safe fields from a direct PendingDecision", () => {
+    const pendingDecision = pendingDecisionRecord({
+      actionId: "action-secret-ish",
+      reasonCode: "material_choice_required",
+      question: "是否继续生成 PPTX？",
+      impactSummary: "确认后会调用外部生成服务。",
+    });
     const state = buildAgentWorldState({
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [],
       artifacts: [],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: {
-        status: "pending",
-        teacherRequest: "帮我做五年级数学百分数 PPT",
-        actionId: "action-secret-ish",
-        runtimeKind: "openai",
-        toolPlan: {
-          planId: "requirement_spec:test",
-          capabilityId: "requirement_spec",
-          reasonForUser: "我可以先整理需求。",
-          internalReason: "do-not-leak-internal-reason",
-          inputDraft: { provider: "do-not-leak" },
-          missingInputs: [],
-          upstreamPlan: [],
-          nextSuggestedCapabilities: ["lesson_plan"],
-          requiresConfirmation: true,
-          expectedArtifactKind: "requirement_spec",
-        },
-      },
+      pendingDecision,
     });
 
-    expect(state.pendingPlan).toEqual({
-      teacherRequest: "帮我做五年级数学百分数 PPT",
-      capabilityId: "requirement_spec",
-      expectedArtifactKind: "requirement_spec",
+    expect(state.pendingDecision).toEqual({
+      decisionId: pendingDecision.decisionId,
+      status: "pending",
+      kind: "material_choice",
+      reasonCode: "material_choice_required",
+      question: "是否继续生成 PPTX？",
+      impactSummary: "确认后会调用外部生成服务。",
       hasActionId: true,
     });
-    expect(JSON.stringify(state.pendingPlan)).not.toMatch(/internalReason|do-not-leak|action-secret-ish|provider/i);
+    expect(JSON.stringify(state.pendingDecision)).not.toMatch(/action-secret-ish|actorUserId|maxCostCredits|options/i);
   });
 
   it("keeps active tool observations visible to the model without turning them into trusted inputs", () => {
@@ -180,12 +162,10 @@ describe("AgentWorldState", () => {
       project: projectRecord(),
       taskBrief: null,
       taskPlanRevision: null,
-      workflowNodes: [],
       artifacts: [],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
       toolObservations: [observation, { ...observation, observationId: "resolved", status: "resolved" }],
     });
 
@@ -236,12 +216,10 @@ describe("AgentWorldState", () => {
       project: projectRecord(),
       taskBrief,
       taskPlanRevision: 4,
-      workflowNodes: [],
       artifacts: [],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
       agentObservations: [observation],
       runCheckpoint: checkpoint,
     });
@@ -289,7 +267,6 @@ describe("AgentWorldState", () => {
       project: projectRecord({ intentEpoch: taskB.intentEpoch }),
       taskBrief: taskB,
       taskPlanRevision: 0,
-      workflowNodes: [],
       artifacts: [
         artifactRecord({
           id: "task-a-approved-ppt",
@@ -314,8 +291,7 @@ describe("AgentWorldState", () => {
       ],
       generationJobs: [],
       turnJobs: [],
-      contextPackage: contextPackage(),
-      pendingPlan: null,
+      pendingDecision: null,
       runCheckpoint: taskACheckpoint,
     });
 
@@ -331,7 +307,6 @@ function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     id: "project-1",
     title: "五年级数学百分数公开课",
     status: "active",
-    currentNodeKey: "ppt_draft",
     grade: "五年级",
     subject: "数学",
     textbookVersion: "人教版",
@@ -341,22 +316,6 @@ function projectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     archivedAt: null,
     deletedAt: null,
     createdAt: "2026-07-09T00:00:00.000Z",
-    updatedAt: "2026-07-09T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-function nodeRecord(overrides: Partial<WorkflowNodeRecord>): WorkflowNodeRecord {
-  return {
-    id: `node-${overrides.key ?? "requirement_spec"}`,
-    projectId: "project-1",
-    key: overrides.key ?? "requirement_spec",
-    title: overrides.title ?? "备课节点",
-    status: overrides.status ?? "not_started",
-    order: 1,
-    upstreamNodeKeys: [],
-    approvedArtifactId: null,
-    staleReason: null,
     updatedAt: "2026-07-09T00:00:00.000Z",
     ...overrides,
   };
@@ -377,6 +336,33 @@ function artifactRecord(overrides: Partial<ArtifactRecord>): ArtifactRecord {
     isApproved: overrides.isApproved ?? false,
     createdAt: "2026-07-09T00:00:00.000Z",
     updatedAt: "2026-07-09T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function pendingDecisionRecord(overrides: Partial<PendingDecision> = {}): PendingDecision {
+  return {
+    schemaVersion: "pending-decision.v1",
+    decisionId: "decision-material-choice",
+    status: "pending",
+    kind: "material_choice",
+    reasonCode: "material_choice_required",
+    question: "是否继续？",
+    impactSummary: "确认后继续执行。",
+    options: [
+      { id: "confirm", label: "继续", recommended: true },
+      { id: "cancel", label: "取消", recommended: false },
+    ],
+    actorUserId: "teacher-1",
+    projectId: "project-1",
+    taskId: "task-decision",
+    intentEpoch: 0,
+    planId: "plan-decision",
+    actionId: "action-decision",
+    budgetPolicyVersion: null,
+    maxCostCredits: null,
+    maxExternalProviderCalls: null,
+    expiresAt: null,
     ...overrides,
   };
 }
@@ -429,26 +415,5 @@ function turnJobRecord(overrides: Partial<ConversationTurnJobRecord>): Conversat
     startedAt: "2026-07-09T00:00:00.000Z",
     finishedAt: "2026-07-09T00:01:00.000Z",
     ...overrides,
-  };
-}
-
-function contextPackage() {
-  return {
-    mode: "snapshot" as const,
-    project: {
-      id: "project-1",
-      title: "五年级数学百分数公开课",
-      grade: "五年级",
-      subject: "数学",
-      textbookVersion: "人教版",
-      lessonTopic: "百分数",
-      currentNodeKey: "ppt_draft" as const,
-    },
-    workflowNodes: [],
-    recentMessages: [],
-    artifacts: [],
-    guardrails: [],
-    summaryValidation: { status: "passed" as const, errors: [] },
-    tokenEstimate: 100,
   };
 }

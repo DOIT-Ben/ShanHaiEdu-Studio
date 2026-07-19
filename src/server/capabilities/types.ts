@@ -25,8 +25,6 @@ export type CapabilityId =
 
 export type ProviderMode = "internal" | "external" | "package";
 
-export type DeterministicFallbackPolicy = "allowed" | "blocked" | "draft_only";
-
 export type CapabilityDefinition = {
   id: CapabilityId;
   userLabel: string;
@@ -35,47 +33,12 @@ export type CapabilityDefinition = {
   outputSchema: Record<string, unknown>;
   upstreamCapabilities: CapabilityId[];
   artifactKind: string;
-  workflowNodeKey: string;
   requiresConfirmation: boolean;
   providerMode: ProviderMode;
-  deterministicFallback: DeterministicFallbackPolicy;
   failureRecovery: {
     retryable: boolean;
     userMessage: string;
   };
-};
-
-export type CapabilityToolPlan = {
-  planId: string;
-  capabilityId: CapabilityId;
-  reasonForUser: string;
-  internalReason: string;
-  inputDraft: Record<string, unknown>;
-  missingInputs: string[];
-  upstreamPlan: CapabilityToolPlan[];
-  nextSuggestedCapabilities: CapabilityId[];
-  requiresConfirmation: boolean;
-  expectedArtifactKind: string;
-};
-
-export type DeliveryPlanStepStatus = "pending" | "awaiting_confirmation" | "running" | "succeeded" | "failed";
-
-export type DeliveryPlanStep = {
-  id: CapabilityId;
-  capabilityId: CapabilityId;
-  artifactKind: string;
-  title: string;
-  teacherDescription: string;
-  status: DeliveryPlanStepStatus;
-  requiresConfirmation: boolean;
-};
-
-export type DeliveryPlan = {
-  id: string;
-  title: string;
-  summary: string;
-  currentStepId: CapabilityId;
-  steps: DeliveryPlanStep[];
 };
 
 export type SaveArtifactDraft = {
@@ -92,7 +55,7 @@ export type CapabilityRunResult =
       status: "succeeded";
       artifactDraft: SaveArtifactDraft;
       assistantSummary: string;
-      providerStatus: "real" | "deterministic_draft";
+      providerStatus: "real";
     }
   | {
       status: "needs_input";
@@ -108,7 +71,7 @@ export type CapabilityRunResult =
       reasonDetails?: string[];
       runtimeRun?: {
         runId: string;
-        runtimeKind: "deterministic" | "openai";
+        runtimeKind: "openai";
         status: "failed";
       };
     };
@@ -147,10 +110,7 @@ export type MainAgentTurn = {
   state: MainAgentState;
   quickReplies: QuickReply[];
   recommendedOptions: RecommendedOption[];
-  toolPlan?: CapabilityToolPlan;
-  deliveryPlan?: DeliveryPlan;
-  shouldRunToolNow: boolean;
-  runtimeKind: "openai" | "deterministic";
+  runtimeKind: "openai";
   artifactRefs?: string[];
   failure?: import("@/server/conversation/main-agent-failure").MainAgentFailure;
 };

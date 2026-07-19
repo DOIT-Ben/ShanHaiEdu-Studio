@@ -162,10 +162,6 @@ export function projectConversationMessageParts(input: {
   if (persistentActivities.length) parts.unshift(...persistentActivities);
   const dialogueCheckpoint = toDialogueCheckpointPart(metadata.dialogueCheckpoint);
   if (dialogueCheckpoint) parts.push(dialogueCheckpoint);
-  const pendingPlan = isRecord(metadata.pendingDeliveryPlan) ? metadata.pendingDeliveryPlan : undefined;
-  const deliveryPlan = isRecord(pendingPlan?.deliveryPlan) ? pendingPlan.deliveryPlan : undefined;
-  const planPart = toPlanPart(deliveryPlan);
-  if (planPart) parts.push(planPart);
 
   const toolStatus = toToolStatusPart(metadata.latestToolStatus)
     ?? toToolStatusPartFromObservation(latestRecord(metadata.agentObservations));
@@ -199,7 +195,7 @@ export function projectConversationMessageParts(input: {
     }
   }
 
-  const pendingDecision = isRecord(pendingPlan?.pendingDecision) ? pendingPlan.pendingDecision : undefined;
+  const pendingDecision = isRecord(metadata.pendingDecision) ? metadata.pendingDecision : undefined;
   const humanInput = toHumanInputPart(pendingDecision);
   if (humanInput) {
     parts.push(humanInput);
@@ -337,24 +333,6 @@ function isPlanStep(value: unknown) {
     && isOneOf(value.status, ["pending", "running", "waiting", "completed", "succeeded", "failed", "blocked", "skipped", "canceled"]);
 }
 
-function toPlanPart(value: Record<string, unknown> | undefined): PlanMessagePart | undefined {
-  if (!value || !isNonEmptyString(value.planId) || !isNonNegativeInteger(value.revision)
-      || !isNonEmptyString(value.title) || !Array.isArray(value.steps)) return undefined;
-  const part: PlanMessagePart = {
-    type: "plan",
-    schemaVersion: MESSAGE_PART_VERSION,
-    planId: value.planId,
-    revision: value.revision,
-    title: value.title,
-    steps: value.steps.filter(isPlanStep).map((step) => ({
-      id: step.id as string,
-      title: step.title as string,
-      status: step.status as PlanMessagePart["steps"][number]["status"],
-    })),
-  };
-  return isMessagePart(part) ? part : undefined;
-}
-
 function toPersistentActivityParts(value: unknown): ActivityMessagePart[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((part) =>
@@ -436,7 +414,9 @@ function toToolStatusPartFromObservation(value: unknown): ToolStatusMessagePart 
 }
 
 function toHumanInputPart(value: Record<string, unknown> | undefined): HumanInputMessagePart | undefined {
-  if (!value || !Array.isArray(value.options)) return undefined;
+  if (!value || (typeof value.status === "string" && value.status !== "pending") || !Array.isArray(value.options)) {
+    return undefined;
+  }
   const part: HumanInputMessagePart = {
     type: "human-input",
     schemaVersion: MESSAGE_PART_VERSION,

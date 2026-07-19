@@ -293,7 +293,7 @@ export function resolveV1_9RunContext({
 }
 
 export function resolveV1_9RunMode(env, runState) {
-  assertDeterministicRuntimeDisabled(env);
+  assertFixtureModesDisabled(env);
   const runMode = String(env.V1_9_RUN_MODE ?? "").trim();
   if (runMode === "start-new") {
     if (runState.status !== "prepared") throw new Error("v1_9_fresh_run_state_invalid");
@@ -389,11 +389,10 @@ export function assertV1_9RunReadyForExternalAcceptance(runContext) {
   return runState;
 }
 
-function assertDeterministicRuntimeDisabled(env) {
+function assertFixtureModesDisabled(env) {
   if (
     env.M67_E2E_DETERMINISTIC === "1" ||
-    env.SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT === "1" ||
-    env.SHANHAI_E2E_DETERMINISTIC_RUNTIME === "1"
+    env.SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT === "1"
   ) {
     throw new Error("v1_9_deterministic_runtime_forbidden");
   }

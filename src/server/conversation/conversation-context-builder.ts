@@ -3,7 +3,7 @@ import type { CapabilityAvailabilityEntry } from "@/server/capabilities/capabili
 import type { AgentWorldState } from "@/server/conversation/agent-world-state";
 import type { ContextPackage } from "@/server/conversation/context-package";
 import { compactSessionWithValidation } from "@/server/conversation/session-compactor";
-import type { ArtifactRecord, ConversationMessageRecord, ProjectRecord, WorkflowNodeRecord } from "@/server/workbench/types";
+import type { ArtifactRecord, ConversationMessageRecord, ProjectRecord } from "@/server/workbench/types";
 import type { SemanticContextSnapshot } from "@/server/conversation/context-semantic-snapshot";
 import type { TaskBrief } from "@/server/conversation/task-contract";
 import { isArtifactBoundToTask } from "@/server/quality/artifact-truth-boundary";
@@ -17,7 +17,6 @@ const CONTEXT_GUARDRAILS = [
 export function buildConversationContextPackage(input: {
   project: ProjectRecord;
   messages: ConversationMessageRecord[];
-  workflowNodes: WorkflowNodeRecord[];
   artifacts: ArtifactRecord[];
   taskBrief?: TaskBrief | null;
   maxInputTokens?: number;
@@ -56,15 +55,7 @@ export function buildConversationContextPackage(input: {
       subject: input.project.subject,
       textbookVersion: input.project.textbookVersion,
       lessonTopic: input.project.lessonTopic,
-      currentNodeKey: input.project.currentNodeKey,
     },
-    workflowNodes: input.workflowNodes.map((node) => ({
-      key: node.key,
-      title: node.title,
-      status: node.status,
-      approvedArtifactId: node.approvedArtifactId,
-      staleReason: sanitizeTeacherMessage(node.staleReason) || null,
-    })),
     sessionSummary: packageMode === "snapshot" ? compacted.summary : undefined,
     recentMessages: recentMessages.map((message) => ({
       id: message.id,
@@ -89,22 +80,10 @@ export function buildConversationContextPackage(input: {
   };
 }
 
-function sanitizeTeacherMessage(message: string | null): string {
-  if (!message) return "";
-  const containsSensitiveDetail = /\b(provider|schema|storage|debug|token|manifest|node_id|api|key|secret|credential)\b|[A-Z0-9_]*(?:API_KEY|API_TOKEN|TOKEN|SECRET|KEY|CREDENTIAL)[A-Z0-9_]*|local\s+path|[A-Za-z]:[\\/]|\/(Users|home|tmp|var|private|mnt)\//i.test(message);
-  if (containsSensitiveDetail) return "处理过程遇到问题，请稍后重试或调整后再继续。";
-  return message.trim();
-}
-
 export function contextPackageToMainAgentConversationContext(
   contextPackage: ContextPackage,
   agentWorldState: AgentWorldState | undefined,
   capabilityAvailability: CapabilityAvailabilityEntry[] | undefined,
-  pendingPlan: {
-    teacherRequest: string;
-    toolPlan: import("@/server/capabilities/types").CapabilityToolPlan;
-    deliveryPlan?: import("@/server/capabilities/types").DeliveryPlan;
-  } | null,
   semanticSnapshot?: SemanticContextSnapshot,
 ) {
   return {
@@ -114,12 +93,5 @@ export function contextPackageToMainAgentConversationContext(
     semanticSnapshot,
     recentMessages: contextPackage.recentMessages.map((message) => ({ role: message.role, content: message.content })),
     latestAssistantContent: [...contextPackage.recentMessages].reverse().find((message) => message.role === "assistant")?.content,
-    pendingDeliveryPlan: pendingPlan
-      ? {
-          teacherRequest: pendingPlan.teacherRequest,
-          toolPlan: pendingPlan.toolPlan,
-          deliveryPlan: pendingPlan.deliveryPlan,
-        }
-      : undefined,
   };
 }

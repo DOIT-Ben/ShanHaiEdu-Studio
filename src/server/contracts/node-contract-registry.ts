@@ -36,16 +36,6 @@ export function getPublishedNodeContractByCapabilityId(capabilityId: string): No
   return getPublishedNodeContract(contractId);
 }
 
-export function getPublishedNodeContractByWorkflowNodeKey(workflowNodeKey: string): NodeContract {
-  const contract = getPublishedNodeContracts().find(
-    (publishedContract) => publishedContract.workflowNodeKey === workflowNodeKey,
-  );
-  if (!contract) {
-    throw new Error(`Unknown workflow node for node contract: ${workflowNodeKey}`);
-  }
-  return cloneContract(contract);
-}
-
 export function getPublishedNodeContracts(): NodeContract[] {
   if (!publishedContractsCache) {
     publishedContractsCache = publishedContractIds.map((contractId) =>
@@ -77,7 +67,7 @@ function assertNodeContract(value: unknown, source: string): asserts value is No
     throw new Error(`Invalid node contract JSON: ${source}`);
   }
 
-  for (const field of ["id", "workflowNodeKey", "artifactKind", "version", "displayName", "purpose"] as const) {
+  for (const field of ["id", "artifactKind", "version", "displayName", "purpose"] as const) {
     if (typeof value[field] !== "string" || value[field].trim().length === 0) {
       throw new Error(`Invalid node contract field ${field}: ${source}`);
     }

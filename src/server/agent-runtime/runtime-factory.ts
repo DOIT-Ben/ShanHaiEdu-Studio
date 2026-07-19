@@ -1,12 +1,9 @@
 import OpenAI from "openai";
-import { DeterministicRuntime } from "./deterministic-runtime";
 import { OpenAIRuntime, type OpenAIResponsesClient } from "./openai-runtime";
 import type { AgentRuntime, AgentRuntimeInput, AgentRuntimeResult } from "./types";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 
 type RuntimeFactoryEnv = OpenAICompatibleEnv & {
-  SHANHAI_OPENAI_NATIVE_TOOL_LOOP?: string;
-  SHANHAI_E2E_DETERMINISTIC_RUNTIME?: string;
   AGENT_RUNTIME_TIMEOUT_MS?: string;
 };
 
@@ -14,9 +11,6 @@ const defaultAgentRuntimeTimeoutMs = 180_000;
 const minimumAgentRuntimeTimeoutMs = 10_000;
 
 export function createAgentRuntimeFromEnv(env: RuntimeFactoryEnv = process.env): AgentRuntime {
-  if (env.NODE_ENV !== "production" && env.SHANHAI_E2E_DETERMINISTIC_RUNTIME === "1") {
-    return new DeterministicRuntime();
-  }
   const config = pickOpenAICompatibleConfig(env);
   if (!config) {
     return new UnavailableAgentRuntime();

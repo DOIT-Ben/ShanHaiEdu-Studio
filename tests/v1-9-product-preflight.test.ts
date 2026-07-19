@@ -66,7 +66,6 @@ describe("V1-9 product preflight", () => {
   it.each([
     "M67_E2E_DETERMINISTIC",
     "SHANHAI_E2E_DETERMINISTIC_MAIN_AGENT",
-    "SHANHAI_E2E_DETERMINISTIC_RUNTIME",
   ])("fails before any eager or external boundary when %s is enabled", async (name) => {
     const dependencies = readyDependencies();
 

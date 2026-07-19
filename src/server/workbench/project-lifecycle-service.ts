@@ -145,19 +145,14 @@ async function reconcileStaleProjectJobs(tx: Prisma.TransactionClient, projectId
     where: { projectId, status: { in: ["queued", "running"] }, updatedAt: { lte: staleBefore } },
     data: { status: "failed", errorMessage: message, finishedAt: now },
   });
-  await tx.agentRun.updateMany({
-    where: { projectId, status: "running", startedAt: { lte: staleBefore } },
-    data: { status: "failed", errorMessage: message, finishedAt: now },
-  });
 }
 
 async function hasPendingProjectWork(tx: Prisma.TransactionClient, projectId: string) {
-  const [turnJobs, generationJobs, agentRuns] = await Promise.all([
+  const [turnJobs, generationJobs] = await Promise.all([
     tx.conversationTurnJob.count({ where: { projectId, status: { in: ["queued", "running"] } } }),
     tx.generationJob.count({ where: { projectId, status: { in: ["queued", "running"] } } }),
-    tx.agentRun.count({ where: { projectId, status: "running" } }),
   ]);
-  return turnJobs + generationJobs + agentRuns > 0;
+  return turnJobs + generationJobs > 0;
 }
 
 function resolveLifecycleTransition(project: Project, mutation: ProjectLifecycleMutation, now: Date): Prisma.ProjectUpdateManyMutationInput | null {

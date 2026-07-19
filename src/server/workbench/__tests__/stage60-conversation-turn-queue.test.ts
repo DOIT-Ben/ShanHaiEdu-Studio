@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { POST as postMessageRoute } from "@/app/api/workbench/projects/[projectId]/messages/route";
-import { DeterministicRuntime } from "@/server/agent-runtime/deterministic-runtime";
-import { createAgentRuntimeFromEnv } from "@/server/agent-runtime/runtime-factory";
+import { FixtureAgentRuntime } from "../../../../tests/helpers/fixture-agent-runtime";
 import { drainProjectConversationQueue } from "@/server/conversation/conversation-turn-queue";
-import { createConversationTurnService } from "@/server/conversation/conversation-turn-service";
 import { createControlPlaneStore } from "@/server/conversation/control-plane-store";
-import type { MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
-import { createExecutionEnvelope, createTaskBrief, type IntentGrant } from "@/server/conversation/task-contract";
+import { buildSemanticContextSnapshot } from "@/server/conversation/context-semantic-snapshot";
+import type { MainConversationAgent, MainConversationAgentInput } from "@/server/conversation/main-conversation-agent";
+import {
+  createExecutionEnvelope,
+  createTaskBrief,
+  type IntentGrant,
+  type PendingDecision,
+  type TaskRequestedOutput,
+} from "@/server/conversation/task-contract";
 import type { AgentToolInvocationEnvelope } from "@/server/tools/agent-tool-invocation";
 import { createWorkbenchService } from "../service";
 
@@ -22,8 +27,11 @@ describe("Local Real MVP M60 conversation turn queue", () => {
 
     const result = await drainProjectConversationQueue(project.id, {
       service,
-      runtime: new DeterministicRuntime(),
-      enableTaskGrantAutonomy: true,
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture({
+        requestedOutputs: ["ppt"],
+        toolCall: { toolName: "create_ppt_outline", arguments: {} },
+      }),
     });
     const snapshot = await service.getProjectSnapshot(project.id);
     const persistedTeacherMessage = snapshot.messages.find((message) => message.id === teacherMessage.id)!;
@@ -34,7 +42,7 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       taskBrief: { goal: expect.stringContaining("投篮命中率"), intentEpoch: 0 },
       intentGrant: { standardWorkAuthorized: true, taskId: expect.any(String), intensity: "standard" },
     });
-    expect(snapshot.messages.filter((message) => message.role === "assistant").at(-1)?.metadata.pendingDeliveryPlan).toBeUndefined();
+    expect(snapshot.messages.some((message) => message.metadata.pendingDecision)).toBe(false);
   });
 
   it("persists queued conversation turn jobs in the project snapshot", async () => {
@@ -133,12 +141,11 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(snapshot.turnJobs.map((job) => job.id)).toContain(body.job.id);
   });
 
-  it("POST /messages persists confirmedActionId metadata and queued execution confirms the pending plan", async () => {
+  it("POST /messages binds confirmation to the persisted PendingDecision", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API confirmedActionId 入队确认", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
-    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
-    await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
-    const actionId = await getLatestPendingActionId(service, project.id);
+    const seeded = await seedPendingDecision(service, project.id, "帮我做五年级数学百分数 PPT");
+    const actionId = seeded.decision.actionId;
 
     const response = await postMessageRoute(
       new Request("http://localhost/api/workbench/projects/project/messages", {
@@ -152,22 +159,37 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(response.status).toBe(202);
     expect(body.message).toMatchObject({ role: "teacher", content: "确认开始", metadata: { confirmedActionId: actionId } });
 
-    const drainResult = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
+    const drainResult = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture(),
+    });
     const snapshot = await service.getProjectSnapshot(project.id);
-    const assistantPlanMessage = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).teacherRequest === "帮我做五年级数学百分数 PPT");
+    const decisionMessage = snapshot.messages.find((message) => pendingDecisionOf(message).decisionId === seeded.decision.decisionId);
+    const aggregate = await seeded.store.getTaskAggregate(project.id, seeded.taskBrief.intentEpoch);
+    const semanticSnapshot = await seeded.store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: seeded.taskBrief.taskId,
+      intentEpoch: seeded.taskBrief.intentEpoch,
+    });
 
     expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
-    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "ppt_draft", status: "needs_review" })]);
+    expect(snapshot.artifacts).toEqual([]);
+    expect(snapshot.project.intentEpoch).toBe(seeded.taskBrief.intentEpoch);
     expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
-    expect(pendingDeliveryPlanOf(assistantPlanMessage)).toMatchObject({ status: "confirmed", actionId });
+    expect(pendingDecisionOf(decisionMessage)).toMatchObject({ status: "confirmed", actionId });
+    expect(aggregate).toMatchObject({
+      taskBrief: { taskId: seeded.taskBrief.taskId, intentEpoch: seeded.taskBrief.intentEpoch },
+      status: "paused_recovery",
+    });
+    expect(semanticSnapshot?.snapshot.pendingDecision).toMatchObject({ status: "confirmed", actionId });
   });
 
-  it("queued execution treats edited quick-reply text as a revision and never spends the old action", async () => {
+  it("queued execution supersedes the old PendingDecision when its quick reply is edited", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "V1-4 queued edited action", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
-    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
-    await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
-    const oldActionId = await getLatestPendingActionId(service, project.id);
+    const seeded = await seedPendingDecision(service, project.id, "帮我做五年级数学百分数 PPT");
+    const oldActionId = seeded.decision.actionId;
     const edited = await service.addMessage(project.id, {
       role: "teacher",
       content: "把叙事改成先冲突后揭秘，不要按刚才那版执行",
@@ -175,23 +197,32 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     });
     await service.enqueueConversationTurn(project.id, { teacherMessageId: edited.id });
 
-    const result = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
+    const result = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture(),
+    });
     const snapshot = await service.getProjectSnapshot(project.id);
-    const oldPlan = snapshot.messages.find((message) => pendingDeliveryPlanOf(message).actionId === oldActionId);
+    const oldDecision = snapshot.messages.find((message) => pendingDecisionOf(message).actionId === oldActionId);
 
     expect(result).toMatchObject({ started: 1, succeeded: 1, blocked: 0, failed: 0 });
     expect(snapshot.artifacts).toHaveLength(0);
     expect(snapshot.project.intentEpoch).toBe((project.intentEpoch ?? 0) + 1);
-    expect(pendingDeliveryPlanOf(oldPlan)).toMatchObject({ status: "superseded", actionId: oldActionId });
+    expect(pendingDecisionOf(oldDecision)).toMatchObject({ status: "superseded", actionId: oldActionId });
+    expect(await seeded.store.getTaskAggregate(project.id, seeded.taskBrief.intentEpoch)).toMatchObject({ status: "superseded" });
+    await expect(seeded.store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: seeded.taskBrief.taskId,
+      intentEpoch: seeded.taskBrief.intentEpoch,
+    })).resolves.toBeNull();
     expect(await getLatestPendingActionId(service, project.id)).not.toBe(oldActionId);
   });
 
   it("POST /messages accepts actionId as an alias for confirmedActionId before queued execution", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API actionId 入队确认", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
-    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
-    await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
-    const actionId = await getLatestPendingActionId(service, project.id);
+    const seeded = await seedPendingDecision(service, project.id, "帮我做五年级数学百分数 PPT");
+    const actionId = seeded.decision.actionId;
 
     const response = await postMessageRoute(
       new Request("http://localhost/api/workbench/projects/project/messages", {
@@ -205,19 +236,23 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(response.status).toBe(202);
     expect(body.message).toMatchObject({ role: "teacher", content: "确认开始", metadata: { confirmedActionId: actionId } });
 
-    const drainResult = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
+    const drainResult = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture(),
+    });
     const snapshot = await service.getProjectSnapshot(project.id);
 
     expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
-    expect(snapshot.artifacts).toEqual([expect.objectContaining({ nodeKey: "ppt_draft", status: "needs_review" })]);
+    expect(snapshot.artifacts).toEqual([]);
+    expect(snapshot.messages.some((message) => pendingDecisionOf(message).status === "confirmed" && pendingDecisionOf(message).actionId === actionId)).toBe(true);
     expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked", errorCode: "completion_contract_unsatisfied" });
   });
 
-  it("queued execution blocks a pending plan when POST /messages has no valid actionId", async () => {
+  it("queued execution leaves a PendingDecision unspent when POST /messages has the wrong actionId", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "MVP1 API actionId 阻断", grade: "五年级", subject: "数学", lessonTopic: "百分数" });
-    const turnService = createConversationTurnService({ service, runtime: new DeterministicRuntime() });
-    await turnService.createTurn(project.id, { role: "teacher", content: "帮我做五年级数学百分数 PPT" });
+    const seeded = await seedPendingDecision(service, project.id, "帮我做五年级数学百分数 PPT");
 
     const response = await postMessageRoute(
       new Request("http://localhost/api/workbench/projects/project/messages", {
@@ -231,14 +266,26 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     expect(response.status).toBe(202);
     expect(body.message).toMatchObject({ role: "teacher", metadata: { confirmedActionId: "human:wrong:requirement_spec:message" } });
 
-    const drainResult = await drainProjectConversationQueue(project.id, { service, runtime: new DeterministicRuntime() });
+    const drainResult = await drainProjectConversationQueue(project.id, {
+      service,
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture(),
+    });
     const snapshot = await service.getProjectSnapshot(project.id);
-    const assistantMessages = snapshot.messages.filter((message) => message.role === "assistant");
+    const semanticSnapshot = await seeded.store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: seeded.taskBrief.taskId,
+      intentEpoch: seeded.taskBrief.intentEpoch,
+    });
 
-    expect(drainResult).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
+    expect(drainResult).toMatchObject({ started: 1, succeeded: 1, blocked: 0, failed: 0 });
     expect(snapshot.artifacts).toHaveLength(0);
-    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "blocked" });
-    expect(assistantMessages.at(-1)?.content).toContain("不匹配");
+    expect(snapshot.turnJobs.find((job) => job.id === body.job.id)).toMatchObject({ status: "succeeded" });
+    expect(snapshot.messages.some((message) => pendingDecisionOf(message).status === "pending" && pendingDecisionOf(message).actionId === seeded.decision.actionId)).toBe(true);
+    expect(semanticSnapshot?.snapshot.pendingDecision).toMatchObject({
+      status: "pending",
+      actionId: seeded.decision.actionId,
+    });
   });
 
   it("POST /messages deduplicates teacher message and turn job by idempotency key", async () => {
@@ -447,66 +494,10 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     ]);
   });
 
-  it("atomically preempts an in-flight task before queuing an explicit control turn", async () => {
+  it("atomically pauses an in-flight task without changing its IntentEpoch or PendingDecision", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "控制抢先提交" });
-    const source = await service.addMessage(project.id, { role: "teacher", content: "生成PPT" });
-    const brief = createTaskBrief({
-      taskId: `task:${source.id}`,
-      projectId: project.id,
-      intentEpoch: 0,
-      goal: source.content,
-      requestedOutputs: ["ppt"],
-      constraints: [],
-      excludedOutputs: [],
-      generationIntensity: "standard",
-      sourceMessageId: source.id,
-    });
-    const grant: IntentGrant = {
-      schemaVersion: "intent-grant.v1",
-      taskId: brief.taskId,
-      projectId: project.id,
-      intentEpoch: 0,
-      standardWorkAuthorized: true,
-      intensity: "standard",
-      budgetPolicyVersion: "v1-standard-task-scope.v1",
-      maxCostCredits: null,
-      maxExternalProviderCalls: 2,
-      requiredCheckpoints: [],
-      expiresAt: null,
-    };
-    const store = createControlPlaneStore();
-    await store.upsertTaskAggregate({
-      taskBrief: brief,
-      intentGrant: grant,
-      plan: { planId: `plan:${brief.taskId}`, revision: 0, status: "active" },
-      checkpoint: null,
-    });
-    const pendingActionId = "action-preemptive-pause";
-    await service.addMessage(project.id, {
-      role: "assistant",
-      content: "等待确认",
-      metadata: {
-        pendingDeliveryPlan: {
-          status: "pending",
-          teacherRequest: source.content,
-          toolPlan: {
-            planId: `plan:${brief.taskId}`,
-            capabilityId: "ppt_outline",
-            reasonForUser: "生成PPT大纲",
-            internalReason: "test",
-            inputDraft: {},
-            missingInputs: [],
-            upstreamPlan: [],
-            nextSuggestedCapabilities: [],
-            requiresConfirmation: true,
-            expectedArtifactKind: "ppt_draft",
-          },
-          runtimeKind: "openai",
-          actionId: pendingActionId,
-        },
-      },
-    });
+    const seeded = await seedPendingDecision(service, project.id, "生成PPT");
 
     const result = await service.enqueueMessageAndConversationTurn(project.id, {
       role: "teacher",
@@ -515,54 +506,46 @@ describe("Local Real MVP M60 conversation turn queue", () => {
       preemptiveControl: {
         kind: "pause",
         reasonCode: "teacher_requested_pause",
-        advanceIntentEpoch: true,
+        advanceIntentEpoch: false,
         userMessage: "暂停",
       },
     } as Parameters<typeof service.enqueueMessageAndConversationTurn>[1]);
 
     expect(result.job).toMatchObject({ status: "succeeded", assistantMessageId: expect.any(String) });
     const snapshot = await service.getProjectSnapshot(project.id);
-    expect(snapshot.project.intentEpoch).toBe(1);
-    expect(snapshot.messages.find((message) => pendingDeliveryPlanOf(message).actionId === pendingActionId))
-      .toMatchObject({ metadata: { pendingDeliveryPlan: { status: "paused", actionId: pendingActionId } } });
-    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
+    const semanticSnapshot = await seeded.store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: seeded.taskBrief.taskId,
+      intentEpoch: seeded.taskBrief.intentEpoch,
+    });
+    expect(snapshot.project.intentEpoch).toBe(seeded.taskBrief.intentEpoch);
+    expect(snapshot.messages.find((message) => pendingDecisionOf(message).actionId === seeded.decision.actionId))
+      .toMatchObject({ metadata: { pendingDecision: { status: "pending", actionId: seeded.decision.actionId } } });
+    expect(await seeded.store.getTaskAggregate(project.id, seeded.taskBrief.intentEpoch)).toMatchObject({
+      status: "paused_recovery",
+      plan: { revision: 0 },
+    });
+    expect(semanticSnapshot?.snapshot).toMatchObject({
+      taskBrief: { taskId: seeded.taskBrief.taskId, intentEpoch: seeded.taskBrief.intentEpoch },
+      pendingDecision: { status: "pending", actionId: seeded.decision.actionId },
+    });
   });
 
   it("atomically cancels an in-flight invocation before its result can be promoted", async () => {
     const service = createQueueTestService();
     const project = await service.createProject({ title: "取消抢先阻断迟到结果" });
-    const source = await service.addMessage(project.id, { role: "teacher", content: "生成PPT" });
-    const brief = createTaskBrief({
-      taskId: `task:${source.id}`,
-      projectId: project.id,
-      intentEpoch: 0,
-      goal: source.content,
-      requestedOutputs: ["ppt"],
-      constraints: [],
-      excludedOutputs: [],
-      generationIntensity: "standard",
-      sourceMessageId: source.id,
-    });
-    const grant: IntentGrant = {
-      schemaVersion: "intent-grant.v1",
-      taskId: brief.taskId,
-      projectId: project.id,
-      intentEpoch: 0,
-      standardWorkAuthorized: true,
-      intensity: "standard",
-      budgetPolicyVersion: "v1-standard-task-scope.v1",
-      maxCostCredits: null,
-      maxExternalProviderCalls: 2,
-      requiredCheckpoints: [],
-      expiresAt: null,
-    };
-    const store = createControlPlaneStore();
-    await store.upsertTaskAggregate({
+    const seeded = await seedPendingDecision(service, project.id, "生成PPT");
+    const { source, taskBrief: brief, intentGrant: grant, store } = seeded;
+    const activePlan = { planId: seeded.decision.planId, revision: 0, status: "active" };
+    await store.resumeTaskAggregate({ taskBrief: brief, intentGrant: grant, plan: activePlan });
+    await store.saveSemanticSnapshot(buildSemanticContextSnapshot({
       taskBrief: brief,
-      intentGrant: grant,
-      plan: { planId: `plan:${brief.taskId}`, revision: 0, status: "active" },
-      checkpoint: null,
-    });
+      plan: activePlan,
+      pendingDecision: seeded.decision,
+      trustedArtifactRefs: [],
+      observationRefs: [],
+      recentMessages: [{ role: "teacher", content: source.content }],
+    }), 0);
     const envelope = createExecutionEnvelope({
       actorUserId: "local-test-user",
       taskBrief: brief,
@@ -589,7 +572,16 @@ describe("Local Real MVP M60 conversation turn queue", () => {
     });
 
     expect(result.job).toMatchObject({ status: "succeeded", assistantMessageId: expect.any(String) });
-    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
+    const snapshot = await service.getProjectSnapshot(project.id);
+    expect(snapshot.project.intentEpoch).toBe(brief.intentEpoch + 1);
+    expect(snapshot.messages.find((message) => pendingDecisionOf(message).actionId === seeded.decision.actionId))
+      .toMatchObject({ metadata: { pendingDecision: { status: "canceled", actionId: seeded.decision.actionId } } });
+    expect(await store.getTaskAggregate(project.id, brief.intentEpoch)).toMatchObject({ status: "canceled", plan: { revision: 1 } });
+    await expect(store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: brief.taskId,
+      intentEpoch: brief.intentEpoch,
+    })).resolves.toBeNull();
     await expect(store.commitToolResult({
       invocationId,
       artifact: {
@@ -672,7 +664,12 @@ describe("Local Real MVP M60 conversation turn queue", () => {
 
     expect(result.job).toMatchObject({ status: "queued", assistantMessageId: null });
     expect((await service.getProjectSnapshot(project.id)).project.intentEpoch).toBe(1);
-    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "paused_recovery", plan: { revision: 1 } });
+    expect(await store.getTaskAggregate(project.id, 0)).toMatchObject({ status: "superseded", plan: { revision: 1 } });
+    await expect(store.getLatestSemanticSnapshot({
+      projectId: project.id,
+      taskId: brief.taskId,
+      intentEpoch: brief.intentEpoch,
+    })).resolves.toBeNull();
   });
 
   it("default drain executor runs the existing conversation turn service", async () => {
@@ -683,7 +680,8 @@ describe("Local Real MVP M60 conversation turn queue", () => {
 
     const drainResult = await drainProjectConversationQueue(project.id, {
       service,
-      runtime: createAgentRuntimeFromEnv({ NODE_ENV: "test" }),
+      runtime: new FixtureAgentRuntime(),
+      agent: createQueueAgentFixture(),
     });
 
     const snapshot = await service.getProjectSnapshot(project.id);
@@ -783,11 +781,10 @@ describe("Local Real MVP M60 conversation turn queue", () => {
 
     const result = await drainProjectConversationQueue(project.id, {
       service,
-      runtime: new DeterministicRuntime(),
+      runtime: new FixtureAgentRuntime(),
       agent,
       agentToolExecutor,
       workerId: "v1-3-worker",
-      enableNativeToolControlPlane: true,
     });
 
     expect(result).toMatchObject({ started: 1, succeeded: 0, blocked: 1, failed: 0 });
@@ -809,12 +806,151 @@ function createQueueTestService() {
   });
 }
 
-async function getLatestPendingActionId(service: ReturnType<typeof createWorkbenchService>, projectId: string) {
-  const messages = await service.getMessages(projectId);
-  const pendingMessage = [...messages].reverse().find((message) => pendingDeliveryPlanOf(message).status === "pending");
-  return String(pendingDeliveryPlanOf(pendingMessage).actionId ?? "");
+function createQueueAgentFixture(options: {
+  requestedOutputs?: TaskRequestedOutput[];
+  toolCall?: { toolName: string; arguments: Record<string, unknown> };
+} = {}): MainConversationAgent {
+  return {
+    async intakeTask(input) {
+      if (!options.requestedOutputs && /^(?:你好|您好)[！!。.]?$/.test(input.userMessage.trim())) {
+        return {
+          kind: "conversation",
+          turn: {
+            assistantMessage: { body: "小酷在这里，今天想准备哪节课？" },
+            state: "chatting",
+            quickReplies: [],
+            recommendedOptions: [],
+            shouldRunToolNow: false,
+            runtimeKind: "openai",
+          },
+        };
+      }
+      return {
+        kind: "task",
+        proposal: {
+          goal: input.userMessage,
+          requestedOutputs: options.requestedOutputs ?? ["requirement_spec"],
+          constraints: [],
+          excludedOutputs: [],
+        },
+      };
+    },
+    async respond(input) {
+      if (options.toolCall) {
+        if (!input.agentToolLoop) throw new Error("Queue Agent fixture requires the native Agent Tool loop.");
+        const dispatched = await input.agentToolLoop.dispatch({
+          callId: `queue-fixture:${crypto.randomUUID()}`,
+          ...options.toolCall,
+        });
+        if (dispatched.status !== "succeeded") {
+          throw new Error(`Queue Agent fixture Tool failed: ${dispatched.status}`);
+        }
+      }
+      return {
+        assistantMessage: { body: "小酷已读取当前任务状态。" },
+        state: "chatting",
+        quickReplies: [],
+        recommendedOptions: [],
+        shouldRunToolNow: false,
+        runtimeKind: "openai",
+      };
+    },
+  };
 }
 
-function pendingDeliveryPlanOf(message?: { metadata: Record<string, unknown> }) {
-  return (message?.metadata.pendingDeliveryPlan ?? {}) as { status?: string; actionId?: string; teacherRequest?: string };
+async function seedPendingDecision(
+  service: ReturnType<typeof createWorkbenchService>,
+  projectId: string,
+  teacherRequest: string,
+) {
+  const project = await service.getProject(projectId);
+  const source = await service.addMessage(projectId, { role: "teacher", content: teacherRequest });
+  const taskBrief = createTaskBrief({
+    taskId: `task:${source.id}`,
+    projectId,
+    intentEpoch: project.intentEpoch ?? 0,
+    goal: teacherRequest,
+    requestedOutputs: ["ppt_outline"],
+    constraints: [],
+    excludedOutputs: [],
+    generationIntensity: "standard",
+    sourceMessageId: source.id,
+  });
+  const intentGrant: IntentGrant = {
+    schemaVersion: "intent-grant.v1",
+    taskId: taskBrief.taskId,
+    projectId,
+    intentEpoch: taskBrief.intentEpoch,
+    standardWorkAuthorized: true,
+    intensity: "standard",
+    budgetPolicyVersion: "v1-standard-task-scope.v1",
+    maxCostCredits: null,
+    maxExternalProviderCalls: 2,
+    requiredCheckpoints: [],
+    expiresAt: null,
+  };
+  const plan = {
+    planId: `plan:${taskBrief.taskId}`,
+    revision: 0,
+    status: "paused_recovery",
+  };
+  const decision: PendingDecision = {
+    schemaVersion: "pending-decision.v1",
+    decisionId: `decision:${crypto.randomUUID()}`,
+    status: "pending",
+    kind: "material_choice",
+    reasonCode: "material_choice_required",
+    question: "是否按当前范围继续？",
+    impactSummary: "确认只恢复当前任务，不授权范围外工作。",
+    options: [
+      { id: "confirm", label: "确认继续", recommended: true },
+      { id: "cancel", label: "暂不继续", recommended: false },
+    ],
+    actorUserId: "local-test-user",
+    projectId,
+    taskId: taskBrief.taskId,
+    intentEpoch: taskBrief.intentEpoch,
+    planId: plan.planId,
+    actionId: `action:${crypto.randomUUID()}`,
+    budgetPolicyVersion: intentGrant.budgetPolicyVersion,
+    maxCostCredits: intentGrant.maxCostCredits,
+    maxExternalProviderCalls: intentGrant.maxExternalProviderCalls,
+    expiresAt: null,
+  };
+  await service.updateMessageMetadata(projectId, source.id, { taskBrief, intentGrant });
+  const decisionMessage = await service.addMessage(projectId, {
+    role: "assistant",
+    content: `${decision.question}\n\n${decision.impactSummary}`,
+    metadata: { pendingDecision: decision },
+  });
+  const store = createControlPlaneStore();
+  await store.upsertTaskAggregate({
+    taskBrief,
+    intentGrant,
+    plan,
+    status: "paused_recovery",
+    checkpoint: null,
+  });
+  await store.saveSemanticSnapshot(buildSemanticContextSnapshot({
+    taskBrief,
+    plan,
+    pendingDecision: decision,
+    trustedArtifactRefs: [],
+    observationRefs: [],
+    recentMessages: [
+      { role: "teacher", content: source.content },
+      { role: "assistant", content: decisionMessage.content },
+    ],
+  }), 0);
+  return { source, taskBrief, intentGrant, decision, decisionMessage, store };
+}
+
+async function getLatestPendingActionId(service: ReturnType<typeof createWorkbenchService>, projectId: string) {
+  const messages = await service.getMessages(projectId);
+  const pendingMessage = [...messages].reverse().find((message) => pendingDecisionOf(message).status === "pending");
+  return String(pendingDecisionOf(pendingMessage).actionId ?? "");
+}
+
+function pendingDecisionOf(message?: { metadata: Record<string, unknown> }) {
+  return (message?.metadata.pendingDecision ?? {}) as Partial<PendingDecision>;
 }

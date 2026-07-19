@@ -5,8 +5,7 @@ import { normalizeSnapshot, type BackendSnapshot } from "@/lib/workbench-mappers
 describe("V1-9R4 historical artifact mapping", () => {
   it("keeps a message-referenced historical version available alongside the latest node version", () => {
     const snapshot = normalizeSnapshot({
-      project: { id: "project-1", title: "百分数", status: "active", currentNodeKey: "ppt_draft", grade: null, subject: null, textbookVersion: null, lessonTopic: null, createdAt: "2026-07-14T00:00:00.000Z", updatedAt: "2026-07-14T00:00:00.000Z" },
-      nodes: [{ id: "node-ppt", projectId: "project-1", key: "ppt_draft", title: "PPT 大纲", status: "needs_review", order: 1, upstreamNodeKeys: [], approvedArtifactId: null, staleReason: null, updatedAt: "2026-07-14T00:00:00.000Z" }],
+      project: { id: "project-1", title: "百分数", status: "active", grade: null, subject: null, textbookVersion: null, lessonTopic: null, createdAt: "2026-07-14T00:00:00.000Z", updatedAt: "2026-07-14T00:00:00.000Z" },
       artifacts: [
         { id: "ppt-v1", projectId: "project-1", nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT 大纲 v1", status: "approved", summary: "旧版", markdownContent: "# 旧版", structuredContent: {}, version: 1, isApproved: true, createdAt: "2026-07-14T00:00:00.000Z", updatedAt: "2026-07-14T00:00:00.000Z" },
         { id: "ppt-v2", projectId: "project-1", nodeKey: "ppt_draft", kind: "ppt_draft", title: "PPT 大纲 v2", status: "needs_review", summary: "新版", markdownContent: "# 新版", structuredContent: {}, version: 2, isApproved: false, createdAt: "2026-07-14T00:01:00.000Z", updatedAt: "2026-07-14T00:01:00.000Z" },
@@ -18,6 +17,8 @@ describe("V1-9R4 historical artifact mapping", () => {
       ["ppt-v2", 2],
       ["ppt-v1", 1],
     ]);
+    expect(snapshot.project.currentStep).toBe("PPT 大纲");
+    expect(snapshot.activeArtifactKey).toBe("ppt-v2");
     expect(snapshot.messages[0]?.artifactRefs).toEqual(["ppt-v1"]);
   });
 
@@ -30,8 +31,7 @@ describe("V1-9R4 historical artifact mapping", () => {
       updatedAt: "2026-07-14T00:00:01.000Z",
     };
     const snapshot = normalizeSnapshot({
-      project: { id: "project-1", title: "百分数", status: "active", currentNodeKey: "requirement_spec", grade: null, subject: null, textbookVersion: null, lessonTopic: null, createdAt: base.createdAt, updatedAt: base.updatedAt },
-      nodes: [],
+      project: { id: "project-1", title: "百分数", status: "active", grade: null, subject: null, textbookVersion: null, lessonTopic: null, createdAt: base.createdAt, updatedAt: base.updatedAt },
       artifacts: [],
       messages: ["queued", "running", "failed", "blocked"].map((status, index) => ({
         id: `teacher-${index}`,
@@ -56,5 +56,7 @@ describe("V1-9R4 historical artifact mapping", () => {
       ["failed", "生成失败，可重试"],
       ["blocked", "未达标，需要处理"],
     ]);
+    expect(snapshot.project.currentStep).toBe("进行中");
+    expect(snapshot.activeArtifactKey).toBe("");
   });
 });
