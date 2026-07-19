@@ -16,6 +16,7 @@
     "config/node-contracts/requirement_spec.json",
     "docs/README.md",
     "docs/architecture/README.md",
+    "docs/architecture/decisions/2026-07-14-adr-main-agent-react-checkpoint-compaction.md",
     "docs/mainlines/current-mainline-status.md",
     "docs/product/**",
     "docs/roadmap/**",

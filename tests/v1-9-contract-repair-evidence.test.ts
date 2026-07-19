@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  V1_9_CONTRACT_REPAIR_REQUIRED_FILES,
   contractRepairEvidencePath,
   createV1_9ContractRepairEvidence,
   validateV1_9ContractRepairEvidence,
@@ -18,6 +19,26 @@ import {
 } from "../scripts/lib/v1-9-e2e-contract.mjs";
 
 describe("V1-9 contract repair evidence", () => {
+  it("binds every decomposed Main Agent Tool Loop responsibility into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/conversation/main-agent-tool-description.ts",
+      "src/server/conversation/main-agent-tool-input-projection.ts",
+      "src/server/conversation/main-agent-tool-loop-agent-result.ts",
+      "src/server/conversation/main-agent-tool-loop-business-result.ts",
+      "src/server/conversation/main-agent-tool-loop-checkpoints.ts",
+      "src/server/conversation/main-agent-tool-loop-config.ts",
+      "src/server/conversation/main-agent-tool-loop-dialogue.ts",
+      "src/server/conversation/main-agent-tool-loop-dispatch.ts",
+      "src/server/conversation/main-agent-tool-loop-execution.ts",
+      "src/server/conversation/main-agent-tool-loop-human-gate.ts",
+      "src/server/conversation/main-agent-tool-loop-metadata.ts",
+      "src/server/conversation/main-agent-tool-loop-observations.ts",
+      "src/server/conversation/main-agent-tool-loop-ppt-assets.ts",
+      "src/server/conversation/main-agent-tool-loop-types.ts",
+      "src/server/conversation/main-agent-tool-qualification.ts",
+    ]));
+  });
+
   it("binds the exact Job, teacher message, TaskBrief, idempotency key, failure signature and required repair closure", () => {
     const cwd = path.resolve(".tmp", "v1-9-contract-repair-evidence");
     const repairFile = "repair/recovery.ts";

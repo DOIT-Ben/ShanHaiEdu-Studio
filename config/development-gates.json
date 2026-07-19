@@ -135,13 +135,6 @@
         "totalFunctionLines": 330
       },
       {
-        "path": "src/server/conversation/main-agent-tool-loop-config.ts",
-        "lines": 2062,
-        "violatingFunctions": 2,
-        "maxFunctionLines": 1272,
-        "totalFunctionLines": 2207
-      },
-      {
         "path": "src/server/conversation/model-main-conversation-agent.ts",
         "lines": 516,
         "violatingFunctions": 0,

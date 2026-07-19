@@ -31,9 +31,8 @@
 
 仍存在的问题：
 
-- 复杂度债务为28个文件，源码字符串合同债务为21个文件；Lint与构建动态追踪warning已清零并锁入门禁。
-- `conversation-turn-service.ts`已降到115行公开门面；`main-agent-tool-loop-config.ts`为2062行，workbench repository为2058行，后两者仍混合多项职责。
-- PendingDecision状态更新的消息、事件和语义快照尚未形成单事务或等价可恢复提交，中途写失败的恢复合同需在阶段C先关闭。
+- 复杂度债务为27个文件，源码字符串合同债务为21个文件；Lint与构建动态追踪warning已清零并锁入门禁。
+- `conversation-turn-service.ts`已降到115行公开门面，`main-agent-tool-loop-config.ts`已降到97行公开门面；workbench repository仍为2058行，是下一项核心巨型模块债务。
 
 尚未实现：
 
@@ -102,7 +101,7 @@
 
 ### 阶段C：拆分两个核心巨型模块
 
-状态：**进行中**。C0阶段合同、C1 PendingDecision一致性与C2 turn service拆分已完成；唯一下一切片为C3 tool loop拆分。
+状态：**已完成离线合同与执行验收**。C0阶段合同、C1 PendingDecision一致性、C2 turn service拆分与C3 tool loop拆分均已完成；不代表真实Provider、model orchestration、product E2E或release通过。
 
 目标：让turn协调和Tool执行各自只做一件事。
 
@@ -113,7 +112,7 @@
 1. **C0 阶段合同（已完成）**：推进`active-stage.json`、离线Provider延期精确绑定和门禁测试到固定基线；已独立提交，未修改生产业务代码。
 2. **C1 PendingDecision一致性（已完成）**：失败注入证明旧实现会先暴露`confirmed`消息；现已把TaskAggregate、授权元数据、匹配消息、决策事件和SemanticSnapshot纳入同一Prisma事务。同一`actionId`同payload重放复用原事件，冲突终态失败关闭。
 3. **C2 turn service拆分（已完成）**：保持`createConversationTurnService`、`MessageTurnResponse`和`capabilityTeacherLabel`原导入路径不变；任务intake、控制回合、进度投影、协调、上下文、结果提交和共享类型分别进入职责模块。公开门面降到115行，新职责模块最大363行且单函数均低于150行。
-4. **C3 tool loop拆分**：保持`createMainAgentToolLoopOptions`公开入口不变，把Tool目录、参数归一化、ExecutionEnvelope准备、单Tool执行、结果归一化、Observation与重试策略迁到职责模块；`main-agent-tool-loop-config.ts`降到500行以内。
+4. **C3 tool loop拆分（已完成）**：保持`createMainAgentToolLoopOptions`公开入口不变；Tool资格、教师可见描述、输入投影、checkpoint、DialogueCheckpoint、HumanGate、Invocation/Skill/Provider准备、业务与Agent结果、Observation和PPT批次生命周期分别迁到职责模块。公开门面降到97行。
 
 每个切片都必须先保留外部行为测试，再迁移实现，最后删除原位置的竞争实现。单文件不超过500行、函数不超过150行；不得通过转发层套转发层、提高阈值、扩大排除目录或源码字符串测试制造通过。
 
@@ -123,9 +122,11 @@ C1完成后，`control-plane-store.ts`由758降至639行、最大函数由406降
 
 C2完成后，`conversation-turn-service.ts`由1321降至115行并退出复杂度baseline；复杂度债务文件总数由29降至28。拆分未改变Provider请求、模型选择、Tool执行、消息返回、控制回合或错误文案合同。
 
+C3完成后，`main-agent-tool-loop-config.ts`由2062降至97行并退出复杂度baseline；15个内部职责模块均低于500行且单函数低于150行，复杂度债务文件总数由28降至27。公开工厂和输入类型继续从原路径导出，生产消费者仍只有`conversation-turn-agent-context.ts`；重试和停止策略仍只在controlled ReAct loop。V1-9 contract repair evidence已把15个拆分模块全部纳入SHA-256闭包，避免只绑定门面文件；C3未调用真实Provider。
+
 ### 阶段D：清零剩余工程债务
 
-目标：把阶段C结束后的全部复杂度债务和当前21项源码字符串债务归零。
+目标：把阶段C结束后的27个复杂度债务文件和当前21项源码字符串债务归零。
 
 修改范围：按职责拆分其余前端、workbench、skills、tool adapters和共享合同；清理无用变量、未处理Promise和不稳定依赖；把动态文件追踪改为显式受限根与静态入口。
 

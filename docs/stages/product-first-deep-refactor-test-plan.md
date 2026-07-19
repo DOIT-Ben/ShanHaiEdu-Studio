@@ -38,14 +38,15 @@
 
 ```powershell
 node --test --test-concurrency=1 <相关Node测试>
-npx vitest run <相关Vitest测试> --maxWorkers=1 --no-file-parallelism
+npm test
 npm run typecheck
 npm run lint -- --max-warnings 0
 npm run gate:development
 git diff --check
+git diff --cached --check
 ```
 
-早期切片中若既存warning尚未清零，可运行定向ESLint并记录剩余总数；只有阶段D完成后才允许声称Lint门通过。
+`npm test`是依赖数据库测试的权威入口，会为Node测试和Vitest分片初始化独立临时SQLite；不得裸跑依赖数据库的Vitest并复用真实库。每个切片都必须保持ESLint `0 error / 0 warning`；只有阶段D完成后才允许声称复杂度和源码字符串合同债务已清零。
 
 ## 4. 删除性验收
 
@@ -91,6 +92,14 @@ C2新鲜证据：
 - TypeScript、ESLint `0 warning`、生产构建、standalone敏感文件检查和development gate通过。
 - `conversation-turn-service.ts`为115行，新职责模块均低于500行且无函数超过150行；复杂度债务由29降至28，源码字符串合同债务仍为21。
 - Provider保持离线延期、`passed=false`且请求数为0。
+
+C3新鲜证据：
+
+- `createMainAgentToolLoopOptions`和`CreateMainAgentToolLoopOptionsInput`继续从原模块导出；生产消费者仍只有`conversation-turn-agent-context.ts`，没有新增竞争dispatch入口。
+- `npm test`通过：Node测试`427/427`，Vitest隔离分片`793/793`与`778/778`；覆盖Tool资格、ExecutionEnvelope、HumanGate、Skill合同、terminal replay、Observation/Artifact提交、GenerationJob恢复及PPT/视频编排。
+- TypeScript、ESLint `0 warning`和生产构建通过，standalone检查`forbidden=[]`；`main-agent-tool-loop-config.ts`为97行，15个职责模块均低于500行且无函数超过150行。
+- V1-9 contract repair evidence的默认SHA闭包包含全部15个拆分模块，定向合同`2/2`通过。
+- development gate通过；复杂度债务由28降至27，源码字符串合同债务仍为21。Provider保持离线延期、`passed=false`和0请求，未把离线回归上推为连续性通过。
 
 ## 7. 最终全量验证
 

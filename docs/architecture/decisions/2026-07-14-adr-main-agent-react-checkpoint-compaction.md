@@ -52,7 +52,6 @@ Artifact / Report / locator 引用
 Main Agent 请求不得同时发送顶层 `contextPackage`、`agentWorldState`、`capabilityAvailability`，又把包含相同对象的完整 `conversationContext` 再发送一次。只保留：
 
 - 顶层权威上下文对象；
-- `pendingDeliveryPlan`；
 - 没有 `ContextPackage` 时的最近消息兼容窗口。
 
 ### 5. 脱敏遥测
@@ -87,7 +86,16 @@ main-agent-run-pause.ts
   确定性构造预算 Observation、RunCheckpoint、输入摘要和教师安全暂停文案，不访问数据库。
 
 main-agent-tool-loop-config.ts
-  先持久化 Observation，再提供受限 continuation Observation；持久化脱敏遥测、预算 Observation、RunCheckpoint 和停止轨迹。
+  只组合唯一 Tool 资格入口、checkpoint callbacks 和唯一 dispatch，不承载具体 Tool 终态。
+
+main-agent-tool-loop-dispatch.ts
+  只协调 epoch/lease、ExecutionEnvelope、HumanGate、Invocation/Skill/Provider准备、既有 dispatcher 和结果处理器的固定调用边界，不选择下一 Tool 或决定重试/停止。
+
+main-agent-tool-loop-checkpoints.ts / main-agent-tool-loop-metadata.ts
+  持久化脱敏遥测、预算 Observation、RunCheckpoint 和停止轨迹。
+
+main-agent-tool-loop-*-result.ts / main-agent-tool-loop-observations.ts
+  先提交正式 Tool 终态，再提供受限 continuation Observation；不得反向取得循环控制权。
 ```
 
 Harness 不新增 PPT、视频或整包业务分支；Tool 选择权仍只属于同一个 Main Agent。
