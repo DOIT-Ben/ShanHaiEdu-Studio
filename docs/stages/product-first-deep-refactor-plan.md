@@ -106,13 +106,18 @@
 
 目标：让turn协调和Tool执行各自只做一件事。
 
-第一切片先为PendingDecision状态提交建立失败注入测试，并实现消息、事件、语义快照之间的原子提交或明确可重放恢复；不得把模块拆分建立在部分写成功的状态上。
+固定基线：阶段B验收提交`20c6e2530b991db77108c7b7a61090e9060b7fca`。Stage C不得修改Provider请求构造、模型选择、网络提交与重试、响应晋升、receipt可信根或release条件。
 
-`conversation-turn-service.ts`拆为：输入与任务边界、turn协调、流式事件投影、持久化提交、失败恢复。
+执行顺序只有一条：
 
-`main-agent-tool-loop-config.ts`拆为：Tool目录、参数归一化、ExecutionEnvelope准备、单Tool执行、结果归一化、观察与重试策略。
+1. **C0 阶段合同**：推进`active-stage.json`、离线Provider延期精确绑定和门禁测试到固定基线；先独立提交，不修改生产业务代码。
+2. **C1 PendingDecision一致性**：先为事件或语义快照中途失败写失败注入测试，再实现消息、事件、语义快照的同事务提交；同一`actionId`重复提交必须返回同一业务结果，冲突payload必须失败关闭。不得用补偿性“再写一次”掩盖已对外可见的部分确认。
+3. **C2 turn service拆分**：保持`createConversationTurnService`公开入口不变，把输入与任务边界、turn协调、流式事件投影、持久化提交和失败恢复迁到职责模块；`conversation-turn-service.ts`降到500行以内。
+4. **C3 tool loop拆分**：保持`createMainAgentToolLoopOptions`公开入口不变，把Tool目录、参数归一化、ExecutionEnvelope准备、单Tool执行、结果归一化、Observation与重试策略迁到职责模块；`main-agent-tool-loop-config.ts`降到500行以内。
 
-验收：原文件删除或降到500行以内；所有新函数150行以内；公开接口保持最小且行为测试不依赖源码字符串。
+每个切片都必须先保留外部行为测试，再迁移实现，最后删除原位置的竞争实现。单文件不超过500行、函数不超过150行；不得通过转发层套转发层、提高阈值、扩大排除目录或源码字符串测试制造通过。
+
+验收：PendingDecision不存在部分确认；两个公开工厂签名和Provider语义不变；讨论零Tool、单Tool范围、HumanGate确认/取消/改道、迟到结果隔离、Invocation/Observation/Event/Artifact终态矩阵和恢复行为均通过；Stage C结束时两个目标文件均不超过500行。
 
 ### 阶段D：清零剩余工程债务
 

@@ -236,7 +236,7 @@ function writeOfflineRefactorStage(root, continuityOverrides = {}, stageOverride
     schemaVersion: "shanhai-active-stage.v1",
     stageId: "product-first-deep-refactor",
     status: "active",
-    baselineSha: "cbf73aa2a427125c763f1a27f344b44749ff58b6",
+    baselineSha: "20c6e2530b991db77108c7b7a61090e9060b7fca",
     plan: "docs/stages/product-first-deep-refactor-plan.md",
     testPlan: "docs/stages/product-first-deep-refactor-test-plan.md",
     ...stageOverrides,

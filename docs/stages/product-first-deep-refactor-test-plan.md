@@ -24,6 +24,10 @@
 | DR-B02 | deterministic结果尝试晋升为正式Artifact | 晋升失败 |
 | DR-B03 | native turn之外的组件选择下一业务Tool | 行为合同失败 |
 | DR-C01 | PendingDecision消息已更新，但事件或语义快照写入失败 | 不得对外形成部分确认；同一action可幂等恢复 |
+| DR-C02 | 同一PendingDecision actionId以不同payload重放 | 冲突失败关闭，不覆盖首次提交事实 |
+| DR-C03 | turn service拆分后执行讨论、单Tool、确认、取消、改道和恢复 | `createConversationTurnService`入口与外部行为不变 |
+| DR-C04 | tool loop拆分后执行Tool资格、Envelope、结果提交和恢复 | `createMainAgentToolLoopOptions`入口与终态矩阵不变 |
+| DR-C05 | Stage C目标文件或新职责模块超过500行，或函数超过150行 | complexity gate失败 |
 | DR-D01 | 新增或扩大复杂度债务 | complexity gate失败 |
 | DR-D02 | 债务减少但baseline尚未同步 | 报告可识别stale baseline，允许显式收缩 |
 | DR-D03 | 新增源码字符串合同 | source-contract gate失败 |
@@ -64,7 +68,15 @@ node scripts/development-gates/source-contracts.mjs
 - `verify:local`生成绑定当前HEAD与工作树的manifest，`gate:manifest:verify`及`desktop:smoke`通过。
 - 复杂度债务为29个文件、源码字符串合同债务为21个文件，未上推为阶段D完成。
 
-## 6. 最终全量验证
+## 6. 阶段C切片验证
+
+- C0：Provider continuity gate测试、wiring测试、development gate和`git diff --check`；Provider结果必须保持`passed=false`且请求数为0。
+- C1：PendingDecision失败注入、幂等重放、冲突payload、错误actionId、确认/取消/改道和刷新恢复测试。
+- C2：conversation turn service、streaming progress、structured intake、TaskBrief和控制回合回归。
+- C3：main agent tool loop、Tool registry、ExecutionEnvelope、terminal replay、Observation/Artifact提交和GenerationJob恢复回归。
+- 每个切片再运行TypeScript、零warning ESLint、complexity gate、source-contract gate和development gate。
+
+## 7. 最终全量验证
 
 ```powershell
 npm test
@@ -79,7 +91,7 @@ npm run desktop:smoke
 
 随后从最终HEAD启动隔离本地实例，验证：health、登录、新建项目、普通讨论不触发Tool、单一需求规格只触发对应Tool、刷新后状态不漂移、失败只出现一次恢复入口。浏览器使用桌面视口。
 
-## 7. 明确不执行
+## 8. 明确不执行
 
 - 不运行`gate:provider:live`、Provider seal或release gate。
 - 不调用图片、视频、PPTX、ZIP或整包Provider。

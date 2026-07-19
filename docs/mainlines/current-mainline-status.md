@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-- 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段B活动基线：`cbf73aa2a427125c763f1a27f344b44749ff58b6`，即阶段A已验收提交。
+- 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
 - 唯一活动阶段：`product-first-deep-refactor`。
 - 阶段进度：阶段A“合同正确性”和阶段B“删除竞争控制面”已完成离线验收；唯一下一阶段是阶段C“PendingDecision一致性与核心巨型模块拆分”。
 - 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
@@ -46,7 +46,7 @@
 - `verify:local`通过：development gate、TypeScript、ESLint、全量测试和生产构建均成功。
 - Node测试`427/427`；Vitest隔离分片`793/793`与`775/775`。
 - development gate：134个变更文件、0个二进制文件；Provider为离线延期且`passed=false`。
-- `gate:manifest:verify`通过并绑定HEAD `cbf73aa2a427125c763f1a27f344b44749ff58b6`；`desktop:smoke`通过。
+- `gate:manifest:verify`通过并绑定HEAD `20c6e2530b991db77108c7b7a61090e9060b7fca`；`desktop:smoke`通过。
 - 生产旧控制面符号扫描为0；复杂度门和源码合同门通过，但仍分别有29与21个登记债务。
 
 ## 当前验收边界

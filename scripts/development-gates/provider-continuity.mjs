@@ -63,7 +63,7 @@ const CAPTURE_BOOTSTRAP_ALLOWED_PATHS = [
   ...CAPTURE_BOOTSTRAP_TEST_PATHS,
 ];
 const OFFLINE_REFACTOR_STAGE_ID = "product-first-deep-refactor";
-const OFFLINE_REFACTOR_BASELINE = "cbf73aa2a427125c763f1a27f344b44749ff58b6";
+const OFFLINE_REFACTOR_BASELINE = "20c6e2530b991db77108c7b7a61090e9060b7fca";
 const OFFLINE_REFACTOR_PLAN = "docs/stages/product-first-deep-refactor-plan.md";
 const OFFLINE_REFACTOR_TEST_PLAN = "docs/stages/product-first-deep-refactor-test-plan.md";
 const OFFLINE_REFACTOR_EXPIRES_ON = "2026-08-16";
