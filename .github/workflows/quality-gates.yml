@@ -57,6 +57,8 @@ jobs:
           $libreOfficeDir >> $env:GITHUB_PATH
       - name: Install locked dependencies
         run: npm ci
+      - name: Stage public Provider ledger fixture
+        run: node scripts/stage-ci-provider-ledger.mjs
       - name: Run SHA-bound verification
         run: npm run verify:ci
       - name: Preserve verification manifest

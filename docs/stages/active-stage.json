@@ -7,6 +7,8 @@
   "testPlan": "docs/stages/product-first-deep-refactor-test-plan.md",
   "allowedPaths": [
     ".gitattributes",
+    ".github/workflows/quality-gates.yml",
+    ".gitignore",
     "AGENTS.md",
     "config/development-gates.json",
     "config/orchestration-write-operations.json",

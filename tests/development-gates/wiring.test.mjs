@@ -105,6 +105,9 @@ test("quality-gates workflow calls the repository CI entry without a success byp
     .map((step) => step.run)
     .filter((command) => typeof command === "string" && /^npm(?:\s|$)/.test(command));
   assert.deepEqual(npmCommands, ["npm ci", "npm run verify:ci"]);
+  const stageProviderLedger = steps.find((step) => step.name === "Stage public Provider ledger fixture");
+  assert.equal(stageProviderLedger?.run, "node scripts/stage-ci-provider-ledger.mjs");
+  assert.ok(steps.indexOf(stageProviderLedger) < steps.findIndex((step) => step.name === "Run SHA-bound verification"));
   const verification = steps.find((step) => step.name === "Run SHA-bound verification");
   assert.equal(verification?.run, "npm run verify:ci");
   assert.equal(verification?.if, undefined);

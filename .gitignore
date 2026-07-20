@@ -34,6 +34,7 @@ output/playwright/
 # Private API ledgers and local credential bundles
 *PRIVATE*.zip
 /API台账系统*.zip
+API台账系统/
 ShanHaiEdu-API-Ledger-Standalone/
 API台账系统/PRIVATE-LOCAL-SECRETS/
 
