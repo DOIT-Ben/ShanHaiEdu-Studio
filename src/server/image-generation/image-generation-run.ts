@@ -6,10 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
-import {
-  resolveProviderLedgerRuntimeContract,
-  resolveProviderLedgerValueBag,
-} from "@/server/provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { PptAssetRequest, PptGeneratedAsset } from "@/server/ppt-quality/ppt-asset-types";
@@ -32,7 +29,7 @@ export type ImageGenerationResult = {
   sha256: string;
   imageValid: true;
   mime: "image/png" | "image/jpeg";
-  provider: "minimax";
+  provider: "model_gateway";
   model: string;
   width: number;
   height: number;
@@ -95,7 +92,7 @@ export async function generateImageFromArtifact(input: {
     sha256: normalizedSha256,
     imageValid: true,
     mime: validation.mime,
-    provider: "minimax",
+    provider: "model_gateway",
     model: config.model,
     width: validation.width,
     height: validation.height,
@@ -189,7 +186,7 @@ async function generatePptAssetImageWithMiniMax(input: {
     height: normalizedAsset.height,
     mime: normalizedAsset.mime,
     transparentBackgroundVerified: input.request.transparentBackground ? hasPngAlpha(buffer) : false,
-    provider: "minimax",
+    provider: "model_gateway",
     model: input.config.model,
     clientRequestId: randomUUID(),
     providerRequestId: null,
@@ -202,44 +199,38 @@ async function generatePptAssetImageWithMiniMax(input: {
 }
 
 async function requestMiniMaxImage(input: { config: MiniMaxImageProviderConfig; prompt: string; aspectRatio: string }): Promise<Buffer> {
+  const idempotencyKey = `image-${sha256(Buffer.from(`${input.config.model}\0${input.aspectRatio}\0${input.prompt}`, "utf8")).slice(0, 48)}`;
   const response = await fetch(buildMiniMaxImageGenerationUrl(input.config.baseUrl), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.config.apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify({
       model: input.config.model,
       prompt: input.prompt,
-      aspect_ratio: input.aspectRatio,
-      response_format: "base64",
+      size: input.aspectRatio === "16:9" ? "1536x1024" : "1024x1024",
+      response_format: "b64_json",
       n: 1,
-      prompt_optimizer: false,
     }),
     signal: AbortSignal.timeout(input.config.timeoutMs),
   });
   if (!response.ok) throw new Error(`minimax_image_generation_request_failed:http_${response.status}`);
-  const payload = await response.json() as {
-    base_resp?: { status_code?: number | string | null; status_msg?: unknown };
-    data?: { image_base64?: unknown };
-  };
-  const statusCode = payload.base_resp?.status_code;
-  if (statusCode !== undefined && statusCode !== null && String(statusCode) !== "0") {
-    const statusMessage = sanitizeMiniMaxStatusMessage(payload.base_resp?.status_msg);
-    throw new Error(`minimax_image_generation_request_failed:status_${String(statusCode).replace(/[^A-Za-z0-9_-]/g, "_")}${statusMessage ? `:${statusMessage}` : ""}`);
+  const payload = await response.json() as { data?: Array<{ b64_json?: unknown; url?: unknown }> };
+  const first = payload.data?.[0];
+  if (typeof first?.b64_json === "string" && first.b64_json.trim()) {
+    return Buffer.from(first.b64_json.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/i, "").replace(/\s+/g, ""), "base64");
   }
-  const images = payload.data?.image_base64;
-  if (!Array.isArray(images) || typeof images[0] !== "string" || !images[0].trim()) {
+  if (typeof first?.url === "string" && /^https:\/\//i.test(first.url)) {
+    const imageResponse = await fetch(first.url, { signal: AbortSignal.timeout(input.config.timeoutMs) });
+    if (!imageResponse.ok) throw new Error("model_gateway_image_download_failed");
+    return Buffer.from(await imageResponse.arrayBuffer());
+  }
+  {
     throw new Error("minimax_image_generation_response_invalid");
   }
-  const encoded = images[0].trim().replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/i, "").replace(/\s+/g, "");
-  return Buffer.from(encoded, "base64");
-}
-
-function sanitizeMiniMaxStatusMessage(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
 }
 
 async function normalizeMiniMaxProviderFormat(buffer: Buffer): Promise<Buffer> {
@@ -252,8 +243,8 @@ async function normalizeMiniMaxProviderFormat(buffer: Buffer): Promise<Buffer> {
 }
 
 export function buildMiniMaxImageGenerationUrl(baseUrl: string) {
-  const normalized = baseUrl.replace(/\/+$/, "").replace(/\/v1$/i, "");
-  return `${normalized}/v1/image_generation`;
+  const normalized = baseUrl.replace(/\/+$/, "");
+  return `${normalized.endsWith("/v1") ? normalized : `${normalized}/v1`}/images/generations`;
 }
 
 function buildOpaqueForegroundFallbackBody(providerBody: Record<string, unknown>): Record<string, unknown> {
@@ -296,18 +287,12 @@ async function normalizePptAssetBuffer(buffer: Buffer, request: PptAssetRequest)
 }
 
 function readConfig(env: NodeJS.ProcessEnv): MiniMaxImageProviderConfig {
-  const runtimeContract = resolveProviderLedgerRuntimeContract({ capability: "image_generation", ambientEnv: env });
-  if (runtimeContract.kind !== "minimax_image") {
-    throw new Error("image_provider_runtime_contract_invalid");
-  }
-  const values = resolveProviderLedgerValueBag({ capability: "image_generation", ambientEnv: env });
-  const channel = values.require(runtimeContract.selectedChannelEnv);
-  if (channel !== runtimeContract.requiredChannel) throw new Error("image_provider_channel_not_allowed");
+  const gateway = resolveModelGatewayConfig("image", env);
 
   return {
-    apiKey: values.require(runtimeContract.credentialEnv),
-    baseUrl: values.require(runtimeContract.baseUrlEnv).replace(/\/+$/, ""),
-    model: values.require(runtimeContract.modelEnv),
+    apiKey: gateway.apiKey,
+    baseUrl: gateway.baseUrl,
+    model: gateway.model,
     timeoutMs: Number.parseInt(env.IMAGE_SMOKE_TIMEOUT_MS || env.AIRCODE_PROVIDER_TIMEOUT || "180000", 10),
     backgroundRemovalCommand: env.PPT_ASSET_REMBG_COMMAND?.trim() || null,
   };

@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { verifyProviderContinuityReceiptV2 } from "./provider-continuity/receipt-v2.mjs";
 import { loadTrustedCaptureKeys } from "./provider-continuity/trust-store.mjs";
 import { collectGitVerificationSubject } from "./verification-subject.mjs";
+import { verifyModelGatewaySmokeReceipt } from "./model-gateway-smoke-receipt.mjs";
 
 const DEFAULT_CONFIG_PATH = "config/development-gates.json";
 const ACTIVE_STAGE_PATH = "docs/stages/active-stage.json";
@@ -806,6 +807,16 @@ export function verifyProviderContinuityEvidence(options = {}) {
     changedPaths: options.changedPaths,
     now,
   });
+
+  const activeStage = readJsonFile(root, ACTIVE_STAGE_PATH, "Active stage declaration").value;
+  if (activeStage?.providerContinuity?.requirement === "model-gateway-live-smoke") {
+    if (mode !== "development") fail("Model gateway smoke receipts are development-only.", "MODEL_GATEWAY_RECEIPT_MODE_UNSUPPORTED");
+    try {
+      return { ...verifyModelGatewaySmokeReceipt({ root, now, maxAgeHours: activeStage.providerContinuity.maxAgeHours ?? 24 }), matchedPaths: impact.matchedPaths };
+    } catch (error) {
+      fail(`Model gateway smoke receipt verification failed: ${error instanceof Error ? error.message : "invalid receipt"}.`, "MODEL_GATEWAY_RECEIPT_INVALID");
+    }
+  }
 
   const receiptLocation = resolveWithin(root, policy.receiptPath, "receipt path").absolutePath;
   if (!existsSync(receiptLocation)) {

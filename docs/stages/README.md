@@ -9,9 +9,9 @@
 ## 活动文件
 
 - 机器合同：`active-stage.json`
-- 实施计划：`product-first-deep-refactor-plan.md`
-- 测试计划：`product-first-deep-refactor-test-plan.md`
-- 续作交接：`product-first-deep-refactor-handoff.md`
+- 实施计划：`model-gateway-unification-plan.md`
+- 测试计划：`model-gateway-unification-test-plan.md`
+- 上一阶段交接：`product-first-deep-refactor-handoff.md`
 
 ## 固定边界
 

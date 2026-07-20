@@ -25,8 +25,8 @@ describe("A20 Provider identity contract", () => {
   });
 
   it("changes the config digest when only the credential rotates without serializing secret material", () => {
-    const first = pickOpenAICompatibleConfig(agentBrainEnv("credential-version-one"));
-    const second = pickOpenAICompatibleConfig(agentBrainEnv("credential-version-two"));
+    const first = pickOpenAICompatibleConfig(modelGatewayEnv("credential-version-one"));
+    const second = pickOpenAICompatibleConfig(modelGatewayEnv("credential-version-two"));
 
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
@@ -274,5 +274,13 @@ function agentBrainEnv(credential: string) {
     AGENT_BRAIN_API_KEY: credential,
     AGENT_BRAIN_BASE_URL: "https://primary.invalid/v1",
     AGENT_BRAIN_MODEL: "gpt-fixture",
+  };
+}
+
+function modelGatewayEnv(credential: string) {
+  return {
+    MODEL_GATEWAY_API_KEY: credential,
+    MODEL_GATEWAY_BASE_URL: "https://gateway.invalid/v1",
+    MODEL_GATEWAY_AGENT_MODEL: "gpt-fixture",
   };
 }

@@ -89,6 +89,7 @@ describe("provider-ledger Runtime Factory boundary", () => {
 
     await createAgentRuntimeFromEnv({
       NODE_ENV: "production",
+      SHANHAI_PROVIDER_MIGRATION_MODE: "legacy-compat",
       SHANHAI_PROVIDER_LEDGER_ROOT: fixtureRoot,
       OPENAI_API_KEY: "generic-must-not-win",
       OPENAI_BASE_URL: "https://generic.invalid/v1",
@@ -108,6 +109,7 @@ describe("provider-ledger Runtime Factory boundary", () => {
     const { createOpenAICompatibleConfigDigest, pickOpenAICompatibleConfig } = await import("@/server/openai-compatible-config");
     const config = pickOpenAICompatibleConfig({
       SHANHAI_PROVIDER_LEDGER_ROOT: fixtureRoot,
+      SHANHAI_PROVIDER_MIGRATION_MODE: "legacy-compat",
       AGENT_BRAIN_CHANNEL: "primary",
     });
     expect(config).not.toBeNull();

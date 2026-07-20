@@ -1,4 +1,3 @@
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { OpenAIResponsesClient } from "@/server/agent-runtime/openai-runtime";
@@ -77,7 +76,7 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
 
     await executor(envelope, getAgentToolDefinition(envelope.toolId));
 
-    expect(payload).toMatchObject({ model: "gpt-5.6-terra", reasoning: { effort: "xhigh" } });
+    expect(payload).toMatchObject({ model: "fallback", reasoning: { effort: "xhigh" } });
   });
 
   it("does not create a production executor without a configured model channel", () => {
@@ -145,21 +144,15 @@ describe("V1-3 OpenAI Agent Tool Executor", () => {
     expect(JSON.stringify(payload)).not.toContain("deterministic_draft");
   });
 
-  it("requires an explicit complete DeepSeek channel configuration", () => {
-    const ledgerEnv = {
-      SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
-      SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret" as const,
-    };
+  it("requires an explicit complete model-gateway text configuration", () => {
     expect(createAgentToolExecutorFromEnv({
-      ...ledgerEnv,
       AGENT_TOOL_MODEL_CHANNEL: "deepseek",
     })).toBeUndefined();
     expect(createAgentToolExecutorFromEnv({
-      ...ledgerEnv,
       AGENT_TOOL_MODEL_CHANNEL: "deepseek",
-      DEEPSEEK_API_KEY: "test-key",
-      DEEPSEEK_BASE_URL: "https://example.invalid/v1",
-      DEEPSEEK_MODEL: "deepseek-chat",
+      MODEL_GATEWAY_API_KEY: "test-key",
+      MODEL_GATEWAY_BASE_URL: "https://example.invalid/v1",
+      MODEL_GATEWAY_TEXT_MODEL: "deepseek-chat",
     })).toBeDefined();
   });
 

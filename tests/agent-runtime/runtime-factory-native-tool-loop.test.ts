@@ -1,4 +1,3 @@
-import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRuntimeInput } from "@/server/agent-runtime/types";
 
@@ -67,12 +66,9 @@ describe("createAgentRuntimeFromEnv native tool loop", () => {
 
 function openAIEnv() {
   return {
-    SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
-    SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret" as const,
-    AGENT_BRAIN_CHANNEL: "primary",
-    AGENT_BRAIN_API_KEY: "test-key",
-    AGENT_BRAIN_BASE_URL: "https://example.invalid/v1",
-    AGENT_BRAIN_MODEL: "gpt-test",
+    MODEL_GATEWAY_API_KEY: "test-key",
+    MODEL_GATEWAY_BASE_URL: "https://example.invalid/v1",
+    MODEL_GATEWAY_AGENT_MODEL: "gpt-test",
   };
 }
 

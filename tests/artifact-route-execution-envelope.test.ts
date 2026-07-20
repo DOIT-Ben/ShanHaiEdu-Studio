@@ -14,10 +14,9 @@ import type { ArtifactRecord } from "@/server/workbench/types";
 
 const originalFetch = globalThis.fetch;
 const originalImageEnv = {
-  IMAGE_PROVIDER_CHANNEL: process.env.IMAGE_PROVIDER_CHANNEL,
-  MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
-  MINIMAX_BASE_URL: process.env.MINIMAX_BASE_URL,
-  MINIMAX_IMAGE_MODEL: process.env.MINIMAX_IMAGE_MODEL,
+  MODEL_GATEWAY_API_KEY: process.env.MODEL_GATEWAY_API_KEY,
+  MODEL_GATEWAY_BASE_URL: process.env.MODEL_GATEWAY_BASE_URL,
+  MODEL_GATEWAY_IMAGE_MODEL: process.env.MODEL_GATEWAY_IMAGE_MODEL,
 };
 
 afterEach(() => {
@@ -106,13 +105,11 @@ describe("A17 artifact route ExecutionEnvelope", () => {
   });
 
   it("persists the offline image route result as one Invocation/Observation/Artifact/Event transaction", async () => {
-    process.env.IMAGE_PROVIDER_CHANNEL = "minimax";
-    process.env.MINIMAX_API_KEY = "offline-fixture-key";
-    process.env.MINIMAX_BASE_URL = "https://offline-minimax.invalid";
-    process.env.MINIMAX_IMAGE_MODEL = "image-01";
+    process.env.MODEL_GATEWAY_API_KEY = "offline-fixture-key";
+    process.env.MODEL_GATEWAY_BASE_URL = "https://offline-gateway.invalid/v1";
+    process.env.MODEL_GATEWAY_IMAGE_MODEL = "image-fixture";
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
-      data: { image_base64: [validPngBase64()] },
-      base_resp: { status_code: 0 },
+      data: [{ b64_json: validPngBase64() }],
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     const service = createWorkbenchService();

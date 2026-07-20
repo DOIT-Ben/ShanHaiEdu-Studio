@@ -65,7 +65,7 @@ export class OpenAIRuntime implements AgentRuntime {
       const strategy = input.taskInput && Object.hasOwn(input.taskInput, "generationIntensity")
         ? resolveGenerationIntensityStrategy(input.taskInput.generationIntensity)
         : null;
-      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: strategy?.model ?? this.model });
+      const adapter = createOpenAIResponsesGptAdapter({ client: this.client, model: this.model });
       const request = buildOpenAIResponseRequest(input, strategy?.reasoningEffort ?? this.reasoningEffort);
       const assistantText = await this.createAssistantText(adapter, request, input);
       const parsed = parseStructuredOutput(assistantText, input.task);

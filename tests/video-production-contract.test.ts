@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { omitFixtureFields } from "./support/omit-fixture-fields";
 import { createStoryboardManifest, resolveStoryboardShotDurations, validateStoryboardManifest } from "@/server/video-quality/video-production-contract";
-import { buildResolvedShotVideoRequest, buildShotVideoRequestBody } from "@/server/video-generation/video-generation-run";
+import { buildResolvedShotVideoRequest, buildShotVideoRequestBody, buildVideoQueryUrl } from "@/server/video-generation/video-generation-run";
 import { buildVideoShotGenerationJobs } from "@/server/video-quality/video-shot-job-planner";
 
 function validManifest() {
@@ -14,6 +14,10 @@ function validManifest() {
 }
 
 describe("V1 Stage 4A video production contract", () => {
+  it("queries model-gateway video tasks through the videos resource", () => {
+    expect(buildVideoQueryUrl("https://gateway.example/v1", "task id", "model_gateway")).toBe("https://gateway.example/v1/videos/task%20id");
+  });
+
   it("accepts a three-shot Full Intro with video-domain reference evidence", () => {
     expect(validateStoryboardManifest(validManifest()).valid).toBe(true);
   });

@@ -1,9 +1,6 @@
 import type { VideoNarrationScript } from "@/server/video-quality/video-narration-contract";
 import { validateVideoNarrationScript } from "@/server/video-quality/video-narration-contract";
-import {
-  resolveProviderLedgerRuntimeContract,
-  resolveProviderLedgerValueBag,
-} from "@/server/provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
 
 export type NarrationSubtitleCue = { text: string; startMs: number; endMs: number };
 
@@ -15,7 +12,7 @@ export type VideoNarrationProviderResult = {
     model: string;
     voiceId: string;
     requestedVoiceId: string;
-    voiceBindingSource: "provider_ledger";
+    voiceBindingSource: "model_gateway" | "provider_ledger";
     scriptDigest: string;
     reportedDurationMs: number | null;
   };
@@ -57,41 +54,28 @@ export async function generateMiniMaxVideoNarration(input: {
   const validation = validateVideoNarrationScript(input.script);
   if (!validation.valid) throw new Error(`video_narration_script_invalid:${validation.issues.join(",")}`);
   const env = input.env ?? process.env;
-  let values: ReturnType<typeof resolveProviderLedgerValueBag>;
-  let runtimeContract: ReturnType<typeof resolveProviderLedgerRuntimeContract>;
+  let config: ReturnType<typeof resolveModelGatewayConfig>;
   try {
-    values = resolveProviderLedgerValueBag({ capability: "tts_minimax", ambientEnv: env });
-    runtimeContract = resolveProviderLedgerRuntimeContract({ capability: "tts_minimax", ambientEnv: env });
+    config = resolveModelGatewayConfig("tts", env);
   } catch {
     throw narrationError("video_narration_provider_config_invalid", "configuration", false, false);
   }
-  if (runtimeContract.kind !== "minimax_tts") {
-    throw narrationError("video_narration_provider_config_invalid", "configuration", false, false);
-  }
-  const selectedMode = env[runtimeContract.selectedModeEnv]?.trim().toLowerCase() ||
-    values.get(runtimeContract.selectedModeEnv)?.trim().toLowerCase();
-  const apiKey = values.get(runtimeContract.credentialEnv);
-  const baseUrl = values.get(runtimeContract.baseUrlEnv)?.replace(/\/+$/, "");
-  const model = values.get(runtimeContract.modelEnv);
-  const providerVoiceId = values.get("MINIMAX_TTS_VOICE_ID");
-  if (selectedMode !== runtimeContract.requiredMode || !apiKey || !baseUrl || !model || !providerVoiceId) {
-    throw narrationError("video_narration_provider_env_missing", "configuration", false, false);
-  }
+  const apiKey = config.apiKey;
+  const baseUrl = config.baseUrl;
+  const model = config.model;
+  const providerVoiceId = config.voiceId!;
   const fetchImpl = input.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await fetchImpl(`${baseUrl}/v1/t2a_v2`, {
+    response = await fetchImpl(`${baseUrl}/audio/speech`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model,
-        text: input.script.text,
-        voice_setting: { voice_id: providerVoiceId, speed: 1, vol: 1, pitch: 0 },
-        audio_setting: { format: "mp3", sample_rate: 32000, bitrate: 128000, channel: 1 },
-        language_boost: "Chinese",
-        output_format: "hex",
-        stream: false,
-        subtitle_enable: true,
+        input: input.script.text,
+        voice: providerVoiceId,
+        response_format: "mp3",
+        speed: 1,
       }),
       signal: AbortSignal.timeout(180_000),
     });
@@ -99,71 +83,45 @@ export async function generateMiniMaxVideoNarration(input: {
     throw narrationError("video_narration_submit_transport_failed", "provider_submit", true, true);
   }
   if (!response.ok) throw classifySubmitStatus(response.status);
-  let payload: unknown;
+  let audioBuffer: Buffer;
   try {
-    payload = await response.json() as unknown;
+    audioBuffer = Buffer.from(await response.arrayBuffer());
   } catch {
     throw narrationError("video_narration_response_invalid", "provider_response", true, false);
   }
-  const parsed = parseNarrationResponse(payload);
-  let subtitleResponse: Response;
-  try {
-    subtitleResponse = await fetchImpl(parsed.subtitleUrl, { signal: AbortSignal.timeout(30_000) });
-  } catch {
-    throw narrationError("video_narration_subtitle_download_failed", "subtitle_download", true, true);
+  const reportedDurationMs = mp3DurationMs(audioBuffer);
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+  if (contentType !== "audio/mpeg" || audioBuffer.length < 512 || reportedDurationMs === null) {
+    throw narrationError("video_narration_audio_invalid", "provider_response", true, false);
   }
-  if (!subtitleResponse.ok) throw narrationError("video_narration_subtitle_download_failed", "subtitle_download", true, subtitleResponse.status === 429 || subtitleResponse.status >= 500);
-  let subtitlePayload: unknown;
-  try {
-    subtitlePayload = await subtitleResponse.json();
-  } catch {
-    throw narrationError("video_narration_subtitles_invalid", "subtitle_validation", true, false);
-  }
-  const cues = parseSubtitleCues(subtitlePayload);
+  const cues = deriveCues(input.script.text, reportedDurationMs);
   return {
-    audioBuffer: parsed.audioBuffer,
+    audioBuffer,
     transcriptBuffer: Buffer.from(toSrt(cues), "utf8"),
     cues,
     providerEvidence: {
       model,
       voiceId: providerVoiceId,
       requestedVoiceId: input.script.voiceId,
-      voiceBindingSource: "provider_ledger",
+      voiceBindingSource: "model_gateway",
       scriptDigest: input.script.scriptDigest,
-      reportedDurationMs: parsed.reportedDurationMs,
+      reportedDurationMs,
     },
   };
 }
 
-function parseNarrationResponse(value: unknown) {
-  const root = isRecord(value) ? value : {};
-  const baseResponse = isRecord(root.base_resp) ? root.base_resp : {};
-  if (typeof baseResponse.status_code === "number" && baseResponse.status_code !== 0) {
-    throw narrationError("video_narration_provider_rejected", "provider_response", true, false);
-  }
-  const data = isRecord(root.data) ? root.data : {};
-  const audioHex = typeof data.audio === "string" ? data.audio.trim() : "";
-  if (!audioHex || audioHex.length % 2 !== 0 || !/^[a-f0-9]+$/i.test(audioHex)) throw narrationError("video_narration_audio_invalid", "provider_response", true, false);
-  const audioBuffer = Buffer.from(audioHex, "hex");
-  if (audioBuffer.length < 512) throw narrationError("video_narration_audio_invalid", "provider_response", true, false);
-  const subtitleUrl = typeof data.subtitle_file === "string" ? data.subtitle_file.trim() : "";
-  if (!/^https:\/\//i.test(subtitleUrl)) throw narrationError("video_narration_subtitle_url_invalid", "provider_response", true, false);
-  const extra = isRecord(root.extra_info) ? root.extra_info : {};
-  const reportedDuration = Number(extra.audio_length);
-  return { audioBuffer, subtitleUrl, reportedDurationMs: Number.isFinite(reportedDuration) && reportedDuration > 0 ? Math.round(reportedDuration) : null };
-}
-
-function parseSubtitleCues(value: unknown): NarrationSubtitleCue[] {
-  if (!Array.isArray(value) || value.length === 0) throw narrationError("video_narration_subtitles_invalid", "subtitle_validation", true, false);
-  let previousEnd = 0;
-  return value.map((item) => {
-    if (!isRecord(item)) throw narrationError("video_narration_subtitles_invalid", "subtitle_validation", true, false);
-    const text = typeof item.text === "string" ? item.text.trim() : "";
-    const startMs = Number(item.time_begin);
-    const endMs = Number(item.time_end);
-    if (!text || !Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs < previousEnd || endMs <= startMs) throw narrationError("video_narration_subtitles_invalid", "subtitle_validation", true, false);
-    previousEnd = endMs;
-    return { text, startMs: Math.round(startMs), endMs: Math.round(endMs) };
+function deriveCues(text: string, durationMs: number): NarrationSubtitleCue[] {
+  const segments = text.split(/(?<=[。！？!?；;])/u).map((item) => item.trim()).filter(Boolean);
+  const values = segments.length ? segments : [text];
+  const total = values.reduce((sum, item) => sum + [...item].length, 0);
+  let cursor = 0;
+  return values.map((item, index) => {
+    const endMs = index === values.length - 1
+      ? durationMs
+      : Math.max(cursor + 1, Math.round(cursor + durationMs * [...item].length / total));
+    const cue = { text: item, startMs: cursor, endMs };
+    cursor = endMs;
+    return cue;
   });
 }
 
@@ -179,8 +137,30 @@ function formatSrtTime(ms: number) {
   return `${hours}:${minutes}:${seconds},${millis}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function mp3DurationMs(bytes: Buffer): number | null {
+  let offset = bytes.subarray(0, 3).toString("ascii") === "ID3" ? 10 : 0;
+  let durationMs = 0;
+  let frames = 0;
+  const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+  while (offset + 4 <= bytes.length) {
+    const header = bytes.readUInt32BE(offset);
+    if ((header & 0xffe00000) >>> 0 !== 0xffe00000) { offset += 1; continue; }
+    const version = (header >>> 19) & 3;
+    const layer = (header >>> 17) & 3;
+    const bitrateIndex = (header >>> 12) & 15;
+    const sampleRateIndex = (header >>> 10) & 3;
+    if (version === 1 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || sampleRateIndex === 3) { offset += 1; continue; }
+    const mpeg1 = version === 3;
+    const bitrate = bitrates[bitrateIndex];
+    const sampleRate = [44_100, 48_000, 32_000][sampleRateIndex] / (mpeg1 ? 1 : version === 2 ? 2 : 4);
+    if (!bitrate || !sampleRate) { offset += 1; continue; }
+    const frameLength = Math.floor(((mpeg1 ? 144 : 72) * bitrate * 1000) / sampleRate) + ((header >>> 9) & 1);
+    if (frameLength < 4 || offset + frameLength > bytes.length) break;
+    durationMs += ((mpeg1 ? 1152 : 576) * 1000) / sampleRate;
+    frames += 1;
+    offset += frameLength;
+  }
+  return frames > 0 ? Math.max(1, Math.round(durationMs)) : null;
 }
 
 function classifySubmitStatus(status: number): VideoNarrationProviderError {

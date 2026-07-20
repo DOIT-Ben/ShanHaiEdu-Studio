@@ -1,10 +1,8 @@
-import {
-  tryResolveSelectedProviderLedgerConfig,
-  type ProviderLedgerEnv,
-} from "@/server/provider-ledger/provider-ledger-adapter";
 import { createHash } from "node:crypto";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
+import { tryResolveSelectedProviderLedgerConfig } from "@/server/provider-ledger/provider-ledger-adapter";
 
-export type OpenAICompatibleEnv = ProviderLedgerEnv & {
+export type OpenAICompatibleEnv = Record<string, string | undefined> & {
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
   OPENAI_MODEL?: string;
@@ -24,6 +22,7 @@ export type OpenAICompatibleEnv = ProviderLedgerEnv & {
 export type OpenAIReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export type OpenAICompatibleCredentialSource =
+  | "model_gateway_env"
   | "provider_ledger_private_env"
   | "provider_ledger_deployment_secret";
 
@@ -45,28 +44,46 @@ export type OpenAICompatibleConfig = {
 export type AgentBrainChannel = "primary" | "third" | "fallback";
 
 export function pickOpenAICompatibleConfig(env: OpenAICompatibleEnv = process.env): OpenAICompatibleConfig | null {
-  const ledgerConfig = tryResolveSelectedProviderLedgerConfig({
-    capability: "agent_brain",
-    ambientEnv: env,
-  });
-  if (!ledgerConfig) return null;
+  let gatewayConfig: ReturnType<typeof resolveModelGatewayConfig>;
+  try {
+    gatewayConfig = resolveModelGatewayConfig("agent", env);
+  } catch {
+    if (env.NODE_ENV !== "test" && env.SHANHAI_PROVIDER_MIGRATION_MODE !== "legacy-compat") return null;
+    if (!env.SHANHAI_PROVIDER_LEDGER_ROOT) return null;
+    const legacy = tryResolveSelectedProviderLedgerConfig({ capability: "agent_brain", ambientEnv: env });
+    if (!legacy) return null;
+    const legacyConfig = {
+      credentialSource: legacy.credentialSource === "ledger_private_env"
+        ? "provider_ledger_private_env" as const
+        : "provider_ledger_deployment_secret" as const,
+      baseURL: legacy.baseURL,
+      model: legacy.model,
+      reasoningEffort: legacy.reasoningEffort,
+      channel: legacy.channel,
+      endpointCategory: legacy.endpointCategory,
+    } as OpenAICompatibleConfig;
+    Object.defineProperty(legacyConfig, "credential", { value: legacy.credential, enumerable: false });
+    return Object.freeze(legacyConfig);
+  }
   const config = {
-    credentialSource: ledgerConfig.credentialSource === "ledger_private_env"
-      ? "provider_ledger_private_env"
-      : "provider_ledger_deployment_secret",
-    baseURL: ledgerConfig.baseURL,
-    model: ledgerConfig.model,
-    reasoningEffort: ledgerConfig.reasoningEffort,
-    channel: ledgerConfig.channel,
-    endpointCategory: ledgerConfig.endpointCategory,
+    credentialSource: "model_gateway_env" as const,
+    baseURL: gatewayConfig.baseUrl,
+    model: gatewayConfig.model,
+    reasoningEffort: normalizeReasoningEffort(env.AGENT_BRAIN_REASONING_EFFORT),
+    channel: "primary" as const,
+    endpointCategory: "openai_compatible_responses" as const,
   } as OpenAICompatibleConfig;
   Object.defineProperty(config, "credential", {
-    value: ledgerConfig.credential,
+    value: gatewayConfig.apiKey,
     enumerable: false,
     configurable: false,
     writable: false,
   });
   return Object.freeze(config);
+}
+
+function normalizeReasoningEffort(value: string | undefined): OpenAIReasoningEffort {
+  return value === "low" || value === "high" || value === "xhigh" ? value : "medium";
 }
 
 export function createOpenAICompatibleConfigDigest(config: Omit<OpenAICompatibleConfig, "credentialSource"> & {
@@ -92,6 +109,7 @@ export function createOpenAICompatibleConfigDigest(config: Omit<OpenAICompatible
 }
 
 export function normalizeDigestCredentialSource(source: OpenAICompatibleDigestCredentialSource) {
+  if (source === "model_gateway_env") return "deployment_secret" as const;
   if (source === "provider_ledger_private_env") return "ledger_private_env" as const;
   if (source === "provider_ledger_deployment_secret") return "deployment_secret" as const;
   return source;

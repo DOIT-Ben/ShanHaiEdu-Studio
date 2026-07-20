@@ -70,7 +70,7 @@
 - 现行业务Skill权威源为集合根既有 `shanhaiedu-技能系统`；运行时projection只是一次运行冻结投影。
 - Skill只能增强Main Agent当前选择的高层业务Tool，不能规划、批准、返修、重试或停止整个任务。
 - 工作流模板和Skill可以为当前Tool提供业务策略与质量规范，但不得携带隐藏的下一步、固定依赖链或整任务完成条件。
-- Main Agent只调用高层业务Tool，不选择裸Provider。Provider配置、模型、凭据和能力以API台账与运行时Binding Policy为准。
+- Main Agent只调用高层业务Tool，不选择裸Provider。Provider配置、模型、凭据和能力统一以服务端模型网关 `MODEL_GATEWAY_*` 为准；API台账仅保留历史合同、fixture和审计证据，不得作为生产凭据入口。
 - V1图片生产使用台账绑定的MiniMax通道，不允许静默切换free或其他fallback通道。
 - 没有有效费用披露版本时付费调用为0；预算升级必须是类型化HumanGate并原子更新授权。
 

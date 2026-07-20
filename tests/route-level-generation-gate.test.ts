@@ -193,18 +193,16 @@ describe("route-level generation gate", () => {
 
   it("saves direct image generation output as image prompts without overwriting the source PPT draft", async () => {
     const originalEnv = {
-      IMAGE_PROVIDER_CHANNEL: process.env.IMAGE_PROVIDER_CHANNEL,
-      MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
-      MINIMAX_BASE_URL: process.env.MINIMAX_BASE_URL,
-      MINIMAX_IMAGE_MODEL: process.env.MINIMAX_IMAGE_MODEL,
+      MODEL_GATEWAY_API_KEY: process.env.MODEL_GATEWAY_API_KEY,
+      MODEL_GATEWAY_BASE_URL: process.env.MODEL_GATEWAY_BASE_URL,
+      MODEL_GATEWAY_IMAGE_MODEL: process.env.MODEL_GATEWAY_IMAGE_MODEL,
     };
     const originalFetch = globalThis.fetch;
-    process.env.IMAGE_PROVIDER_CHANNEL = "minimax";
-    process.env.MINIMAX_API_KEY = "test-image-key";
-    process.env.MINIMAX_BASE_URL = "https://image.test";
-    process.env.MINIMAX_IMAGE_MODEL = "image-01";
+    process.env.MODEL_GATEWAY_API_KEY = "test-image-key";
+    process.env.MODEL_GATEWAY_BASE_URL = "https://image.test/v1";
+    process.env.MODEL_GATEWAY_IMAGE_MODEL = "image-2";
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ data: { image_base64: [validPngBase64()] }, base_resp: { status_code: 0 } }), {
+      new Response(JSON.stringify({ data: [{ b64_json: validPngBase64() }] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -235,10 +233,9 @@ describe("route-level generation gate", () => {
       expect(generated).toMatchObject({ nodeKey: "image_prompts", kind: "image_prompts", status: "needs_review", isApproved: false });
     } finally {
       globalThis.fetch = originalFetch;
-      restoreEnv("IMAGE_PROVIDER_CHANNEL", originalEnv.IMAGE_PROVIDER_CHANNEL);
-      restoreEnv("MINIMAX_API_KEY", originalEnv.MINIMAX_API_KEY);
-      restoreEnv("MINIMAX_BASE_URL", originalEnv.MINIMAX_BASE_URL);
-      restoreEnv("MINIMAX_IMAGE_MODEL", originalEnv.MINIMAX_IMAGE_MODEL);
+      restoreEnv("MODEL_GATEWAY_API_KEY", originalEnv.MODEL_GATEWAY_API_KEY);
+      restoreEnv("MODEL_GATEWAY_BASE_URL", originalEnv.MODEL_GATEWAY_BASE_URL);
+      restoreEnv("MODEL_GATEWAY_IMAGE_MODEL", originalEnv.MODEL_GATEWAY_IMAGE_MODEL);
     }
   });
 });

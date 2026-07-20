@@ -261,7 +261,7 @@ describe("OpenAIRuntime", () => {
 
     await runtime.run(runtimeInput);
 
-    expect(calls[0]).toMatchObject({ model: "gpt-5.6-terra", reasoning: { effort: "medium" } });
+    expect(calls[0]).toMatchObject({ model: "ledger-default", reasoning: { effort: "medium" } });
   });
 
   it("preserves actionable PPT candidate validation diagnostics for Main Agent repair", async () => {

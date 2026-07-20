@@ -64,7 +64,7 @@ export function classifyMediaFailure(
     };
   }
   if (internalReason.toLowerCase().includes(`invalid_${media}_output`) ||
-      (media === "image" && internalReason === "minimax_image_lineage_incomplete")) {
+      (media === "image" && internalReason === "model_gateway_image_lineage_incomplete")) {
     return {
       capabilityId,
       provider,

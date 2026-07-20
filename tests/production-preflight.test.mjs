@@ -40,10 +40,13 @@ test("production preflight passes with complete local production env without lea
     cwd,
     env: {
       ...completeEnv(storageRoot, { databasePath }),
-      AGENT_BRAIN_CHANNEL: "fallback",
-      AGENT_BRAIN_FALLBACK_API_KEY: "test-fallback-key-do-not-print",
-      AGENT_BRAIN_FALLBACK_BASE_URL: "https://fallback-private.invalid/v1",
-      AGENT_BRAIN_FALLBACK_MODEL: "fallback-private-model",
+      MODEL_GATEWAY_API_KEY: "test-gateway-key-do-not-print",
+      MODEL_GATEWAY_BASE_URL: "https://gateway-private.invalid/v1",
+      MODEL_GATEWAY_AGENT_MODEL: "gpt-5.6",
+      MODEL_GATEWAY_TEXT_MODEL: "deepseek",
+      MODEL_GATEWAY_IMAGE_MODEL: "image-2",
+      MODEL_GATEWAY_VIDEO_MODEL: "video-grok",
+      MODEL_GATEWAY_TTS_MODEL: "speech-2.8-hd",
     },
   });
   const serialized = JSON.stringify(result);
@@ -52,34 +55,21 @@ test("production preflight passes with complete local production env without lea
   assert.equal(result.checks.every((check) => check.ok), true);
   assert.match(serialized, /next-standalone-output/);
   assert.match(serialized, /provider-video/);
-  assert.doesNotMatch(serialized, /test-fallback-key-do-not-print/);
-  assert.doesNotMatch(serialized, /fallback-private\.invalid/);
-  assert.doesNotMatch(serialized, /test-image-key-do-not-print/);
-  assert.doesNotMatch(serialized, /image-private\.invalid/);
-  assert.doesNotMatch(serialized, /test-video-key-do-not-print/);
-  assert.doesNotMatch(serialized, /video-private\.invalid/);
-  assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
+   assert.doesNotMatch(serialized, /test-gateway-key-do-not-print/);
+   assert.doesNotMatch(serialized, /gateway-private\.invalid/);
 });
 
 test("production preflight keeps MiniMax image authority while accepting the configured Evolink video runtime", async () => {
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
   const env = completeEnv(makeExternalStorageRoot());
-  delete env.OCTO_API_KEY;
-  delete env.OCTO_BASE_URL;
-  delete env.VIDEO_MODEL;
-  Object.assign(env, {
-    VIDEO_PROVIDER_MODE: "evolink",
-    EVOLINK_API_KEY: "test-evolink-key-do-not-print",
-    EVOLINK_VIDEO_MODEL: "test-evolink-model",
-  });
 
   const result = await runProductionPreflight({ cwd, env });
   const serialized = JSON.stringify(result);
 
   assert.equal(result.ok, true);
-  assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "provider_ledger:minimax");
-  assert.equal(result.checks.find((check) => check.id === "provider-video")?.source, "evolink");
+  assert.equal(result.checks.find((check) => check.id === "provider-image")?.source, "model_gateway");
+  assert.equal(result.checks.find((check) => check.id === "provider-video")?.source, "model_gateway");
   assert.doesNotMatch(serialized, /test-evolink-key-do-not-print/);
 });
 
@@ -88,20 +78,20 @@ test("production preflight requires the exact MiniMax TTS fields declared by the
   const cwd = makeRepoFixture({ standalone: true });
   const storageRoot = makeExternalStorageRoot();
   const primaryEnv = completeEnv(storageRoot);
-  delete primaryEnv.MINIMAX_TTS_MODEL;
+  primaryEnv.MODEL_GATEWAY_TTS_MODEL = "";
 
   const primaryResult = await runProductionPreflight({ cwd, env: primaryEnv });
   const primaryCheck = primaryResult.checks.find((check) => check.id === "provider-tts");
   const serialized = JSON.stringify(primaryResult);
   assert.equal(primaryCheck?.ok, false);
-  assert.equal(primaryCheck?.source, "provider_ledger:minimax");
+  assert.equal(primaryCheck?.source, "model_gateway");
   assert.doesNotMatch(serialized, /test-tts-key-do-not-print/);
   assert.doesNotMatch(serialized, /tts-private\.invalid/);
 
   const completeResult = await runProductionPreflight({ cwd, env: completeEnv(storageRoot) });
   const completeCheck = completeResult.checks.find((check) => check.id === "provider-tts");
   assert.equal(completeCheck?.ok, true);
-  assert.equal(completeCheck?.source, "provider_ledger:minimax");
+  assert.equal(completeCheck?.source, "model_gateway");
 });
 
 test("production preflight detects missing standalone output and package script", async () => {
@@ -374,23 +364,14 @@ function completeEnv(storageRoot, { databasePath = makeAuthDatabase({ admin: tru
     SHANHAI_APP_INSTANCE_COUNT: "1",
     DATABASE_URL: `file:${databasePath}`,
     ARTIFACT_STORAGE_ROOT: storageRoot,
-    SHANHAI_PROVIDER_LEDGER_ROOT: path.resolve("tests", "fixtures", "provider-ledger"),
-    SHANHAI_PROVIDER_LEDGER_SECRET_SOURCE: "deployment_secret",
-    AGENT_BRAIN_CHANNEL: "primary",
-    AGENT_BRAIN_API_KEY: "test-agent-key-do-not-print",
-    AGENT_BRAIN_BASE_URL: "https://agent-private.invalid/v1",
-    AGENT_BRAIN_MODEL: "test-agent-model",
-    COZE_API_TOKEN: "test-coze-token-do-not-print",
-    COZE_PPT_RUN_URL: "https://coze-private.invalid/run",
-    IMAGE_PROVIDER_CHANNEL: "minimax",
-    MINIMAX_API_KEY: "test-minimax-key-do-not-print",
-    MINIMAX_BASE_URL: "https://minimax-private.invalid",
-    MINIMAX_IMAGE_MODEL: "test-image-model",
-    OCTO_API_KEY: "test-video-key-do-not-print",
-    OCTO_BASE_URL: "https://video-private.invalid/v1",
-    VIDEO_MODEL: "test-video-model",
-    TTS_PROVIDER_MODE: "minimax",
-    MINIMAX_TTS_MODEL: "test-tts-model",
+    MODEL_GATEWAY_API_KEY: "test-gateway-key-do-not-print",
+    MODEL_GATEWAY_BASE_URL: "https://gateway-private.invalid/v1",
+    MODEL_GATEWAY_AGENT_MODEL: "gpt-5.6",
+    MODEL_GATEWAY_TEXT_MODEL: "deepseek",
+    MODEL_GATEWAY_IMAGE_MODEL: "image-2",
+    MODEL_GATEWAY_VIDEO_MODEL: "video-grok",
+    MODEL_GATEWAY_TTS_MODEL: "speech-2.8-hd",
+    COZE_PPT_CHANNEL: "cli",
   };
 }
 

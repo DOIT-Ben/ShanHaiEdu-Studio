@@ -38,7 +38,7 @@
 
 ## 当前合同
 
-- Provider台账绑定：`..\contracts\provider-ledger-runtime-contract.md`
+- 模型网关绑定：`..\stages\model-gateway-unification-plan.md`；Provider台账合同仅作历史审计证据：`..\contracts\provider-ledger-runtime-contract.md`
 - 产品不变量：`..\product\current-requirements-baseline.md`
 - 当前重构与发布阻塞：`..\mainlines\current-mainline-status.md`
 

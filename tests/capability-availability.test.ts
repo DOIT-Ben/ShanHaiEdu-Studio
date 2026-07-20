@@ -1,4 +1,3 @@
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCapabilityAvailability, resolveRuntimeProviderAvailability } from "@/server/capabilities/capability-availability";
 import { getCapabilityDefinitions } from "@/server/capabilities/capability-registry";
@@ -7,8 +6,6 @@ import { createTaskBrief } from "@/server/conversation/task-contract";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
 const definitions = getCapabilityDefinitions();
-const providerLedgerFixtureRoot = path.resolve("tests", "fixtures", "provider-ledger");
-
 function approvedArtifactFor(capabilityId: CapabilityId): ArtifactRecord {
   const capability = definitions.find((definition) => definition.id === capabilityId);
   if (!capability) {
@@ -154,14 +151,11 @@ describe("CapabilityAvailability", () => {
     const availability = resolveRuntimeProviderAvailability({
       COZE_PPT_USE_CLI: "1",
       NODE_ENV: "test",
-      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
-      SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
-      IMAGE_PROVIDER_CHANNEL: "minimax",
-      MINIMAX_API_KEY: "test-key",
-      MINIMAX_BASE_URL: "https://image.example",
-      MINIMAX_IMAGE_MODEL: "image-01",
-      EVOLINK_API_KEY: "video-key",
-      EVOLINK_VIDEO_BASE_URL: "https://video.example",
+       SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+       MODEL_GATEWAY_API_KEY: "test-key",
+       MODEL_GATEWAY_BASE_URL: "https://gateway.example/v1",
+       MODEL_GATEWAY_IMAGE_MODEL: "image-2",
+       MODEL_GATEWAY_VIDEO_MODEL: "video-grok",
     });
 
     expect(availability).toMatchObject({
@@ -188,15 +182,13 @@ describe("CapabilityAvailability", () => {
     });
   });
 
-  it("recognizes the API-ledger MiniMax image contract without another image provider", () => {
+  it("recognizes the unified model gateway image contract", () => {
     const availability = resolveRuntimeProviderAvailability({
       NODE_ENV: "test",
-      SHANHAI_PROVIDER_LEDGER_ROOT: providerLedgerFixtureRoot,
-      SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
-      IMAGE_PROVIDER_CHANNEL: "minimax",
-      MINIMAX_API_KEY: "minimax-test-key",
-      MINIMAX_BASE_URL: "https://minimax.example",
-      MINIMAX_IMAGE_MODEL: "image-01",
+       SHANHAI_ENABLE_PROVIDER_AVAILABILITY_IN_TESTS: "1",
+       MODEL_GATEWAY_API_KEY: "gateway-test-key",
+       MODEL_GATEWAY_BASE_URL: "https://gateway.example/v1",
+       MODEL_GATEWAY_IMAGE_MODEL: "image-2",
     });
 
     expect(availability).toMatchObject({

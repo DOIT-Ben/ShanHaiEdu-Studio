@@ -94,7 +94,7 @@ export class OpenAIMainConversationAgent implements MainConversationAgent {
         : null;
       const adapter = createOpenAIResponsesGptAdapter({
         client: this.client,
-        model: strategy?.model ?? this.model,
+        model: this.model,
         providerChannel: this.providerChannel,
       });
       const request = {

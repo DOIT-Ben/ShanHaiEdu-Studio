@@ -328,7 +328,7 @@ export function resolveBusinessSkillProvenance(input: ProviderToolAdapterInput) 
 
 function assertCompleteImageGenerationResult(result: ImageGenerationResult) {
   const files = [result.rawAsset, result.normalizedAsset];
-  if (result.provider !== "minimax" || !result.model?.trim() ||
+  if (result.provider !== "model_gateway" || !result.model?.trim() ||
       !Number.isInteger(result.width) || result.width <= 0 ||
       !Number.isInteger(result.height) || result.height <= 0 ||
       !/^[a-f0-9]{64}$/i.test(result.promptDigest) ||
@@ -338,7 +338,7 @@ function assertCompleteImageGenerationResult(result: ImageGenerationResult) {
       result.sha256 !== result.normalizedAsset.sha256 ||
       result.localOutput !== result.normalizedAsset.localOutput ||
       result.width !== result.normalizedAsset.width || result.height !== result.normalizedAsset.height) {
-    throw new Error("minimax_image_lineage_incomplete");
+    throw new Error("model_gateway_image_lineage_incomplete");
   }
 }
 

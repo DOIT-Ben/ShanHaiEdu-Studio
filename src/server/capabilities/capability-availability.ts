@@ -4,7 +4,7 @@ import { isArtifactTrustedForDownstream } from "../quality/artifact-quality-stat
 import { isArtifactBoundToTask } from "../quality/artifact-truth-boundary";
 import type { TaskBrief } from "../conversation/task-contract";
 import { isCapabilityInTaskScope } from "../conversation/task-output-scope";
-import { tryResolveProviderLedgerValueBag, type ProviderLedgerEnv } from "../provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "../model-gateway-config";
 
 export type CapabilityAvailabilityStatus =
   | "available"
@@ -121,41 +121,31 @@ function hasApprovedArtifactForCapability(
 
 function hasCozePptProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
   const channel = env.COZE_PPT_CHANNEL?.trim().toLowerCase();
-  if (channel === "cli" || env.COZE_PPT_USE_CLI === "1") return true;
-  const values = tryResolveProviderLedgerValueBag({ capability: "coze_ppt", ambientEnv: env as ProviderLedgerEnv });
-  const token = values?.get("COZE_API_TOKEN");
-  if (!token) return false;
-  return Boolean(values?.get("COZE_PPT_RUN_URL") || values?.get("COZE_PPT_BOT_ID"));
+  return channel === "cli" || env.COZE_PPT_USE_CLI === "1";
 }
 
 function hasImageProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
-  const values = tryResolveProviderLedgerValueBag({ capability: "image_generation", ambientEnv: env as ProviderLedgerEnv });
-  const channel = env.IMAGE_PROVIDER_CHANNEL?.trim() || values?.get("IMAGE_PROVIDER_CHANNEL") || values?.get("IMAGE_PROVIDER_MODE");
-  if (channel !== "minimax") return false;
-  const map = {
-    primary: ["IMAGEGEN_MYSELF_PRIMARY_API_KEY", "IMAGEGEN_MYSELF_PRIMARY_BASE_URL"],
-    free: ["IMAGEGEN_FREE_API_KEY", "IMAGEGEN_FREE_BASE_URL"],
-    free_primary: ["IMAGEGEN_FREE_PRIMARY_API_KEY", "IMAGEGEN_FREE_PRIMARY_BASE_URL"],
-    myself_fallback: ["IMAGEGEN_MYSELF_FALLBACK_API_KEY", "IMAGEGEN_MYSELF_FALLBACK_BASE_URL"],
-    minimax: ["MINIMAX_API_KEY", "MINIMAX_BASE_URL"],
-  } as const;
-  const [apiKeyName, baseUrlName] = map[channel];
-  return Boolean(values?.get(apiKeyName) && values?.get(baseUrlName) && values?.get("MINIMAX_IMAGE_MODEL"));
+  return hasGatewayCapability("image", env);
 }
 
 function hasVideoProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
-  const values = tryResolveProviderLedgerValueBag({ capability: "video_generation", ambientEnv: env as ProviderLedgerEnv });
-  if (!values) return false;
-  const wantsEvolink = values.get("VIDEO_PROVIDER_MODE") === "evolink" || Boolean(values.get("EVOLINK_API_KEY"));
-  if (wantsEvolink) {
-    return Boolean(values.get("EVOLINK_API_KEY") && (values.get("EVOLINK_BASE_URL") || "https://api.evolink.ai"));
-  }
-  return Boolean(values.get("OCTO_API_KEY") && values.get("OCTO_BASE_URL"));
+  return hasGatewayCapability("video", env);
 }
 
 function hasVideoNarrationProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
-  const values = tryResolveProviderLedgerValueBag({ capability: "tts_minimax", ambientEnv: env as ProviderLedgerEnv });
-  return Boolean(values?.get("MINIMAX_API_KEY"));
+  return hasGatewayCapability("tts", env);
+}
+
+function hasGatewayCapability(
+  capability: "image" | "video" | "tts",
+  env: Partial<NodeJS.ProcessEnv>,
+): boolean {
+  try {
+    resolveModelGatewayConfig(capability, env as NodeJS.ProcessEnv);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildEntry(input: {

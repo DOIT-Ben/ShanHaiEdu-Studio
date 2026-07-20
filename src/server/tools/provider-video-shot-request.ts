@@ -1,5 +1,5 @@
 import { resolveLocalArtifactOutput } from "@/server/artifact-storage/local-artifact-storage";
-import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
 import {
   buildResolvedShotVideoRequest,
   type ResolvedShotVideoRequest,
@@ -46,12 +46,13 @@ export async function resolveDefaultVideoShotRequest(
   const localPath = resolveLocalArtifactOutput(localOutput);
   const sha256 = typeof imageAsset?.sha256 === "string" ? imageAsset.sha256.toLowerCase() : "";
   if (!localPath || !/^[a-f0-9]{64}$/i.test(sha256)) throw new Error("video_provider_reference_file_invalid");
-  const providerValues = resolveProviderLedgerValueBag({ capability: "video_generation" });
-  const apiKey = providerValues.get("EVOLINK_API_KEY") || "";
+  const gateway = resolveModelGatewayConfig("video");
+  const apiKey = gateway.apiKey;
+  const filesBaseUrl = process.env.MODEL_GATEWAY_FILES_BASE_URL || `${gateway.baseUrl}/files`;
   const referenceEvidence = await resolveEvolinkShotReferences({
     shotId: shot.shotId,
     apiKey,
-    filesBaseUrl: providerValues.get("EVOLINK_FILES_BASE_URL"),
+    filesBaseUrl,
     references: [{
       assetId: reference.assetId,
       assetDomain: "video",

@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import JSZip from "jszip";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
-import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 
 export { resolvePptDesignPageCount, validatePptDesignDraftForCoze } from "@/server/ppt-design/ppt-design-validation";
@@ -231,34 +230,7 @@ function readConfig(env: NodeJS.ProcessEnv): CozePptConfig {
     };
   }
 
-  const values = resolveProviderLedgerValueBag({ capability: "coze_ppt", ambientEnv: env });
-  const runUrl = values.get("COZE_PPT_RUN_URL");
-  const token = values.get("COZE_API_TOKEN");
-  const botId = values.get("COZE_PPT_BOT_ID");
-  if (!token || (!botId && !runUrl)) {
-    throw new Error("missing_COZE_PPT_RUN_ENV");
-  }
-
-  if (botId) {
-    return {
-      mode: "openapi",
-      apiBase: (values.get("COZE_API_BASE") || "https://api.coze.cn").replace(/\/$/, ""),
-      botId,
-      token,
-      timeoutMs,
-      deadlineSeconds,
-      pollIntervalMs: Number.parseInt(values.get("COZE_PPT_POLL_INTERVAL_SECONDS") || "1", 10) * 1000,
-      maxPollAttempts: Number.parseInt(values.get("COZE_PPT_MAX_POLL_ATTEMPTS") || "300", 10),
-    };
-  }
-
-  return {
-    mode: "run",
-    runUrl: runUrl!,
-    token,
-    timeoutMs,
-    deadlineSeconds,
-  };
+  throw new Error("coze_ppt_disabled_by_model_gateway_only");
 }
 
 async function runCozeCliPpt(config: Extract<CozePptConfig, { mode: "cli" }>, prompt: string): Promise<CozePptDownloadedResult> {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
-import { resolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { EvolinkReferenceUploadEvidence } from "./evolink-reference-upload";
 
@@ -82,8 +82,18 @@ export async function generateVideoFromArtifact(input: {
     onTaskAccepted: input.taskLifecycle?.onTaskAccepted,
     poll: async (taskId) => pollVideoTask(config, taskId, input.taskLifecycle?.onPoll),
   });
-  const videoUrl = extractVideoResultUrl(completedPayload);
-  const videoBuffer = await downloadVideo(videoUrl, config.timeoutMs);
+  let videoUrl: string;
+  let downloadApiKey: string | undefined;
+  try {
+    videoUrl = extractVideoResultUrl(completedPayload);
+  } catch (error) {
+    if (config.channel !== "model_gateway" || !(error instanceof Error) || error.message !== "missing_video_result_url") throw error;
+    const normalizedBase = config.baseUrl.replace(/\/+$/, "");
+    const apiBase = normalizedBase.endsWith("/v1") ? normalizedBase : `${normalizedBase}/v1`;
+    videoUrl = `${apiBase}/videos/${encodeURIComponent(extractTaskId(completedPayload))}/content`;
+    downloadApiKey = config.apiKey;
+  }
+  const videoBuffer = await downloadVideo(videoUrl, config.timeoutMs, downloadApiKey);
   const validation = validateMp4Buffer(videoBuffer);
   if (!validation.valid) {
     throw new Error("invalid_video_output");
@@ -110,6 +120,9 @@ export async function generateVideoFromArtifact(input: {
 
 export function buildVideoEndpointUrl(baseUrl: string, channel = "octo") {
   const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "model_gateway") {
+    return `${normalized.endsWith("/v1") ? normalized : `${normalized}/v1`}/videos`;
+  }
   if (channel === "evolink") {
     if (/\/v1\/videos\/generations$/i.test(normalized)) {
       return normalized;
@@ -130,6 +143,9 @@ export function buildVideoEndpointUrl(baseUrl: string, channel = "octo") {
 
 export function buildVideoQueryUrl(baseUrl: string, taskId: string, channel = "octo") {
   const normalized = baseUrl.replace(/\/+$/, "");
+  if (channel === "model_gateway") {
+    return `${normalized.endsWith("/v1") ? normalized : `${normalized}/v1`}/videos/${encodeURIComponent(taskId)}`;
+  }
   if (channel === "evolink") {
     const tasksBase = /\/v1\/tasks$/i.test(normalized)
       ? normalized
@@ -230,7 +246,7 @@ export function buildVideoRequestBody(
   prompt: string,
   referenceImageUrls: string[] = [],
 ) {
-  if (config.channel === "evolink") {
+  if (config.channel === "evolink" || config.channel === "model_gateway") {
     if (referenceImageUrls.length > EVOLINK_GROK_IMAGINE_VIDEO_PROVIDER_PROFILE.imageUrls.max) {
       throw new Error("video_reference_image_limit_exceeded");
     }
@@ -267,25 +283,18 @@ function isProviderDurationRange(range: { minSeconds: number; maxSeconds: number
 }
 
 function readConfig(env: NodeJS.ProcessEnv): VideoProviderConfig {
-  const values = resolveProviderLedgerValueBag({ capability: "video_generation", ambientEnv: env });
-  const providerMode = values.get("VIDEO_PROVIDER_MODE");
-  const wantsEvolink = providerMode === "evolink" || Boolean(values.get("EVOLINK_API_KEY"));
-  const apiKey = wantsEvolink ? values.get("EVOLINK_API_KEY") : values.get("OCTO_API_KEY");
-  const baseUrl = wantsEvolink ? values.get("EVOLINK_BASE_URL") || "https://api.evolink.ai" : values.get("OCTO_BASE_URL");
-  if (!apiKey || !baseUrl) {
-    throw new Error("missing_VIDEO_PROVIDER_ENV");
-  }
+  const gateway = resolveModelGatewayConfig("video", env);
 
   return {
-    channel: wantsEvolink ? "evolink" : values.get("OCTO_VIDEO_PROVIDER") || providerMode || "octo",
-    apiKey,
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    model: values.get("EVOLINK_VIDEO_MODEL") || values.get("VIDEO_MODEL") || values.get("OMNI_DEFAULT_MODEL") || values.get("NEWAPI_DEFAULT_MODEL") || (wantsEvolink ? "grok-imagine-text-to-video-beta" : "omni_flash-10s"),
-    size: values.get("OMNI_DEFAULT_SIZE") || values.get("NEWAPI_DEFAULT_SIZE") || "1280x720",
-    duration: Number.parseInt(values.get("EVOLINK_VIDEO_DURATION") || "6", 10),
-    quality: values.get("EVOLINK_VIDEO_QUALITY") || "480p",
-    mode: values.get("EVOLINK_VIDEO_MODE") || "normal",
-    aspectRatio: values.get("EVOLINK_VIDEO_ASPECT_RATIO") || "16:9",
+    channel: "model_gateway",
+    apiKey: gateway.apiKey,
+    baseUrl: gateway.baseUrl,
+    model: gateway.model,
+    size: env.OMNI_DEFAULT_SIZE || "1280x720",
+    duration: Number.parseInt(env.EVOLINK_VIDEO_DURATION || "6", 10),
+    quality: env.EVOLINK_VIDEO_QUALITY || "480p",
+    mode: env.EVOLINK_VIDEO_MODE || "normal",
+    aspectRatio: env.EVOLINK_VIDEO_ASPECT_RATIO || "16:9",
     timeoutMs: Number.parseInt(env.VIDEO_SMOKE_TIMEOUT_MS || "600000", 10),
     pollIntervalMs: Number.parseInt(env.VIDEO_SMOKE_POLL_INTERVAL_MS || "5000", 10),
     maxPolls: Number.parseInt(env.VIDEO_SMOKE_MAX_POLLS || "72", 10),
@@ -296,15 +305,18 @@ async function submitVideoTask(
   config: VideoProviderConfig,
   input: { project: ProjectRecord; artifact: ArtifactRecord; shot?: ResolvedShotVideoRequest },
 ) {
+  const body = input.shot
+    ? buildShotVideoRequestBody(config, input.shot)
+    : buildVideoRequestBody(config, buildVideoArtifactPrompt(input.project, input.artifact));
+  const idempotencyKey = `video-${createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 48)}`;
   const response = await fetch(buildVideoEndpointUrl(config.baseUrl, config.channel), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
     },
-    body: JSON.stringify(input.shot
-      ? buildShotVideoRequestBody(config, input.shot)
-      : buildVideoRequestBody(config, buildVideoArtifactPrompt(input.project, input.artifact))),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
 
@@ -430,12 +442,13 @@ function validateMp4Buffer(buffer: Buffer): { valid: true } | { valid: false } {
   return { valid: false };
 }
 
-async function downloadVideo(url: string, timeoutMs: number) {
+async function downloadVideo(url: string, timeoutMs: number, apiKey?: string) {
   const response = await fetch(url, {
     method: "GET",
     headers: {
       Accept: "video/mp4,application/octet-stream;q=0.9,*/*;q=0.8",
       "User-Agent": "Mozilla/5.0 ShanHaiEdu-MVP-VideoAdapter",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
     signal: AbortSignal.timeout(timeoutMs),
   });

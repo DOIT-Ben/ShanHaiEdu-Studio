@@ -1,10 +1,10 @@
 # Provider 台账运行合同
 
-状态：A20 当前合同
+状态：历史合同（生产入口已退役）
 
 ## 1. 权威边界
 
-`API台账系统\manifest.json` 中每个生产能力的 `runtime_contract` 是 Provider 字段映射和发布选择的唯一权威。应用 Runtime、V1-9 Provider lock、健康 evidence 和 `production-preflight` 必须消费同一份声明；代码不能另建 purpose、channel、credential、base URL、model 或 reasoning 字段表。
+`API台账系统\manifest.json` 仅保留历史字段映射、fixture 和审计证据，不再是生产 Provider 选择或凭据入口。生产 Runtime、能力可用性和 `production-preflight` 统一消费服务端模型网关 `MODEL_GATEWAY_*`；本文件只用于解释旧 V1-9 lock/evidence 的兼容合同，不能恢复旧生产路径。
 
 可跟踪的无密钥合同 fixture 位于：
 

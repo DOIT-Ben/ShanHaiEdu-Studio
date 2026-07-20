@@ -38,7 +38,7 @@
 | 主线 | `mainlines\current-mainline-status.md` | 当前事实、五层状态、阻塞和下一动作 |
 | 架构 | `architecture\README.md`、`architecture\V1.0 重构设计.md` | 当前智能体原子 Tool 架构与已接受ADR |
 | 阶段 | `stages\README.md` | 当前唯一活动阶段是产品优先深度重构 |
-| Provider合同 | `contracts\provider-ledger-runtime-contract.md` | API台账到运行时的非敏感绑定边界 |
+| Provider历史合同 | `contracts\provider-ledger-runtime-contract.md` | 仅供历史审计与 fixture 追溯；生产模型统一走模型网关 |
 | 前端 | `ui\README.md` | assistant-ui工作台与视觉证据入口 |
 
 ## 4. 未来工作

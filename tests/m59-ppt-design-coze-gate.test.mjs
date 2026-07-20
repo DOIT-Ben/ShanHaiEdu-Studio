@@ -75,8 +75,7 @@ test("M59 Coze PPT only accepts ppt_design_draft and prompts from the four-layer
   assert.match(cozeSource, /需要先生成 PPT 设计稿|missing_ppt_design_draft/);
   assert.match(cozeSource, /逐页四层 PPT 设计稿/);
   assert.match(cozeSource, /底图[\s\S]*元素[\s\S]*文字[\s\S]*排版/);
-  assert.match(cozeSource, /\/v3\/chat/);
-  assert.match(cozeSource, /COZE_PPT_BOT_ID/);
+  assert.match(cozeSource, /coze_ppt_disabled_by_model_gateway_only/);
   assert.match(cozeSource, /resolvePptDesignPageCount/);
   assert.match(cozeSource, /validatePptDesignDraftForCoze/);
   assert.match(cozeSource, /validation\.slideCount !== requestedPageCount/);

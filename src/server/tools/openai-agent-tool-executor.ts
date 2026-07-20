@@ -4,7 +4,7 @@ import { createToolObservation } from "@/server/capabilities/tool-observation";
 import { createOpenAIResponsesGptAdapter } from "@/server/gpt-protocol/openai-responses-adapter";
 import { pickOpenAICompatibleConfig, type OpenAICompatibleEnv } from "@/server/openai-compatible-config";
 import { adaptPptDirectorOutputToDesignArtifact } from "@/server/ppt-quality/ppt-director-design-adapter";
-import { tryResolveProviderLedgerValueBag } from "@/server/provider-ledger/provider-ledger-adapter";
+import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
 import {
   runWithProviderCallTracePhase,
   type ProviderCallTraceInput,
@@ -65,9 +65,6 @@ export type OpenAIChatCompletionsAgentToolExecutorOptions = {
 
 type AgentToolExecutorEnv = OpenAICompatibleEnv & {
   AGENT_TOOL_MODEL_CHANNEL?: string;
-  DEEPSEEK_API_KEY?: string;
-  DEEPSEEK_BASE_URL?: string;
-  DEEPSEEK_MODEL?: string;
 };
 
 type AgentToolExecutorFactoryOptions = {
@@ -83,7 +80,7 @@ export function createOpenAIAgentToolExecutor(options: OpenAIAgentToolExecutorOp
       const strategy = resolveGenerationIntensityStrategy(envelope.generationIntensity);
       const adapter = createOpenAIResponsesGptAdapter({
         client: options.client,
-        model: strategy.model ?? options.model,
+        model: options.model,
         providerChannel: options.providerChannel,
         traceRecorder: options.traceRecorder,
       });
@@ -275,15 +272,12 @@ export function createAgentToolExecutorFromEnv(
 ): AgentToolExecutor<AgentToolInvocationEnvelope> | undefined {
   const channel = env.AGENT_TOOL_MODEL_CHANNEL?.trim().toLowerCase();
   if (channel === "deepseek") {
-    const values = tryResolveProviderLedgerValueBag({ capability: "text_llm", ambientEnv: env });
-    const credential = values?.get("DEEPSEEK_API_KEY");
-    const baseURL = values?.get("DEEPSEEK_BASE_URL");
-    const model = values?.get("DEEPSEEK_MODEL");
-    if (!credential || !baseURL || !model) return undefined;
-    const client = new OpenAI({ apiKey: credential, baseURL, timeout: 180_000, maxRetries: 0 }) as unknown as OpenAIChatCompletionsClient;
+    let gateway: ReturnType<typeof resolveModelGatewayConfig>;
+    try { gateway = resolveModelGatewayConfig("text", env); } catch { return undefined; }
+    const client = new OpenAI({ apiKey: gateway.apiKey, baseURL: gateway.baseUrl, timeout: 180_000, maxRetries: 0 }) as unknown as OpenAIChatCompletionsClient;
     return createOpenAIChatCompletionsAgentToolExecutor({
       client,
-      model,
+      model: gateway.model,
       loadContext: options.loadContext,
     });
   }

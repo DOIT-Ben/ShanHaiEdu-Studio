@@ -5,10 +5,10 @@
 ## 当前结论
 
 - 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
-- 唯一活动阶段：`product-first-deep-refactor`。
+- 唯一活动阶段：`model-gateway-unification`。
 - 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1至D17切片已完成离线行为回归；D13完成视频route HTTP边界与执行协调最小拆分以及单镜头血缘修复；D14完成Ops环境与smoke结构化合同；D15完成M67与V1-9 Runner源码合同迁移；D16完成wrapper、别名、解构、默认参数、闭包、常量表和属性传播的源码合同检测增强，并完成复杂度保留项复评；D17完成剩余源码合同行为化迁移，source-contract债务清零。
-- 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
-- 本轮未调用真实Provider，未创建V1-9 runId，未生成或测试图片、视频、PPTX、ZIP，未运行390px真实黑盒，未部署或发布。
+- 当前口径：**CONTRACT PASS（网关合同） / EXECUTOR PASS（网关适配） / LIVE RECEIPT BLOCKED（图片上游 502） / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
+- 本轮已按用户授权调用真实网关并验真图片、MP3与MP4；未创建V1-9 runId，未运行完整产品E2E、390px真实黑盒、部署或发布。
 
 ## 已实现
 
@@ -39,6 +39,7 @@
 - 复杂度baseline当前有11个登记项；没有尚未治理的“应拆”项，逐项职责、风险和触发条件已登记在活动plan的D16记录。阈值只触发评估，不以机械清空baseline作为唯一目标。
 - 当前源码合同门在增强扫描下报告0个文件、0次命中；wrapper读取、import alias、解构、参数默认值、闭包、常量表和属性传播均已纳入，循环投影与深层AST不会使扫描崩溃。剩余5个测试文件已通过行为、接口、运行时和渲染合同迁移，baseline为空。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
+- 模型网关生产适配已统一到 Agent `gpt-5.6`、Text `deepseek`、Image `image-2`、Video `video-grok`、TTS `speech-2.8-hd`；此前一次真实 smoke 已完成图片、MP3、MP4 字节验真。当前候选复探的图片上游返回 `HTTP 502 / ALL_IMAGE_ROUTES_FAILED`，因此 receipt 与 development gate 暂未通过。生产运行时只读取 `MODEL_GATEWAY_*`，Provider Ledger 仅保留历史合同、fixture 和审计证据。
 - D13暴露的产品边界风险仍在：只有服务端提供明确`shotId`的video Artifact action才可展示；当前旧artifact action没有镜头选择，不会再展示直发按钮，产品级多镜头选择与真实视频链路仍未验。
 
 ## 尚未实现
@@ -152,4 +153,4 @@
 
 ## 唯一下一动作
 
-D17已完成，进入阶段E最终验证；Provider连续性保持0请求，待离线重构正式关闭后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+D17已完成；下一动作是完成本分支全量回归、独立 diff 审查和提交前 development gate。真实模型网关已通过，但产品级 V1-9、教师签收和 release 仍未关闭。

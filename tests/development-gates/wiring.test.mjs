@@ -56,26 +56,15 @@ test("package exposes the single Provider live preflight and seal entrypoints", 
   assert.ok(policy.providerContinuity.sensitivePaths.includes("scripts/lib/v1-9-orchestration-authority*"));
 });
 
-test("the active stage is the product-first refactor and permits only the exact one-time archive migration", () => {
+test("the active stage is the unified model gateway migration", () => {
   const stage = JSON.parse(readFileSync(path.join(process.cwd(), "docs", "stages", "active-stage.json"), "utf8"));
-  assert.equal(stage.stageId, "product-first-deep-refactor");
-  assert.equal(stage.baselineSha, "20c6e2530b991db77108c7b7a61090e9060b7fca");
-  assert.equal(stage.plan, "docs/stages/product-first-deep-refactor-plan.md");
-  assert.equal(stage.testPlan, "docs/stages/product-first-deep-refactor-test-plan.md");
-  assert.deepEqual(stage.protectedPathExceptions, [
-    "docs/archive/README.md",
-    "docs/archive/2026-07-19-provider-continuity-paused/README.md",
-    "docs/archive/2026-07-19-provider-continuity-paused/archive-manifest.json",
-    "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-plan.md",
-    "docs/archive/2026-07-19-provider-continuity-paused/provider-continuity-readiness-test-plan.md",
-    "docs/archive/2026-07-19-provider-continuity-paused/v1-9-readiness-matrix.md",
-    "docs/archive/2026-07-19-project-rule-before-offline-refactor/AGENTS_20260719-120150.bak",
-    "docs/archive/2026-07-19-project-rule-before-offline-refactor/README.md",
-    "docs/archive/2026-07-19-project-rule-before-offline-refactor/archive-manifest.json",
-    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/README.md",
-    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/archive-manifest.json",
-    "docs/archive/2026-07-20-superseded-assistant-ui-control-boundary/2026-07-14-adr-assistant-ui前移并统一控制面消息边界.md",
-  ]);
+  assert.equal(stage.stageId, "model-gateway-unification");
+  assert.equal(stage.baselineSha, "25ae52f8ec0f0cb92262ca0c5482bd500414a343");
+  assert.equal(stage.plan, "docs/stages/model-gateway-unification-plan.md");
+  assert.equal(stage.testPlan, "docs/stages/model-gateway-unification-test-plan.md");
+  assert.equal(stage.providerContinuity.requirement, "model-gateway-live-smoke");
+  assert.equal(stage.providerContinuity.releaseAccepted, false);
+  assert.deepEqual(stage.protectedPathExceptions, []);
 });
 
 test("quality-gates workflow calls the repository CI entry without a success bypass", () => {

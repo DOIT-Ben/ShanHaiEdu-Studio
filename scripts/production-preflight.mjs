@@ -1,14 +1,9 @@
-import { accessSync, constants, readFileSync, realpathSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, realpathSync } from "node:fs";
 import Database from "better-sqlite3";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveSqliteFileUrl } from "./lib/sqlite-url.mjs";
 import { checkSqliteSchemaReadiness } from "../src/server/health/sqlite-schema-readiness.mjs";
-import {
-  resolveProviderLedgerManifestRoot,
-  resolveProviderLedgerValueSource,
-  resolveProviderRuntimeContract,
-} from "../src/server/provider-ledger/provider-ledger-contract.mjs";
 
 export async function runProductionPreflight({ cwd = process.cwd(), env = process.env } = {}) {
   const checks = [
@@ -26,7 +21,7 @@ export async function runProductionPreflight({ cwd = process.cwd(), env = proces
     checkOpenAiProvider(cwd, env),
     checkCozePptProvider(env),
     checkImageProvider(cwd, env),
-    checkVideoProvider(env),
+    checkVideoProvider(env, cwd),
     checkTtsProvider(cwd, env),
   ];
 
@@ -210,116 +205,72 @@ function checkArtifactStorageRoot(cwd, env) {
 }
 
 function checkOpenAiProvider(cwd, env) {
-  try {
-    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "agent_brain");
-    if (contract.kind !== "agent_brain_responses") throw new Error("agent_brain_contract_kind_invalid");
-    const selectedChannel = providerValue(valueSource, contract.selectedChannelEnv)?.toLowerCase();
-    const channel = Object.values(contract.purposeChannels).find((entry) => entry.channel === selectedChannel);
-    if (!selectedChannel || !channel) {
-      return buildCheck("provider-openai", false, {
-        message: "Select a ledger-declared Agent Brain channel for production.",
-        missing: selectedChannel ? [] : [contract.selectedChannelEnv],
-        source: "provider_ledger:invalid_channel",
-      });
-    }
-    const missing = missingProviderValues(valueSource, [channel.credentialEnv, channel.baseUrlEnv, channel.modelEnv]);
-    const reasoning = providerValue(valueSource, contract.reasoning.env)?.toLowerCase() || contract.reasoning.default;
-    const reasoningAllowed = contract.reasoning.allowed.includes(reasoning);
-    return buildCheck("provider-openai", missing.length === 0 && reasoningAllowed, {
-      message: missing.length === 0 && reasoningAllowed
-        ? "Agent Brain matches the ledger runtime contract."
-        : "Agent Brain does not satisfy the ledger runtime contract.",
-      missing,
-      source: `provider_ledger:${selectedChannel}`,
-    });
-  } catch {
-    return invalidLedgerCheck("provider-openai", "Agent Brain ledger runtime contract is unavailable or invalid.");
-  }
+  return checkGatewayCapability("provider-openai", cwd, env, "MODEL_GATEWAY_AGENT_MODEL");
 }
 
 function checkCozePptProvider(env) {
-  const missing = missingEnv(env, ["COZE_PPT_RUN_URL", "COZE_API_TOKEN"]);
-  return buildCheck("provider-coze-ppt", missing.length === 0, {
-    message: missing.length === 0 ? "Coze PPT run env is present." : "Coze PPT run env is missing.",
-    missing,
-    source: "coze_run",
+  const local = env.COZE_PPT_CHANNEL?.trim().toLowerCase() === "cli" || env.COZE_PPT_USE_CLI?.trim() === "1";
+  return buildCheck("provider-coze-ppt", local, {
+    message: local ? "PPTX generation uses the local controlled CLI path." : "Legacy remote Coze PPT is disabled in gateway-only mode.",
+    missing: local ? [] : ["COZE_PPT_CHANNEL=cli"],
+    source: local ? "local_cli" : "disabled_gateway_only",
   });
 }
 
 function checkImageProvider(cwd, env) {
-  try {
-    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "image_generation");
-    if (contract.kind !== "minimax_image") throw new Error("image_contract_kind_invalid");
-    const selectedChannel = providerValue(valueSource, contract.selectedChannelEnv)?.toLowerCase();
-    const missing = missingProviderValues(valueSource, [contract.credentialEnv, contract.baseUrlEnv, contract.modelEnv]);
-    const ok = selectedChannel === contract.requiredChannel && missing.length === 0;
-    return buildCheck("provider-image", ok, {
-      message: ok ? "MiniMax image generation matches the ledger runtime contract." : "Only the ledger-declared MiniMax image channel is release-ready.",
-      missing: selectedChannel ? missing : [contract.selectedChannelEnv, ...missing],
-      source: selectedChannel === contract.requiredChannel ? "provider_ledger:minimax" : "provider_ledger:invalid_channel",
-    });
-  } catch {
-    return invalidLedgerCheck("provider-image", "Image ledger runtime contract is unavailable or invalid.");
-  }
+  return checkGatewayCapability("provider-image", cwd, env, "MODEL_GATEWAY_IMAGE_MODEL");
 }
 
-function checkVideoProvider(env) {
-  const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
-  if (wantsEvolink) {
-    const hasKey = Boolean(env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim());
-    return buildCheck("provider-video", hasKey, {
-      message: hasKey ? "Evolink video provider env is present." : "Evolink video provider env is missing.",
-      missing: hasKey ? [] : ["EVOLINK_VIDEO_API_KEY"],
-      source: "evolink",
-    });
-  }
-
-  const hasOcto = hasAll(env, ["OCTO_API_KEY", "OCTO_BASE_URL"]) && Boolean(env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim());
-  const hasNewApi = hasAll(env, ["NEWAPI_API_KEY", "NEWAPI_BASE_URL"]) && Boolean(env.VIDEO_MODEL?.trim() || env.OMNI_DEFAULT_MODEL?.trim() || env.NEWAPI_DEFAULT_MODEL?.trim());
-  const missing = hasOcto || hasNewApi ? [] : ["OCTO_API_KEY", "OCTO_BASE_URL", "VIDEO_MODEL"];
-  return buildCheck("provider-video", missing.length === 0, {
-    message: missing.length === 0 ? "Video provider env is present." : "Video provider env is missing.",
-    missing,
-    source: hasOcto ? "octo" : hasNewApi ? "newapi" : "missing",
-  });
+function checkVideoProvider(env, cwd = process.cwd()) {
+  return checkGatewayCapability("provider-video", cwd, env, "MODEL_GATEWAY_VIDEO_MODEL");
 }
 
 function checkTtsProvider(cwd, env) {
-  try {
-    const { contract, valueSource } = resolveRuntimeProvider(cwd, env, "tts_minimax");
-    if (contract.kind !== "minimax_tts") throw new Error("tts_contract_kind_invalid");
-    const selectedMode = providerValue(valueSource, contract.selectedModeEnv)?.toLowerCase();
-    const missing = missingProviderValues(valueSource, [contract.credentialEnv, contract.baseUrlEnv, contract.modelEnv]);
-    const ok = selectedMode === contract.requiredMode && missing.length === 0;
-    return buildCheck("provider-tts", ok, {
-      message: ok ? "MiniMax TTS matches the ledger runtime contract." : "MiniMax TTS requires the ledger-declared mode, key, base URL, and model.",
-      missing: selectedMode ? missing : [contract.selectedModeEnv, ...missing],
-      source: selectedMode === contract.requiredMode ? "provider_ledger:minimax" : "provider_ledger:invalid_mode",
-    });
-  } catch {
-    return invalidLedgerCheck("provider-tts", "TTS ledger runtime contract is unavailable or invalid.");
-  }
+  return checkGatewayCapability("provider-tts", cwd, env, "MODEL_GATEWAY_TTS_MODEL");
 }
 
-function resolveRuntimeProvider(cwd, env, capability) {
-  const ledgerRoot = resolveProviderLedgerManifestRoot({ cwd, env });
+function checkGatewayCapability(id, cwd, env, modelName) {
+  const values = resolveGatewayValues(cwd, env);
+  const missing = ["MODEL_GATEWAY_BASE_URL", "MODEL_GATEWAY_API_KEY", modelName].filter((name) => !values[name]?.trim());
+  return buildCheck(id, missing.length === 0, {
+    message: missing.length === 0 ? "Unified model gateway configuration is present." : "Unified model gateway configuration is incomplete.",
+    missing,
+    source: "model_gateway",
+  });
+}
+
+function resolveGatewayValues(cwd, env) {
+  const localEnv = path.resolve(cwd, ".env.local");
+  const pointer = env.MODEL_GATEWAY_ENV_FILE?.trim() || (env.SHANHAI_PRODUCTION_PREFLIGHT_SKIP_DOTENV === "1" ? "" : (existsSync(localEnv) ? parseSimpleEnv(readFileSync(localEnv, "utf8")).MODEL_GATEWAY_ENV_FILE : ""));
+  let fileValues = {};
+  if (pointer && existsSync(pointer)) {
+    const raw = readFileSync(pointer, "utf8").trim();
+    try {
+      const value = JSON.parse(raw);
+      if (typeof value.key === "string" && typeof value.url === "string") {
+        const normalizedUrl = value.url.replace(/\/+$/, "");
+        fileValues = { MODEL_GATEWAY_API_KEY: value.key, MODEL_GATEWAY_BASE_URL: normalizedUrl.endsWith("/v1") ? normalizedUrl : `${normalizedUrl}/v1` };
+      }
+    } catch {
+      fileValues = parseSimpleEnv(raw);
+    }
+  }
   return {
-    contract: resolveProviderRuntimeContract({ ledgerRoot, capability }),
-    valueSource: resolveProviderLedgerValueSource({
-      ledgerRoot,
-      capability,
-      ambientEnv: env,
-      explicitLedgerRoot: Boolean(env.SHANHAI_PROVIDER_LEDGER_ROOT?.trim()),
-    }),
+    MODEL_GATEWAY_AGENT_MODEL: "gpt-5.6",
+    MODEL_GATEWAY_TEXT_MODEL: "deepseek",
+    MODEL_GATEWAY_IMAGE_MODEL: "image-2",
+    MODEL_GATEWAY_VIDEO_MODEL: "video-grok",
+    MODEL_GATEWAY_TTS_MODEL: "speech-2.8-hd",
+    ...fileValues,
+    ...env,
   };
 }
 
-function invalidLedgerCheck(id, message) {
-  return buildCheck(id, false, {
-    message,
-    missing: ["provider-ledger-runtime-contract"],
-    source: "provider_ledger:invalid_contract",
-  });
+function parseSimpleEnv(raw) {
+  return Object.fromEntries(raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#") && line.includes("=")).map((line) => {
+    const index = line.indexOf("=");
+    return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+  }));
 }
 
 function buildCheck(id, ok, detail) {
@@ -343,23 +294,6 @@ function formatSchemaReason(reason) {
   if (reason.code === "database_schema_missing_trigger") return `trigger:${reason.table}.${reason.trigger}`;
   if (reason.code === "database_schema_invalid_trigger") return `trigger-invalid:${reason.table}.${reason.trigger}`;
   return reason.code;
-}
-
-function missingEnv(env, keys) {
-  return keys.filter((key) => !env[key]?.trim());
-}
-
-function missingProviderValues(valueSource, keys) {
-  return keys.filter((key) => !providerValue(valueSource, key));
-}
-
-function providerValue(valueSource, key) {
-  const value = valueSource.values[key];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function hasAll(env, keys) {
-  return missingEnv(env, keys).length === 0;
 }
 
 function parsePositiveInteger(value) {

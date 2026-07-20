@@ -175,8 +175,8 @@ function minimaxImageResult(overrides: Partial<ImageGenerationResult> = {}): Ima
     sha256: "d".repeat(64),
     imageValid: true,
     mime: "image/png",
-    provider: "minimax",
-    model: "image-01",
+    provider: "model_gateway",
+    model: "image-2",
     width: 1920,
     height: 1080,
     promptDigest: "f".repeat(64),
@@ -535,7 +535,7 @@ describe("M64-C ProviderToolAdapter", () => {
       status: "succeeded",
       toolId: "asset_image_generate",
       capabilityId: "asset_image_generate",
-      provider: "minimax",
+      provider: "model_gateway",
       artifactDraft: {
         nodeKey: "asset_image_generate",
         kind: "asset_image_generate",
@@ -837,7 +837,7 @@ describe("M64-C ProviderToolAdapter", () => {
         status: "succeeded",
         toolId: "generate_classroom_image",
         capabilityId: "image_asset",
-        provider: "minimax",
+        provider: "model_gateway",
         artifactDraft: {
           nodeKey: "image_prompts",
           kind: "image_prompts",
@@ -933,8 +933,8 @@ describe("M64-C ProviderToolAdapter", () => {
             sha256: "d".repeat(64),
             imageValid: true,
             mime: "image/png",
-            provider: "minimax",
-            model: "image-01",
+            provider: "model_gateway",
+            model: "image-2",
             width: 1920,
             height: 1080,
             promptDigest: "f".repeat(64),
@@ -954,13 +954,13 @@ describe("M64-C ProviderToolAdapter", () => {
       });
       expect(result).toMatchObject({
         status: "succeeded",
-        provider: "minimax",
+        provider: "model_gateway",
         artifactDraft: {
           structuredContent: {
             storage: {
               imageAsset: {
-                provider: "minimax",
-                model: "image-01",
+                provider: "model_gateway",
+                model: "image-2",
                 width: 1920,
                 height: 1080,
                 rawAsset: { sha256: "e".repeat(64) },
@@ -986,8 +986,8 @@ describe("M64-C ProviderToolAdapter", () => {
           sha256: "d".repeat(64),
           imageValid: true,
           mime: "image/png",
-          provider: "minimax",
-          model: "image-01",
+          provider: "model_gateway",
+          model: "image-2",
           width: 1920,
           height: 1080,
           promptDigest: "f".repeat(64),
@@ -1324,9 +1324,13 @@ describe("M64-C ProviderToolAdapter", () => {
     it("uploads a real approved reference asset and binds the evidence to the selected shot", async () => {
       const root = mkdtempSync(path.join(os.tmpdir(), "shanhai-video-reference-"));
       const previousRoot = process.env.ARTIFACT_STORAGE_ROOT;
-      const previousKey = process.env.EVOLINK_API_KEY;
+      const previousGatewayKey = process.env.MODEL_GATEWAY_API_KEY;
+      const previousGatewayBaseUrl = process.env.MODEL_GATEWAY_BASE_URL;
+      const previousGatewayVideoModel = process.env.MODEL_GATEWAY_VIDEO_MODEL;
       process.env.ARTIFACT_STORAGE_ROOT = root;
-      process.env.EVOLINK_API_KEY = "test-only";
+      process.env.MODEL_GATEWAY_API_KEY = "test-only";
+      process.env.MODEL_GATEWAY_BASE_URL = "https://gateway.example/v1";
+      process.env.MODEL_GATEWAY_VIDEO_MODEL = "video-grok";
       try {
         const image = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(2048, 7)]);
         const stored = writeLocalArtifact({ category: "image-artifacts", fileName: "reference.png", buffer: image });
@@ -1356,7 +1360,9 @@ describe("M64-C ProviderToolAdapter", () => {
       } finally {
         vi.unstubAllGlobals();
         if (previousRoot === undefined) delete process.env.ARTIFACT_STORAGE_ROOT; else process.env.ARTIFACT_STORAGE_ROOT = previousRoot;
-        if (previousKey === undefined) delete process.env.EVOLINK_API_KEY; else process.env.EVOLINK_API_KEY = previousKey;
+        if (previousGatewayKey === undefined) delete process.env.MODEL_GATEWAY_API_KEY; else process.env.MODEL_GATEWAY_API_KEY = previousGatewayKey;
+        if (previousGatewayBaseUrl === undefined) delete process.env.MODEL_GATEWAY_BASE_URL; else process.env.MODEL_GATEWAY_BASE_URL = previousGatewayBaseUrl;
+        if (previousGatewayVideoModel === undefined) delete process.env.MODEL_GATEWAY_VIDEO_MODEL; else process.env.MODEL_GATEWAY_VIDEO_MODEL = previousGatewayVideoModel;
         rmSync(root, { recursive: true, force: true });
       }
     });
