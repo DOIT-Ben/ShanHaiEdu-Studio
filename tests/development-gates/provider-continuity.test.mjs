@@ -126,6 +126,16 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+test("pinned Provider implementations keep LF bytes across Windows CI checkouts", () => {
+  const attributes = readFileSync(path.join(process.cwd(), ".gitattributes"), "utf8");
+  for (const implementationPath of OFFLINE_REFACTOR_PINNED_IMPLEMENTATION_PATHS) {
+    assert.match(
+      attributes,
+      new RegExp(`^${implementationPath.replaceAll(".", "\\.")} text eol=lf$`, "m"),
+    );
+  }
+});
+
 function writeJson(filePath, value) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");

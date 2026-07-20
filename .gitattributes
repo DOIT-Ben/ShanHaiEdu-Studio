@@ -9,3 +9,6 @@ docs/stages/p0-05a-provider-continuity-readiness-test-plan.md text eol=lf
 docs/product/p0-05a-provider-continuity-readiness-spec.md text eol=lf
 docs/archive/2026-07-17-project-development-gates/*.json text eol=lf
 docs/archive/2026-07-17-project-development-gates/*.md text eol=lf
+# Provider continuity pins raw SHA-256 bytes for these implementations.
+src/server/provider-ledger/provider-ledger-adapter.ts text eol=lf
+src/server/provider-ledger/provider-ledger-contract.mjs text eol=lf

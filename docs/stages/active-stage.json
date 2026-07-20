@@ -6,6 +6,7 @@
   "plan": "docs/stages/product-first-deep-refactor-plan.md",
   "testPlan": "docs/stages/product-first-deep-refactor-test-plan.md",
   "allowedPaths": [
+    ".gitattributes",
     "AGENTS.md",
     "config/development-gates.json",
     "config/orchestration-write-operations.json",
