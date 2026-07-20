@@ -6,7 +6,7 @@
 
 - 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
 - 唯一活动阶段：`product-first-deep-refactor`。
-- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4、D5、D6、D7、D8、D9、D10、D11、D12和D13切片已完成离线行为回归；D7完成TaskAggregate与external-audit ingress职责治理，另完成了风险优先的Agent Tool授权职责、Provider结果合同和Provider视频镜头请求拆分；D8完成Skill runtime执行、结果校验和辅助合同职责拆分；D9完成Agent策略、Provider结果和Package三族职责拆分；D10完成Runtime请求/响应/schema/错误结果与ReAct合同/回合辅助职责拆分；D11完成Feedback service reconciliation职责拆分，并明确repository、controller和dialog稳定内聚保留；D12完成真实前端controller/composer职责治理，并明确MediaWorkbench与ProjectListItem继续保留；D13完成视频route HTTP边界与执行协调最小拆分以及单镜头血缘修复。
+- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1至D17切片已完成离线行为回归；D13完成视频route HTTP边界与执行协调最小拆分以及单镜头血缘修复；D14完成Ops环境与smoke结构化合同；D15完成M67与V1-9 Runner源码合同迁移；D16完成wrapper、别名、解构、默认参数、闭包、常量表和属性传播的源码合同检测增强，并完成复杂度保留项复评；D17完成剩余源码合同行为化迁移，source-contract债务清零。
 - 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
 - 本轮未调用真实Provider，未创建V1-9 runId，未生成或测试图片、视频、PPTX、ZIP，未运行390px真实黑盒，未部署或发布。
 
@@ -36,8 +36,8 @@
 
 ## 当前问题
 
-- 复杂度baseline当前有11个登记项；按风险治理ADR分为应拆、修改时再评估和可保留三类，不能把11项等同为11个必须拆的屎山，也不再以机械清空baseline作为唯一目标。D13已把视频route从baseline移出，并将执行协调与单镜头输入校验迁入同资源helper。
-- 当前源码合同门报告13个文件；Ops smoke已改为结构化配置或可注入行为测试，但wrapper读取、import alias、解构、参数默认值、闭包和完整控制流传播尚未纳入，当前数字不能表述为全部债务或清零。
+- 复杂度baseline当前有11个登记项；没有尚未治理的“应拆”项，逐项职责、风险和触发条件已登记在活动plan的D16记录。阈值只触发评估，不以机械清空baseline作为唯一目标。
+- 当前源码合同门在增强扫描下报告0个文件、0次命中；wrapper读取、import alias、解构、参数默认值、闭包、常量表和属性传播均已纳入，循环投影与深层AST不会使扫描崩溃。剩余5个测试文件已通过行为、接口、运行时和渲染合同迁移，baseline为空。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
 - D13暴露的产品边界风险仍在：只有服务端提供明确`shotId`的video Artifact action才可展示；当前旧artifact action没有镜头选择，不会再展示直发按钮，产品级多镜头选择与真实视频链路仍未验。
 
@@ -135,6 +135,21 @@
 - 定向视频/Artifact route回归`27/27`，API client Node合同`18/18`，TypeScript、ESLint `0 error / 0 warning`；complexity由12项单调降至11项。
 - Provider保持`passed=false`且请求数为0；未创建V1-9 runId，未生成媒体，未部署、签收或发布。
 
+## D16新鲜验证
+
+- `source-contracts.mjs`定向回归`15/15`通过：读取wrapper、`node:fs`导入别名、对象解构、参数默认值、闭包、路径常量表和对象属性传播均被识别；结构化解析、词法遮蔽、JSX和赋值时序例外未回退。
+- 循环对象投影和深层AST测试源码可稳定完成扫描，不会栈溢出；D16阶段起点报告为11个既有债务文件、98次命中，baseline当时没有改动。
+- 复杂度保持11项，所有项已完成事实理由、当前风险与未来触发条件登记；没有提高阈值、扩大排除或删除有效测试。
+- 全量`npm test`通过Node`425/425`与Vitest`776/776 + 797/797`；`typecheck`、ESLint `0 error / 0 warning`、生产构建、standalone `missing=[] / forbidden=[]`和development gate均通过。
+- Provider保持`passed=false`且请求数为0；未运行真实Provider、M67/V1-9 E2E、媒体生成、部署、签收或发布。
+
+## D17新鲜验证
+
+- Artifact route、assistant-ui waiting、M44 runtime UI、M47 composer API和M74 branded auth替代回归`10/10`通过；权威`npm test`通过Node`411/411`与Vitest`780/780 + 801/801`。
+- `source-contracts.mjs --report-json`返回`[]`，baseline从5个文件/88次命中收缩为空数组；没有扩大排除目录或删除有效测试。
+- TypeScript、ESLint `0 error / 0 warning`、生产构建、standalone `missing=[] / forbidden=[]`、development gate、verify:local、manifest verify和desktop smoke均通过；complexity保持11个登记项。
+- Provider保持`passed=false`且真实请求数为0；未创建V1-9 runId，未生成媒体，未部署、签收或发布。
+
 ## 唯一下一动作
 
-D14 Ops源码合同已完成；进入D15 Runner源码合同，先治理M67后治理V1-9的冻结树、child process、shutdown和manifest/state行为。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+D17已完成，进入阶段E最终验证；Provider连续性保持0请求，待离线重构正式关闭后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。

@@ -771,55 +771,42 @@ test("V1-9 run-state binds one task contract and only advances plan revision mon
   }), /task_contract_lock_required/);
 });
 
-test("V1-9 runner is desktop-only, deterministic-off and bound to a reusable run root", async () => {
-  const source = await readFile(new URL("../scripts/run-v1-9-e2e.mjs", import.meta.url), "utf8");
-  const isolatedHarnessSource = await readFile(new URL("../scripts/run-m67-e2e.mjs", import.meta.url), "utf8");
-  const specSource = await readFile(new URL("e2e/v1-9-unique-real-product.spec.ts", import.meta.url), "utf8");
-  assert.match(source, /chromium-desktop/);
-  assert.doesNotMatch(source, /chromium-narrow/);
-  assert.match(source, /M67_E2E_DETERMINISTIC:\s*"0"/);
-  assert.match(source, /SHANHAI_SKILL_RUNTIME_MODE:\s*"required"/);
-  assert.match(source, /SHANHAI_SKILLS_EXPECTED_PROJECTION_LOCK_DIGEST:\s*skillLock\.projectionLockDigest/);
-  assert.match(source, /SHANHAI_SKILLS_EXPECTED_BINDING_POLICY_DIGEST:\s*skillLock\.bindingPolicyDigest/);
-  assert.match(source, /readFrozenSkillLock\(runContext\.manifest\)/);
-  assert.doesNotMatch(source, /SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START/);
-  assert.match(source, /V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID/);
-  assert.match(source, /V1_9_E2E_STATE_PATH:\s*runContext\.statePath/);
-  assert.match(source, /M67_E2E_FROZEN_APP_ROOT:\s*runContext\.frozenAppRoot/);
-  assert.match(source, /V1_9_E2E_RUN_ID:\s*runContext\.manifest\.runId/);
-  assert.match(source, /V1_9_E2E_MANIFEST_SHA256:\s*runContext\.manifestSha256/);
-  assert.match(source, /SHANHAI_V1_9_REPOSITORY_ROOT:\s*runContext\.rootDir/);
-  assert.match(source, /M67_E2E_RUN_ROOT/);
-  assert.match(source, /tests\/e2e\/v1-9-unique-real-product\.spec\.ts/);
-  assert.match(source, /assertManifestBytesUnchanged\(runContext\)/);
-  assert.doesNotMatch(source, /closeActiveRun\s*\(/);
-  assert.doesNotMatch(source, /createV1_9RunManifest\s*\(/);
-  assert.doesNotMatch(source, /writeJsonAtomic\s*\(/);
-  assert.match(isolatedHarnessSource, /resolveRunRoot\(process\.env\.M67_E2E_RUN_ROOT/);
-  assert.match(isolatedHarnessSource, /resumeExistingRun/);
-  assert.match(isolatedHarnessSource, /deriveV1_9ExternalCodexOrchestrationCount/);
-  assert.doesNotMatch(isolatedHarnessSource, /externalCodexOrchestrationCount:\s*0/);
-  assert.match(specSource, /loginThroughUi/);
-  assert.match(specSource, /recordV1_9RunStateMutation/);
-  assert.match(specSource, /markV1_9RunStatePendingDecision/);
-  assert.doesNotMatch(specSource, /page\.route\s*\(/);
-  assert.doesNotMatch(specSource, /\.request\.(?:post|put|patch|delete)\s*\(/);
-  assert.doesNotMatch(specSource, /\/approve|\/generate|confirmedActionId/);
+test("V1-9 runner is desktop-only, deterministic-off and bound to a reusable run root", async (t) => {
+  const fixture = await createRunnerFixture(t);
+  const runContext = resolveV1_9RunContext({ rootDir: fixture.rootDir });
+  const childEnv = createV1_9ChildEnvironment({
+    env: { M67_E2E_DETERMINISTIC: "1", V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID: "stale" },
+    runContext,
+    runMode: "start-new",
+    skillLock: runContext.manifest.skillLock,
+  });
+  assert.equal(childEnv.M67_E2E_SPEC, "tests/e2e/v1-9-unique-real-product.spec.ts");
+  assert.equal(childEnv.M67_E2E_PROJECTS, "chromium-desktop");
+  assert.equal(childEnv.M67_E2E_DETERMINISTIC, "0");
+  assert.equal(childEnv.M67_E2E_RUN_ROOT, runContext.relativeRunRoot);
+  assert.equal(childEnv.M67_E2E_FROZEN_APP_ROOT, runContext.frozenAppRoot);
+  assert.equal(childEnv.V1_9_E2E_RUN_ID, runContext.manifest.runId);
+  assert.equal(childEnv.V1_9_E2E_MANIFEST_SHA256, runContext.manifestSha256);
+  assert.equal(childEnv.V1_9_E2E_STATE_PATH, runContext.statePath);
+  assert.equal(childEnv.SHANHAI_V1_9_REPOSITORY_ROOT, runContext.rootDir);
+  assert.equal(childEnv.SHANHAI_SKILL_RUNTIME_MODE, "required");
+  assert.equal(childEnv.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID, "");
+  assert.equal("SHANHAI_RECOVER_RETRYABLE_TURNS_ON_START" in childEnv, false);
 });
 
-test("V1-9 runner consumes an immutable v2 pointer and separates fresh start from recovery", async () => {
-  const source = await readFile(new URL("../scripts/run-v1-9-e2e.mjs", import.meta.url), "utf8");
-
-  assert.match(source, /v1-9-active-run\.v2/);
-  assert.match(source, /v1_9_legacy_active_run_not_resumable/);
-  assert.match(source, /V1_9_RUN_MODE/);
-  assert.match(source, /runMode === "start-new"/);
-  assert.match(source, /runState\.status !== "prepared"/);
-  assert.match(source, /external_acceptance_repair_required/);
-  assert.match(source, /delete childEnv\.V1_9_AGENT_BRAIN_HEALTH_EVIDENCE_ID/);
-  assert.match(source, /run-manifest\.json/);
-  assert.match(source, /run-state\.json/);
-  assert.match(source, /next-app-frozen/);
+test("V1-9 runner consumes an immutable v2 pointer and separates fresh start from recovery", async (t) => {
+  const fixture = await createRunnerFixture(t);
+  const runContext = resolveV1_9RunContext({ rootDir: fixture.rootDir });
+  assert.equal(resolveV1_9RunMode({ V1_9_RUN_MODE: "start-new" }, runContext.runState), "start-new");
+  assert.throws(
+    () => resolveV1_9RunMode({ V1_9_RUN_MODE: "resume" }, runContext.runState),
+    /v1_9_resume_run_state_invalid/,
+  );
+  const recovery = await createRunnerFixture(t, { stateStatus: "external_acceptance_repair_required" });
+  assert.equal(
+    resolveV1_9RunMode({ V1_9_RUN_MODE: "resume" }, resolveV1_9RunContext({ rootDir: recovery.rootDir }).runState),
+    "resume",
+  );
 });
 
 test("V1-9 fresh runner consumes prepared v2 state without reusing recovery evidence", async (t) => {
@@ -1030,10 +1017,6 @@ test("V1-9 outer runner rejects a repository root reached through an ancestor ju
 
 test("V1-9 outer runner uses IPC supervision and verifies after an M67 command failure", async (t) => {
   const fixture = await createRunnerFixture(t);
-  const source = await readFile(path.resolve("scripts", "run-v1-9-e2e.mjs"), "utf8");
-  assert.match(source, /createRunnerShutdownAuthority/);
-  assert.match(source, /gracefulIpc:\s*true/);
-  assert.doesNotMatch(source, /const timeout = setTimeout\(\(\) => \{\s*child\.kill\(\)/s);
 
   let commandCount = 0;
   let verifyCount = 0;

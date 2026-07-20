@@ -43,6 +43,8 @@
 | DR-D13 | D9拆分改变Agent策略、Provider调用/结果或Package产物合同 | 既有Agent Tool、Provider、Package和Tool Router行为回归失败 |
 | DR-D14 | D12前端职责拆分改变项目快照、composer提交/恢复、Artifact动作或附件生命周期合同 | 前端Node/Vitest与源码合同回归失败 |
 | DR-D15 | D13视频route未绑定唯一shot、GenerationJob unitId与Provider Tool输入，或HTTP边界/helper拆分改变共享Envelope、错误恢复和原子提交合同 | 视频route、Artifact route隔离、Provider视频工具和API client合同回归失败 |
+| DR-D16 | wrapper、别名、解构、默认参数、闭包、常量表或属性传播隐藏源码字符串断言，或循环/深层测试源码使检测器崩溃 | source-contract detector识别前七类；循环与深层AST保守完成且不栈溢出 |
+| DR-D17 | 剩余源码字符串合同未迁移，或行为替代测试缺失 | 五个剩余测试文件均改为行为/接口/运行时合同，source-contract报告为0且全量回归通过 |
 
 ## 3. 每切片验证
 
@@ -238,6 +240,35 @@ D14新鲜证据：
 - D14定向Ops Node合同`55/55`；全量`npm test`通过Node`425/425`、Vitest`776/776 + 797/797`。
 - TypeScript、ESLint `0 error / 0 warning`、生产构建和standalone `missing=[] / forbidden=[]`通过；development gate为`passed-with-offline-refactor-defer`，source-contract债务由19个文件收缩至13个，complexity保持11个登记项。
 - Provider保持`passed=false`且请求数为0；未创建V1-9 runId，未生成媒体、部署或发布。
+
+D15 M67 Runner测试设计：
+
+- 先运行`tests/m67-e2e-runner.test.mjs`与`tests/runner-shutdown-authority.test.mjs`建立基线；不运行`npm run test:e2e:m67`，该命令会启动浏览器和隔离应用，不属于本次源码合同治理。
+- 测试必须直接导入生产M67 runner helper，以可注入filesystem、spawn、网络端口、shutdown authority和baseline verifier验证行为；不得读取`run-m67-e2e.mjs`文本、用正则检查实现细节、动态`Function`编译生产源码，或复制一套仅供测试的运行器逻辑。
+- 覆盖冻结树、受限路径、fresh/resume存储、manifest/state ledger、冻结baseline、Next child cwd与共享追踪、IPC/cleanup/post-stop顺序、证据保留与脱敏、浏览器受限端口和spec timeout下限。每项失败必须关闭，且不触发真实Provider或媒体生成。
+- M67完成条件：定向行为回归通过，`source-contracts.mjs`不再列出`tests/m67-e2e-runner.test.mjs`，债务文件从13收缩为12；随后才开始V1-9 runner同类迁移。
+
+D15新鲜证据：
+
+- M67冻结树、child process、IPC/共享shutdown、post-stop、manifest/state与证据脱敏的行为回归，加上shared shutdown authority，共`39/39`通过。
+- V1-9 fixture、冻结身份、immutable pointer、fresh/resume、child environment、外层监督和post-stop行为回归，加上shared shutdown authority，共`40/40`通过。
+- `source-contracts.mjs`不再列出M67或V1-9 runner测试；baseline由13个文件收缩至11个。未运行M67/V1-9 E2E，未创建runId，未调用Provider或生成媒体。
+
+D16新鲜证据：
+
+- 检测器定向回归`15/15`通过，覆盖wrapper、导入别名、对象解构、参数默认值、闭包、常量表、属性传播以及既有结构化解析、遮蔽、JSX和赋值顺序例外。
+- 增强后初始`--report-json`稳定返回既有11个文件、98次命中；没有新增漏项。循环对象投影与深层AST均不会使扫描崩溃。
+- 首批替代回归`22/22`通过：消息规范化/事件回放和截断PNG完整解码拒绝取代两个源码文本断言；固定阶段轨删除合同定向Node回归`1/1`通过；强度冲突行为回归`2/2`通过；PPT图片行为回归`8/8`通过；package route行为回归`3/3`通过，baseline收缩为5个文件、88次命中。
+- 复杂度仍为11个登记项，所有项的事实理由、当前风险和复评触发条件已在plan的D16记录；没有提高阈值、扩大排除或移除有效测试。
+- 全量`npm test`通过Node`425/425`与Vitest`776/776 + 797/797`；`typecheck`、ESLint `0 error / 0 warning`、生产构建和development gate通过，standalone为`missing=[] / forbidden=[]`。
+- 未运行真实Provider、M67/V1-9 E2E、媒体生成、部署、签收或发布。
+
+D17新鲜证据：
+
+- Artifact route、assistant-ui waiting、M44 runtime UI、M47 composer API和M74 branded auth替代回归`10/10`通过；数据库相关路线由权威`npm test`入口验证。
+- `source-contracts.mjs --report-json`返回`[]`；baseline从5个文件/88次命中收缩为空数组，没有新增排除或删除有效测试。
+- 权威`npm test`通过Node`411/411`与Vitest`780/780 + 801/801`；TypeScript、ESLint `0 warning`、生产构建、development gate、verify:local、manifest verify和desktop smoke均通过。
+- Provider保持`passed=false`且真实请求数为0；未创建V1-9 runId，未生成媒体，未部署、签收或发布。
 
 ## 7. 最终全量验证
 

@@ -69,13 +69,6 @@ describe("V1 Stage 3B PPT asset image generation bridge", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not retain legacy image channel aliases or provider field tables in the production runtime", async () => {
-    const source = await readFile(path.resolve("src/server/image-generation/image-generation-run.ts"), "utf8");
-
-    expect(source).not.toMatch(/channelEnvMap|IMAGEGEN_(?:MYSELF|FREE)|myself_fallback|free_primary/);
-    expect(source).not.toMatch(/requestOpenAICompatibleImage|generatePptAssetImageWith(?:Curl|Wrapper)/);
-  });
-
   it("rejects non-MiniMax image channels before sending a request", async () => {
     vi.stubEnv("IMAGE_PROVIDER_CHANNEL", "primary");
     vi.stubEnv("IMAGEGEN_MYSELF_PRIMARY_API_KEY", "test-key");

@@ -14,12 +14,16 @@ type PasswordAuthGateProps = {
   onRegister: (input: { email: string; displayName?: string; password: string }) => Promise<void>;
 };
 
+export function isPasswordRegistrationMode(registrationEnabled: boolean, mode: "login" | "register") {
+  return registrationEnabled && mode === "register";
+}
+
 export function PasswordAuthGate({ errorMessage, submitting, registrationEnabled, onLogin, onRegister }: PasswordAuthGateProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
-  const isRegisterMode = registrationEnabled && mode === "register";
+  const isRegisterMode = isPasswordRegistrationMode(registrationEnabled, mode);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

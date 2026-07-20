@@ -12,6 +12,7 @@ import { useWorkbenchProjectActions } from "@/hooks/useWorkbenchProjectActions";
 import { useWorkbenchComposerController } from "@/hooks/useWorkbenchComposerController";
 import { useWorkbenchArtifactNavigation } from "@/hooks/useWorkbenchArtifactNavigation";
 import { useWorkbenchArtifactOperations } from "@/hooks/useWorkbenchArtifactOperations";
+import { updateGenerationIntensityWithRecovery } from "@/hooks/workbench-generation-intensity-recovery";
 import type { SubmitConversationMessageInput } from "@/hooks/workbench-composer-submission";
 
 export type { SubmitConversationMessageInput } from "@/hooks/workbench-composer-submission";
@@ -61,17 +62,19 @@ export function useWorkbenchController(options: { eventDrivenMessages?: boolean 
   async function updateGenerationIntensity(intensity: GenerationIntensity, confirmationActionId?: string) {
     const activeProject = state.activeProject;
     if (!activeProject) throw new Error("No active project.");
-    try {
-      const result = await dataSource.updateGenerationIntensity(activeProject.id, intensity, intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0, confirmationActionId);
+    return updateGenerationIntensityWithRecovery({
+      projectId: activeProject.id,
+      intensity,
+      confirmationActionId,
+      expectedVersion: intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0,
+      update: dataSource.updateGenerationIntensity,
+      apply: (result) => {
       intensityVersionRef.current.set(result.project.id, result.project.intensityVersion ?? 0);
       state.setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
       if (!result.confirmationRequired) setNotice(`生成强度已调整为${intensity === "standard" ? "标准" : intensity === "enhanced" ? "增强" : intensity === "deep" ? "深度" : "极致"}，从下一条任务开始生效。`);
-      return result;
-    } catch (error) {
-      const status = error instanceof Error && "status" in error ? Number(error.status) : undefined;
-      if (status === 409) await sync.loadProject(activeProject.id);
-      throw error;
-    }
+      },
+      reload: sync.loadProject,
+    });
   }
   const operations = useWorkbenchArtifactOperations({ dataSource, state, sync, composer, setNotice, setRealAssetGenerationKey });
   const executionFeedback: WorkbenchExecutionFeedback | null = null;

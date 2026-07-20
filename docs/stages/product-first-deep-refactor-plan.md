@@ -256,10 +256,48 @@ D14已完成（Ops源码合同与失效数据源清理）：
 - D14定向Ops Node合同`55/55`通过；全量`npm test`通过Node`425/425`、Vitest`776/776 + 797/797`；TypeScript、ESLint `0 error / 0 warning`和生产构建通过，standalone为`missing=[] / forbidden=[]`。
 - source-contract债务由19个文件收缩至13个，complexity保持11个登记项；Provider仍为`passed=false`且真实请求数为0。
 
-D14完成后的唯一执行顺序：
+D15已完成（Runner源码合同，先M67后V1-9）：
 
-1. **D15 Runner源码合同**：先M67后V1-9，改验冻结树、child process、shutdown和manifest/state行为。
-2. **D16 最终检测**：启用wrapper/常量表/属性传播检测，清完真实漏项并完成保留项登记后收口complexity与source policy。
+- M67只治理`tests/m67-e2e-runner.test.mjs`读取`run-m67-e2e.mjs`、动态抽取并编译函数的源码字符串合同。冻结目录、child process、共享shutdown authority、端口保留、证据脱敏、manifest/state ledger和冻结baseline必须改由生产模块的可注入行为入口验证。
+- `run-m67-e2e.mjs`继续是唯一CLI组装入口；可测试的运行器操作迁入单一内部helper，不能新增第二个runner、独立`taskkill`路径、固定业务编排、Provider调用或媒体生成路径。
+- M67先证明：冻结树仅复制/验证允许闭包；Next child只在隔离冻结根启动并被共享authority追踪；cleanup与signal只通过同一shutdown promise并在确认退出后执行post-stop；manifest/state路径、身份和baseline不一致均失败关闭；保留证据时不删除run root。
+- M67将环境、冻结、Next child、共享shutdown、端口、证据脱敏、manifest/state ledger和冻结baseline的可验证操作迁入`m67-e2e-runner-operations.mjs`；`run-m67-e2e.mjs`继续是唯一CLI入口，未新增独立停止或业务编排路径。
+- M67定向行为与shutdown回归`39/39`通过；V1-9 runner fixture/监督回归`40/40`通过。两个测试文件均不再读取或动态编译生产源码，冻结产物由生产digest/marker验证。
+- source-contract债务由13个文件单调收缩至11个；未运行M67或V1-9真实E2E，未创建V1-9 run，Provider请求保持0。
+
+D16已完成（检测器增强与复杂度保留项复评）：
+
+- `source-contracts.mjs`现在识别读取wrapper、`node:fs`导入别名、对象解构、参数默认值、闭包返回、路径常量表和对象属性传播；结构化JSON/YAML读取、词法遮蔽、属性名/JSX名称和赋值时序例外保持不变。
+- 检测器对循环对象投影和深层AST表达式保守失败关闭，不再因测试源码形状栈溢出；15项定向检测器回归通过。
+- 增强后真实报告稳定为既有11个文件、98次命中（D16阶段起点）；没有发现新增漏项，故当时不修改`sourceStringContracts.baseline`，不删除或豁免任何有效测试。
+- 首批迁移后，`conversation-contract-authority`以消息规范化与事件回放的独立版本化运行时合同替代类型名扫描，`feedback-contract`以截断PNG的真实完整解码拒绝替代`.stats()`源码扫描；固定阶段轨测试仅保留已删除组件的文件存在性合同，真实活动时间线由既有assistant-ui行为合同覆盖。强度冲突测试以可注入恢复协调函数验证409刷新与错误传播；PPT图片测试复用ledger、通道拒绝、请求体与资产血缘行为合同；package route复用正式包资产读取和缺失资产失败合同。债务由11个文件、98次命中收缩至5个文件、88次命中。
+- 复杂度11项已完成逐项复评：没有“应拆”项。`control-plane-store.ts`、`model-main-conversation-agent.ts`、`feedback/repository.ts`和`useFeedbackController.ts`继续在修改时复评；`FeedbackDialog.tsx`、`MediaWorkbench.tsx`、`ProjectListItem.tsx`、三个Skill静态映射和`tool-router.ts`保持内聚保留。每项理由、当前风险和触发条件见下表；不提高阈值、不扩大排除目录。
+- 全量`npm test`通过Node`425/425`与Vitest`776/776 + 797/797`；`typecheck`、ESLint `0 error / 0 warning`、生产构建、standalone `missing=[] / forbidden=[]`和development gate通过。Provider保持离线延期，`passed=false`且真实请求数为0。
+
+D17已完成（剩余源码合同行为化迁移）：
+
+- Artifact route ExecutionEnvelope合同复用数据库行为回归，waiting、M44、M47和M74分别改为渲染、接口、运行时和纯函数合同；没有保留读取生产源码并匹配字符串的测试路径。
+- `sourceStringContracts.baseline`从5个文件、88次命中单调收缩至空数组；`node scripts/development-gates/source-contracts.mjs --report-json`返回`[]`，没有扩大排除目录或删除有效测试。
+- 定向替代回归`10/10`通过；权威`npm test`通过Node`411/411`、Vitest`780/780 + 801/801`；TypeScript、零warning Lint、生产构建、standalone `missing=[] / forbidden=[]`、development gate、verify:local、manifest verify和desktop smoke均通过。
+- 复杂度保持11个登记项，Provider保持离线延期，`passed=false`且真实请求数为0；未创建V1-9 runId、未生成媒体、未部署、签收或发布。
+
+| 登记项 | 当前职责与风险 | 未来触发条件 |
+|---|---|---|
+| `control-plane-store.ts` | 单一控制面持久化入口；事务顺序与恢复耦合仍属高风险。 | 新增TaskAggregate生命周期、第二事务写入路径或恢复/提交边界分叉。 |
+| `model-main-conversation-agent.ts` | 单一模型Agent装配和ReAct调用边界；配置、错误与请求上下文必须保持同一控制权。 | Provider选择、预算/重试或Tool编排再次进入同一模块。 |
+| `feedback/repository.ts` | 单一Feedback持久化边界；记录、附件和状态映射仍需同事务一致。 | 新增存储后端、独立附件写路径或查询/写入语义混杂。 |
+| `useFeedbackController.ts` | 单一前端反馈提交状态机；图片生命周期和幂等提交紧密相关。 | 新增第二提交流、跨页面共享状态或图片处理职责继续增长。 |
+| `FeedbackDialog.tsx` | 单一反馈Dialog投影；当前仅消费controller，不拥有业务写控制权。 | 表单校验、上传、提交或预览状态开始绕过controller。 |
+| `MediaWorkbench.tsx` | 工作台布局组合根；当前只连接既有controller和面板。 | 新增业务状态、Tool决策或重复项目/会话控制。 |
+| `ProjectListItem.tsx` | 单行项目编辑状态机；选择、重命名和菜单交互局限于当前行。 | 生命周期写入、共享列表状态或第二选择控制流进入组件。 |
+| `business-tool-skill-bindings.ts` | 稳定业务Tool绑定映射，无执行副作用。 | 绑定规则与运行时执行/校验职责混杂。 |
+| `business-tool-skill-output-contract.ts` | 稳定正式输出协议映射，无控制面决策。 | 协议定义与结果校验/执行逻辑重新混杂。 |
+| `skill-registry.ts` | 版本化Skill注册表和完整性投影保持单一职责。 | 注册、校验和投影边界继续增长或变得模糊。 |
+| `tool-router.ts` | 唯一Tool前置校验、适配器分发和后置校验边界。 | 第二编排权、重复校验或适配器私有语义回流。 |
+
+D17完成后的唯一执行顺序：
+
+1. 阶段E：在最终HEAD重新执行全量工程验证；真实Provider连续性、V1-9、教师签收和release仍需另行授权与证据。
 
 验收：
 

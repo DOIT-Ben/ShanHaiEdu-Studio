@@ -131,21 +131,7 @@
       "next.config",
       "electron-builder.config"
     ],
-    "baseline": [
-      { "path": "tests/artifact-route-execution-envelope.test.ts", "occurrences": 4 },
-      { "path": "tests/assistant-ui-waiting-state.test.ts", "occurrences": 5 },
-      { "path": "tests/conversation-contract-authority.test.ts", "occurrences": 2 },
-      { "path": "tests/feedback-contract.test.ts", "occurrences": 2 },
-      { "path": "tests/m44-runtime-ui.test.mjs", "occurrences": 7 },
-      { "path": "tests/m47-composer-api-wiring.test.mjs", "occurrences": 26 },
-      { "path": "tests/m67-e2e-runner.test.mjs", "occurrences": 29 },
-      { "path": "tests/m74-branded-auth-page.test.mjs", "occurrences": 46 },
-      { "path": "tests/ppt-asset-image-generation-run.test.ts", "occurrences": 2 },
-      { "path": "tests/v1-9-e2e-runner.test.mjs", "occurrences": 37 },
-      { "path": "tests/v1-9r-intensity-conflict.test.mjs", "occurrences": 2 },
-      { "path": "tests/v1-9r-legacy-control-paths.test.ts", "occurrences": 1 },
-      { "path": "tests/v1-9r-stage-progress-mobile.test.mjs", "occurrences": 1 }
-    ]
+    "baseline": []
   },
   "lint": {
     "maxWarnings": 0

@@ -1,10 +1,10 @@
 # 产品优先深度重构续作交接
 
-更新时间：2026-07-20 13:32 +08:00
+更新时间：2026-07-20 15:10 +08:00
 
 ## 1. 交接结论
 
-当前唯一活动阶段仍是`product-first-deep-refactor`。阶段A、阶段B、阶段C以及阶段D的D1至D14已经完成离线合同与工程回归；D13发现真实单镜头血缘缺口并完成最小拆分，D14已完成Ops源码合同治理，下一步是D15 Runner源码合同。
+当前唯一活动阶段仍是`product-first-deep-refactor`。阶段A、阶段B、阶段C以及阶段D的D1至D17已经完成离线合同与工程回归；D13发现真实单镜头血缘缺口并完成最小拆分，D14完成Ops源码合同治理，D15完成M67和V1-9 Runner源码合同治理，D16完成检测器增强和复杂度保留项复评，D17完成剩余源码合同行为化迁移并清零source-contract债务。下一步进入阶段E最终验证。
 
 复杂度门当前报告11个登记项，但风险治理ADR的“应拆”队列已经清空。11是阈值命中登记数，不是11个必须拆分的“屎山文件”。稳定注册表、协议映射、同一资源路由和内聚UI可以保留；只有职责混杂、重复控制权、测试边界不清或变更风险实际升高时才拆。D13视频route已因测试边界失效和单镜头血缘缺口完成最小拆分。
 
@@ -15,10 +15,10 @@
 | 工作目录 | `E:\desktop\AI\11_Products\lab\ShanHaiEdu-Studio\main` |
 | OS / Shell | Windows / PowerShell |
 | 分支 | `main` |
-| HEAD | `03464f16d97f4016d277b52ee9d083fbc065fd5a` |
+| HEAD | `dd146f4ab5ae4a07ab59ba475e33323dd256f8f6` |
 | upstream | `origin/main` |
-| 领先 / 落后 | 领先13，落后0 |
-| 工作区 | 47个已跟踪改动、43个未跟踪路径，全部保留 |
+| 领先 / 落后 | 领先14，落后0 |
+| 工作区 | D1-D16未提交改动全部保留；以实时`git status --short`为准 |
 | Entire | 已启用，`manual-commit`；当前分支checkpoint为0 |
 | 提交与远端 | D1-D13尚未提交；本交接未commit、未push |
 
@@ -34,7 +34,7 @@
 
 | 层级 | 当前状态 | 说明 |
 |---|---|---|
-| contract | partial | D1-D13合同治理和行为回归通过；源码合同wrapper漏报仍未清除 |
+| contract | partial | D1-D17合同治理和行为回归通过；增强扫描下source-contract报告为0，但真实Provider与产品链路仍未验 |
 | executor | partial | 原子提交、权限、队列、恢复和任务隔离已有仓内证据；真实媒体执行未验 |
 | model orchestration | partial | 没有本轮真实Provider连续性证据 |
 | product E2E | partial | 未创建唯一V1-9新run，未做教师真实全链路签收 |
@@ -106,6 +106,7 @@ D13完成后本轮新鲜复核：
 - complexity报告为11个登记项；D13视频route从baseline移出，没有新增或扩大债务。
 - source-contract gate通过，仍登记13个债务文件；wrapper、alias、解构、参数默认值、闭包与完整传播留给D16。
 - Entire当前分支checkpoint为0。
+- D17完成后source-contract报告为0；源码合同baseline为空数组。
 
 这些结果不能证明真实Provider、model orchestration、product E2E或release通过。下一位修改任何生产文件后必须在新工作树上重新验证，不能复用上述计数作为新切片完成证据。
 
@@ -147,7 +148,30 @@ D13完成后本轮新鲜复核：
 - D14定向Ops Node合同`55/55`；全量`npm test`通过Node`425/425`、Vitest`776/776 + 797/797`；TypeScript、ESLint `0 error / 0 warning`、生产构建和standalone `missing=[] / forbidden=[]`通过。
 - complexity保持11个登记项，source-contract债务由19个文件降至13个；Provider仍为`passed=false`且真实请求数为0。
 
-## 8. D13验证与完成口径
+## 8. D15 Runner源码合同完成
+
+- `run-m67-e2e.mjs`仍是唯一CLI入口；环境、冻结、Next child、共享shutdown、端口、证据脱敏、manifest/state ledger和冻结baseline的可注入操作迁入`m67-e2e-runner-operations.mjs`。
+- `tests/m67-e2e-runner.test.mjs`不再读取或动态编译runner源码；冻结闭包由生产marker/digest验证，M67与shared shutdown定向回归`39/39`通过。
+- `tests/v1-9-e2e-runner.test.mjs`改为直接调用既有生产runner导出，V1-9与shared shutdown定向回归`40/40`通过；未运行`run-v1-9-e2e.mjs`、未创建runId。
+- source-contract债务由13个文件降至11个；真实Provider请求数保持0，未生成媒体、部署、签收或发布。
+
+## 9. D16检测器增强与复杂度复评
+
+- `source-contracts.mjs`现可追踪读取wrapper、`node:fs`导入别名、对象解构、参数默认值、闭包返回、路径常量表和对象属性传播；词法遮蔽、结构化JSON/YAML、属性名/JSX名称及赋值时序例外保持有效。
+- 检测器回归`15/15`通过。循环对象投影和深层AST均稳定结束，不会栈溢出；真实报告没有产生新增漏项，保持11个既有债务文件、98次命中。
+- 因没有真实修复，`sourceStringContracts.baseline`未改动；不得删除有效测试、放宽扫描、增加排除或把D16称为源码合同清零。
+- 复杂度11项已逐项登记当前职责、风险和复评触发条件；没有“应拆”项。具体表格见`product-first-deep-refactor-plan.md`的D16记录。
+
+## 10. D17源码合同迁移完成
+
+- Artifact route ExecutionEnvelope测试删除重复源码扫描，保留数据库行为合同；assistant-ui waiting、M44、M47和M74分别改为渲染、接口、运行时和纯函数合同。
+- `sourceStringContracts.baseline`从5个文件、88次命中单调收缩为空数组；`node scripts\development-gates\source-contracts.mjs --report-json`返回`[]`。
+- 定向替代回归`10/10`通过；权威`npm test`通过Node`411/411`、Vitest`780/780 + 801/801`；TypeScript、零warning Lint、生产构建、standalone、development gate、verify:local、manifest verify和desktop smoke均通过。
+- 复杂度保持11个登记项；Provider保持`passed=false`且真实请求数为0，未创建V1-9 runId、未生成媒体、未部署、签收或发布。
+- 全量`npm test`通过Node`425/425`与Vitest`776/776 + 797/797`；`typecheck`、零warning Lint、生产构建和development gate通过，standalone为`missing=[] / forbidden=[]`。
+- 未运行真实Provider、M67/V1-9 E2E、媒体生成、部署、教师签收或发布。
+
+## 11. D13验证与完成口径
 
 先定向复核以下测试：
 
@@ -179,13 +203,11 @@ git diff --check
 - product E2E：仍为partial，除非另有新鲜真实产品证据。
 - release：仍为not started。
 
-## 9. 后续顺序
+## 12. 后续顺序
 
-1. D15：治理Runner源码合同，先M67后V1-9。
-2. D16：增强wrapper、常量表和属性传播检测，清除真实源码合同漏项并收口政策。
-3. 阶段E：在最终HEAD重新执行全量工程验证；真实Provider连续性、V1-9、教师签收和release仍需另行授权与证据。
+1. 阶段E：在最终HEAD重新执行全量工程验证；真实Provider连续性、V1-9、教师签收和release仍需另行授权与证据。
 
-## 10. 回退边界
+## 13. 回退边界
 
 route文件和D13 helper现在属于本轮工作区改动。若需要回退，只手工撤销D13新增的精确route/helper、client、mapper、测试和文档改动，不得使用会覆盖D1-D12现场的仓库级回退命令。
 

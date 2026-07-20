@@ -252,6 +252,85 @@ test("does not use a later source assignment to classify an earlier assertion", 
   assert.deepEqual(actual, []);
 });
 
+test("follows implementation text through wrappers, aliases, bindings, defaults, closures, tables, and properties", () => {
+  const actual = analyzeSourceStringContracts(
+    [
+      {
+        path: "tests/read-wrapper-contract.test.ts",
+        content: `
+          function readSource() {
+            return readFileSync("src/feature.ts", "utf8");
+          }
+          const source = readSource();
+          expect(source).toContain("internalFunction");
+        `,
+      },
+      {
+        path: "tests/import-alias-contract.test.ts",
+        content: `
+          import { readFileSync as readText } from "node:fs";
+          const source = readText("src/feature.ts", "utf8");
+          expect(source).toContain("internalFunction");
+        `,
+      },
+      {
+        path: "tests/object-destructuring-contract.test.ts",
+        content: `
+          const document = { source: readFileSync("src/feature.ts", "utf8") };
+          const { source } = document;
+          expect(source).toContain("internalFunction");
+        `,
+      },
+      {
+        path: "tests/default-parameter-contract.test.ts",
+        content: `
+          function assertSource(source = readFileSync("src/feature.ts", "utf8")) {
+            expect(source).toContain("internalFunction");
+          }
+          assertSource();
+        `,
+      },
+      {
+        path: "tests/closure-contract.test.ts",
+        content: `
+          function createSourceReader() {
+            const source = readFileSync("src/feature.ts", "utf8");
+            return () => source;
+          }
+          const source = createSourceReader()();
+          expect(source).toContain("internalFunction");
+        `,
+      },
+      {
+        path: "tests/constant-table-contract.test.ts",
+        content: `
+          const files = { feature: "src/feature.ts" };
+          const source = readFileSync(files.feature, "utf8");
+          assert.match(source, /internalFunction/);
+        `,
+      },
+      {
+        path: "tests/property-propagation-contract.test.ts",
+        content: `
+          const document = { source: readFileSync("src/feature.ts", "utf8") };
+          expect(document.source).toContain("internalFunction");
+        `,
+      },
+    ],
+    policy(),
+  );
+
+  assert.deepEqual(actual, [
+    { path: "tests/closure-contract.test.ts", occurrences: 1 },
+    { path: "tests/constant-table-contract.test.ts", occurrences: 1 },
+    { path: "tests/default-parameter-contract.test.ts", occurrences: 1 },
+    { path: "tests/import-alias-contract.test.ts", occurrences: 1 },
+    { path: "tests/object-destructuring-contract.test.ts", occurrences: 1 },
+    { path: "tests/property-propagation-contract.test.ts", occurrences: 1 },
+    { path: "tests/read-wrapper-contract.test.ts", occurrences: 1 },
+  ]);
+});
+
 test("fails closed for added, increased, or decreased unratcheted debt", () => {
   const files = [{ path: "tests/source-contract.test.ts", content: suspiciousSource }];
 

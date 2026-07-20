@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -132,10 +130,13 @@ describe("feedback image contract", () => {
     }))).rejects.toThrow("图片解码超时");
   });
 
-  it("fully decodes through bounded statistics without allocating a raw output buffer", async () => {
-    const source = await readFile(path.join(process.cwd(), "src", "server", "feedback", "media.ts"), "utf8");
-    expect(source).toContain(".stats()");
-    expect(source).not.toContain(".raw().toBuffer()");
+  it("rejects a truncated image that metadata alone could not promote", async () => {
+    const png = await createFeedbackImage("png");
+    const truncated = png.subarray(0, 50);
+
+    await expect(validateFeedbackAttachments([
+      { bytes: truncated, mimeType: "image/png", fileName: "truncated.png" },
+    ])).rejects.toThrow("图片内容无法完整解码");
   });
 
   it("fully decodes PNG, JPEG and WebP and records canonical metadata", async () => {

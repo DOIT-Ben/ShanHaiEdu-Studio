@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { POST as postImage } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route";
@@ -15,7 +12,6 @@ import type { ToolExecutionResult } from "@/server/tools/tool-types";
 import { createWorkbenchService } from "@/server/workbench/service";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
-const root = process.cwd();
 const originalFetch = globalThis.fetch;
 const originalImageEnv = {
   IMAGE_PROVIDER_CHANNEL: process.env.IMAGE_PROVIDER_CHANNEL,
@@ -294,40 +290,6 @@ describe("A17 artifact route ExecutionEnvelope", () => {
     expect(authoritySummary).toMatchObject({ complete: false, readyEligible: false });
   });
 
-  it("keeps all three artifact routes on the shared gateway and atomic result boundary", () => {
-    const routePaths = [
-      "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/image/route.ts",
-      "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route.ts",
-      "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route.ts",
-    ];
-    for (const relativePath of routePaths) {
-      const source = [
-        readFileSync(path.join(root, relativePath), "utf8"),
-        ...(relativePath.endsWith("/video/route.ts")
-          ? [readFileSync(path.join(root, "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/video-route-generation.ts"), "utf8")]
-          : []),
-      ].join("\n");
-      expect(
-        source.includes("claimArtifactRouteToolExecution") &&
-        source.includes("commitArtifactRouteToolSuccess"),
-      ).toBe(true);
-      expect(
-        source.includes("commitArtifactRouteToolFailure") &&
-        !source.includes("commitGenerationResult") &&
-        !source.includes("resumeStagedGenerationResult"),
-      ).toBe(true);
-    }
-
-    const boundary = readFileSync(path.join(root, "src/server/tools/artifact-route-tool-execution.ts"), "utf8");
-    expect([
-      "executeThroughToolGateway",
-      "createExecutionEnvelope",
-    ].every((marker) => boundary.includes(marker))).toBe(true);
-    expect([
-      "startArtifactRouteToolInvocation",
-      "commitToolResult",
-    ].every((marker) => boundary.includes(marker))).toBe(true);
-  });
 });
 
 function approvedArtifact(kind: ArtifactRecord["kind"], id: string): ArtifactRecord {

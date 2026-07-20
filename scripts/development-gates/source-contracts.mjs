@@ -202,10 +202,46 @@ function nearestVarScope(scope) {
 function getOrCreateBinding(scope, name) {
   let binding = scope.bindings.get(name);
   if (!binding) {
-    binding = { name, initializers: [], assignments: [], scope };
+    binding = {
+      name,
+      initializers: [],
+      assignments: [],
+      functions: [],
+      projections: [],
+      scope,
+    };
     scope.bindings.set(name, binding);
   }
   return binding;
+}
+
+function propertyNameText(node) {
+  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) return node.text;
+  return undefined;
+}
+
+function bindDeclarationPattern(pattern, initializer, declarationScope, declarations) {
+  if (ts.isIdentifier(pattern)) {
+    const binding = getOrCreateBinding(declarationScope, pattern.text);
+    if (initializer) binding.initializers.push(initializer);
+    declarations.set(pattern, binding);
+    return;
+  }
+  if (!ts.isObjectBindingPattern(pattern) && !ts.isArrayBindingPattern(pattern)) return;
+  pattern.elements.forEach((element, index) => {
+    if (!ts.isBindingElement(element)) return;
+    const propertyName = ts.isObjectBindingPattern(pattern)
+      ? propertyNameText(element.propertyName ?? (ts.isIdentifier(element.name) ? element.name : undefined))
+      : String(index);
+    if (ts.isIdentifier(element.name)) {
+      const binding = getOrCreateBinding(declarationScope, element.name.text);
+      if (initializer && propertyName !== undefined) binding.projections.push({ source: initializer, propertyName });
+      if (element.initializer) binding.initializers.push(element.initializer);
+      declarations.set(element.name, binding);
+      return;
+    }
+    bindDeclarationPattern(element.name, initializer, declarationScope, declarations);
+  });
 }
 
 function buildLexicalModel(sourceFile) {
@@ -217,15 +253,22 @@ function buildLexicalModel(sourceFile) {
     const scope = node === sourceFile ? root : (kind ? createLexicalScope(parentScope, kind) : parentScope);
     nodeScopes.set(node, scope);
 
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    if (ts.isVariableDeclaration(node)) {
       const declarationFlags = node.parent.flags;
       const isVarDeclaration = (declarationFlags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) === 0;
       const declarationScope = isVarDeclaration ? nearestVarScope(scope) : scope;
-      const binding = getOrCreateBinding(declarationScope, node.name.text);
-      if (node.initializer) binding.initializers.push(node.initializer);
-      declarations.set(node.name, binding);
+      bindDeclarationPattern(node.name, node.initializer, declarationScope, declarations);
     } else if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
       const binding = getOrCreateBinding(scope, node.name.text);
+      if (node.initializer) binding.initializers.push(node.initializer);
+      declarations.set(node.name, binding);
+    } else if (ts.isFunctionDeclaration(node) && node.name) {
+      const binding = getOrCreateBinding(parentScope, node.name.text);
+      binding.functions.push(node);
+      declarations.set(node.name, binding);
+    } else if (ts.isImportSpecifier(node)) {
+      const binding = getOrCreateBinding(scope, node.name.text);
+      binding.importedName = node.propertyName?.text ?? node.name.text;
       declarations.set(node.name, binding);
     }
 
@@ -286,6 +329,17 @@ function isPropertyNameIdentifier(node) {
 function nodePosition(node) {
   const position = node?.getStart?.();
   return Number.isSafeInteger(position) ? position : Number.MAX_SAFE_INTEGER;
+}
+
+function exceedsAnalysisDepth(node, maximumDepth = 192) {
+  let current = node;
+  let depth = 0;
+  while (current?.parent) {
+    depth += 1;
+    if (depth > maximumDepth) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function memoizedBindingValue(memo, binding, cutoff) {
@@ -373,17 +427,83 @@ function isStructuredDataParse(node) {
   return ["JSON", "YAML", "yaml"].includes(root);
 }
 
+function propertyAccessName(node) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && node.argumentExpression) return propertyNameText(node.argumentExpression);
+  return undefined;
+}
+
+function objectPropertyInitializers(node, propertyName, model, activeBindings = new Set()) {
+  const current = unwrapExpression(node);
+  if (ts.isObjectLiteralExpression(current)) {
+    return current.properties.flatMap((property) => {
+      if (ts.isPropertyAssignment(property) && propertyNameText(property.name) === propertyName) return [property.initializer];
+      if (ts.isShorthandPropertyAssignment(property) && property.name.text === propertyName) return [property.name];
+      return [];
+    });
+  }
+  if (ts.isIdentifier(current) && !isPropertyNameIdentifier(current)) {
+    const binding = resolveLexicalBinding(current, model.nodeScopes.get(current));
+    if (!binding || activeBindings.has(binding)) return [];
+    activeBindings.add(binding);
+    const values = [
+      ...binding.initializers,
+      ...binding.assignments.map((assignment) => assignment.value),
+    ].flatMap((value) => objectPropertyInitializers(value, propertyName, model, activeBindings));
+    activeBindings.delete(binding);
+    return values;
+  }
+  return [];
+}
+
+function returnExpressions(functionLike) {
+  if (ts.isArrowFunction(functionLike) && !ts.isBlock(functionLike.body)) return [functionLike.body];
+  if (!ts.isBlock(functionLike.body)) return [];
+  const values = [];
+  const visit = (node) => {
+    if (exceedsAnalysisDepth(node) || (node !== functionLike && ts.isFunctionLike(node))) return;
+    if (ts.isReturnStatement(node) && node.expression) values.push(node.expression);
+    ts.forEachChild(node, visit);
+  };
+  visit(functionLike.body);
+  return values;
+}
+
+function functionValuesForCallee(node, model) {
+  const current = unwrapExpression(node);
+  if (ts.isFunctionLike(current)) return [current];
+  if (ts.isIdentifier(current) && !isPropertyNameIdentifier(current)) {
+    const binding = resolveLexicalBinding(current, model.nodeScopes.get(current));
+    if (!binding) return [];
+    return [
+      ...binding.functions,
+      ...binding.initializers.filter((initializer) => ts.isFunctionLike(unwrapExpression(initializer))),
+    ];
+  }
+  if (!ts.isCallExpression(current)) return [];
+  return functionValuesForCallee(current.expression, model).flatMap((functionLike) => (
+    returnExpressions(functionLike).filter((value) => ts.isFunctionLike(unwrapExpression(value)))
+  ));
+}
+
+function isFilesystemReadName(callExpression, model) {
+  const calledName = getCalledName(callExpression);
+  if (calledName === "readFile" || calledName === "readFileSync") return true;
+  if (!ts.isIdentifier(callExpression.expression)) return false;
+  const binding = resolveLexicalBinding(callExpression.expression, model.nodeScopes.get(callExpression.expression));
+  return binding?.importedName === "readFile" || binding?.importedName === "readFileSync";
+}
+
 function isFilesystemReadCall(node, markers, model, state) {
   const current = unwrapExpression(node);
   if (!ts.isCallExpression(current)) return false;
-  const calledName = getCalledName(current);
-  if (calledName !== "readFile" && calledName !== "readFileSync") return false;
+  if (!isFilesystemReadName(current, model)) return false;
   return current.arguments.some((argument) => expressionContainsImplementationMarker(argument, markers, model, state));
 }
 
 function expressionContainsImplementationMarker(node, markers, model, state) {
   const current = unwrapExpression(node);
-  if (!current) return false;
+  if (!current || exceedsAnalysisDepth(current)) return false;
   if (ts.isStringLiteralLike(current)) return stringMatchesMarker(current.text, markers);
   if (ts.isTemplateExpression(current)) {
     if (stringMatchesMarker(current.head.text, markers)) return true;
@@ -391,6 +511,13 @@ function expressionContainsImplementationMarker(node, markers, model, state) {
       stringMatchesMarker(span.literal.text, markers)
       || expressionContainsImplementationMarker(span.expression, markers, model, state)
     ));
+  }
+  const propertyName = propertyAccessName(current);
+  if (propertyName !== undefined && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))) {
+    const values = objectPropertyInitializers(current.expression, propertyName, model);
+    if (values.length > 0) {
+      return values.some((value) => expressionContainsImplementationMarker(value, markers, model, state));
+    }
   }
   if (ts.isIdentifier(current) && !isPropertyNameIdentifier(current)) {
     const binding = resolveLexicalBinding(current, model.nodeScopes.get(current));
@@ -416,6 +543,13 @@ function bindingContainsImplementationMarker(binding, markers, model, state, cut
       expressionContainsImplementationMarker(initializer, markers, model, state)
     )),
   );
+  for (const projection of binding.projections) {
+    if (!result) {
+      result = objectPropertyInitializers(projection.source, projection.propertyName, model).some((value) => (
+        expressionContainsImplementationMarker(value, markers, model, state)
+      ));
+    }
+  }
   for (const assignment of binding.assignments) {
     if (!result && nodePosition(assignment.identifier) < cutoff &&
         expressionContainsImplementationMarker(assignment.value, markers, model, state)) result = true;
@@ -425,10 +559,27 @@ function bindingContainsImplementationMarker(binding, markers, model, state, cut
   return result;
 }
 
-function expressionContainsImplementationText(node, markers, model, state) {
+function expressionContainsImplementationTextInner(node, markers, model, state) {
   const current = unwrapExpression(node);
-  if (!current || isStructuredDataParse(current)) return false;
+  if (!current || exceedsAnalysisDepth(current) || isStructuredDataParse(current)) return false;
   if (isFilesystemReadCall(current, markers, model, state)) return true;
+  const propertyName = propertyAccessName(current);
+  if (propertyName !== undefined && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))) {
+    const values = objectPropertyInitializers(current.expression, propertyName, model);
+    if (values.length > 0) {
+      return values.some((value) => expressionContainsImplementationText(value, markers, model, state));
+    }
+  }
+  if (ts.isCallExpression(current)) {
+    const functionValues = functionValuesForCallee(current.expression, model);
+    if (functionValues.length > 0) {
+      return functionValues.some((functionLike) => (
+        returnExpressions(functionLike).some((value) => (
+          expressionContainsImplementationText(value, markers, model, state)
+        ))
+      ));
+    }
+  }
   if (ts.isIdentifier(current) && !isPropertyNameIdentifier(current)) {
     const binding = resolveLexicalBinding(current, model.nodeScopes.get(current));
     return binding
@@ -442,6 +593,19 @@ function expressionContainsImplementationText(node, markers, model, state) {
   return found;
 }
 
+function expressionContainsImplementationText(node, markers, model, state) {
+  const current = unwrapExpression(node);
+  if (!current) return false;
+  const tracksNode = !ts.isIdentifier(current);
+  if (tracksNode && state.textActiveNodes.has(current)) return false;
+  if (tracksNode) state.textActiveNodes.add(current);
+  try {
+    return expressionContainsImplementationTextInner(current, markers, model, state);
+  } finally {
+    if (tracksNode) state.textActiveNodes.delete(current);
+  }
+}
+
 function bindingContainsImplementationText(binding, markers, model, state, cutoff = Number.MAX_SAFE_INTEGER) {
   const memoized = memoizedBindingValue(state.textMemo, binding, cutoff);
   if (memoized !== undefined) return memoized;
@@ -453,6 +617,13 @@ function bindingContainsImplementationText(binding, markers, model, state, cutof
       expressionContainsImplementationText(initializer, markers, model, state)
     )),
   );
+  for (const projection of binding.projections) {
+    if (!result) {
+      result = objectPropertyInitializers(projection.source, projection.propertyName, model).some((value) => (
+        expressionContainsImplementationText(value, markers, model, state)
+      ));
+    }
+  }
   for (const assignment of binding.assignments) {
     if (!result && nodePosition(assignment.identifier) < cutoff &&
         expressionContainsImplementationText(assignment.value, markers, model, state)) result = true;
@@ -529,6 +700,7 @@ function countSourceStringAssertions(file, policy) {
     markerMemo: new WeakMap(),
     textActive: new WeakMap(),
     textMemo: new WeakMap(),
+    textActiveNodes: new WeakSet(),
   };
   let occurrences = 0;
   const visit = (node) => {

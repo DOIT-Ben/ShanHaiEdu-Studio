@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { sanitizeEvidenceText } from "../scripts/lib/evidence-sanitizer.mjs";
 import {
   M67_FROZEN_APP_MARKER_SCHEMA_VERSION,
   assertM67CanonicalOwnedDescendant,
@@ -24,27 +23,29 @@ import {
   resolveM67FrozenAppRoot,
   resolveM67FrozenPlaywrightSpecPath,
   resolveM67FrozenRunIdentity,
+  verifyM67FrozenApp,
 } from "../scripts/lib/m67-frozen-app.mjs";
+import {
+  assertM67FrozenBaselineCurrent,
+  createM67RunnerCleanup,
+  createM67RunnerCommandRunner,
+  createM67RunnerEnvironment,
+  createM67ServerOutputCapture,
+  prepareM67IsolatedNextApp,
+  readM67V1_9OrchestrationLedger,
+  reserveM67Port,
+  resolveM67FrozenBaselineLock,
+  resolveM67PlaywrightCommandTimeoutMs,
+  resolveM67ProviderChannel,
+  startM67NextServer,
+  verifyM67FrozenAppAfterOwnedProcessesStop,
+} from "../scripts/lib/m67-e2e-runner-operations.mjs";
 
 const root = process.cwd();
-const runnerSource = readFileSync(path.join(root, "scripts", "run-m67-e2e.mjs"), "utf8");
-const v19rSpecSource = readFileSync(path.join(root, "tests", "e2e", "v1-9r-two-user-main-agent.spec.ts"), "utf8");
 
 test("runCommand delegates init, bootstrap, invite, and Playwright children to one shutdown authority", async () => {
-  assert.match(runnerSource, /createRunnerShutdownAuthority/);
-  assert.doesNotMatch(runnerSource, /const ownedChildren = new Set\(\)/);
-  assert.match(runnerSource, /SHANHAI_BOOTSTRAP_ADMIN_CONFIRM:\s*"CREATE_ADMIN"/);
-  for (const commandMarker of [
-    "scripts/init-sqlite-schema.mjs",
-    "bootstrap-admin.mjs",
-    "invite-user.mjs",
-    "node_modules/@playwright/test/cli.js",
-  ]) {
-    assert.match(runnerSource, new RegExp(escapeRegExp(commandMarker)));
-  }
-
   const calls = [];
-  const runCommand = compileFunction("runCommand", {
+  const runCommand = createM67RunnerCommandRunner({
     shutdownAuthority: {
       runCommand(...args) {
         calls.push(args);
@@ -67,12 +68,11 @@ test("runCommand delegates init, bootstrap, invite, and Playwright children to o
 });
 
 test("cleanup calls share one promise and remove tempRoot only after shared shutdown completes", async () => {
-  assert.match(runnerSource, /let cleanupPromise/);
   let releaseShutdown;
   const pendingShutdown = new Promise((resolve) => { releaseShutdown = resolve; });
   const shutdownCalls = [];
   const removals = [];
-  const cleanup = compileFunction("cleanup", {
+  const cleanup = createM67RunnerCleanup({
     cleanupPromise: undefined,
     preserveRunDirectory: false,
     shutdownAuthority: {
@@ -97,8 +97,7 @@ test("cleanup calls share one promise and remove tempRoot only after shared shut
 
 test("explicit evidence preservation keeps the isolated run directory after owned processes stop", async () => {
   const removals = [];
-  const cleanup = compileFunction("cleanup", {
-    cleanupPromise: undefined,
+  const cleanup = createM67RunnerCleanup({
     preserveRunDirectory: true,
     shutdownAuthority: { shutdown: async () => ({}) },
     removeOwnedTempRoot: async () => removals.push("removed"),
@@ -107,37 +106,51 @@ test("explicit evidence preservation keeps the isolated run directory after owne
   await cleanup();
 
   assert.deepEqual(removals, []);
-  assert.match(runnerSource, /M67_E2E_PRESERVE_RUN_DIR/);
 });
 
 test("keeps sanitized R5 snapshots and provider channel attribution inside each isolated run", () => {
-  assert.match(runnerSource, /M67_E2E_EVIDENCE_DIR:\s*evidenceRoot/);
-  assert.match(runnerSource, /providerChannel:\s*resolveProviderChannel\(process\.env\)/);
-  assert.match(v19rSpecSource, /process\.env\.M67_E2E_EVIDENCE_DIR/);
-  assert.match(v19rSpecSource, /path\.resolve\(evidenceRoot\(\),/);
-
-  const resolveProviderChannel = compileFunction("resolveProviderChannel", {});
-  assert.equal(resolveProviderChannel({}), "primary");
-  assert.equal(resolveProviderChannel({ AGENT_BRAIN_CHANNEL: " fallback " }), "fallback");
-  assert.equal(resolveProviderChannel({ OPENAI_API_KEY: "configured", AGENT_BRAIN_CHANNEL: "fallback" }), "fallback");
-  assert.equal(resolveProviderChannel({ OPENAI_API_KEY: "configured", AGENT_BRAIN_CHANNEL: "fallback-typo" }), "invalid");
+  const environment = createM67RunnerEnvironment({
+    env: {},
+    databasePath: "run/m67.sqlite",
+    artifactRoot: "run/artifact-storage",
+    evidenceRoot: "run/evidence",
+    port: 32123,
+    baseURL: "http://127.0.0.1:32123",
+    admin: { email: "admin@example.test", password: "admin-password" },
+    teacher: { email: "teacher@example.test", password: "teacher-password" },
+    secondTeacher: { email: "teacher-b@example.test", password: "teacher-b-password" },
+  });
+  assert.equal(environment.M67_E2E_EVIDENCE_DIR, "run/evidence");
+  assert.equal(environment.DATABASE_URL, "file:run/m67.sqlite");
+  assert.equal(resolveM67ProviderChannel({}), "primary");
+  assert.equal(resolveM67ProviderChannel({ AGENT_BRAIN_CHANNEL: " fallback " }), "fallback");
+  assert.equal(resolveM67ProviderChannel({ OPENAI_API_KEY: "configured", AGENT_BRAIN_CHANNEL: "fallback" }), "fallback");
+  assert.equal(resolveM67ProviderChannel({ OPENAI_API_KEY: "configured", AGENT_BRAIN_CHANNEL: "fallback-typo" }), "invalid");
 });
 
 test("M67 has no independent taskkill path and exposes IPC shutdown through the shared authority", () => {
-  assert.match(runnerSource, /installRunnerShutdownIpcHandler\(shutdownAuthority\)/);
-  assert.match(runnerSource, /shutdownAuthority\.track\(child, \{ label: "m67-next-server" \}\)/);
-  assert.doesNotMatch(runnerSource, /taskkill\.exe/);
+  const child = new FakeChild(201);
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const tracked = [];
+  startM67NextServer({
+    nodeExecutable: "node",
+    nextCliPath: "next-cli",
+    isolatedAppRoot: "C:\\m67\\next-app",
+    env: {},
+    port: 32123,
+    captureServerOutput: () => undefined,
+    shutdownAuthority: { track: (...args) => tracked.push(args) },
+  }, { spawnProcess: () => child });
+  assert.deepEqual(tracked, [[child, { label: "m67-next-server" }]]);
 });
 
 test("captures only sanitized Main Agent failure diagnostics before isolated cleanup", () => {
   const serverLogTail = [];
   const mainAgentFailureDiagnostics = [];
-  const sanitizeDiagnosticText = compileFunction("sanitizeDiagnosticText", { sanitizeEvidenceText });
-  const captureServerOutput = compileFunction("captureServerOutput", {
+  const captureServerOutput = createM67ServerOutputCapture({
     serverLogTail,
     mainAgentFailureDiagnostics,
-    sanitizeDiagnosticText,
-    sanitizeEvidenceText,
   });
 
   captureServerOutput(Buffer.from(
@@ -151,11 +164,6 @@ test("captures only sanitized Main Agent failure diagnostics before isolated cle
     errorName: "Error",
     summary: "request failed at [redacted-url] with token=[redacted]",
   });
-  assert.match(runnerSource, /writeSanitizedSummary\("failed"\)/);
-  assert.match(
-    runnerSource,
-    /console\.error\(sanitizeDiagnosticText\(failure instanceof Error \? failure\.message : failure\)\)/,
-  );
 });
 
 test("sanitizes ordinary Next stdout and stderr before retaining the server log tail", () => {
@@ -164,10 +172,10 @@ test("sanitizes ordinary Next stdout and stderr before retaining the server log 
   const rawLog = "教师可读：结构候选已保存 token=private API_KEY=private credential=private sk-live-private https://private.example/v1 C:\\Users\\Teacher\\private.txt /home/teacher/private.txt\n";
   const sanitizedLog = "教师可读：结构候选已保存 token=[redacted] API_KEY=[redacted] credential=[redacted] [redacted] [redacted-url] [redacted-path] [redacted-path]\n";
   const sanitizerCalls = [];
-  const captureServerOutput = compileFunction("captureServerOutput", {
+  const captureServerOutput = createM67ServerOutputCapture({
     serverLogTail,
     mainAgentFailureDiagnostics,
-    sanitizeDiagnosticText: (value) => String(value),
+  }, {
     sanitizeEvidenceText(value) {
       sanitizerCalls.push(String(value));
       return sanitizedLog;
@@ -182,30 +190,26 @@ test("sanitizes ordinary Next stdout and stderr before retaining the server log 
   assert.doesNotMatch(serverLogTail[0], /private\.example|sk-live-private|C:\\Users\\Teacher|\/home\/teacher/);
 });
 
-test("skips browser-restricted ports before starting the isolated Next server", () => {
-  assert.match(runnerSource, /const browserRestrictedPorts = new Set/);
-  assert.match(runnerSource, /1719, 1720, 1723, 2049/);
-  const reservePortSource = extractFunction("reservePort");
-  assert.match(reservePortSource, /browserRestrictedPorts\.has\(port\)/);
-  assert.match(reservePortSource, /browserRestrictedPorts\.has\(requested\)/);
+test("skips browser-restricted ports before starting the isolated Next server", async () => {
+  await assert.rejects(
+    reserveM67Port({ requestedPort: "1719" }),
+    /M67_E2E_PORT 1719 is browser-restricted/,
+  );
 });
 
 test("keeps the V1-9R runner alive longer than the spec-level timeout", () => {
-  const resolvePlaywrightCommandTimeoutMs = compileFunction("resolvePlaywrightCommandTimeoutMs", {});
-
-  assert.equal(resolvePlaywrightCommandTimeoutMs(
+  assert.equal(resolveM67PlaywrightCommandTimeoutMs(
     "tests/e2e/v1-9r-two-user-main-agent.spec.ts",
     "900000",
   ), 1_560_000);
-  assert.equal(resolvePlaywrightCommandTimeoutMs(
+  assert.equal(resolveM67PlaywrightCommandTimeoutMs(
     "tests/e2e/v1-9r-two-user-main-agent.spec.ts",
     "1800000",
   ), 1_800_000);
-  assert.equal(resolvePlaywrightCommandTimeoutMs("tests/e2e/beta-feedback-center.spec.ts", undefined), 360_000);
+  assert.equal(resolveM67PlaywrightCommandTimeoutMs("tests/e2e/beta-feedback-center.spec.ts", undefined), 360_000);
 });
 
 test("keeps a configured frozen Next app root inside the canonical owned M67 run root", (t) => {
-  assert.match(runnerSource, /M67_E2E_FROZEN_APP_ROOT/);
   const fixtureRoot = mkdtempSync(path.join(tmpdir(), "m67-frozen-path-"));
   const runRoot = path.join(fixtureRoot, "run");
   const outsideRoot = path.join(fixtureRoot, "outside");
@@ -375,17 +379,15 @@ test("binds the frozen baseline to repository root, run root, run id, and immuta
         V1_9_E2E_MANIFEST_PATH: manifestPath,
       },
     };
-    const resolveFrozenBaselineLock = compileFunction("resolveFrozenBaselineLock", {
+    const resolveFrozenBaselineLock = () => resolveM67FrozenBaselineLock({
       frozenRunIdentity: identity,
-      process: fakeProcess,
-      fs,
-      path,
+      env: fakeProcess.env,
       root: repositoryRoot,
       tempRoot,
-      createHash,
-      normalizeV1_9RunManifestV2: (value) => value,
-      createV1_9RunManifestV2Digest: canonicalDigest,
-      assertM67CanonicalOwnedDescendant,
+      platform: process.platform,
+    }, {
+      normalizeManifest: (value) => value,
+      createManifestDigest: canonicalDigest,
     });
 
     assert.deepEqual(resolveFrozenBaselineLock(), baselineLock);
@@ -403,18 +405,18 @@ test("binds the frozen baseline to repository root, run root, run id, and immuta
 
     let manifestReads = 0;
     let baselineChecks = 0;
-    const assertFrozenBaselineCurrent = compileFunction("assertFrozenBaselineCurrent", {
+    const assertFrozenBaselineCurrent = () => assertM67FrozenBaselineCurrent({
       frozenBaselineLock: baselineLock,
       resolveFrozenBaselineLock() {
         manifestReads += 1;
         return baselineLock;
       },
-      assertCurrentV1_9BaselineLock(value) {
+      assertCurrentBaselineLock(value) {
         baselineChecks += 1;
         return value;
       },
       root: repositoryRoot,
-      process: fakeProcess,
+      env: fakeProcess.env,
     });
     assert.deepEqual(assertFrozenBaselineCurrent(), baselineLock);
     assert.equal(manifestReads, 1);
@@ -497,16 +499,15 @@ test("starts Next with the frozen app as process cwd", () => {
   };
   const isolatedAppRoot = path.join(root, "test-results", "v1-9-fixture", "next-app-frozen");
   const tracked = [];
-  const startNextServer = compileFunction("startNextServer", {
-    spawn,
-    path,
-    root,
+  startM67NextServer({
+    nodeExecutable: "node",
+    nextCliPath: path.join(root, "node_modules/next/dist/bin/next"),
     isolatedAppRoot,
+    env: { TEST_ENV: "1" },
+    port: 32123,
     captureServerOutput: () => undefined,
     shutdownAuthority: { track: (...args) => tracked.push(args) },
-  });
-
-  startNextServer({ TEST_ENV: "1" }, 32123);
+  }, { spawnProcess: spawn });
   assert.equal(calls.length, 1);
   assert.equal(calls[0][2].cwd, isolatedAppRoot);
   assert.deepEqual(tracked, [[child, { label: "m67-next-server" }]]);
@@ -589,7 +590,6 @@ test("freezes the current Next app once with run-bound source, copy and full-tre
       nextConfigContents,
       assertBaselineCurrent: () => undefined,
     });
-    assert.equal(readFileSync(path.join(frozenRoot, "src", "version.txt"), "utf8"), "source-v1");
     const markerBeforeResume = readFileSync(markerPath, "utf8");
     const marker = JSON.parse(markerBeforeResume);
     assert.equal(marker.schemaVersion, M67_FROZEN_APP_MARKER_SCHEMA_VERSION);
@@ -599,11 +599,14 @@ test("freezes the current Next app once with run-bound source, copy and full-tre
     assert.match(marker.sourceEntriesDigest, /^sha256:[a-f0-9]{64}$/);
     assert.equal(marker.copiedEntriesDigest, marker.sourceEntriesDigest);
     assert.match(marker.frozenEntriesDigest, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(readFileSync(path.join(frozenRoot, "scripts", "lib", "v1-9-e2e-contract.mjs"), "utf8"), "contract-v1");
-    assert.equal(readFileSync(path.join(frozenRoot, "tests", "e2e", "v1-9-unique-real-product.spec.ts"), "utf8"), "spec-v1");
-    assert.equal(readFileSync(path.join(frozenRoot, "tests", "e2e", "support", "redline.ts"), "utf8"), "redline-v1");
-    assert.equal(readFileSync(path.join(frozenRoot, "config", "node-contract.json"), "utf8"), "node-contract-v1");
-    assert.equal(readFileSync(path.join(frozenRoot, "fixtures", "coze.json"), "utf8"), "coze-fixture-v1");
+    assert.deepEqual(verifyM67FrozenApp({
+      sourceRoot,
+      runRoot,
+      appRoot: frozenRoot,
+      markerPath,
+      identity: freshIdentity,
+      requestedSpec: "tests/e2e/v1-9-unique-real-product.spec.ts",
+    }), marker);
 
     const resumeIdentity = { mode: "resume", runId: "v1-9-fixture", manifestSha256 };
     const prepareResume = () => prepareM67FrozenApp({
@@ -618,7 +621,14 @@ test("freezes the current Next app once with run-bound source, copy and full-tre
     });
 
     prepareResume();
-    assert.equal(readFileSync(path.join(frozenRoot, "src", "version.txt"), "utf8"), "source-v1");
+    assert.deepEqual(verifyM67FrozenApp({
+      sourceRoot,
+      runRoot,
+      appRoot: frozenRoot,
+      markerPath,
+      identity: resumeIdentity,
+      requestedSpec: "tests/e2e/v1-9-unique-real-product.spec.ts",
+    }), marker);
     assert.equal(readFileSync(markerPath, "utf8"), markerBeforeResume);
     assert.throws(
       () => prepareM67FrozenApp({
@@ -888,27 +898,30 @@ test("checks the immutable manifest baseline before copying and after a successf
 });
 
 test("runs the V1-9 observer from the frozen tree with a clean dist cache and final integrity check", () => {
-  assert.match(runnerSource, /resolveM67FrozenPlaywrightSpecPath/);
-  assert.match(runnerSource, /cleanM67OwnedFrozenAppCaches/);
-  assert.match(runnerSource, /verifyM67FrozenApp/);
-  assert.match(runnerSource, /assertCurrentV1_9BaselineLock/);
-  const topLevelStart = runnerSource.indexOf("try {");
-  const topLevelEnd = runnerSource.indexOf("\n} catch (error)", topLevelStart);
-  const topLevelRun = runnerSource.slice(topLevelStart, topLevelEnd);
-  const prepareIndex = topLevelRun.indexOf("prepareIsolatedNextApp();");
-  const firstBaselineIndex = topLevelRun.indexOf("assertFrozenBaselineCurrent();");
-  const finalBaselineIndex = topLevelRun.lastIndexOf("assertFrozenBaselineCurrent();");
-  const startNextIndex = topLevelRun.indexOf("startNextServer(env, port)");
-  assert.ok(firstBaselineIndex < prepareIndex);
-  assert.ok(prepareIndex < finalBaselineIndex);
-  assert.ok(finalBaselineIndex < startNextIndex);
-
-  const stopSequence = extractFunction("stopNextServerAndVerifyFrozenApp");
-  assert.match(stopSequence, /shutdownAuthority\.shutdown/);
-  const postStopSequence = extractFunction("verifyFrozenAppAfterOwnedProcessesStop");
-  assert.ok(postStopSequence.indexOf("verifyM67FrozenAppBeforeCacheCleanup") < postStopSequence.indexOf("cleanM67OwnedFrozenAppCaches"));
-  assert.ok(postStopSequence.indexOf("cleanM67OwnedFrozenAppCaches") < postStopSequence.indexOf("verifyFrozenAppIntegrity()"));
-  assert.ok(postStopSequence.indexOf("verifyFrozenAppIntegrity()") < postStopSequence.indexOf("assertFrozenBaselineCurrent()"));
+  const sequence = [];
+  const verificationInput = { id: "frozen-run" };
+  verifyM67FrozenAppAfterOwnedProcessesStop({
+    frozenAppPrepared: true,
+    createVerificationInput: () => verificationInput,
+    isolatedAppRoot: "frozen-next-app",
+    tempRoot: "run-root",
+    assertFrozenBaselineCurrent: () => sequence.push("baseline"),
+  }, {
+    verifyBeforeCacheCleanup: (input) => {
+      assert.equal(input, verificationInput);
+      sequence.push("verify-before-cleanup");
+    },
+    cleanOwnedCaches: (appRoot, runRoot) => {
+      assert.equal(appRoot, "frozen-next-app");
+      assert.equal(runRoot, "run-root");
+      sequence.push("clean-owned-cache");
+    },
+    verifyFrozenApp: (input) => {
+      assert.equal(input, verificationInput);
+      sequence.push("verify-final");
+    },
+  });
+  assert.deepEqual(sequence, ["verify-before-cleanup", "clean-owned-cache", "verify-final", "baseline"]);
 });
 
 test("keeps the legacy unconfigured isolated app refresh behavior", () => {
@@ -920,19 +933,21 @@ test("keeps the legacy unconfigured isolated app refresh behavior", () => {
     writeAppSourceFixture(sourceRoot, "current-source");
     mkdirSync(path.join(isolatedRoot, "src"), { recursive: true });
     writeFileSync(path.join(isolatedRoot, "src", "version.txt"), "stale-source", "utf8");
-    const prepareUnconfigured = compileFunction("prepareIsolatedNextApp", {
-      fs,
-      path,
+    prepareM67IsolatedNextApp({
       isolatedAppRoot: isolatedRoot,
       root: sourceRoot,
       configuredFrozenAppRoot: null,
-      resumeExistingRun: true,
+      tempRoot: fixtureRoot,
       frozenAppMarkerPath: null,
-      frozenAppMarkerSchemaVersion: "m67-frozen-app.v2",
+      frozenRunIdentity: null,
+      requestedSpec: "tests/e2e/beta-feedback-center.spec.ts",
+      nextConfigContents: createFrozenNextConfig(),
+      assertFrozenBaselineCurrent: () => undefined,
     });
-
-    prepareUnconfigured();
-    assert.equal(readFileSync(path.join(isolatedRoot, "src", "version.txt"), "utf8"), "current-source");
+    assert.equal(
+      digestM67FrozenAppEntries(isolatedRoot, ["src"]),
+      digestM67FrozenAppEntries(sourceRoot, ["src"]),
+    );
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
@@ -956,23 +971,20 @@ test("reads the V1-9 orchestration ledger from run-state before the legacy manif
       },
     }), "utf8");
     writeFileSync(manifestPath, manifestBytes, "utf8");
-    const readV1_9OrchestrationLedger = compileFunction("readV1_9OrchestrationLedger", {
-      process: {
-        env: {
-          V1_9_E2E_STATE_PATH: statePath,
-          V1_9_E2E_MANIFEST_PATH: manifestPath,
-        },
+    const ledger = readM67V1_9OrchestrationLedger({
+      env: {
+        V1_9_E2E_STATE_PATH: statePath,
+        V1_9_E2E_MANIFEST_PATH: manifestPath,
       },
-      path,
       tempRoot: fixtureRoot,
-      fs,
-      normalizeV1_9RunState: (state) => state,
-      deriveV1_9ExternalCodexOrchestrationCount: () => {
+    }, {
+      normalizeRunState: (state) => state,
+      deriveExternalCodexCount: () => {
         throw new Error("legacy manifest must not be read when run-state is configured");
       },
     });
 
-    assert.deepEqual(readV1_9OrchestrationLedger(), {
+    assert.deepEqual(ledger, {
       count: 1,
       source: "run_state_mutation_ledger",
     });
@@ -985,21 +997,18 @@ test("reads the V1-9 orchestration ledger from run-state before the legacy manif
 test("rejects an out-of-run V1-9 state ledger without falling back to the manifest", () => {
   const runRoot = path.join(root, "test-results", "m67-ledger-boundary");
   const outsideStatePath = path.join(root, "test-results", "outside-run-state.json");
-  const readV1_9OrchestrationLedger = compileFunction("readV1_9OrchestrationLedger", {
-    process: {
-      env: {
-        V1_9_E2E_STATE_PATH: outsideStatePath,
-        V1_9_E2E_MANIFEST_PATH: path.join(runRoot, "run-manifest.json"),
-      },
+  const ledger = readM67V1_9OrchestrationLedger({
+    env: {
+      V1_9_E2E_STATE_PATH: outsideStatePath,
+      V1_9_E2E_MANIFEST_PATH: path.join(runRoot, "run-manifest.json"),
     },
-    path,
     tempRoot: runRoot,
-    fs,
-    normalizeV1_9RunState: (state) => state,
-    deriveV1_9ExternalCodexOrchestrationCount: () => 0,
+  }, {
+    normalizeRunState: (state) => state,
+    deriveExternalCodexCount: () => 0,
   });
 
-  assert.deepEqual(readV1_9OrchestrationLedger(), {
+  assert.deepEqual(ledger, {
     count: null,
     source: "run_state_path_rejected",
   });
@@ -1011,16 +1020,15 @@ test("retains the old manifest ledger only as an unconfigured-state compatibilit
 
   try {
     writeFileSync(manifestPath, JSON.stringify({ violations: [{ orchestrationImpact: true }] }), "utf8");
-    const readV1_9OrchestrationLedger = compileFunction("readV1_9OrchestrationLedger", {
-      process: { env: { V1_9_E2E_MANIFEST_PATH: manifestPath } },
-      path,
+    const ledger = readM67V1_9OrchestrationLedger({
+      env: { V1_9_E2E_MANIFEST_PATH: manifestPath },
       tempRoot: fixtureRoot,
-      fs,
-      normalizeV1_9RunState: (state) => state,
-      deriveV1_9ExternalCodexOrchestrationCount: (manifest) => manifest.violations.length,
+    }, {
+      normalizeRunState: (state) => state,
+      deriveExternalCodexCount: (manifest) => manifest.violations.length,
     });
 
-    assert.deepEqual(readV1_9OrchestrationLedger(), {
+    assert.deepEqual(ledger, {
       count: 1,
       source: "legacy_run_manifest_mutation_ledger",
     });
@@ -1028,25 +1036,6 @@ test("retains the old manifest ledger only as an unconfigured-state compatibilit
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
-
-function compileFunction(name, dependencies) {
-  const functionSource = extractFunction(name);
-  const dependencyNames = Object.keys(dependencies);
-  const factory = new Function(...dependencyNames, `return (${functionSource});`);
-  const compiled = factory(...dependencyNames.map((dependencyName) => dependencies[dependencyName]));
-  compiled.dependencies = dependencies;
-  return compiled;
-}
-
-function extractFunction(name) {
-  const match = runnerSource.match(new RegExp(`^(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, "m"));
-  assert.ok(match, `Expected ${name} to be a top-level function`);
-  return match[0];
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function createFrozenNextConfig() {
   return [
