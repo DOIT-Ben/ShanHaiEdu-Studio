@@ -317,10 +317,6 @@ test("production preflight rejects artifact storage inside release directories a
 });
 
 test("production preflight rejects a database junction that resolves back into the release", async (t) => {
-  const source = readFileSync(path.join(process.cwd(), "scripts", "production-preflight.mjs"), "utf8");
-  assert.match(source, /databaseRealpath/);
-  assert.match(source, /databaseParentRealpath/);
-
   const { runProductionPreflight } = await import("../scripts/production-preflight.mjs");
   const cwd = makeRepoFixture({ standalone: true });
   const releaseData = path.join(cwd, "data");

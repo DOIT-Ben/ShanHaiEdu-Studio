@@ -376,7 +376,11 @@ function routeGenerationActionsFromContent(structuredContent: Record<string, unk
     if (!isObjectRecord(action)) continue;
     const actionId = action.actionId;
     if (typeof actionId === "string" && actionId.trim()) {
-      result[capabilityId] = { actionId: actionId.trim() };
+      const shotId = action.shotId;
+      result[capabilityId] = {
+        actionId: actionId.trim(),
+        ...(typeof shotId === "string" && /^shot_[A-Za-z0-9_-]+$/.test(shotId.trim()) ? { shotId: shotId.trim() } : {}),
+      };
     }
   }
   return Object.keys(result).length ? result : undefined;

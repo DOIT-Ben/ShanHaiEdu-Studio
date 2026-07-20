@@ -1,7 +1,5 @@
-import type { LoadedSkill } from "./skill-loader";
 import { SkillLoader } from "./skill-loader";
-import Ajv2020, { type ValidateFunction } from "ajv/dist/2020";
-import addFormats from "ajv-formats";
+import type { LoadedSkill } from "./skill-loader";
 import {
   SkillRegistry,
   SkillRegistryConfigurationError,
@@ -10,14 +8,12 @@ import {
   type SkillRegistryConfig,
 } from "./skill-registry";
 import {
-  businessToolSkillBindingDigest,
   businessToolSkillPolicyDigest,
   hasCompatibleBusinessToolSkillArtifacts,
   hasValidBusinessToolSemanticGuidance,
   listBusinessToolSkillPolicies,
   resolveBusinessToolSkillPolicy,
   type BusinessToolSkillPolicy,
-  type SemanticBoundBusinessToolPolicy,
   type SkillBoundBusinessToolPolicy,
 } from "./business-tool-skill-bindings";
 import { listMainAgentBusinessToolNames } from "@/server/tools/main-agent-tool-registry";
@@ -25,19 +21,15 @@ import { resolveMainAgentToolDefinition } from "@/server/tools/main-agent-tool-r
 import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { ToolDefinition } from "@/server/tools/tool-types";
 import { actionRiskForTool } from "@/server/guards/action-policy";
-import { hashRunInput } from "@/server/execution/run-input-snapshot";
-import type { ToolExecutionResult } from "@/server/tools/tool-types";
-import {
-  BusinessToolSkillOutputContractError,
-  validateFormalBusinessToolSkillOutput,
-  type FormalBusinessToolOutputContract,
-} from "./business-tool-skill-output-contract";
 import type {
   SkillCapability,
   SkillDescriptor,
   SkillHumanGateCondition,
   SkillSideEffect,
 } from "./skill-runtime-types";
+import { createBusinessToolSkillRuntimeCore } from "./business-tool-skill-runtime-execution";
+import { sameSkillContracts } from "./business-tool-skill-runtime-execution-helpers";
+import type { FormalBusinessToolOutputContract } from "./business-tool-skill-output-contract";
 
 export type BusinessToolSkillContext = BusinessSkillContext;
 
@@ -133,180 +125,15 @@ export function createBusinessToolSkillRuntime(dependencies: {
     selectedBy: "main_agent";
     skillName: string;
     referencePaths: string[];
-  }) => Promise<LoadedSkill>;
+  }) => Promise<import("./skill-loader").LoadedSkill>;
   resolveBusinessToolSafetyContract?: (toolName: string) => BusinessToolSkillSafetyContract;
 }) {
-  const loadedFormalBindings = new Map<string, { policy: SkillBoundBusinessToolPolicy; loaded: LoadedSkill }>();
-  const schemaValidators = new Map<string, ValidateFunction>();
-  const ajv = new Ajv2020({ allErrors: true, strict: true, validateSchema: true });
-  addFormats(ajv);
-
-  return {
-    async loadForSelectedTool(input: {
-      selectedBy: "main_agent";
-      businessToolName: string;
-    }): Promise<BusinessToolSkillContext> {
-      if (input.selectedBy !== "main_agent") {
-        throw new Error("Only the Main Agent may select a business Tool Skill.");
-      }
-      const policy = dependencies.resolveBusinessSkillPolicy(input.businessToolName);
-      if (!policy || policy.mode === "exempt") {
-        throw new Error(`Skill binding is missing for business Tool: ${input.businessToolName}`);
-      }
-      const loaded = await dependencies.loadSelected({
-        selectedBy: "main_agent",
-        skillName: policy.skillName,
-        referencePaths: policy.referencePaths,
-      });
-      if (loaded.descriptor.name !== policy.skillName || loaded.descriptor.status !== "active") {
-        throw new Error(`Skill binding resolved an inactive or mismatched Skill: ${policy.skillName}`);
-      }
-      if (!policy.compatibleVersions.includes(loaded.descriptor.version)) {
-        throw new Error(`Skill version is incompatible with business Tool: ${input.businessToolName}`);
-      }
-      if (!hasValidBusinessToolSemanticGuidance(policy)) {
-        throw new SkillRuntimePreflightError("skill_runtime_binding_contract_mismatch");
-      }
-      if (policy.mode === "skill") {
-        if (!sameSkillContracts(policy.contracts.skill.consumes, loaded.descriptor.contracts.consumes) ||
-            !sameSkillContracts(policy.contracts.skill.produces, loaded.descriptor.contracts.produces) ||
-            !hasCompatibleBusinessToolSkillArtifacts({
-              policy,
-              skillContracts: loaded.descriptor.contracts,
-            })) {
-          throw new SkillRuntimePreflightError("skill_runtime_binding_contract_mismatch");
-        }
-        assertBusinessToolSkillSafetyParity(
-          loaded.descriptor,
-          (dependencies.resolveBusinessToolSafetyContract ?? resolveBusinessToolSkillSafetyContract)(policy.toolName),
-        );
-      }
-      assertLoadedSkillProvenance(policy, loaded);
-      const guidanceOnly = policy.mode === "guidance";
-      const responsibility = guidanceOnly
-        ? policy.semanticGuidance.map((guidance) => guidance.objective).join("；")
-        : loaded.descriptor.responsibility;
-      const context: BusinessToolSkillContext = {
-        skillName: policy.skillName,
-        skillVersion: loaded.descriptor.version,
-        displayName: loaded.descriptor.displayName,
-        responsibility,
-        semanticSlice: {
-          schemaVersion: "business-tool-skill-slice.v1",
-          bindingMode: guidanceOnly ? "guidance_only" : "formal_contract",
-          artifactContractAuthority: guidanceOnly ? "tool" : "skill",
-          toolName: policy.toolName,
-          responsibility,
-          contracts: structuredClone(policy.contracts),
-          guidance: policy.semanticGuidance
-            .map((guidance) => ({
-              sourcePath: guidance.sourcePath,
-              content: compileSemanticGuidance(guidance),
-            }))
-            .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
-        },
-        provenance: {
-          schemaVersion: "business-tool-skill-provenance.v1",
-          entrypointSha256: loaded.provenance.entrypointSha256,
-          references: Object.entries(loaded.provenance.referenceSha256)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([sourcePath, sha256]) => ({ sourcePath, sha256 })),
-          bindingPolicyDigest: businessToolSkillBindingDigest(policy),
-        },
-      };
-      if (policy.mode === "skill") {
-        loadedFormalBindings.set(businessSkillValidationCacheKey(context), { policy, loaded });
-      }
-      return context;
-    },
-
-    async validateSelectedToolResult(input: {
-      businessToolName: string;
-      context: BusinessToolSkillContext;
-      result: ToolExecutionResult;
-    }): Promise<BusinessToolSkillResultValidation> {
-      if (input.context.semanticSlice.toolName !== input.businessToolName) {
-        throw new BusinessToolSkillOutputContractError(
-          "formal_skill_output_contract_mismatch",
-          "Formal Skill context does not match the selected business Tool.",
-        );
-      }
-      if (input.context.semanticSlice.bindingMode === "guidance_only") {
-        return { status: "not_applicable", bindingMode: "guidance_only" };
-      }
-      if (input.result.status !== "succeeded") {
-        throw new BusinessToolSkillOutputContractError(
-          "formal_skill_output_source_invalid",
-          "Formal Skill output validation requires a successful Tool result.",
-        );
-      }
-      const cached = loadedFormalBindings.get(businessSkillValidationCacheKey(input.context));
-      if (!cached || cached.policy.toolName !== input.businessToolName ||
-          cached.policy.skillName !== input.context.skillName ||
-          !cached.policy.compatibleVersions.includes(input.context.skillVersion)) {
-        throw new BusinessToolSkillOutputContractError(
-          "formal_skill_output_contract_mismatch",
-          "Formal Skill validation context is missing or stale.",
-        );
-      }
-      const producedArtifactKind = input.result.artifactDraft.kind;
-      const mappings = cached.policy.artifactCompatibility.produces.filter((mapping) =>
-        mapping.toolArtifactKind === producedArtifactKind && mapping.skillContract !== null);
-      if (mappings.length !== 1) {
-        throw new BusinessToolSkillOutputContractError(
-          "formal_skill_output_contract_mismatch",
-          "Formal Skill output contract mapping is missing or ambiguous.",
-        );
-      }
-      const mapping = mappings[0];
-      const skillContract = mapping.skillContract!;
-      const schemas = (cached.loaded.contractSchemas ?? []).filter((schema) =>
-        schema.artifactType === skillContract.artifactType &&
-        schema.contractVersion === skillContract.contractVersion);
-      if (schemas.length !== 1) {
-        throw new BusinessToolSkillOutputContractError(
-          "formal_skill_output_contract_mismatch",
-          "Formal Skill output Schema is missing or ambiguous.",
-        );
-      }
-      const contract: FormalBusinessToolOutputContract = {
-        skillName: input.context.skillName,
-        skillVersion: input.context.skillVersion,
-        artifactType: skillContract.artifactType,
-        contractVersion: skillContract.contractVersion,
-      };
-      const validated = validateFormalBusinessToolSkillOutput({
-        adapterId: mapping.adapterId,
-        businessToolName: input.businessToolName,
-        contract,
-        result: input.result,
-        contractSchema: schemas[0],
-        validator: ({ schema, payload }) => {
-          let validate = schemaValidators.get(schemas[0].schemaSha256);
-          if (!validate) {
-            validate = ajv.compile(schema);
-            schemaValidators.set(schemas[0].schemaSha256, validate);
-          }
-          const valid = validate(payload);
-          return {
-            valid: Boolean(valid),
-            errors: valid ? [] : (validate.errors ?? []).map((error) =>
-              `${error.instancePath || "/"} ${error.message ?? "is invalid"}`),
-          };
-        },
-      });
-      return {
-        status: "passed",
-        bindingMode: "formal_contract",
-        contract: {
-          ...contract,
-          adapterId: validated.adapterId,
-          schemaDigest: validated.schemaSha256,
-          payloadDigest: `sha256:${hashRunInput(validated.payload)}`,
-        },
-      };
-    },
-  };
+  return createBusinessToolSkillRuntimeCore({
+    ...dependencies,
+    resolveBusinessToolSafetyContract: dependencies.resolveBusinessToolSafetyContract ?? resolveBusinessToolSkillSafetyContract,
+    assertBusinessToolSkillSafetyParity,
+    createPreflightError: (reasonCode) => new SkillRuntimePreflightError(reasonCode),
+  });
 }
 
 export function createConfiguredBusinessToolSkillRuntime(
@@ -539,49 +366,8 @@ function preflightMessage(reasonCode: SkillRuntimePreflightReason) {
   return messages[reasonCode];
 }
 
-function assertLoadedSkillProvenance(policy: SemanticBoundBusinessToolPolicy, loaded: LoadedSkill) {
-  if (!/^sha256:[a-f0-9]{64}$/i.test(loaded.provenance?.entrypointSha256 ?? "")) {
-    throw new Error(`Skill entrypoint provenance is missing for business Tool: ${policy.toolName}`);
-  }
-  for (const referencePath of policy.referencePaths) {
-    if (!(referencePath in loaded.references) ||
-        !/^sha256:[a-f0-9]{64}$/i.test(loaded.provenance.referenceSha256[referencePath] ?? "")) {
-      throw new Error(`Skill reference provenance is missing for business Tool: ${policy.toolName}`);
-    }
-  }
-}
-
-function compileSemanticGuidance(guidance: SemanticBoundBusinessToolPolicy["semanticGuidance"][number]) {
-  return [
-    `目标：${guidance.objective}`,
-    ...guidance.rules.map((rule) => `要求：${rule}`),
-    ...guidance.exclusions.map((exclusion) => `排除：${exclusion}`),
-  ].join("\n");
-}
-
-function businessSkillValidationCacheKey(context: BusinessToolSkillContext) {
-  return hashRunInput({
-    toolName: context.semanticSlice.toolName,
-    skillName: context.skillName,
-    skillVersion: context.skillVersion,
-    bindingPolicyDigest: context.provenance.bindingPolicyDigest,
-    entrypointSha256: context.provenance.entrypointSha256,
-    references: context.provenance.references,
-  });
-}
-
 function sameTextSet(left: string[], right: string[]) {
   return JSON.stringify([...new Set(left)].sort()) === JSON.stringify([...new Set(right)].sort());
-}
-
-function sameSkillContracts(
-  expected: Array<{ artifactType: string; contractVersion: string }>,
-  actual: Array<{ artifactType: string; contractVersion: string }>,
-) {
-  const normalize = (items: Array<{ artifactType: string; contractVersion: string }>) => items
-    .map(({ artifactType, contractVersion }) => `${artifactType}@${contractVersion}`)
-    .sort();
-  return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(actual));
 }
 
 function resolveBusinessToolSkillSafetyContract(toolName: string): BusinessToolSkillSafetyContract {

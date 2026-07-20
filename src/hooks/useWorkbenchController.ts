@@ -1,719 +1,142 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { getRealAssetGenerationActions, type RealAssetKind } from "@/lib/artifact-real-assets";
-import { buildArtifactRegenerationSubmission, resolveArtifactActionKey, resolveConversationSubmissionPolicy, type ConversationSubmissionOrigin } from "@/lib/workbench-actions";
-import { artifactText, createWorkbenchApiClient } from "@/lib/workbench-api";
-import { buildClientMessageSignature, clearRetrySafeMessageIdempotencyKey, getRetrySafeMessageIdempotencyKey } from "@/lib/workbench-message-idempotency";
-import type { ArtifactItem, ChatMessage, ConversationTurnJob, GenerationIntensity, PptFullDeckReviewSubmission, PptSampleReviewSubmission, ProjectItem, ProjectLifecycleMutation, ProjectLifecycleState, WorkbenchLoadState, WorkbenchSendMessageOptions, WorkbenchSnapshot } from "@/lib/types";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type ConversationSubmissionOrigin } from "@/lib/workbench-actions";
+import { createWorkbenchApiClient } from "@/lib/workbench-api";
+import type { GenerationIntensity } from "@/lib/types";
 import type { WorkbenchExecutionFeedback } from "@/lib/workbench-execution-feedback";
 import { normalizeXiaoKuResponseStyle, type XiaoKuResponseStyle } from "@/lib/xiaoku-preferences";
-import { shouldRefreshSnapshotForAgentEvent, type TeacherAgentEvent } from "@/lib/teacher-agent-events";
-import {
-  createProjectSnapshotCommitWatermark,
-  createProjectSnapshotRefreshCoordinator,
-  type ProjectSnapshotCommitToken,
-} from "@/lib/project-agent-event-sync";
+import { useWorkbenchProjectState } from "@/hooks/useWorkbenchProjectState";
+import { useWorkbenchProjectSync } from "@/hooks/useWorkbenchProjectSync";
+import { useWorkbenchProjectActions } from "@/hooks/useWorkbenchProjectActions";
+import { useWorkbenchComposerController } from "@/hooks/useWorkbenchComposerController";
+import { useWorkbenchArtifactNavigation } from "@/hooks/useWorkbenchArtifactNavigation";
+import { useWorkbenchArtifactOperations } from "@/hooks/useWorkbenchArtifactOperations";
+import type { SubmitConversationMessageInput } from "@/hooks/workbench-composer-submission";
 
-export type SubmitConversationMessageInput = {
-  body: string;
-  reference: string | null;
-  artifactRefs: string[];
-  confirmedActionId?: string;
-};
-const activeProjectStorageKey = "shanhai.activeProjectId";
+export type { SubmitConversationMessageInput } from "@/hooks/workbench-composer-submission";
+export { resolveBoundConfirmationActionId } from "@/hooks/workbench-composer-contracts";
+
 const xiaokuResponseStyleStorageKey = "shanhai.xiaoku.responseStyle";
 const xiaokuResponseStyleChangeEvent = "shanhai:xiaoku-response-style-change";
-const snapshotPollingIntervalMs = 1200;
-type SnapshotCommitWatermark = {
-  begin: (projectId: string) => ProjectSnapshotCommitToken;
-  commit: (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => boolean;
-};
-
-type EventSnapshotCoordinator = {
-  request: (input: { projectId: string; requiredSequence: number }) => Promise<number | null>;
-};
-
-function hasPendingTurnStatus(status?: ChatMessage["turnStatus"] | ConversationTurnJob["status"]) {
-  return status === "queued" || status === "running";
-}
-
-function snapshotHasPendingTurn(snapshot: WorkbenchSnapshot) {
-  return snapshot.turnJobs.some((job) => hasPendingTurnStatus(job.status)) || snapshot.messages.some((message) => hasPendingTurnStatus(message.turnStatus));
-}
 
 export function useWorkbenchController(options: { eventDrivenMessages?: boolean } = {}) {
   const dataSource = useMemo(() => createWorkbenchApiClient(), []);
-  const [projects, setProjects] = useState<ProjectItem[]>([]);
-  const [projectView, setProjectView] = useState<ProjectLifecycleState>("active");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState("");
-  const [loadState, setLoadState] = useState<WorkbenchLoadState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [input, setInput] = useState("");
+  const state = useWorkbenchProjectState();
   const [pendingConfirmationActionId, setPendingConfirmationActionId] = useState<string | null>(null);
-  const [reference, setReference] = useState<string | null>(null);
-  const [composerArtifactRefs, setComposerArtifactRefs] = useState<string[]>([]);
   const [composerSubmitting, setComposerSubmitting] = useState(false);
-  const [turnJobs, setTurnJobs] = useState<ConversationTurnJob[]>([]);
-  const executionFeedback: WorkbenchExecutionFeedback | null = null;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [composerNotice, setComposerNotice] = useState<string | null>(null);
-  const [detailItem, setDetailItem] = useState<ArtifactItem | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [railOpen, setRailOpen] = useState(false);
-  const [sidePanelItem, setSidePanelItem] = useState<ArtifactItem | null>(null);
-  const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
-  const [activeArtifactKey, setActiveArtifactKey] = useState("");
   const [realAssetGenerationKey, setRealAssetGenerationKey] = useState<string | null>(null);
-  const xiaokuResponseStyle = useSyncExternalStore(
-    subscribeXiaoKuResponseStyle,
-    readXiaoKuResponseStyle,
-    getServerXiaoKuResponseStyle,
-  );
-
-  const activeArtifact = useMemo(
-    () => artifacts.find((item) => item.key === activeArtifactKey) ?? artifacts[0] ?? null,
-    [activeArtifactKey, artifacts],
-  );
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === activeProjectId) ?? null,
-    [activeProjectId, projects],
-  );
-  const projectBusy = useMemo(
-    () => turnJobs.some((job) => hasPendingTurnStatus(job.status)) || messages.some((message) => hasPendingTurnStatus(message.turnStatus)),
-    [messages, turnJobs],
-  );
-  const composerSubmittingRef = useRef(false);
-  const messageIdempotencyRef = useRef(new Map<string, string>());
-  const composerNoticeTimer = useRef<number | null>(null);
+  const xiaokuResponseStyle = useSyncExternalStore(subscribeXiaoKuResponseStyle, readXiaoKuResponseStyle, getServerXiaoKuResponseStyle);
+  const sync = useWorkbenchProjectSync({
+    dataSource,
+    state,
+    eventDrivenMessages: options.eventDrivenMessages ?? false,
+    composerSubmitting,
+    setPendingConfirmationActionId,
+    setNotice,
+  });
+  const actions = useWorkbenchProjectActions({ dataSource, state, sync, setPendingConfirmationActionId, setNotice });
+  const composer = useWorkbenchComposerController({
+    dataSource,
+    state,
+    sync,
+    pendingConfirmationActionId,
+    setPendingConfirmationActionId,
+    composerSubmitting,
+    setComposerSubmitting,
+    xiaokuResponseStyle,
+  });
   const intensityVersionRef = useRef(new Map<string, number>());
-  const activeProjectIdRef = useRef("");
-  const snapshotCommitWatermarkRef = useRef<SnapshotCommitWatermark | null>(null);
-  const eventSnapshotCoordinatorRef = useRef<EventSnapshotCoordinator | null>(null);
-
   useEffect(() => {
-    if (activeProject) intensityVersionRef.current.set(activeProject.id, activeProject.intensityVersion ?? 0);
-  }, [activeProject]);
-
-  const clearActiveProject = useCallback(() => {
-    activeProjectIdRef.current = "";
-    setActiveProjectId("");
-    setPendingConfirmationActionId(null);
-    window.localStorage.removeItem(activeProjectStorageKey);
-    setMessages([]);
-    setArtifacts([]);
-    setTurnJobs([]);
-    setActiveArtifactKey("");
-    setDetailItem(null);
-    setSidePanelItem(null);
-    setSidePanelOpen(false);
-    setDetailOpen(false);
-  }, []);
-
-  const applySnapshotState = useCallback((snapshot: WorkbenchSnapshot) => {
-    activeProjectIdRef.current = snapshot.project.id;
-    setActiveProjectId(snapshot.project.id);
-    window.localStorage.setItem(activeProjectStorageKey, snapshot.project.id);
-    setMessages(snapshot.messages);
-    setArtifacts(snapshot.artifacts);
-    setTurnJobs(snapshot.turnJobs ?? []);
-    setActiveArtifactKey(snapshot.activeArtifactKey);
-    setDetailItem((current) => current
-      ? snapshot.artifacts.find((item) => item.key === current.key)
-        ?? snapshot.artifacts.find((item) => item.nodeKey === current.nodeKey)
-        ?? current
-      : current);
-    setSidePanelItem((current) => current
-      ? snapshot.artifacts.find((item) => item.key === current.key)
-        ?? snapshot.artifacts.find((item) => item.nodeKey === current.nodeKey)
-        ?? current
-      : current);
-    setProjects((current) => current.map((project) => (project.id === snapshot.project.id ? snapshot.project : project)));
-    setErrorMessage(null);
-    setLoadState("ready");
-  }, []);
-
-  const beginSnapshotRequest = useCallback(
-    (projectId: string) => {
-      const watermark = snapshotCommitWatermarkRef.current;
-      if (!watermark) throw new Error("Project snapshot commit watermark is not ready.");
-      return watermark.begin(projectId);
-    },
-    [],
-  );
-  const applySnapshot = useCallback(
-    (snapshot: WorkbenchSnapshot, token: ProjectSnapshotCommitToken) => {
-      const watermark = snapshotCommitWatermarkRef.current;
-      if (!watermark) throw new Error("Project snapshot commit watermark is not ready.");
-      return watermark.commit(snapshot, token);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const watermark = createProjectSnapshotCommitWatermark({ applySnapshot: applySnapshotState });
-    const coordinator = createProjectSnapshotRefreshCoordinator({
-      loadSnapshot: dataSource.getProjectSnapshot,
-      beginSnapshotRequest: watermark.begin,
-      applySnapshot: (snapshot, token) => {
-        if (!token) throw new Error("Project event snapshot commit token is missing.");
-        watermark.commit(snapshot, token);
-      },
-      isCurrentProject: (projectId: string) => activeProjectIdRef.current === projectId,
-      onError: () => setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。"),
-    });
-    snapshotCommitWatermarkRef.current = watermark;
-    eventSnapshotCoordinatorRef.current = coordinator;
-    return () => {
-      snapshotCommitWatermarkRef.current = null;
-      eventSnapshotCoordinatorRef.current = null;
-    };
-  }, [applySnapshotState, dataSource]);
-
-  const loadProject = useCallback(
-    async (projectId: string) => {
-      setLoadState("loading");
-      try {
-        const snapshotRequest = beginSnapshotRequest(projectId);
-        const snapshot = await dataSource.getProjectSnapshot(projectId);
-        if (snapshot.project.lifecycleState !== "active") {
-          const activeProjects = await dataSource.listProjects("active");
-          setProjects(activeProjects);
-          setProjectView("active");
-          clearActiveProject();
-          setNotice("项目状态已变化，已返回进行中的项目列表。");
-          setLoadState("ready");
-          return;
-        }
-        applySnapshot(snapshot, snapshotRequest);
-      } catch (error) {
-        setLoadState("error");
-        setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "项目内容暂时没有取回，请稍后再试。");
-      }
-    },
-    [applySnapshot, beginSnapshotRequest, clearActiveProject, dataSource],
-  );
-
-  useEffect(() => {
-    if (options.eventDrivenMessages || !activeProjectId || !projectBusy || composerSubmitting || loadState !== "ready") return;
-
-    let active = true;
-    let snapshotPollingTimer: number | null = null;
-
-    function scheduleNextSnapshotRefresh() {
-      snapshotPollingTimer = window.setTimeout(async () => {
-        try {
-          const snapshotRequest = beginSnapshotRequest(activeProjectId);
-          const snapshot = await dataSource.getProjectSnapshot(activeProjectId);
-          if (!active) return;
-          if (snapshot.project.lifecycleState !== "active") {
-            const activeProjects = await dataSource.listProjects("active");
-            if (!active) return;
-            setProjects(activeProjects);
-            setProjectView("active");
-            clearActiveProject();
-            setNotice("项目状态已变化，已返回进行中的项目列表。");
-            setLoadState("ready");
-            return;
-          }
-          applySnapshot(snapshot, snapshotRequest);
-          if (snapshotHasPendingTurn(snapshot)) scheduleNextSnapshotRefresh();
-        } catch {
-          if (!active) return;
-          setErrorMessage("项目进度暂时没有刷新成功，请稍后再试。");
-          scheduleNextSnapshotRefresh();
-        }
-      }, snapshotPollingIntervalMs);
-    }
-
-    scheduleNextSnapshotRefresh();
-    return () => {
-      active = false;
-      if (snapshotPollingTimer) window.clearTimeout(snapshotPollingTimer);
-    };
-  }, [activeProjectId, applySnapshot, beginSnapshotRequest, clearActiveProject, composerSubmitting, dataSource, loadState, options.eventDrivenMessages, projectBusy]);
-
-  const refreshProjectFromAgentEvent = useCallback(async (event: TeacherAgentEvent) => {
-    if (!options.eventDrivenMessages || event.projectId !== activeProjectIdRef.current || !shouldRefreshSnapshotForAgentEvent(event)) return null;
-    return eventSnapshotCoordinatorRef.current?.request({ projectId: event.projectId, requiredSequence: event.sequence }) ?? null;
-  }, [options.eventDrivenMessages]);
-
-  const correctProjectFromAgentStreamError = useCallback(async () => {
-    const projectId = activeProjectIdRef.current;
-    if (!options.eventDrivenMessages || !projectId) return;
-    await eventSnapshotCoordinatorRef.current?.request({ projectId, requiredSequence: 0 });
-  }, [options.eventDrivenMessages]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadInitialState() {
-      setLoadState("loading");
-      try {
-        const nextProjects = await dataSource.listProjects("active");
-        if (!active) return;
-        setProjects(nextProjects);
-        activeProjectIdRef.current = "";
-        setActiveProjectId("");
-        setMessages([]);
-        setArtifacts([]);
-        setTurnJobs([]);
-        setLoadState("ready");
-      } catch (error) {
-        if (!active) return;
-        setLoadState("error");
-        setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "项目内容暂时没有取回，请稍后再试。");
-      }
-    }
-
-    loadInitialState();
-    return () => {
-      active = false;
-    };
-  }, [dataSource]);
-
+    if (state.activeProject) intensityVersionRef.current.set(state.activeProject.id, state.activeProject.intensityVersion ?? 0);
+  }, [state.activeProject]);
   function setXiaoKuResponseStyle(value: XiaoKuResponseStyle) {
     const normalized = normalizeXiaoKuResponseStyle(value);
     window.localStorage.setItem(xiaokuResponseStyleStorageKey, normalized);
     window.dispatchEvent(new Event(xiaokuResponseStyleChangeEvent));
   }
-
-  function flashComposerNotice(message: string) {
-    setComposerNotice(message);
-    if (composerNoticeTimer.current) {
-      window.clearTimeout(composerNoticeTimer.current);
-    }
-    composerNoticeTimer.current = window.setTimeout(() => setComposerNotice(null), 1800);
-  }
-
-  function openDetail(item: ArtifactItem) {
-    setDetailItem(item);
-    setDetailOpen(true);
-  }
-
-  function selectProject(projectId: string) {
-    setPendingConfirmationActionId(null);
-    activeProjectIdRef.current = projectId;
-    setActiveProjectId(projectId);
-    setSidePanelOpen(false);
-    setDetailOpen(false);
-    loadProject(projectId);
-  }
-
-  async function createProject() {
-    setPendingConfirmationActionId(null);
-    setLoadState("loading");
-    try {
-      const snapshot = await dataSource.createProject();
-      const snapshotRequest = beginSnapshotRequest(snapshot.project.id);
-      const nextProjects = await dataSource.listProjects();
-      setProjects(nextProjects);
-      setProjectView("active");
-      applySnapshot(snapshot, snapshotRequest);
-      setNotice("已新建公开课项目，可以开始描述备课目标。");
-      return true;
-    } catch (error) {
-      setLoadState("error");
-      setErrorMessage(error instanceof Error && "userMessage" in error ? String(error.userMessage) : "新项目暂时没有创建成功，请稍后再试。");
-      return false;
-    }
-  }
-
-  function openSidePanel(item: ArtifactItem) {
-    if (sidePanelOpen && sidePanelItem?.key === item.key) {
-      setSidePanelOpen(false);
-      return;
-    }
-    setSidePanelItem(item);
-    setSidePanelOpen(true);
-  }
-
-  async function copyArtifact(item: ArtifactItem) {
-    const text = artifactText(item);
-    try {
-      await navigator.clipboard.writeText(text);
-      setNotice(`已复制「${item.title}」关键内容。`);
-      return true;
-    } catch {
-      setNotice(`复制没有成功，请打开「${item.title}」详情后手动选择内容。`);
-      return false;
-    }
-  }
-
-  function useAsInput(item: ArtifactItem) {
-    const text = artifactText(item);
-    setPendingConfirmationActionId(null);
-    setReference(`${item.title}：${item.summary}`);
-    setComposerArtifactRefs(item.artifactId ? [item.artifactId] : []);
-    setInput((current) => (current ? `${current}\n\n请基于：${text}` : `请基于：${text}`));
-    setNotice(`已把「${item.title}」插入为下一步输入。`);
-    flashComposerNotice("已插入为下一步输入。");
-    setRailOpen(false);
-    setSidePanelOpen(false);
-    setDetailOpen(false);
-  }
-
-  function attachComposerFile(fileName: string, text: string) {
-    setPendingConfirmationActionId(null);
-    setReference(`资料《${fileName}》：\n${text}`);
-    setComposerArtifactRefs([]);
-    flashComposerNotice(`已附加《${fileName}》，发送时会作为本轮资料引用。`);
-  }
-
-  function clearComposerReference() {
-    setPendingConfirmationActionId(null);
-    setReference(null);
-    setComposerArtifactRefs([]);
-  }
-
-  async function setMessageReaction(messageId: string, value: ChatMessage["reaction"] | null) {
-    if (!activeProjectId || !dataSource.setMessageReaction) return;
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.setMessageReaction(activeProjectId, messageId, value);
-      applySnapshot(snapshot, snapshotRequest);
-    } catch {
-      setNotice("这条反馈标签暂时没有保存，请稍后重试。");
-    }
-  }
-
-  async function openProjectView(view: ProjectLifecycleState) {
-    setLoadState("loading");
-    try {
-      const nextProjects = await dataSource.listProjects(view);
-      setProjects(nextProjects);
-      setProjectView(view);
-      clearActiveProject();
-      setLoadState("ready");
-    } catch {
-      setLoadState("error");
-      setErrorMessage("项目列表暂时没有取回，请稍后再试。");
-    }
-  }
-
-  async function mutateProjectLifecycle(projectId: string, mutation: ProjectLifecycleMutation) {
-    try {
-      const result = await dataSource.mutateProjectLifecycle(projectId, mutation);
-      if (result.project.lifecycleState === "active" && projectView !== "active") {
-        const activeProjects = await dataSource.listProjects("active");
-        setProjects(activeProjects);
-        setProjectView("active");
-        await loadProject(projectId);
-        setNotice(result.changed ? "项目已恢复到进行中的项目列表。" : "项目状态没有变化。");
-        return result;
-      }
-      const targetView = result.project.lifecycleState === "active" && projectView === "active" ? "active" : projectView;
-      const nextProjects = await dataSource.listProjects(targetView);
-      setProjects(nextProjects);
-      if (result.project.lifecycleState !== "active" && projectId === activeProjectId) {
-        clearActiveProject();
-        setProjectView("active");
-        setProjects(await dataSource.listProjects("active"));
-      }
-      setNotice(result.changed ? "项目状态已更新。" : "项目状态没有变化。");
-      return result;
-    } catch (error) {
-      const status = error instanceof Error && "status" in error ? Number(error.status) : undefined;
-      setNotice(status === 409 ? "项目状态已变化，请刷新后再操作。" : "项目操作暂时没有完成，请稍后重试。");
-      throw error;
-    }
-  }
-
+  const navigation = useWorkbenchArtifactNavigation({ state, composer, setPendingConfirmationActionId, setNotice });
   async function updateGenerationIntensity(intensity: GenerationIntensity, confirmationActionId?: string) {
+    const activeProject = state.activeProject;
     if (!activeProject) throw new Error("No active project.");
     try {
-      const result = await dataSource.updateGenerationIntensity(
-        activeProject.id,
-        intensity,
-        intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0,
-        confirmationActionId,
-      );
+      const result = await dataSource.updateGenerationIntensity(activeProject.id, intensity, intensityVersionRef.current.get(activeProject.id) ?? activeProject.intensityVersion ?? 0, confirmationActionId);
       intensityVersionRef.current.set(result.project.id, result.project.intensityVersion ?? 0);
-      setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
+      state.setProjects((current) => current.map((project) => project.id === result.project.id ? result.project : project));
       if (!result.confirmationRequired) setNotice(`生成强度已调整为${intensity === "standard" ? "标准" : intensity === "enhanced" ? "增强" : intensity === "deep" ? "深度" : "极致"}，从下一条任务开始生效。`);
       return result;
     } catch (error) {
       const status = error instanceof Error && "status" in error ? Number(error.status) : undefined;
-      if (status === 409) await loadProject(activeProject.id);
+      if (status === 409) await sync.loadProject(activeProject.id);
       throw error;
     }
   }
-
-  function updateInput(value: string) {
-    setPendingConfirmationActionId(null);
-    setInput(value);
-  }
-
-  async function confirmArtifact(item: ArtifactItem) {
-    if (!activeProjectId) return;
-    const artifactKey = resolveArtifactActionKey(item, "confirm");
-    if (!artifactKey) {
-      setNotice(`「${item.title}」暂时没有确认成功，请稍后再试。`);
-      return;
-    }
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.approveArtifact(activeProjectId, artifactKey);
-      applySnapshot(snapshot, snapshotRequest);
-      setNotice(`已确认「${item.title}」，下一步会使用它继续生成。`);
-    } catch {
-      setNotice(`「${item.title}」暂时没有确认成功，请稍后再试。`);
-    }
-  }
-  async function requestArtifactRegeneration(item: ArtifactItem) {
-    const submission = buildArtifactRegenerationSubmission(item);
-    if (!activeProjectId || !submission) {
-      setNotice(`「${item.title}」暂时没有开始重做，请稍后再试。`);
-      return;
-    }
-    setDetailOpen(false);
-    await submitConversationMessage(submission, "artifact_action");
-  }
-  async function generateRealAsset(item: ArtifactItem, assetKind: RealAssetKind) {
-    if (!activeProjectId || !item.artifactId) {
-      setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
-      return;
-    }
-    const action = getRealAssetGenerationActions(item).find((candidate) => candidate.kind === assetKind);
-    if (!action?.actionId) {
-      setNotice(`「${item.title}」暂时不能生成真实素材，请稍后再试。`);
-      return;
-    }
-    const nextGenerationKey = `${item.artifactId}:${assetKind}`;
-    setRealAssetGenerationKey(nextGenerationKey);
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.generateRealAsset(activeProjectId, item.artifactId, assetKind, { confirmedActionId: action.actionId });
-      applySnapshot(snapshot, snapshotRequest);
-      setNotice(action.successNotice);
-    } catch {
-      setNotice(action.failureNotice);
-    } finally {
-      setRealAssetGenerationKey(null);
-    }
-  }
-
-  async function submitConversationMessage(submission: SubmitConversationMessageInput, origin: ConversationSubmissionOrigin = "composer") {
-    if (composerSubmittingRef.current || composerSubmitting) {
-      flashComposerNotice("正在发送，请稍候。");
-      return;
-    }
-    const body = submission.body.trim();
-    const submittedReference = submission.reference?.trim() || null;
-    const artifactRefs = [...new Set(submission.artifactRefs.map((value) => value.trim()).filter(Boolean))];
-    if (!body && !submittedReference) {
-      flashComposerNotice("先输入内容，或从右侧选择一个上游产物。");
-      return;
-    }
-    let targetProjectId = activeProjectId;
-    let snapshotRequest = targetProjectId ? beginSnapshotRequest(targetProjectId) : null;
-    const policy = resolveConversationSubmissionPolicy(origin);
-    const confirmationActionId = policy.bindPendingConfirmation ? resolveBoundConfirmationActionId({
-      submittedActionId: submission.confirmedActionId,
-      pendingActionId: pendingConfirmationActionId,
-      submittedBody: body,
-      boundBody: input,
-    }) : null;
-    const displayBody = submittedReference ? `${body || "请参考这份资料继续。"}\n\n引用：${submittedReference}` : body;
-    const optimisticMessage: ChatMessage = {
-      id: `optimistic-teacher-${Date.now()}`,
-      speaker: "teacher",
-      body: displayBody,
-      artifactRefs,
-      turnStatus: projectBusy ? "queued" : "running",
-      turnStatusLabel: projectBusy ? "排队中" : "正在生成",
-    };
-    if (policy.clearComposer) {
-      setInput(""); setPendingConfirmationActionId(null);
-      setReference(null); setComposerArtifactRefs([]);
-    }
-    composerSubmittingRef.current = true;
-    setComposerSubmitting(true);
-    setMessages((current) => [...current, optimisticMessage]);
-    flashComposerNotice(projectBusy ? "已加入队列" : "已发送，正在生成");
-    try {
-      if (!targetProjectId) {
-        flashComposerNotice("正在新建项目并发送");
-        const createdSnapshot = await dataSource.createProject();
-        targetProjectId = createdSnapshot.project.id;
-        const createSnapshotRequest = beginSnapshotRequest(targetProjectId);
-        const nextProjects = await dataSource.listProjects();
-        setProjects(nextProjects);
-        setProjectView("active");
-        applySnapshot(createdSnapshot, createSnapshotRequest);
-        setMessages((current) => [...current, optimisticMessage]);
-        snapshotRequest = beginSnapshotRequest(targetProjectId);
-      }
-
-      const messageSignature = buildClientMessageSignature(targetProjectId, body, submittedReference, confirmationActionId, xiaokuResponseStyle, artifactRefs);
-      const sendOptions: WorkbenchSendMessageOptions = {
-        idempotencyKey: getRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature),
-        ...(confirmationActionId ? { confirmedActionId: confirmationActionId } : {}),
-        responseStyle: xiaokuResponseStyle,
-      };
-      const snapshot = await dataSource.submitConversationMessage(targetProjectId, {
-        body,
-        reference: submittedReference,
-        artifactRefs,
-        ...sendOptions,
-      });
-      if (!snapshotRequest) throw new Error("Conversation snapshot commit token is missing.");
-      applySnapshot(snapshot, snapshotRequest);
-      clearRetrySafeMessageIdempotencyKey(messageIdempotencyRef, messageSignature);
-      flashComposerNotice("已发送");
-    } catch {
-      setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
-      if (policy.restoreOnFailure) {
-        setInput(body); setPendingConfirmationActionId(confirmationActionId);
-        setReference(submittedReference); setComposerArtifactRefs(artifactRefs);
-      }
-      flashComposerNotice("发送没有成功，请稍后再试。");
-    } finally {
-      composerSubmittingRef.current = false;
-      setComposerSubmitting(false);
-    }
-  }
-
-  async function recoverConversationTurn(checkpointId: string) {
-    if (!activeProjectId || composerSubmittingRef.current || composerSubmitting) return;
-    composerSubmittingRef.current = true;
-    setComposerSubmitting(true);
-    flashComposerNotice("正在从已保存的进度恢复");
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      applySnapshot(await dataSource.recoverConversationTurn(activeProjectId, checkpointId), snapshotRequest);
-      flashComposerNotice("已恢复当前任务");
-    } catch {
-      flashComposerNotice("当前进度暂时不能恢复，请刷新后重试。");
-    } finally {
-      composerSubmittingRef.current = false;
-      setComposerSubmitting(false);
-    }
-  }
-
-  async function sendPrompt() {
-    return submitConversationMessage({
-      body: input,
-      reference,
-      artifactRefs: composerArtifactRefs,
-      ...(pendingConfirmationActionId ? { confirmedActionId: pendingConfirmationActionId } : {}),
-    });
-  }
-
-  async function submitPptSampleReview(item: ArtifactItem, review: PptSampleReviewSubmission) {
-    if (!activeProjectId || !item.artifactId) return;
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.submitPptSampleReview(activeProjectId, item.artifactId, review);
-      applySnapshot(snapshot, snapshotRequest);
-      const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.findings.length === 0);
-      setNotice(passed ? "样张审查已通过，请确认是否用于后续批量制作。" : "样张问题已记录，可以按页调整后重新审查。");
-    } catch {
-      setNotice("样张审查暂时没有保存成功，请检查各页结论后重试。");
-    }
-  }
-
-  async function submitPptFullDeckReview(item: ArtifactItem, review: PptFullDeckReviewSubmission) {
-    if (!activeProjectId || !item.artifactId) return;
-    try {
-      const snapshotRequest = beginSnapshotRequest(activeProjectId);
-      const snapshot = await dataSource.submitPptFullDeckReview(activeProjectId, item.artifactId, review);
-      applySnapshot(snapshot, snapshotRequest);
-      const passed = review.qa.every((entry) => entry.design === "passed" && entry.visual === "passed" && entry.provenance === "passed" && entry.readability === "passed" && entry.findings.length === 0);
-      setNotice(passed ? "完整课件逐页审查已通过，请确认是否进入最终交付。" : "页面问题已记录，可以按页返修后重新审查。");
-    } catch {
-      setNotice("完整课件审查暂时没有保存成功，请检查逐页结论后重试。");
-    }
-  }
-
-  function selectQuickReply(value: string, actionId?: string) {
-    setPendingConfirmationActionId(actionId?.trim() || null);
-    setInput(value);
-    flashComposerNotice("已填入，可修改后发送。");
-  }
-
-  function showRecovery() {
-    const blocked = artifacts.find((item) => item.key === "video-storyboard");
-    if (blocked) openDetail(blocked);
-    setNotice("失败恢复示例已打开：旧内容会保留，并提示下一步能做什么。");
-  }
-
+  const operations = useWorkbenchArtifactOperations({ dataSource, state, sync, composer, setNotice, setRealAssetGenerationKey });
+  const executionFeedback: WorkbenchExecutionFeedback | null = null;
   return {
-    activeProjectId,
-    activeProject,
-    projects,
-    projectView,
-    messages,
-    loadState,
-    errorMessage,
-    selectProject,
-    openProjectView,
-    mutateProjectLifecycle,
+    activeProjectId: state.activeProjectId,
+    activeProject: state.activeProject,
+    projects: state.projects,
+    projectView: state.projectView,
+    messages: state.messages,
+    loadState: state.loadState,
+    errorMessage: state.errorMessage,
+    selectProject: actions.selectProject,
+    openProjectView: actions.openProjectView,
+    mutateProjectLifecycle: actions.mutateProjectLifecycle,
     updateGenerationIntensity,
-    createProject,
-    retryActiveProject: () => (activeProjectId ? loadProject(activeProjectId) : undefined),
+    createProject: actions.createProject,
+    retryActiveProject: () => (state.activeProjectId ? sync.loadProject(state.activeProjectId) : undefined),
     sidebarCollapsed,
     setSidebarCollapsed,
-    input,
-    setInput: updateInput,
-    reference,
-    setReference,
-    clearComposerReference,
-    composerArtifactRefs,
+    input: composer.input,
+    setInput: composer.setInput,
+    reference: composer.reference,
+    setReference: composer.setReference,
+    clearComposerReference: composer.clearComposerReference,
+    composerArtifactRefs: composer.composerArtifactRefs,
     pendingConfirmationActionId,
     composerSubmitting,
-    projectBusy,
-    turnJobs,
+    projectBusy: state.projectBusy,
+    turnJobs: state.turnJobs,
     executionFeedback,
     notice,
-    composerNotice,
-    flashComposerNotice,
-    detailItem,
-    detailOpen,
-    setDetailOpen,
-    railOpen,
-    setRailOpen,
-    sidePanelItem,
-    sidePanelOpen,
-    setSidePanelOpen,
-    artifacts,
-    activeArtifact,
-    openDetail,
-    openSidePanel,
-    copyArtifact,
-    useAsInput,
-    setMessageReaction,
-    attachComposerFile,
-    confirmArtifact,
-    submitPptSampleReview,
-    submitPptFullDeckReview,
-    requestArtifactRegeneration,
-    generateRealAsset,
+    composerNotice: composer.composerNotice,
+    flashComposerNotice: composer.flashComposerNotice,
+    detailItem: state.detailItem,
+    detailOpen: state.detailOpen,
+    setDetailOpen: state.setDetailOpen,
+    railOpen: state.railOpen,
+    setRailOpen: state.setRailOpen,
+    sidePanelItem: state.sidePanelItem,
+    sidePanelOpen: state.sidePanelOpen,
+    setSidePanelOpen: state.setSidePanelOpen,
+    artifacts: state.artifacts,
+    activeArtifact: state.activeArtifact,
+    openDetail: navigation.openDetail,
+    openSidePanel: navigation.openSidePanel,
+    copyArtifact: navigation.copyArtifact,
+    useAsInput: navigation.useAsInput,
+    setMessageReaction: actions.setMessageReaction,
+    attachComposerFile: composer.attachComposerFile,
+    confirmArtifact: operations.confirmArtifact,
+    submitPptSampleReview: operations.submitPptSampleReview,
+    submitPptFullDeckReview: operations.submitPptFullDeckReview,
+    requestArtifactRegeneration: operations.requestArtifactRegeneration,
+    generateRealAsset: operations.generateRealAsset,
     realAssetGenerationKey,
     xiaokuResponseStyle,
     setXiaoKuResponseStyle,
-    sendPrompt,
-    submitConversationMessage,
-    recoverConversationTurn,
-    refreshProjectFromAgentEvent,
-    correctProjectFromAgentStreamError,
-    selectQuickReply,
-    showRecovery,
+    sendPrompt: composer.sendPrompt,
+    submitConversationMessage: (submission: SubmitConversationMessageInput, origin?: ConversationSubmissionOrigin) => composer.submitConversationMessage(submission, origin),
+    recoverConversationTurn: composer.recoverConversationTurn,
+    refreshProjectFromAgentEvent: sync.refreshProjectFromAgentEvent,
+    correctProjectFromAgentStreamError: sync.correctProjectFromAgentStreamError,
+    selectQuickReply: composer.selectQuickReply,
+    showRecovery: navigation.showRecovery,
   };
-}
-
-export function resolveBoundConfirmationActionId(input: {
-  submittedActionId?: string;
-  pendingActionId: string | null;
-  submittedBody: string;
-  boundBody: string;
-}) {
-  const submittedActionId = input.submittedActionId?.trim() || null;
-  if (!submittedActionId || submittedActionId !== input.pendingActionId?.trim()) return null;
-  return input.submittedBody.trim() === input.boundBody.trim() ? submittedActionId : null;
 }
 
 function subscribeXiaoKuResponseStyle(onStoreChange: () => void) {

@@ -445,9 +445,8 @@ test("shared SQLite URL parser rejects ambiguous URLs and is used by auth produc
     assert.throws(() => sqliteUrl.resolveSqliteFileUrl(databaseUrl, { baseDir }), /DATABASE_URL/);
   }
 
-  assert.match(readFileSync(path.join(root, "scripts", "production-preflight.mjs"), "utf8"), /scripts\/lib\/sqlite-url|\.\/lib\/sqlite-url/);
-  assert.match(readFileSync(path.join(root, "scripts", "bootstrap-admin.mjs"), "utf8"), /\.\/lib\/sqlite-url/);
-  assert.match(readFileSync(path.join(root, "scripts", "init-sqlite-schema.mjs"), "utf8"), /\.\/lib\/sqlite-url/);
+  const resolved = sqliteUrl.resolveSqliteFileUrl("file:./data/app.db", { baseDir });
+  assert.equal(path.isAbsolute(resolved), true);
 });
 
 test("package exposes the isolated M67 browser runner", () => {

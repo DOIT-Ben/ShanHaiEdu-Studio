@@ -6,6 +6,12 @@ import { pathToFileURL } from "node:url";
 
 const installerName = "ShanHaiEdu Studio Setup 0.1.0.exe";
 const appExeName = "ShanHaiEdu Studio.exe";
+export const DESKTOP_USER_DATA_DIRECTORIES = Object.freeze([
+  "data",
+  "artifact-storage-root",
+  "logs",
+  "crash-dumps",
+]);
 
 export async function runDesktopInstallerSmoke({
   cwd = process.cwd(),
@@ -396,12 +402,7 @@ function resolveStartMenuShortcutPath() {
 }
 
 function checkDesktopUserData(userDataDir) {
-  return (
-    existsSync(path.join(userDataDir, "data")) &&
-    existsSync(path.join(userDataDir, "artifact-storage-root")) &&
-    existsSync(path.join(userDataDir, "logs")) &&
-    existsSync(path.join(userDataDir, "crash-dumps"))
-  );
+  return DESKTOP_USER_DATA_DIRECTORIES.every((directory) => existsSync(path.join(userDataDir, directory)));
 }
 
 function resolveInstalledServerPath(installDir) {

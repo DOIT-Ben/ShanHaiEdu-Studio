@@ -32,6 +32,7 @@
 2. `decisions\2026-07-14-adr-r5-ppt-design-candidate-boundary.md`
 3. `decisions\2026-07-16-adr-main-agent唯一编排与工作流原子Tool化.md`
 4. `decisions\2026-07-17-adr-project-development-gates.md`
+5. `decisions\2026-07-20-adr-risk-based-complexity-governance.md`
 
 入口：`decisions\README.md`。
 

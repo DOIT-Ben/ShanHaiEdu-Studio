@@ -301,19 +301,32 @@ describe("A17 artifact route ExecutionEnvelope", () => {
       "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/coze-ppt/route.ts",
     ];
     for (const relativePath of routePaths) {
-      const source = readFileSync(path.join(root, relativePath), "utf8");
-      expect(source).toContain("claimArtifactRouteToolExecution");
-      expect(source).toContain("commitArtifactRouteToolSuccess");
-      expect(source).toContain("commitArtifactRouteToolFailure");
-      expect(source).not.toContain("commitGenerationResult");
-      expect(source).not.toContain("resumeStagedGenerationResult");
+      const source = [
+        readFileSync(path.join(root, relativePath), "utf8"),
+        ...(relativePath.endsWith("/video/route.ts")
+          ? [readFileSync(path.join(root, "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/video-route-generation.ts"), "utf8")]
+          : []),
+      ].join("\n");
+      expect(
+        source.includes("claimArtifactRouteToolExecution") &&
+        source.includes("commitArtifactRouteToolSuccess"),
+      ).toBe(true);
+      expect(
+        source.includes("commitArtifactRouteToolFailure") &&
+        !source.includes("commitGenerationResult") &&
+        !source.includes("resumeStagedGenerationResult"),
+      ).toBe(true);
     }
 
     const boundary = readFileSync(path.join(root, "src/server/tools/artifact-route-tool-execution.ts"), "utf8");
-    expect(boundary).toContain("executeThroughToolGateway");
-    expect(boundary).toContain("createExecutionEnvelope");
-    expect(boundary).toContain("startArtifactRouteToolInvocation");
-    expect(boundary).toContain("commitToolResult");
+    expect([
+      "executeThroughToolGateway",
+      "createExecutionEnvelope",
+    ].every((marker) => boundary.includes(marker))).toBe(true);
+    expect([
+      "startArtifactRouteToolInvocation",
+      "commitToolResult",
+    ].every((marker) => boundary.includes(marker))).toBe(true);
   });
 });
 

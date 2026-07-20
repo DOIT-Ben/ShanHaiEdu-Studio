@@ -33,11 +33,11 @@ test("ShanHaiThread renders only explicit quick reply choices", () => {
 
 test("ConversationWorkbench routes quick reply choices into the composer without sending", () => {
   const conversationSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
-  const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
+  const controllerSource = readSource("src/hooks/useWorkbenchComposerController.ts");
 
   assert.match(conversationSource, /onSelectAction=\{onQuickReplySelect \?\? onInputChange\}/);
-  assert.match(controllerSource, /function selectQuickReply/);
-  assert.match(controllerSource, /setInput\(value\)/);
+  assert.match(controllerSource, /const selectQuickReply = useCallback/);
+  assert.match(controllerSource, /setInputState\(value\)/);
   assert.doesNotMatch(controllerSource, /selectQuickReply[\s\S]*sendPrompt\(/);
 });
 

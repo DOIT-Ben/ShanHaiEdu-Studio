@@ -29,7 +29,12 @@ const routeCases = [
 
 test("M61 real generation routes require route-level PlanGuard/HumanGate before jobs or artifacts", () => {
   for (const routeCase of routeCases) {
-    const source = readSource(routeCase.routePath);
+    const source = [
+      readSource(routeCase.routePath),
+      ...(routeCase.label === "video"
+        ? [readSource("src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/video-route-generation.ts")]
+        : []),
+    ].join("\n");
     const guardIndex = source.indexOf("assertRouteLevelGenerationConfirmation({");
     const createJobIndex = source.indexOf("createGenerationJob");
     const commitResultIndex = source.indexOf("await commitArtifactRouteToolSuccess({");

@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createDeployDemoCommandEnvironment } from "./ops-runtime-config.mjs";
 
 if (process.env.SHANHAI_DEPLOY_DEMO_PREFLIGHT_SKIP_DOTENV !== "1") {
   await import("dotenv/config");
@@ -21,20 +22,12 @@ const databasePath = path.join(sharedRoot, "data", "production.db");
 const artifactRoot = path.join(sharedRoot, "artifacts");
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(artifactRoot);
-const commandEnv = {
-  ...process.env,
-  SHANHAI_AUTH_MODE: "password",
-  NEXT_PUBLIC_SHANHAI_AUTH_MODE: "password",
-  SHANHAI_TRUST_PROXY: "1",
-  SHANHAI_APP_INSTANCE_COUNT: "1",
-  SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
-  NEXT_PUBLIC_SHANHAI_PUBLIC_REGISTRATION_ENABLED: "0",
-  SHANHAI_BOOTSTRAP_ADMIN_EMAIL: "deploy_demo_admin",
-  SHANHAI_BOOTSTRAP_ADMIN_DISPLAY_NAME: "部署验收管理员",
-  SHANHAI_BOOTSTRAP_ADMIN_INITIAL_PASSWORD: randomBytes(24).toString("base64url"),
-  DATABASE_URL: `file:${databasePath}`,
-  ARTIFACT_STORAGE_ROOT: artifactRoot,
-};
+const commandEnv = createDeployDemoCommandEnvironment({
+  baseEnv: process.env,
+  databasePath,
+  artifactRoot,
+  bootstrapPassword: randomBytes(24).toString("base64url"),
+});
 
 fs.rmSync(reportJsonPath, { force: true });
 fs.rmSync(reportMarkdownPath, { force: true });

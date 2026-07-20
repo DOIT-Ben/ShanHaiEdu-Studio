@@ -5,6 +5,7 @@ export type RealAssetKind = "pptx" | "image" | "video";
 export type RealAssetGenerationAction = {
   kind: RealAssetKind;
   actionId?: string;
+  shotId?: string;
   label: string;
   pendingLabel: string;
   successNotice: string;
@@ -45,12 +46,15 @@ export function getRealAssetGenerationActions(item: ArtifactItem): RealAssetGene
   }
 
   if ((item.nodeKey === "video_segment_plan" || item.kind === "video_segment_plan") && item.status === "approved") {
-    const actionId = item.routeGenerationActions?.video_segment_generate?.actionId;
-    if (!actionId) return [];
+    const routeAction = item.routeGenerationActions?.video_segment_generate;
+    const actionId = routeAction?.actionId;
+    const shotId = routeAction?.shotId;
+    if (!actionId || !shotId || !/^shot_[A-Za-z0-9_-]+$/.test(shotId)) return [];
     return [
       {
         kind: "video",
         actionId,
+        shotId,
         label: "生成分镜视频",
         pendingLabel: "正在生成分镜视频",
         successNotice: "分镜视频已生成，请核对画面、节奏和课堂锚点。",

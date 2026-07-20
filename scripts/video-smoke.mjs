@@ -170,7 +170,7 @@ export function validateMp4Buffer(buffer) {
   return { valid: false, mime: "application/octet-stream", extension: ".bin" };
 }
 
-function readConfig(env) {
+export function readVideoConfig(env) {
   const wantsEvolink = env.VIDEO_PROVIDER_MODE?.trim() === "evolink" || Boolean(env.EVOLINK_API_KEY?.trim() || env.EVOLINK_VIDEO_API_KEY?.trim());
   const apiKey = wantsEvolink ? env.EVOLINK_VIDEO_API_KEY?.trim() || env.EVOLINK_API_KEY?.trim() : env.OCTO_API_KEY?.trim() || env.NEWAPI_API_KEY?.trim();
   const baseUrl = wantsEvolink ? env.EVOLINK_VIDEO_BASE_URL?.trim() || env.EVOLINK_BASE_URL?.trim() || "https://api.evolink.ai" : env.OCTO_BASE_URL?.trim() || env.NEWAPI_BASE_URL?.trim();
@@ -199,7 +199,7 @@ function readConfig(env) {
 }
 
 async function runVideoSmoke() {
-  const config = readConfig(process.env);
+  const config = readVideoConfig(process.env);
   if (!config.ok) {
     console.log(
       JSON.stringify({

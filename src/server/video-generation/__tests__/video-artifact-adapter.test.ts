@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as postVideoRoute } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route";
+import { readVideoRouteShotId } from "@/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/video-route-generation";
 import { createWorkbenchService } from "@/server/workbench/service";
 import { createHumanGateActionId } from "@/server/guards/human-gate";
 import { seedArtifactRouteTask } from "../../../../tests/support/artifact-route-task-fixture";
@@ -14,6 +15,13 @@ import { routeToolCall } from "@/server/tools/tool-router";
 describe("Local Real MVP M21 video artifact adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("requires one explicit video shot at the route boundary", () => {
+    expect(readVideoRouteShotId({ shotId: "shot_01" })).toBe("shot_01");
+    expect(readVideoRouteShotId({ shotIds: ["shot_02"] })).toBe("shot_02");
+    expect(() => readVideoRouteShotId({})).toThrow("video_route_shot_required");
+    expect(() => readVideoRouteShotId({ shotId: "shot_01", shotIds: ["shot_02"] })).toThrow("video_route_shot_required");
   });
 
   it("saves a generated video segment artifact only after storyboard and asset-image preconditions", async () => {
@@ -104,9 +112,19 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       },
     }, { stage: "video_segment_generate", domain: "video", toolId: "generate_video_segment" }));
 
-    const response = await postVideoRoute(new Request("http://localhost", {
+    const missingShotResponse = await postVideoRoute(new Request("http://localhost", {
       method: "POST",
       body: JSON.stringify({ confirmedActionId }),
+    }), {
+      params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
+    });
+    expect(missingShotResponse.status).toBe(400);
+    expect(routeToolCall).not.toHaveBeenCalled();
+    expect(await service.getGenerationJobs(project.id)).toHaveLength(0);
+
+    const response = await postVideoRoute(new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({ confirmedActionId, shotId: "shot_01" }),
     }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
@@ -121,6 +139,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
       }),
       toolInput: expect.objectContaining({
         sourceArtifactId: sourceArtifact.id,
+        shotIds: ["shot_01"],
         taskBrief: expect.objectContaining({ taskId: taskBrief.taskId, digest: taskBrief.digest }),
       }),
       artifactRefs: [approvedSourceArtifact, approvedStoryboard, approvedAssetImages].map((artifact) => ({
@@ -142,6 +161,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
     expect(body.job).toMatchObject({
       status: "succeeded",
       sourceArtifactId: sourceArtifact.id,
+      unitId: "shot_01",
       resultArtifactId: body.artifact.id,
     });
     expect(JSON.stringify(body)).not.toContain("Bearer ");
@@ -150,7 +170,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
 
     const repeatedResponse = await postVideoRoute(new Request("http://localhost", {
       method: "POST",
-      body: JSON.stringify({ confirmedActionId }),
+      body: JSON.stringify({ confirmedActionId, shotId: "shot_01" }),
     }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
@@ -242,7 +262,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
 
     const response = await postVideoRoute(new Request("http://localhost", {
       method: "POST",
-      body: JSON.stringify({ confirmedActionId }),
+      body: JSON.stringify({ confirmedActionId, shotId: "shot_01" }),
     }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });
@@ -330,7 +350,7 @@ describe("Local Real MVP M21 video artifact adapter", () => {
 
     const response = await postVideoRoute(new Request("http://localhost", {
       method: "POST",
-      body: JSON.stringify({ confirmedActionId }),
+      body: JSON.stringify({ confirmedActionId, shotId: "shot_01" }),
     }), {
       params: Promise.resolve({ projectId: project.id, artifactId: sourceArtifact.id }),
     });

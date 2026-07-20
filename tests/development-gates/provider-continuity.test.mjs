@@ -79,6 +79,8 @@ const OFFLINE_REFACTOR_IMPLEMENTATION_PATHS = [
   "src/server/provider-ledger/provider-ledger-contract.mjs",
   "src/app/api/**/route.ts",
   "src/lib/conversation-message-contract.ts",
+  "src/lib/conversation-message-*.ts",
+  "src/lib/teacher-agent-event*.ts",
   "prisma/schema.prisma",
 ];
 const OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS = [
@@ -146,6 +148,9 @@ function makeConfig() {
         "src/server/gpt-protocol/**",
         "src/server/provider-ledger/**",
         "src/server/workbench/*.ts",
+        "src/lib/conversation-message-contract.ts",
+        "src/lib/conversation-message-*.ts",
+        "src/lib/teacher-agent-event*.ts",
         "scripts/lib/v1-9-e2e-contract*",
         "scripts/development-gates/provider-continuity.mjs",
         "config/development-gates.json",
@@ -558,6 +563,8 @@ test("offline product refactor is exact, expiring, development-only, and never p
     "scripts/development-gates/run-development-gates.mjs",
     "src/server/conversation/conversation-turn-service.ts",
     "src/server/workbench/workbench-generation-service.ts",
+    "src/lib/conversation-message-parts.ts",
+    "src/lib/teacher-agent-event-timeline.ts",
     "tests/development-gates/provider-continuity.test.mjs",
   ];
   const result = verify(root, { changedPaths });
@@ -630,6 +637,25 @@ test("detectProviderImpact covers workbench production modules without matching 
     changedPaths: [...productionPaths, "src/server/workbench/__tests__/service.test.ts"],
     now: NOW,
   });
+
+  assert.equal(impact.impacted, true);
+  assert.deepEqual(impact.matchedPaths, productionPaths);
+  assert.deepEqual(impact.productionProviderPaths, productionPaths);
+});
+
+test("detectProviderImpact covers every decomposed message and teacher event contract module", (t) => {
+  const root = setupRepository(t);
+  const productionPaths = [
+    "src/lib/conversation-message-contract.ts",
+    "src/lib/conversation-message-parts.ts",
+    "src/lib/conversation-message-projection.ts",
+    "src/lib/teacher-agent-event-contract.ts",
+    "src/lib/teacher-agent-event-message-merge.ts",
+    "src/lib/teacher-agent-event-projection.ts",
+    "src/lib/teacher-agent-event-timeline.ts",
+    "src/lib/teacher-agent-events.ts",
+  ];
+  const impact = detectProviderImpact({ root, changedPaths: productionPaths, now: NOW });
 
   assert.equal(impact.impacted, true);
   assert.deepEqual(impact.matchedPaths, productionPaths);

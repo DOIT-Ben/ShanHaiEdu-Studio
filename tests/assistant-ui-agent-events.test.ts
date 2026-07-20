@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendTeacherAgentEvent,
+  buildTeacherAgentTimeline,
   collectPersistentTeacherMessageParts,
   hasCurrentTurnAgentProjection,
   mergeTeacherAgentEventsIntoMessages,
@@ -14,6 +15,23 @@ import { normalizeSnapshot } from "@/lib/workbench-mappers";
 import { AGENT_EVENT_VERSION, type AgentEventEnvelope } from "@/server/conversation/agent-event-envelope";
 
 describe("assistant-ui teacher event projection", () => {
+  it("keeps the original teacher event runtime export surface stable", async () => {
+    expect(Object.keys(await import("@/lib/teacher-agent-events")).sort()).toEqual([
+      "TEACHER_AGENT_EVENT_VERSION",
+      "appendTeacherAgentEvent",
+      "buildTeacherAgentTimeline",
+      "collectPersistentTeacherActivityParts",
+      "collectPersistentTeacherMessageParts",
+      "hasCurrentTurnAgentProjection",
+      "mergeTeacherAgentEventsIntoMessages",
+      "parseTeacherAgentEvent",
+      "projectTeacherAgentEvent",
+      "shouldRefreshSnapshotForAgentEvent",
+      "teacherAgentEventToActivityPart",
+      "teacherAgentEventToMessageParts",
+    ]);
+  });
+
   it("does not project internal control facts into the teacher event stream", () => {
     const projected = projectTeacherAgentEvent(event({
       kind: "tool_observed",
@@ -215,6 +233,89 @@ describe("assistant-ui teacher event projection", () => {
     expect(() => appendTeacherAgentEvent(state, { ...second, eventId: "event-3", sequence: 1 }, "project-a")).toThrow(/sequence/i);
     expect(() => appendTeacherAgentEvent(state, { ...second, eventId: "event-4", projectId: "project-b", sequence: 3 }, "project-a")).toThrow(/project/i);
     expect(parseTeacherAgentEvent(JSON.stringify(second), "project-a")).toEqual(second);
+  });
+
+  it("rejects a duplicate event identity when its facts drift", () => {
+    const first = projectTeacherAgentEvent(event({ eventId: "event-1", sequence: 1 }))!;
+    const drifted = {
+      ...first,
+      payload: {
+        ...first.payload,
+        activity: { ...first.payload.activity, label: "被改写的事实" },
+      },
+    };
+    const state = appendTeacherAgentEvent([], first, "project-a");
+
+    expect(() => appendTeacherAgentEvent(state, drifted, "project-a")).toThrow(/conflict/i);
+  });
+
+  it("round-trips a projected decision checkpoint through the serialized event contract", () => {
+    const projected = projectTeacherAgentEvent(event({
+      kind: "decision_pending",
+      payload: {
+        decisionId: "decision-1",
+        dialogueCheckpoint: pendingDialogueCheckpoint(),
+      },
+    }))!;
+
+    expect(parseTeacherAgentEvent(JSON.stringify(projected), "project-a")).toEqual(projected);
+  });
+
+  it("keeps a decision checkpoint ordered and unique across live, persistence, and refresh", () => {
+    const envelope = event({
+      kind: "decision_pending",
+      payload: { decisionId: "decision-1", dialogueCheckpoint: pendingDialogueCheckpoint() },
+    });
+    const projected = projectTeacherAgentEvent(envelope)!;
+    const live = buildTeacherAgentTimeline([projected]);
+    const persisted = collectPersistentTeacherMessageParts([envelope], projected.runId);
+    const refreshed = projectConversationMessageParts({
+      role: "assistant",
+      content: "",
+      metadata: {
+        agentTimeline: persisted,
+        dialogueCheckpoint: pendingDialogueCheckpoint(),
+      },
+    });
+
+    for (const parts of [live, persisted, refreshed]) {
+      expect(parts.map((part) => part.type)).toEqual(["activity", "dialogue-checkpoint"]);
+      expect(parts.filter((part) => part.type === "dialogue-checkpoint")).toHaveLength(1);
+      expect(parts[1]).toMatchObject({ sourceEventIds: [projected.eventId], sourceSequence: projected.sequence });
+    }
+  });
+
+  it("rejects malformed optional activity fields and forged source bindings", () => {
+    const projected = projectTeacherAgentEvent(event({ kind: "tool_started" }))!;
+    const malformed = structuredClone(projected);
+    Object.assign(malformed.payload.activity, { inputSummary: "not-an-array", durationMs: "fast" });
+    expect(() => parseTeacherAgentEvent(JSON.stringify(malformed), "project-a")).toThrow(/invalid/i);
+
+    const forged = structuredClone(projected);
+    Object.assign(forged.payload.activity, {
+      sourceEventIds: ["forged-event"],
+      sourceSequence: 999,
+      sourceSequenceEnd: 1000,
+    });
+    expect(() => parseTeacherAgentEvent(JSON.stringify(forged), "project-a")).toThrow(/invalid/i);
+
+    const withUnknownSecrets = structuredClone(projected);
+    Object.assign(withUnknownSecrets.payload, { apiKey: "secret-value" });
+    Object.assign(withUnknownSecrets.payload.activity, { provider: "private-provider" });
+    expect(JSON.stringify(parseTeacherAgentEvent(JSON.stringify(withUnknownSecrets), "project-a")))
+      .not.toMatch(/secret-value|private-provider/);
+  });
+
+  it("keeps a second completed-only text segment in the same run", () => {
+    const timeline = buildTeacherAgentTimeline([
+      projectTeacherAgentEvent(event({ eventId: "start-1", sequence: 1, kind: "text_started", payload: {} }))!,
+      projectTeacherAgentEvent(event({ eventId: "delta-1", sequence: 2, kind: "text_delta", payload: { text: "第一段" } }))!,
+      projectTeacherAgentEvent(event({ eventId: "complete-1", sequence: 3, kind: "text_completed", payload: { text: "第一段" } }))!,
+      projectTeacherAgentEvent(event({ eventId: "start-2", sequence: 4, kind: "text_started", payload: {} }))!,
+      projectTeacherAgentEvent(event({ eventId: "complete-2", sequence: 5, kind: "text_completed", payload: { text: "第二段" } }))!,
+    ]);
+
+    expect(timeline.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["第一段", "第二段"]);
   });
 
   it("keeps completed Tool steps attached to the exact persisted assistant response", () => {
@@ -423,5 +524,28 @@ function event(overrides: Partial<AgentEventEnvelope>): AgentEventEnvelope {
     occurredAt: "2026-07-15T00:00:00.000Z",
     payload: { observationId: "observation-1", status: "succeeded" },
     ...overrides,
+  };
+}
+
+function pendingDialogueCheckpoint() {
+  return {
+    schemaVersion: "dialogue-checkpoint.v1",
+    checkpointId: "checkpoint-1",
+    kind: "semantic_boundary",
+    status: "pending",
+    projectId: "project-a",
+    taskId: "task-a",
+    intentEpoch: 1,
+    planRevision: 0,
+    sourceMessageId: "message-teacher-1",
+    question: "继续教案还是改做PPT？",
+    understandingSummary: "当前交付方向尚未确定。",
+    impactSummary: "选择会改变后续工具范围。",
+    options: [
+      { id: "lesson", label: "继续教案", description: "保持当前范围", recommended: true },
+      { id: "ppt", label: "改做PPT", description: "切换交付方向", recommended: false },
+    ],
+    allowFreeText: true,
+    requestedAt: "2026-07-15T00:00:00.000Z",
   };
 }

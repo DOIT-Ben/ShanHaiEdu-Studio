@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  DESKTOP_USER_DATA_DIRECTORIES,
   resolveInstallerTimeoutMs,
   runDesktopInstallerSmoke,
   summarizeInstallExperienceState,
@@ -104,11 +105,7 @@ test("install experience diagnostics cover system entrypoints and uninstall resi
 });
 
 test("desktop user data smoke verifies runtime data, logs, and crash dump directories", () => {
-  const source = readFileSync(path.join(root, "scripts", "desktop-installer-smoke.mjs"), "utf8");
-
-  assert.match(source, /artifact-storage-root/);
-  assert.match(source, /logs/);
-  assert.match(source, /crash-dumps/);
+  assert.deepEqual(DESKTOP_USER_DATA_DIRECTORIES, ["data", "artifact-storage-root", "logs", "crash-dumps"]);
 });
 
 function createInstallerSmokeFixture() {

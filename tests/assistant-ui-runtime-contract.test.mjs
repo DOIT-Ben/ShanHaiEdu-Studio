@@ -54,17 +54,19 @@ test("all project data parts have explicit renderers and markdown rejects raw ht
 
 test("assistant-ui submit uses an explicit message object and keeps runtime-only actions disabled", () => {
   const controller = read("src/hooks/useWorkbenchController.ts");
+  const submission = read("src/hooks/workbench-composer-submission.ts");
+  const composerContracts = read("src/hooks/workbench-composer-contracts.ts");
   const runtime = read("src/components/conversation/assistant-ui/ShanHaiAssistantRuntime.tsx");
   const thread = read("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const workbench = read("src/components/conversation/ConversationWorkbench.tsx");
 
   assert.match(controller, /submitConversationMessage/);
-  assert.match(controller, /body:\s*string/);
-  assert.match(controller, /artifactRefs:\s*string\[\]/);
+  assert.match(submission, /body:\s*string/);
+  assert.match(submission, /artifactRefs:\s*string\[\]/);
   assert.match(runtime, /submitConversationMessage\(\{[\s\S]*body[\s\S]*reference[\s\S]*artifactRefs[\s\S]*confirmedActionId/);
-  assert.match(controller, /resolveBoundConfirmationActionId/);
-  assert.match(controller, /submittedBody:\s*body,[\s\S]*boundBody:\s*input/);
-  assert.match(controller, /input\.submittedBody\.trim\(\) === input\.boundBody\.trim\(\)/);
+  assert.match(submission, /resolveBoundConfirmationActionId/);
+  assert.match(submission, /submittedBody:\s*body,[\s\S]*boundBody:\s*context\.input/);
+  assert.match(composerContracts, /input\.submittedBody\.trim\(\) === input\.boundBody\.trim\(\)/);
   assert.match(thread, /onComposerInputChange:\s*\(value: string\) => void/);
   assert.match(thread, /ComposerPrimitive\.Input[\s\S]*onChange=\{\(event\) => onComposerInputChange\(event\.currentTarget\.value\)\}/);
   assert.match(workbench, /onComposerInputChange=\{onInputChange\}/);

@@ -19,6 +19,8 @@ import {
   type FeedbackRecordEntity,
   type FeedbackRepository,
 } from "./repository";
+import { createFeedbackReconciliationHandler } from "./service-reconciliation";
+import { finalizeFeedbackSubmission } from "./service-shared";
 import { FeedbackStorage } from "./storage";
 
 export class FeedbackConflictError extends Error {
@@ -44,6 +46,7 @@ export function createFeedbackService(options: FeedbackServiceOptions = {}) {
   const generateId = options.generateId ?? randomUUID;
   const now = options.now ?? (() => new Date());
   const appVersion = options.appVersion?.trim() || process.env.SHANHAI_APP_VERSION?.trim() || packageJson.version;
+  const reconcile = createFeedbackReconciliationHandler({ repository, storage, now });
 
   return {
     assertAdmin(actor: WorkbenchActor) {
@@ -119,68 +122,13 @@ export function createFeedbackService(options: FeedbackServiceOptions = {}) {
       }
       await options.faults?.afterCommit?.();
 
-      if (!await finalizeSubmitted(repository, actor.userId, { ...record, attachments }, undefined)) {
+      if (!await finalizeFeedbackSubmission(repository, actor.userId, { ...record, attachments }, undefined)) {
         throw new Error("Feedback status changed before submission completed.");
       }
       return { feedbackId: record.id, receiptCode: record.receipt, status: "submitted" as const, reused: false };
     },
 
-    async reconcile(input: {
-      owner: string;
-      staleAfterMs: number;
-      leaseMs: number;
-      orphanGraceMs: number;
-      limit?: number;
-    }) {
-      const current = now();
-      const claimed = await repository.claimStaleProcessing({
-        owner: input.owner,
-        now: current,
-        staleBefore: new Date(current.getTime() - input.staleAfterMs),
-        leaseUntil: new Date(current.getTime() + input.leaseMs),
-        limit: input.limit ?? 50,
-      });
-      let cleanupFailures = 0;
-      let recoveryFailures = 0;
-      for (const record of claimed) {
-        let finalExists = false;
-        try {
-          finalExists = await storage.hasFinal(record.id);
-          if (!finalExists) {
-            if (!await storage.hasStaging(record.stagingKey)) {
-              await repository.markFailed(record.id, "missing_staged_attachments", input.owner);
-              recoveryFailures += 1;
-              continue;
-            }
-            await storage.commit(record.stagingKey, record.id);
-            finalExists = true;
-          }
-          if (!await finalizeSubmitted(repository, record.createdByUserId, record, input.owner)) {
-            throw new Error("Feedback reconciliation ownership changed before finalization.");
-          }
-        } catch {
-          recoveryFailures += 1;
-          const recoverableFinal = finalExists || await storage.hasFinal(record.id).catch(() => true);
-          if (!recoverableFinal) {
-            await repository.markFailed(record.id, "reconciliation_failed", input.owner).catch(() => false);
-            await storage.removeStaging(record.stagingKey).catch(() => { cleanupFailures += 1; });
-          }
-        }
-      }
-
-      const orphanCutoff = current.getTime() - input.orphanGraceMs;
-      for (const entry of await storage.listStagingEntries()) {
-        if (entry.modifiedAt.getTime() <= orphanCutoff && !await repository.isStagingReferenced(entry.key)) {
-          await storage.removeStaging(entry.key).catch(() => { cleanupFailures += 1; });
-        }
-      }
-      for (const entry of await storage.listFinalEntries()) {
-        if (entry.modifiedAt.getTime() <= orphanCutoff && !await repository.isFeedbackReferenced(entry.key)) {
-          await storage.removeFinal(entry.key).catch(() => { cleanupFailures += 1; });
-        }
-      }
-      return { claimed: claimed.length, cleanupFailures, recoveryFailures };
-    },
+    reconcile,
 
     async list(actor: WorkbenchActor, input: { category?: FeedbackCategory; severity?: FeedbackSeverity; limit: number; cursor?: string; includeTotal?: boolean }) {
       requirePasswordAdmin(actor);
@@ -230,7 +178,7 @@ export function createFeedbackService(options: FeedbackServiceOptions = {}) {
       await storage.removeStaging(stagingKey).catch(() => undefined);
       throw error;
     }
-    if (!await finalizeSubmitted(repository, actor.userId, existing, undefined)) throw new Error("Feedback retry status changed.");
+    if (!await finalizeFeedbackSubmission(repository, actor.userId, existing, undefined)) throw new Error("Feedback retry status changed.");
     return { feedbackId: existing.id, receiptCode: existing.receipt, status: "submitted" as const, reused: true };
   }
 }
@@ -311,24 +259,4 @@ function requirePasswordAdmin(actor: WorkbenchActor) {
   requireActor(actor);
   if (actor.authMode !== "password") throw new Error("Password authentication is required for feedback admin access.");
   if (actor.isAdmin !== true) throw new Error("Feedback admin access is required.");
-}
-
-async function finalizeSubmitted(
-  repository: FeedbackRepository,
-  actorUserId: string,
-  record: FeedbackRecordEntity,
-  reconciliationOwner?: string,
-) {
-  return repository.finalizeSubmitted({
-    id: record.id,
-    reconciliationOwner,
-    actorUserId,
-    projectId: record.projectId,
-    metadata: {
-      category: record.category,
-      severity: record.severity,
-      attachmentCount: record.attachments.length,
-      status: "submitted",
-    },
-  });
 }

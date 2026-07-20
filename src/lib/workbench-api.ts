@@ -141,7 +141,10 @@ export function createWorkbenchApiClient(options: WorkbenchApiClientOptions = {}
       const confirmedActionId = normalizedConfirmedActionId(options);
       return request<unknown>(`/api/workbench/projects/${projectId}/artifacts/${artifactId}/${realAssetRouteSegment(assetKind)}`, {
         method: "POST",
-        body: JSON.stringify(confirmedActionId ? { confirmedActionId } : {}),
+        body: JSON.stringify({
+          ...(confirmedActionId ? { confirmedActionId } : {}),
+          ...(assetKind === "video" && options?.shotId ? { shotId: options.shotId } : {}),
+        }),
       }).then(() => request<unknown>(`/api/workbench/projects/${projectId}/snapshot`).then(normalizeSnapshot));
     },
     mutateProjectLifecycle(projectId, mutation) {

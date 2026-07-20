@@ -6,7 +6,7 @@
 
 - 重构启动基线：`95b9b29d22553474ffe0c937d035bbe55924b157`；阶段C活动基线：`20c6e2530b991db77108c7b7a61090e9060b7fca`，即阶段B已验收提交。
 - 唯一活动阶段：`product-first-deep-refactor`。
-- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4、D5切片已完成离线行为回归；阶段D继续清理复杂度和源码字符串合同债务。
+- 阶段进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4、D5、D6、D7、D8、D9、D10、D11、D12和D13切片已完成离线行为回归；D7完成TaskAggregate与external-audit ingress职责治理，另完成了风险优先的Agent Tool授权职责、Provider结果合同和Provider视频镜头请求拆分；D8完成Skill runtime执行、结果校验和辅助合同职责拆分；D9完成Agent策略、Provider结果和Package三族职责拆分；D10完成Runtime请求/响应/schema/错误结果与ReAct合同/回合辅助职责拆分；D11完成Feedback service reconciliation职责拆分，并明确repository、controller和dialog稳定内聚保留；D12完成真实前端controller/composer职责治理，并明确MediaWorkbench与ProjectListItem继续保留；D13完成视频route HTTP边界与执行协调最小拆分以及单镜头血缘修复。
 - 当前口径：**CONTRACT PARTIAL / EXECUTOR PARTIAL / MODEL ORCHESTRATION PARTIAL / PRODUCT E2E PARTIAL / RELEASE NOT STARTED**。
 - 本轮未调用真实Provider，未创建V1-9 runId，未生成或测试图片、视频、PPTX、ZIP，未运行390px真实黑盒，未部署或发布。
 
@@ -36,10 +36,10 @@
 
 ## 当前问题
 
-- 复杂度债务仍有24个文件，尚未达到清零目标。
-- 当前源码合同门报告19个文件、219次命中，但它仍只追踪直接文件读取；至少21个wrapper读取文件以及import alias、解构、参数默认值、闭包和完整控制流传播尚未纳入。当前数字不能表述为全部债务或清零。
-- `desktop/electron-main.mjs`和`playwright.config.ts`仍赋值已失效的`NEXT_PUBLIC_WORKBENCH_DATA_SOURCE`；当前阶段路径门禁止修改这两个文件，且生产代码已无读取者，D14必须删除这两处无效配置。
+- 复杂度baseline当前有11个登记项；按风险治理ADR分为应拆、修改时再评估和可保留三类，不能把11项等同为11个必须拆的屎山，也不再以机械清空baseline作为唯一目标。D13已把视频route从baseline移出，并将执行协调与单镜头输入校验迁入同资源helper。
+- 当前源码合同门报告13个文件；Ops smoke已改为结构化配置或可注入行为测试，但wrapper读取、import alias、解构、参数默认值、闭包和完整控制流传播尚未纳入，当前数字不能表述为全部债务或清零。
 - 当前Provider连续性receipt不存在；一次历史Main Agent续轮502仍使连续多轮稳定性保持未关闭。
+- D13暴露的产品边界风险仍在：只有服务端提供明确`shotId`的video Artifact action才可展示；当前旧artifact action没有镜头选择，不会再展示直发按钮，产品级多镜头选择与真实视频链路仍未验。
 
 ## 尚未实现
 
@@ -67,6 +67,57 @@
 - D4全量回归：source-contract detector新增作用域、属性名、TypeScript wrapper、`var`作用域和模板路径回归，原有6项加新增8项、共`14/14`通过；开发门禁测试`119/119`，另有1项Windows符号链接能力跳过。`npm test`通过Node`423/423`和Vitest`778/778 + 773/773`；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`、development gate和工作树绑定`verify:local`通过。门禁报告由20文件/293次校准为19文件/219次；Provider保持离线延期、`passed=false`且请求数为0，wrapper与完整控制流漏报仍明确保留，未上推为源码合同清零。
 - D5全量回归：complexity baseline先移除`service.ts`并按预期报`New complexity debt`；拆分后`service.ts`由667降至58行，项目、消息、Artifact、Generation、VideoShot、TurnJob、snapshot、共享授权与映射进入9个48至179行的内部模块，47个公开方法和原四参数工厂不变。V1-9 contract repair SHA闭包已覆盖门面、9个模块和门面合同测试；门面测试进一步冻结服务端执行身份覆盖、guard写入、读授权以及finish/fail原guard透传。`src/server/workbench/*.ts`已进入Provider敏感生产路径和离线阶段精确白名单，嵌套`__tests__`不匹配；开发态仍只允许延期，release不接受延期。最终全量回归通过Node`423/423`与Vitest`776/776 + 781/781`；TypeScript、ESLint `0 warning`、生产构建、standalone `forbidden=[]`和development gate通过。复杂度债务降至24；Provider保持离线延期、`passed=false`且请求数为0。
 
+## D6新鲜验证
+
+- `MessagePart`与`TeacherAgentEvent`已拆为独立合同、投影、时间线和消息合并模块，旧导出门面保持兼容。
+- 定向合同`41/41`、Node`423/423`、Vitest隔离分片`776/776 + 791/791`、TypeScript、ESLint `0 warning`、生产构建`forbidden=[]`和development gate通过；复杂度债务降至22。
+- Provider仍为离线延期、`passed=false`且请求数为0；源码合同wrapper漏报、真实Provider和产品E2E仍未关闭。
+
+## D7新鲜验证
+
+- `control-plane-store.ts`的TaskAggregate职责继续保持独立模块；风险优先切片还将Agent Tool授权、Provider结果合同和视频镜头请求解析拆到独立模块，公开入口和Provider提交/轮询/响应语义保持不变。
+- Provider适配器门面按复杂度检测器由955行收缩到900行；V1-9 repair evidence闭包新增两个Provider子模块，防止门面哈希遗漏拆分后的实际职责。
+- 独立SQLite、单worker定向回归`46/46`；TypeScript、ESLint `0 warning`、生产构建standalone `missing=[] / forbidden=[]`和development gate通过。复杂度债务保持22项，Provider仍为离线延期、`passed=false`且请求数为0。
+- external-audit ingress保留唯一入口，事务提交/恢复协调迁入独立模块；定向回归和V1-9 evidence closure为`31/31`，复杂度债务由22降至21。全量Node/Vitest、TypeScript、Lint、生产构建和development gate均通过。
+- 本轮未调用真实Provider、未生成媒体、未创建V1-9 runId、未部署或发布。
+
+## D8新鲜验证
+
+- Skill runtime公开门面、配置运行时和预检入口保持兼容；执行、正式结果校验和辅助合同比较迁入独立模块。稳定的`skill-registry.ts`、`business-tool-skill-bindings.ts`和`business-tool-skill-output-contract.ts`按ADR保留，不因行数阈值机械拆分。
+- Skill定向回归`32/32`；V1-9 repair evidence闭包绑定4个Skill生产模块和3个Skill行为测试。全量Node/Vitest、TypeScript、ESLint、生产构建和development gate均通过。
+- `npm run build`的standalone检查为`missing=[] / forbidden=[]`；development gate为`passed-with-offline-refactor-defer`，复杂度债务降至20，Provider仍为`passed=false`且请求数为0。
+- 本轮未调用真实Provider、未创建V1-9 runId、未生成媒体、未部署或发布。
+
+## D9新鲜验证
+
+- Agent Tool、Provider和Package门面已按真实职责拆分；`tool-router.ts`作为唯一前置校验、适配器分发和后置校验边界保留。
+- V1-9 repair evidence闭包新增模块与行为测试，定向证据`9/9`；全量Node/Vitest、TypeScript、ESLint、生产构建和development gate均通过。
+- `npm run build` standalone检查为`missing=[] / forbidden=[]`；复杂度债务由20降至17，Provider仍为`passed=false`且请求数为0。
+- 本轮未调用真实Provider、未创建V1-9 runId、未生成媒体、未部署或发布。
+
+## D10新鲜验证
+
+- `openai-runtime.ts`保留Runtime门面和native Tool loop边界；请求构造、输出解析、JSON schema、错误分类和结果映射已进入独立模块，`OpenAIRuntime`与`buildOpenAIResponseRequest`原导出路径保持兼容。
+- `main-agent-controlled-react-loop.ts`保留唯一ReAct状态机入口；类型合同、checkpoint/telemetry/通知/恢复辅助、完成合同修复和Tool回合处理已进入独立模块，恢复、重试、预算、HumanGate和停止语义保持不变。
+- Runtime、Runtime质量与ReAct行为定向回归`55/55`；V1-9 repair evidence closure定向回归`10/10`；TypeScript和定向ESLint `0 error / 0 warning`通过。
+- 复杂度目标先移出baseline验证`New complexity debt`红灯，拆分后复杂度债务由17降至15；新增模块均低于500行且无函数超过150行。
+- 本轮未调用真实Provider、未创建V1-9 runId、未生成媒体、未部署或发布。独立运行`main-agent-tool-loop-config.test.ts`会因缺失`OrchestrationAuditEvent`测试表失败，需用`npm test`隔离数据库回归，不把该环境失败上推为D10代码回归。
+
+## D11新鲜验证
+
+- `feedback/service.ts`保留公开工厂、提交、管理查询和附件下载；后台reconciliation进入`service-reconciliation.ts`，终态提交共用合同进入`service-shared.ts`。
+- `feedback/repository.ts`、`useFeedbackController.ts`和`FeedbackDialog.tsx`经评估继续保留：分别是单一Feedback持久化边界、单一幂等客户端状态机和单一反馈Dialog，不存在重复控制权或不清晰变更边界。
+- Feedback服务/存储/契约定向回归`62/62`；M67/M72/M78 UI与源码合同定向回归`16/16`；复杂度债务由15降至14。
+- `npm run build`通过，standalone检查为`missing=[] / forbidden=[]`；全量ESLint为`0 error / 0 warning`，development gate为`passed-with-offline-refactor-defer`。
+- 本轮未调用真实Provider、未创建V1-9 runId、未生成媒体、未部署或发布。
+
+## D12新鲜验证
+
+- `useWorkbenchController.ts`保留唯一公开组合入口；项目状态/快照同步、项目动作、composer提交/恢复、产物导航和产物操作迁入独立职责模块。`PromptComposer.tsx`保留唯一输入面，附件读取生命周期迁入`useComposerAttachments.ts`。
+- `MediaWorkbench.tsx`继续作为工作台布局组合保留；`ProjectListItem.tsx`继续作为单行项目编辑状态机保留。两者没有重复控制权或跨域变更边界证据。
+- D12源码合同定向Node回归`34/34`；全量Node`423/423`、Vitest隔离分片`776/776 + 796/796`，TypeScript、ESLint `0 error / 0 warning`、生产构建和development gate通过；standalone为`missing=[] / forbidden=[]`，复杂度债务由14降至12。
+- 本轮未调用真实Provider、未创建V1-9 runId、未生成媒体、未部署或发布。
+
 ## 当前验收边界
 
 | 层级 | 状态 | 本轮允许证明 | 本轮不能证明 |
@@ -77,6 +128,13 @@
 | product E2E | partial | 仓内合同、构建和桌面壳smoke | V1-9、真实浏览器教师流程与教师签收 |
 | release | not started | 无 | 部署或发布完成 |
 
+## D13新鲜验证
+
+- route风险复核确认GET下载和POST生成仍属于同一Artifact视频资源；GET/POST均只经过`withLocalWorkbenchActor`，POST只持有一个project execution lease、一个`ExecutionEnvelope`和共享原子commit边界，`submission_unknown`、Provider失败、质量失败及404/409/400语义保持不变。
+- 红测证明原route没有把Provider Tool要求的单镜头`shotIds`传入，也没有把镜头绑定到GenerationJob `unitId`；现已由`video-route-generation.ts`承接视频执行协调和输入校验，`route.ts`保留HTTP/认证/下载/lease职责。
+- 定向视频/Artifact route回归`27/27`，API client Node合同`18/18`，TypeScript、ESLint `0 error / 0 warning`；complexity由12项单调降至11项。
+- Provider保持`passed=false`且请求数为0；未创建V1-9 runId，未生成媒体，未部署、签收或发布。
+
 ## 唯一下一动作
 
-执行D6消息与事件合同拆分：拆分`MessagePart`和`TeacherEvent`合同，保持序列化、持久化、assistant-ui投影和已扩展的Provider敏感路径边界不变。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。
+D14 Ops源码合同已完成；进入D15 Runner源码合同，先治理M67后治理V1-9的冻结树、child process、shutdown和manifest/state行为。Provider连续性保持0请求，待离线重构完成后按`..\roadmap\release\provider-continuity-readiness-spec.md`重新规划。

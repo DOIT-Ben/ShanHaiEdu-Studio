@@ -39,19 +39,20 @@ test("MediaWorkbench keeps the artifact drawer available for narrow screens", ()
 });
 
 test("Workbench controller gives immediate chat feedback and blocks duplicate submit clicks", () => {
-  const source = readSource("src/hooks/useWorkbenchController.ts");
+  const source = readSource("src/hooks/workbench-composer-submission.ts");
+  const composerControllerSource = readSource("src/hooks/useWorkbenchComposerController.ts");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
 
-  assert.match(source, /const \[composerSubmitting, setComposerSubmitting\] = useState\(false\)/);
-  assert.match(source, /const composerSubmittingRef = useRef\(false\)/);
-  assert.match(source, /if \(composerSubmittingRef\.current \|\| composerSubmitting\) \{/);
-  assert.match(source, /composerSubmittingRef\.current = true/);
-  assert.match(source, /composerSubmittingRef\.current = false/);
-  assert.match(source, /setMessages\(\(current\) => \[/);
+  assert.match(readSource("src/hooks/useWorkbenchController.ts"), /const \[composerSubmitting, setComposerSubmitting\] = useState\(false\)/);
+  assert.match(composerControllerSource, /const composerSubmittingRef = useRef\(false\)/);
+  assert.match(source, /if \(context\.composerSubmittingRef\.current \|\| context\.composerSubmitting\)/);
+  assert.match(source, /context\.composerSubmittingRef\.current = true/);
+  assert.match(source, /context\.composerSubmittingRef\.current = false/);
+  assert.match(composerControllerSource, /setMessages\(\(current\) => \[/);
   assert.match(source, /speaker: "teacher"/);
-  assert.match(source, /setComposerSubmitting\(true\)/);
-  assert.match(source, /setComposerSubmitting\(false\)/);
-  assert.match(source, /composerSubmitting,/);
+  assert.match(source, /context\.setComposerSubmitting\(true\)/);
+  assert.match(source, /context\.setComposerSubmitting\(false\)/);
+  assert.match(readSource("src/hooks/useWorkbenchController.ts"), /composerSubmitting,/);
   assert.match(composerSource, /composerSubmitting: boolean/);
   assert.match(composerSource, /disabled=\{composerSubmitting\}/);
 });

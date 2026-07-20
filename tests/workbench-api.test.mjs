@@ -111,6 +111,26 @@ function loadWorkbenchApiModule(options = {}) {
     },
   }).outputText;
 
+  const loadCompiledModule = (filename) => {
+    const normalizedPath = path.normalize(filename);
+    if (cache.has(normalizedPath)) return cache.get(normalizedPath).exports;
+    const compiledModule = { exports: {} };
+    cache.set(normalizedPath, compiledModule);
+    vm.runInNewContext(compileModule(normalizedPath), {
+      module: compiledModule,
+      exports: compiledModule.exports,
+      require: (id) => id.startsWith(".")
+        ? loadCompiledModule(`${path.resolve(path.dirname(normalizedPath), id)}.ts`)
+        : requireStub(id),
+      URL,
+      structuredClone,
+      process: { env: options.env ?? {} },
+      fetch: options.fetch,
+      console,
+    });
+    return compiledModule.exports;
+  };
+
   const requireStub = (id) => {
     if (id === "@/lib/csrf-token") {
       return {
@@ -121,52 +141,15 @@ function loadWorkbenchApiModule(options = {}) {
       };
     }
     if (id === "@/lib/conversation-message-contract") {
-      const contractPath = path.join(root, "src", "lib", "conversation-message-contract.ts");
-      if (cache.has(contractPath)) return cache.get(contractPath).exports;
-      const contractModule = { exports: {} };
-      cache.set(contractPath, contractModule);
-      vm.runInNewContext(compileModule(contractPath), {
-        module: contractModule,
-        exports: contractModule.exports,
-        require: requireStub,
-        URL,
-        structuredClone,
-        console,
-      });
-      return contractModule.exports;
+      return loadCompiledModule(path.join(root, "src", "lib", "conversation-message-contract.ts"));
     }
     if (id === "@/lib/workbench-mappers") {
-      const mapperPath = path.join(root, "src", "lib", "workbench-mappers.ts");
-      if (cache.has(mapperPath)) return cache.get(mapperPath).exports;
-      const mapperModule = { exports: {} };
-      cache.set(mapperPath, mapperModule);
-      vm.runInNewContext(compileModule(mapperPath), {
-        module: mapperModule,
-        exports: mapperModule.exports,
-        require: requireStub,
-        URL,
-        structuredClone,
-        process: { env: options.env ?? {} },
-        console,
-      });
-      return mapperModule.exports;
+      return loadCompiledModule(path.join(root, "src", "lib", "workbench-mappers.ts"));
     }
     throw new Error(`Unexpected import in workbench-api test: ${id}`);
   };
 
-  const module = { exports: {} };
-  vm.runInNewContext(compileModule(apiSourcePath), {
-    module,
-    exports: module.exports,
-    require: requireStub,
-    URL,
-    structuredClone,
-    process: { env: options.env ?? {} },
-    fetch: options.fetch,
-    console,
-  });
-
-  return module.exports;
+  return loadCompiledModule(apiSourcePath);
 }
 
 function loadWorkbenchActionsModule() {
@@ -628,6 +611,7 @@ test("API client triggers real asset generation through backend routes with Huma
   await client.generateRealAsset("project-a", "artifact-ppt-v1", "image", { confirmedActionId: "human:project-a:image_asset:artifact-ppt-v1" });
   await client.generateRealAsset("project-a", "artifact-video-plan-v1", "video", {
     confirmedActionId: "human:project-a:video_segment_generate:artifact-video-plan-v1",
+    shotId: "shot_01",
   });
 
   assert.equal(calls[0].url, "/api/workbench/projects/project-a/artifacts/artifact-ppt-v1/coze-ppt");
@@ -640,7 +624,10 @@ test("API client triggers real asset generation through backend routes with Huma
   assert.equal(calls[3].url, "/api/workbench/projects/project-a/snapshot");
   assert.equal(calls[4].url, "/api/workbench/projects/project-a/artifacts/artifact-video-plan-v1/video");
   assert.equal(calls[4].init.method, "POST");
-  assert.equal(JSON.parse(calls[4].init.body).confirmedActionId, "human:project-a:video_segment_generate:artifact-video-plan-v1");
+  assert.deepEqual(JSON.parse(calls[4].init.body), {
+    confirmedActionId: "human:project-a:video_segment_generate:artifact-video-plan-v1",
+    shotId: "shot_01",
+  });
   assert.equal(calls[5].url, "/api/workbench/projects/project-a/snapshot");
 });
 
@@ -728,7 +715,7 @@ test("real asset generation actions are teacher-facing and scoped to supported a
     title: "分镜视频计划",
     status: "approved",
     routeGenerationActions: {
-      video_segment_generate: { actionId: "human:project-a:video_segment_generate:artifact-video-plan-v1" },
+      video_segment_generate: { actionId: "human:project-a:video_segment_generate:artifact-video-plan-v1", shotId: "shot_01" },
     },
   };
   const introVideoPlanArtifact = {
@@ -763,7 +750,9 @@ test("real asset generation actions are teacher-facing and scoped to supported a
   const videoActions = getRealAssetGenerationActions(videoArtifact);
   assert.equal(videoActions.map((action) => action.kind).join(","), "video");
   assert.equal(videoActions[0].actionId, "human:project-a:video_segment_generate:artifact-video-plan-v1");
+  assert.equal(videoActions[0].shotId, "shot_01");
   assert.equal(videoActions.map((action) => action.label).join(","), "生成分镜视频");
+  assert.equal(getRealAssetGenerationActions({ ...videoArtifact, routeGenerationActions: { video_segment_generate: { actionId: videoArtifact.routeGenerationActions.video_segment_generate.actionId } } }).length, 0);
   assert.equal(getRealAssetGenerationActions(introVideoPlanArtifact).length, 0);
 
   assert.equal(getRealAssetGenerationActions(finalDeliveryArtifact).length, 0);

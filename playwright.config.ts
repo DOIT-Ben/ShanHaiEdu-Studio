@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { createPlaywrightWebServerEnvironment } from "./scripts/ops-runtime-config.mjs";
 
 const port = Number.parseInt(process.env.E2E_PORT ?? "3117", 10);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
@@ -28,11 +29,7 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
-    env: {
-      ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
-      NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: process.env.NEXT_PUBLIC_WORKBENCH_DATA_SOURCE ?? "dev",
-    },
+    env: createPlaywrightWebServerEnvironment(process.env),
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: "pipe",

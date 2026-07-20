@@ -5,6 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, shell } from "electron";
+import { createDesktopServerEnvironment } from "../scripts/ops-runtime-config.mjs";
 
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(desktopDir, "..");
@@ -136,16 +137,12 @@ function startNextStandaloneServer({ port, appPaths }) {
 
   return spawn(process.execPath, [serverEntry], {
     cwd: path.dirname(serverEntry),
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "1",
-      NODE_ENV: "production",
-      HOSTNAME: "127.0.0.1",
-      PORT: String(port),
-      DATABASE_URL: appPaths.databaseUrl,
-      ARTIFACT_STORAGE_ROOT: appPaths.artifactStorageRoot,
-      NEXT_PUBLIC_WORKBENCH_DATA_SOURCE: "api",
-    },
+    env: createDesktopServerEnvironment({
+      baseEnv: process.env,
+      port,
+      databaseUrl: appPaths.databaseUrl,
+      artifactStorageRoot: appPaths.artifactStorageRoot,
+    }),
     stdio: "ignore",
     windowsHide: true,
   });

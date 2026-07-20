@@ -7,17 +7,15 @@ function readSource(relativePath) {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
 }
 
-const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
+const projectSyncSource = readSource("src/hooks/useWorkbenchProjectSync.ts");
+const projectActionsSource = readSource("src/hooks/useWorkbenchProjectActions.ts");
+const initialLoader = projectSyncSource.slice(projectSyncSource.indexOf("async function loadInitialState()"));
 const mediaSource = readSource("src/components/layout/MediaWorkbench.tsx");
 const welcomeSource = readSource("src/components/layout/AuthenticatedWelcome.tsx");
 const interactiveRowSource = readSource("src/components/ui/interactive-list-row.tsx");
 const globalCss = readSource("src/app/globals.css");
 
 test("M75 initializes with only the active project list and never restores a snapshot", () => {
-  const initialLoader = controllerSource.slice(
-    controllerSource.indexOf("async function loadInitialState()"),
-    controllerSource.indexOf("function setXiaoKuResponseStyle", controllerSource.indexOf("async function loadInitialState()") + 1),
-  );
   assert.match(initialLoader, /dataSource\.listProjects\("active"\)/);
   assert.match(initialLoader, /setActiveProjectId\(""\)/);
   assert.match(initialLoader, /setMessages\(\[\]\)/);
@@ -56,14 +54,11 @@ test("M75 has the approved welcome copy, project metadata, and an empty state", 
 });
 
 test("M75 lifecycle views and startup never auto-enter an old conversation", () => {
-  const viewLoader = controllerSource.slice(
-    controllerSource.indexOf("async function openProjectView"),
-    controllerSource.indexOf("async function mutateProjectLifecycle"),
-  );
+  const viewLoader = projectActionsSource.slice(projectActionsSource.indexOf("const openProjectView"), projectActionsSource.indexOf("const mutateProjectLifecycle"));
   assert.match(viewLoader, /dataSource\.listProjects\(view\)/);
   assert.match(viewLoader, /clearActiveProject\(\)/);
   assert.doesNotMatch(viewLoader, /localStorage\.getItem|getProjectSnapshot|nextProjects\[0\]|loadProject\(/);
-  assert.doesNotMatch(controllerSource.slice(controllerSource.indexOf("async function loadInitialState()"), controllerSource.indexOf("function setXiaoKuResponseStyle", controllerSource.indexOf("async function loadInitialState()") + 1)), /applySnapshot/);
+  assert.doesNotMatch(initialLoader, /applySnapshot/);
 });
 
 test("M75 loading and errors stay on welcome and animation respects reduced motion", () => {

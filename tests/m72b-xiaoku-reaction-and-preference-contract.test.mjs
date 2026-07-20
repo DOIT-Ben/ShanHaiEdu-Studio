@@ -10,7 +10,7 @@ test("小酷偏好、消息标签和本地升级拥有可追溯的真实合同",
   const schema = readSource("prisma/schema.prisma");
   const initSchema = readSource("scripts/init-sqlite-schema.mjs");
   const route = readSource("src/app/api/workbench/projects/[projectId]/messages/[messageId]/reaction/route.ts");
-  const controller = readSource("src/hooks/useWorkbenchController.ts");
+  const controller = readSource("src/hooks/useWorkbenchProjectActions.ts");
   const actions = readSource("src/components/conversation/messages/MessageActions.tsx");
   const preferences = readSource("src/lib/xiaoku-preferences.ts");
 

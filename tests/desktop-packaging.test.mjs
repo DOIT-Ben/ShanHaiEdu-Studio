@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { createDesktopServerEnvironment } from "../scripts/ops-runtime-config.mjs";
 
 const root = process.cwd();
 
@@ -34,7 +35,22 @@ test("desktop packaging uses Electron without exposing Node APIs in preload", ()
   assert.match(main, /SHANHAI_DESKTOP_PORT/);
   assert.match(main, /SHANHAI_DESKTOP_USER_DATA_DIR/);
   assert.match(main, /app\.setPath\(["']userData["']/);
-  assert.match(main, /ELECTRON_RUN_AS_NODE/);
+  assert.deepEqual(
+    createDesktopServerEnvironment({
+      baseEnv: {},
+      port: 3127,
+      databaseUrl: "file:fixture.db",
+      artifactStorageRoot: "fixture-artifacts",
+    }),
+    {
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_ENV: "production",
+      HOSTNAME: "127.0.0.1",
+      PORT: "3127",
+      DATABASE_URL: "file:fixture.db",
+      ARTIFACT_STORAGE_ROOT: "fixture-artifacts",
+    },
+  );
 });
 
 test("electron builder config keeps binary artifacts out of git-scoped source", () => {

@@ -66,7 +66,7 @@ export type ArtifactActionState = {
   canRegenerate: boolean;
 };
 
-export type ArtifactRouteGenerationActions = Partial<Record<"coze_ppt" | "image_asset" | "video_segment_generate", { actionId: string }>>;
+export type ArtifactRouteGenerationActions = Partial<Record<"coze_ppt" | "image_asset" | "video_segment_generate", { actionId: string; shotId?: string }>>;
 
 export type ArtifactItem = {
   key: string;
@@ -170,6 +170,10 @@ export type WorkbenchSendMessageOptions = {
   responseStyle?: XiaoKuResponseStyle;
 };
 
+export type RealAssetGenerationOptions = Pick<WorkbenchSendMessageOptions, "confirmedActionId" | "actionId"> & {
+  shotId?: string;
+};
+
 export type ConversationMessageSubmission = {
   body: string;
   reference: string | null;
@@ -201,7 +205,7 @@ export type WorkbenchDataSource = {
   approveArtifact: (projectId: string, artifactKey: string) => Promise<WorkbenchSnapshot>;
   submitPptSampleReview: (projectId: string, artifactKey: string, review: PptSampleReviewSubmission) => Promise<WorkbenchSnapshot>;
   submitPptFullDeckReview: (projectId: string, artifactKey: string, review: PptFullDeckReviewSubmission) => Promise<WorkbenchSnapshot>;
-  generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: WorkbenchSendMessageOptions) => Promise<WorkbenchSnapshot>;
+  generateRealAsset: (projectId: string, artifactId: string, assetKind: RealAssetKind, options?: RealAssetGenerationOptions) => Promise<WorkbenchSnapshot>;
 };
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";

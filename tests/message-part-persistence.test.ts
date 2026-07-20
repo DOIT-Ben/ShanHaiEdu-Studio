@@ -69,7 +69,14 @@ describe("message part persistence", () => {
     const project = await service.createProject({ title: "消息Part持久化" });
     const parts: MessagePart[] = [
       { type: "text", schemaVersion: MESSAGE_PART_VERSION, text: "## 教学目标\n理解百分数。", format: "markdown" },
+      { type: "activity", schemaVersion: MESSAGE_PART_VERSION, activityId: "activity-1", label: "正在整理", status: "running", evidenceRefs: [] },
       { type: "plan", schemaVersion: MESSAGE_PART_VERSION, planId: "plan-1", revision: 1, title: "备课事实投影", steps: [{ id: "goal", title: "确认教学目标", status: "completed" }] },
+      { type: "tool-status", schemaVersion: MESSAGE_PART_VERSION, invocationId: "invocation-1", label: "已整理需求", status: "succeeded", observationId: "observation-1" },
+      { type: "artifact-ref", schemaVersion: MESSAGE_PART_VERSION, artifactId: "artifact-1", version: 1, digest: "a".repeat(64), title: "教案", summary: "已形成候选。" },
+      { type: "quality-summary", schemaVersion: MESSAGE_PART_VERSION, artifactId: "artifact-1", version: 1, outcome: "passed", summary: "结构完整。", findingLocators: [] },
+      { type: "human-input", schemaVersion: MESSAGE_PART_VERSION, decisionId: "decision-1", actionId: "action-1", question: "是否继续？", options: [{ id: "continue", label: "继续" }] },
+      { type: "dialogue-checkpoint", schemaVersion: MESSAGE_PART_VERSION, checkpointId: "dialogue-1", question: "继续教案还是改做PPT？", understandingSummary: "交付方向待确认。", impactSummary: "选择会改变后续工具范围。", options: [{ id: "lesson", label: "继续教案", description: "保持当前范围", recommended: true }, { id: "ppt", label: "改做PPT", description: "切换交付方向", recommended: false }], allowFreeText: true },
+      { type: "next-actions", schemaVersion: MESSAGE_PART_VERSION, actions: [{ id: "open", label: "查看教案", kind: "open_artifact", artifactId: "artifact-1" }] },
       { type: "error-recovery", schemaVersion: MESSAGE_PART_VERSION, errorId: "ERR-1", reasonCode: "timeout", summary: "生成超时。", recovery: { kind: "resume", label: "继续", checkpointId: "checkpoint-1" } },
     ];
 

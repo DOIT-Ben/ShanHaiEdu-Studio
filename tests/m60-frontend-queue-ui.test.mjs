@@ -11,15 +11,17 @@ function readSource(relativePath) {
 
 test("M60 frontend separates short submit state from long project generation state", () => {
   const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
+  const stateSource = readSource("src/hooks/useWorkbenchProjectState.ts");
+  const composerControllerSource = readSource("src/hooks/useWorkbenchComposerController.ts");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
   const workbenchSource = readSource("src/components/conversation/ConversationWorkbench.tsx");
 
   assert.match(controllerSource, /const \[composerSubmitting, setComposerSubmitting\] = useState\(false\)/);
-  assert.match(controllerSource, /const projectBusy = useMemo\(/);
+  assert.match(stateSource, /const projectBusy = useMemo\(/);
   assert.doesNotMatch(controllerSource, /if \(sendingRef\.current \|\| sending\) \{/);
-  assert.match(controllerSource, /if \(composerSubmittingRef\.current \|\| composerSubmitting\) \{/);
+  assert.match(composerControllerSource, /if \(!activeProjectId \|\| composerSubmittingRef\.current \|\| composerSubmitting\) return/);
   assert.match(controllerSource, /composerSubmitting,/);
-  assert.match(controllerSource, /projectBusy,/);
+  assert.match(stateSource, /projectBusy,/);
 
   assert.match(composerSource, /composerSubmitting: boolean/);
   assert.match(composerSource, /projectBusy: boolean/);
@@ -52,13 +54,14 @@ test("M60 frontend maps persisted turn jobs to teacher-readable queue labels", (
 });
 
 test("M60 refreshes queued turns through versioned snapshots and disables polling for assistant-ui events", () => {
-  const controllerSource = readSource("src/hooks/useWorkbenchController.ts");
+  const controllerSource = readSource("src/hooks/useWorkbenchProjectSync.ts");
+  const stateSource = readSource("src/hooks/useWorkbenchProjectState.ts");
+  const refreshSource = `${controllerSource}\n${stateSource}`;
 
   assert.match(controllerSource, /const snapshotPollingIntervalMs = \d+/);
-  assert.match(controllerSource, /function hasPendingTurnStatus/);
-  assert.match(controllerSource, /status === "queued" \|\| status === "running"/);
-  assert.match(controllerSource, /useEffect\(\(\) => \{[\s\S]*!projectBusy[\s\S]*composerSubmitting[\s\S]*return/s);
-  assert.match(controllerSource, /options\.eventDrivenMessages \|\| !activeProjectId \|\| !projectBusy/);
+  assert.match(stateSource, /function hasPendingTurnStatus/);
+  assert.match(refreshSource, /status === "queued" \|\| status === "running"/);
+  assert.match(controllerSource, /if \(eventDrivenMessages \|\| !activeProjectId \|\| !projectBusy \|\| composerSubmitting/);
   assert.match(controllerSource, /window\.setTimeout\(async \(\) => \{[\s\S]*beginSnapshotRequest\(activeProjectId\)[\s\S]*dataSource\.getProjectSnapshot\(activeProjectId\)[\s\S]*applySnapshot\(snapshot, snapshotRequest\)[\s\S]*scheduleNextSnapshotRefresh\(\)/s);
   assert.match(controllerSource, /eventSnapshotCoordinatorRef\.current\?\.request\(\{ projectId: event\.projectId, requiredSequence: event\.sequence \}\)/);
   assert.match(controllerSource, /window\.clearTimeout\(snapshotPollingTimer\)/);

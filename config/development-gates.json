@@ -37,20 +37,6 @@
     "maxFunctionLines": 150,
     "baseline": [
       {
-        "path": "src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route.ts",
-        "lines": 216,
-        "violatingFunctions": 2,
-        "maxFunctionLines": 162,
-        "totalFunctionLines": 322
-      },
-      {
-        "path": "src/components/conversation/PromptComposer.tsx",
-        "lines": 339,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 295,
-        "totalFunctionLines": 295
-      },
-      {
         "path": "src/components/feedback/FeedbackDialog.tsx",
         "lines": 314,
         "violatingFunctions": 1,
@@ -79,53 +65,11 @@
         "totalFunctionLines": 236
       },
       {
-        "path": "src/hooks/useWorkbenchController.ts",
-        "lines": 734,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 662,
-        "totalFunctionLines": 662
-      },
-      {
-        "path": "src/lib/conversation-message-contract.ts",
-        "lines": 589,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
-      },
-      {
-        "path": "src/lib/teacher-agent-events.ts",
-        "lines": 524,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
-      },
-      {
-        "path": "src/server/agent-runtime/openai-runtime.ts",
-        "lines": 767,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
-      },
-      {
         "path": "src/server/conversation/control-plane-store.ts",
-        "lines": 639,
+        "lines": 469,
         "violatingFunctions": 1,
-        "maxFunctionLines": 351,
-        "totalFunctionLines": 351
-      },
-      {
-        "path": "src/server/conversation/external-audit-evidence-ingress.ts",
-        "lines": 490,
-        "violatingFunctions": 2,
-        "maxFunctionLines": 213,
-        "totalFunctionLines": 415
-      },
-      {
-        "path": "src/server/conversation/main-agent-controlled-react-loop.ts",
-        "lines": 609,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 330,
-        "totalFunctionLines": 330
+        "maxFunctionLines": 217,
+        "totalFunctionLines": 217
       },
       {
         "path": "src/server/conversation/model-main-conversation-agent.ts",
@@ -142,13 +86,6 @@
         "totalFunctionLines": 222
       },
       {
-        "path": "src/server/feedback/service.ts",
-        "lines": 334,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 196,
-        "totalFunctionLines": 196
-      },
-      {
         "path": "src/server/skills/business-tool-skill-bindings.ts",
         "lines": 547,
         "violatingFunctions": 0,
@@ -163,36 +100,8 @@
         "totalFunctionLines": 0
       },
       {
-        "path": "src/server/skills/business-tool-skill-runtime.ts",
-        "lines": 677,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 181,
-        "totalFunctionLines": 181
-      },
-      {
         "path": "src/server/skills/skill-registry.ts",
         "lines": 644,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
-      },
-      {
-        "path": "src/server/tools/agent-tool-router.ts",
-        "lines": 825,
-        "violatingFunctions": 1,
-        "maxFunctionLines": 162,
-        "totalFunctionLines": 162
-      },
-      {
-        "path": "src/server/tools/package-tool-adapter.ts",
-        "lines": 796,
-        "violatingFunctions": 0,
-        "maxFunctionLines": 0,
-        "totalFunctionLines": 0
-      },
-      {
-        "path": "src/server/tools/provider-tool-adapter.ts",
-        "lines": 1074,
         "violatingFunctions": 0,
         "maxFunctionLines": 0,
         "totalFunctionLines": 0
@@ -225,23 +134,17 @@
     "baseline": [
       { "path": "tests/artifact-route-execution-envelope.test.ts", "occurrences": 4 },
       { "path": "tests/assistant-ui-waiting-state.test.ts", "occurrences": 5 },
-      { "path": "tests/container-deployment.test.mjs", "occurrences": 6 },
       { "path": "tests/conversation-contract-authority.test.ts", "occurrences": 2 },
-      { "path": "tests/deploy-demo-preflight.test.mjs", "occurrences": 34 },
-      { "path": "tests/desktop-installer-smoke.test.mjs", "occurrences": 3 },
       { "path": "tests/feedback-contract.test.ts", "occurrences": 2 },
       { "path": "tests/m44-runtime-ui.test.mjs", "occurrences": 7 },
       { "path": "tests/m47-composer-api-wiring.test.mjs", "occurrences": 26 },
-      { "path": "tests/m67-auth-readiness.test.mjs", "occurrences": 3 },
       { "path": "tests/m67-e2e-runner.test.mjs", "occurrences": 29 },
       { "path": "tests/m74-branded-auth-page.test.mjs", "occurrences": 46 },
       { "path": "tests/ppt-asset-image-generation-run.test.ts", "occurrences": 2 },
-      { "path": "tests/production-preflight.test.mjs", "occurrences": 2 },
       { "path": "tests/v1-9-e2e-runner.test.mjs", "occurrences": 37 },
       { "path": "tests/v1-9r-intensity-conflict.test.mjs", "occurrences": 2 },
       { "path": "tests/v1-9r-legacy-control-paths.test.ts", "occurrences": 1 },
-      { "path": "tests/v1-9r-stage-progress-mobile.test.mjs", "occurrences": 1 },
-      { "path": "tests/video-smoke-script.test.mjs", "occurrences": 7 }
+      { "path": "tests/v1-9r-stage-progress-mobile.test.mjs", "occurrences": 1 }
     ]
   },
   "lint": {
@@ -258,6 +161,8 @@
       "src/server/provider-ledger-*.ts",
       "src/app/api/**/route.ts",
       "src/lib/conversation-message-contract.ts",
+      "src/lib/conversation-message-*.ts",
+      "src/lib/teacher-agent-event*.ts",
       "prisma/schema.prisma",
       "scripts/production-preflight.mjs",
       "scripts/close-v1-9-run.ts",

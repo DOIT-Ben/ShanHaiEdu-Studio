@@ -81,6 +81,8 @@ const OFFLINE_REFACTOR_ALLOWED_IMPLEMENTATION_PATHS = [
   "src/server/provider-ledger/provider-ledger-contract.mjs",
   "src/app/api/**/route.ts",
   "src/lib/conversation-message-contract.ts",
+  "src/lib/conversation-message-*.ts",
+  "src/lib/teacher-agent-event*.ts",
   "prisma/schema.prisma",
 ];
 const OFFLINE_REFACTOR_PINNED_IMPLEMENTATIONS = [
@@ -102,6 +104,8 @@ const PRODUCTION_PROVIDER_PATHS = [
   "src/server/provider-ledger/**",
   "src/app/api/**/route.ts",
   "src/lib/conversation-message-contract.ts",
+  "src/lib/conversation-message-*.ts",
+  "src/lib/teacher-agent-event*.ts",
   "prisma/schema.prisma",
   "scripts/production-preflight.mjs",
   "scripts/close-v1-9-run.ts",

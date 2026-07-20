@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -13,6 +12,7 @@ import {
   resolveVideoTaskId,
   summarizeVideoTaskPayload,
   normalizeVideoStatus,
+  readVideoConfig,
   validateMp4Buffer,
 } from "../scripts/video-smoke.mjs";
 
@@ -80,7 +80,32 @@ test("builds Evolink Grok Imagine video request bodies", () => {
   );
 });
 
-test("builds Evolink request bodies from API ledger EVOLINK_VIDEO_* environment aliases", () => {
+test("resolves Evolink config from API ledger EVOLINK_VIDEO_* environment aliases", () => {
+  const config = readVideoConfig({
+    EVOLINK_VIDEO_API_KEY: "fixture-video-key",
+    EVOLINK_VIDEO_BASE_URL: "https://api.evolink.ai/",
+    EVOLINK_VIDEO_MODEL: "fixture-model",
+    EVOLINK_VIDEO_DURATION_SECONDS: "8",
+    EVOLINK_VIDEO_QUALITY: "720p",
+    EVOLINK_VIDEO_STYLE_MODE: "fun",
+    EVOLINK_VIDEO_ASPECT_RATIO: "9:16",
+  });
+  assert.deepEqual(config, {
+    ok: true,
+    apiKey: "fixture-video-key",
+    baseUrl: "https://api.evolink.ai",
+    channel: "evolink",
+    model: "fixture-model",
+    size: "1280x720",
+    duration: 8,
+    quality: "720p",
+    mode: "fun",
+    aspectRatio: "9:16",
+    timeoutMs: 600000,
+    pollIntervalMs: 5000,
+    maxPolls: 72,
+  });
+
   const body = buildVideoRequestBody(
     {
       channel: "evolink",
@@ -102,15 +127,6 @@ test("builds Evolink request bodies from API ledger EVOLINK_VIDEO_* environment 
     mode: "fun",
     aspect_ratio: "9:16",
   });
-
-  const scriptSource = readFileSync("scripts/video-smoke.mjs", "utf8");
-  assert.match(scriptSource, /EVOLINK_VIDEO_API_KEY/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_BASE_URL/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_MODEL/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_DURATION_SECONDS/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_QUALITY/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_STYLE_MODE/);
-  assert.match(scriptSource, /EVOLINK_VIDEO_ASPECT_RATIO/);
 });
 
 test("resolves video resume task id from explicit env before cached task metadata", () => {

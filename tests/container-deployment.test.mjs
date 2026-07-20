@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { CONTAINER_RUNTIME_BINARY_PROBES, CONTAINER_RUNTIME_NODE_REQUIREMENT, evaluateContainerRuntime } from "../scripts/container-runtime-preflight.mjs";
 
 const root = process.cwd();
 
@@ -9,8 +10,7 @@ test("V1 container deployment keeps one non-root process and external shared dat
   const dockerfilePath = path.join(root, "Dockerfile");
   const ignorePath = path.join(root, ".dockerignore");
   const composePath = path.join(root, "deploy", "v1-compose.yml");
-  const runtimePreflightPath = path.join(root, "scripts", "container-runtime-preflight.mjs");
-  for (const file of [dockerfilePath, ignorePath, composePath, runtimePreflightPath]) {
+  for (const file of [dockerfilePath, ignorePath, composePath]) {
     assert.equal(existsSync(file), true, `${path.basename(file)} must exist`);
   }
 
@@ -73,15 +73,19 @@ test("V1 container deployment keeps one non-root process and external shared dat
   assert.doesNotMatch(compose, /network_mode:\s*host/);
   assert.doesNotMatch(compose, /privileged:\s*true/);
 
-  const preflight = readFileSync(runtimePreflightPath, "utf8");
-  for (const binary of ["ffmpeg", "ffprobe", "soffice", "pdfinfo", "pdftoppm", "curl", "fc-match"]) {
-    assert.match(preflight, new RegExp(`"${escapeRegExp(binary)}"`));
-  }
-  assert.match(preflight, /\["ffmpeg", \["-version"\]\]/);
-  assert.match(preflight, /\["ffprobe", \["-version"\]\]/);
-  assert.match(preflight, /\["pdfinfo", \["-v"\]\]/);
-  assert.match(preflight, /\["pdftoppm", \["-v"\]\]/);
-  assert.match(preflight, /20\.19/);
+  const probeCalls = [];
+  const runtime = evaluateContainerRuntime({
+    nodeVersion: "20.19.0",
+    probe(command, args) {
+      probeCalls.push([command, args]);
+      return command === "fc-match"
+        ? { status: 0, stdout: "NotoSansCJK-Regular" }
+        : { status: 0, stdout: "ok" };
+    },
+  });
+  assert.equal(runtime.ok, true);
+  assert.equal(runtime.checks.find((check) => check.id === "node-engine")?.requirement, CONTAINER_RUNTIME_NODE_REQUIREMENT);
+  assert.deepEqual(probeCalls.slice(0, CONTAINER_RUNTIME_BINARY_PROBES.length), CONTAINER_RUNTIME_BINARY_PROBES);
 });
 
 function escapeRegExp(value) {

@@ -4,7 +4,7 @@ import { MESSAGE_PART_VERSION, type MessagePart } from "@/lib/conversation-messa
 import { chatMessageToAssistantUi } from "@/components/conversation/assistant-ui/message-adapter";
 
 describe("assistant-ui message adapter", () => {
-  it("projects all nine project message parts in order without inventing business state", () => {
+  it("projects all ten project message parts in order without inventing business state", () => {
     const parts: MessagePart[] = [
       { type: "text", schemaVersion: MESSAGE_PART_VERSION, text: "**教学目标**", format: "markdown" },
       { type: "activity", schemaVersion: MESSAGE_PART_VERSION, activityId: "activity-1", label: "正在整理", status: "running", evidenceRefs: [] },
@@ -13,6 +13,7 @@ describe("assistant-ui message adapter", () => {
       { type: "artifact-ref", schemaVersion: MESSAGE_PART_VERSION, artifactId: "artifact-1", version: 1, digest: "a".repeat(64), title: "教案", summary: "已形成候选。" },
       { type: "quality-summary", schemaVersion: MESSAGE_PART_VERSION, artifactId: "artifact-1", version: 1, outcome: "passed", summary: "结构完整。", findingLocators: [] },
       { type: "human-input", schemaVersion: MESSAGE_PART_VERSION, decisionId: "decision-1", actionId: "action-1", question: "是否允许外发？", options: [{ id: "no", label: "暂不外发" }] },
+      { type: "dialogue-checkpoint", schemaVersion: MESSAGE_PART_VERSION, checkpointId: "checkpoint-1", question: "继续教案还是改做PPT？", understandingSummary: "交付方向待确认。", impactSummary: "选择会改变后续工具范围。", options: [{ id: "lesson", label: "继续教案", description: "保持当前范围", recommended: true }, { id: "ppt", label: "改做PPT", description: "切换交付方向", recommended: false }], allowFreeText: true },
       { type: "next-actions", schemaVersion: MESSAGE_PART_VERSION, actions: [{ id: "open", label: "查看教案", kind: "open_artifact", artifactId: "artifact-1" }] },
       { type: "error-recovery", schemaVersion: MESSAGE_PART_VERSION, errorId: "error-1", reasonCode: "timeout", summary: "本轮超时。", recovery: { kind: "resume", label: "从上次进度继续", checkpointId: "checkpoint-1" } },
     ];
@@ -37,6 +38,7 @@ describe("assistant-ui message adapter", () => {
       "shanhai.artifact-ref",
       "shanhai.quality-summary",
       "shanhai.human-input",
+      "shanhai.dialogue-checkpoint",
       "shanhai.next-actions",
       "shanhai.error-recovery",
     ]);

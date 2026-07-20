@@ -87,6 +87,8 @@ test("Project sidebar exposes real archive and recycle-bin actions while collabo
 test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfaces", () => {
   const conversationSource = readSource("src/components/conversation/assistant-ui/ShanHaiThread.tsx");
   const composerSource = readSource("src/components/conversation/PromptComposer.tsx");
+  const attachmentSource = readSource("src/components/conversation/composer/useComposerAttachments.ts");
+  const composerContractSource = `${composerSource}\n${attachmentSource}`;
   const actionsSource = readSource("src/components/conversation/messages/MessageActions.tsx");
 
   assert.match(conversationSource, /WelcomeEmptyState/);
@@ -98,19 +100,19 @@ test("M70 composer exposes real first-run, drag-drop, paste, and tool-menu surfa
   assert.match(composerSource, /onDrop=\{handleDrop\}/);
   assert.match(composerSource, /handlePaste/);
   assert.match(composerSource, /onPaste=\{handlePaste\}/);
-  assert.doesNotMatch(composerSource, /previousComposerSubmittingRef/);
-  assert.match(composerSource, /attachmentSubmission/);
-  assert.match(composerSource, /hasCompletedComposerAttachmentSubmission/);
-  assert.match(composerSource, /attachmentWasSubmitted/);
-  assert.match(composerSource, /visibleAttachment/);
+  assert.doesNotMatch(composerContractSource, /previousComposerSubmittingRef/);
+  assert.match(attachmentSource, /attachmentSubmission/);
+  assert.match(attachmentSource, /hasCompletedComposerAttachmentSubmission/);
+  assert.match(attachmentSource, /attachmentWasSubmitted/);
+  assert.match(attachmentSource, /visibleAttachment/);
   assert.match(composerSource, /function handleSubmit/);
   assert.match(composerSource, /visibleAttachment\?\.status === "pending_parse"/);
   assert.match(composerSource, /这份资料还在读取/);
-  assert.match(composerSource, /if \(composerSubmitting\) return;/);
-  assert.match(composerSource, /正在发送中，请等本轮发送完成后再添加资料/);
-  assert.match(composerSource, /cancelPendingAttachmentRead/);
+  assert.match(attachmentSource, /if \(composerSubmitting\)/);
+  assert.match(attachmentSource, /正在发送中，请等本轮发送完成后再添加资料/);
+  assert.match(attachmentSource, /cancelPendingAttachmentRead/);
   assert.match(composerSource, /onRemove=\{composerSubmitting \? undefined : clearAttachment\}/);
-  assert.match(composerSource, /reference\?\.startsWith\(`资料《\$\{attachment\.fileName\}》`\)/);
+  assert.match(attachmentSource, /reference\?\.startsWith\(`资料《\$\{attachment\.fileName\}》`\)/);
   assert.match(composerSource, /ComposerMenuPlaceholder/);
   assert.doesNotMatch(composerSource, /item\.action === "focus_input"|onFocusInput/);
   assert.match(composerSource, /添加资料/);

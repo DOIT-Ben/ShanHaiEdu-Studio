@@ -120,7 +120,10 @@ test("M60 Evolink provider profile is conservative and does not claim start/end 
 
 test("M60 refuses to call the video provider without required upstream artifacts", () => {
   const videoRunSource = readSource("src/server/video-generation/video-generation-run.ts");
-  const routeSource = readSource("src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route.ts");
+  const routeSource = [
+    readSource("src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/route.ts"),
+    readSource("src/app/api/workbench/projects/[projectId]/artifacts/[artifactId]/video/video-route-generation.ts"),
+  ].join("\n");
 
   assert.match(videoRunSource, /assertVideoProviderPreconditions/);
   assert.match(videoRunSource, /missing_video_workflow_preconditions/);

@@ -4,20 +4,21 @@
 
 `docs\stages\`当前唯一活动阶段是 **产品优先深度重构**。目标不是继续增加证明机制，而是删除旧控制面、修复核心合同漏洞、拆分巨型模块，并让教师主链路只依赖一套可维护实现。
 
-当前进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4、D5切片已完成离线行为回归；repository、workbench API和workbench service已退出复杂度基线，队列/GenerationJob/VideoShot漏洞已关闭，Artifact重做只走标准Main Agent消息，生产mock、Stage41假交付、孤立runtime PoC和新库staged commit结构已删除。workbench生产职责模块已进入Provider敏感路径和离线阶段精确白名单，开发态只允许延期且release不接受延期。阶段D仍在进行，唯一下一切片是D6：拆分消息与事件合同。源码合同检测器已纠正直接读取语义，但wrapper漏报仍未清零。整个活动阶段仍未关闭。
+当前进度：阶段A、阶段B、阶段C以及阶段D的D1、D2、D3、D4、D5、D6、D7、D8、D9、D10、D11、D12、D13、D14切片已完成离线行为回归；D7完成TaskAggregate与external-audit ingress职责治理，并按风险优先策略完成Agent Tool授权与审核目标绑定、Provider结果合同和Provider视频镜头请求拆分；D8完成Skill runtime职责拆分；D9完成Agent策略、Provider结果和Package三族职责拆分；D10完成Runtime请求/响应/schema/错误结果职责与ReAct合同/回合辅助职责拆分；D11完成Feedback service reconciliation职责拆分；D12完成workbench controller、composer提交和附件读取职责治理，并明确MediaWorkbench与ProjectListItem继续作为稳定内聚项保留；D13完成视频route HTTP边界与执行协调最小拆分、单镜头`shotIds`和GenerationJob `unitId`血缘修复；D14完成Ops环境拼装、container/video/desktop/deploy/auth smoke结构化合同和失效数据源键删除。repository、workbench API和workbench service已退出复杂度基线，队列/GenerationJob/VideoShot漏洞已关闭，Artifact重做只走标准Main Agent消息，生产mock、Stage41假交付、孤立runtime PoC和新库staged commit结构已删除。消息与事件合同已拆为独立职责模块，旧导出路径保持兼容。Skill registry、bindings、output contract和Tool Router作为稳定内聚注册表/协议映射/单一校验分发边界保留，Runtime与Tool adapter公开门面保持兼容并已将内部职责迁入独立模块。Provider敏感生产职责模块已进入离线阶段精确白名单，开发态只允许延期且release不接受延期。复杂度债务现为11，源码合同债务现为13；下一步进入D15 Runner源码合同。整个活动阶段仍未关闭。
 
 ## 活动文件
 
 - 机器合同：`active-stage.json`
 - 实施计划：`product-first-deep-refactor-plan.md`
 - 测试计划：`product-first-deep-refactor-test-plan.md`
+- 续作交接：`product-first-deep-refactor-handoff.md`
 
 ## 固定边界
 
 - 先修业务合同和生产控制权，再处理一般工程债务。
 - 不保留竞争实现；消费者迁移完成后删除旧入口、旧类型和旧测试口径。
 - 源码字符串检测器当前既有漏报也有误报；只有全部显性与隐藏源码断言迁移、检测器修正并在增强扫描下报告0，才能清空该债务。
-- 复杂度 baseline、源码字符串合同 baseline、Lint warning 和构建动态追踪 warning 必须在本阶段清零。
+- 复杂度与源码字符串合同门必须保持单调收缩并禁止新增债务；复杂度按`2026-07-20-adr-risk-based-complexity-governance.md`分为应拆、修改时再评估和可保留三类，不再把所有baseline清空作为唯一验收条件。Lint warning和构建动态追踪warning仍必须清零。
 - `WorkflowNode`、外层 `toolPlan` / `deliveryPlan` 和生产 deterministic runtime 必须退出 `src`。
 - 不调用真实 Provider，不创建 V1-9 runId，不生成图片、视频、PPTX、ZIP，不运行390px真实黑盒。
 - release 仍要求新鲜真实 Provider receipt；离线重构延期状态不能上推为 model orchestration、product E2E 或 release 通过。

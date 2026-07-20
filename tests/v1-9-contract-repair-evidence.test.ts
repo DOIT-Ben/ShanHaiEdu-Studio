@@ -76,6 +76,91 @@ describe("V1-9 contract repair evidence", () => {
     ]));
   });
 
+  it("binds every decomposed message and teacher event contract into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/lib/conversation-message-contract.ts",
+      "src/lib/conversation-message-parts.ts",
+      "src/lib/conversation-message-projection.ts",
+      "src/lib/teacher-agent-event-contract.ts",
+      "src/lib/teacher-agent-event-message-merge.ts",
+      "src/lib/teacher-agent-event-projection.ts",
+      "src/lib/teacher-agent-event-timeline.ts",
+      "src/lib/teacher-agent-events.ts",
+      "tests/assistant-ui-agent-events.test.ts",
+      "tests/assistant-ui-message-adapter.test.ts",
+      "tests/conversation-message-contract.test.ts",
+      "tests/message-part-persistence.test.ts",
+      "tests/workbench-api.test.mjs",
+    ]));
+  });
+
+  it("binds every decomposed Provider adapter responsibility into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/tools/provider-tool-adapter.ts",
+      "src/server/tools/provider-tool-adapter-types.ts",
+      "src/server/tools/provider-tool-artifact-resolution.ts",
+      "src/server/tools/provider-tool-failure-classifier.ts",
+      "src/server/tools/provider-tool-result-contract.ts",
+      "src/server/tools/provider-tool-success-result.ts",
+      "src/server/tools/provider-video-shot-request.ts",
+      "tests/provider-tool-adapter.test.ts",
+      "tests/video-narration-provider-tool.test.ts",
+    ]));
+  });
+
+  it("binds decomposed Agent policy and Package assembly responsibilities into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/tools/agent-tool-authorization.ts",
+      "src/server/tools/agent-tool-policy-result.ts",
+      "src/server/tools/agent-tool-router.ts",
+      "src/server/tools/package-tool-adapter-shared.ts",
+      "src/server/tools/package-tool-adapter.ts",
+      "src/server/tools/package-tool-final-adapter.ts",
+      "src/server/tools/package-tool-ppt-adapter.ts",
+      "src/server/tools/package-tool-video-adapter.ts",
+      "tests/agent-tools/agent-tool-router-default-authorization.test.ts",
+      "tests/agent-tools/agent-tool-router.test.ts",
+      "tests/package-tool-adapter.test.ts",
+    ]));
+  });
+
+  it("binds external-audit ingress validation and transaction responsibilities into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/conversation/external-audit-evidence-ingress.ts",
+      "src/server/conversation/external-audit-evidence-transaction.ts",
+      "tests/external-audit-evidence-ingress.test.ts",
+    ]));
+  });
+
+  it("binds decomposed Skill runtime and formal result validation responsibilities into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/skills/business-tool-skill-runtime.ts",
+      "src/server/skills/business-tool-skill-runtime-execution.ts",
+      "src/server/skills/business-tool-skill-result-validator.ts",
+      "src/server/skills/business-tool-skill-runtime-execution-helpers.ts",
+      "tests/business-tool-skill-runtime.test.ts",
+      "tests/business-tool-skill-risk-parity.test.ts",
+      "tests/business-tool-skill-formal-contract.test.ts",
+    ]));
+  });
+
+  it("binds Runtime request/output contracts and ReAct loop helpers into the repair evidence closure", () => {
+    expect(V1_9_CONTRACT_REPAIR_REQUIRED_FILES).toEqual(expect.arrayContaining([
+      "src/server/agent-runtime/openai-runtime.ts",
+      "src/server/agent-runtime/openai-runtime-error.ts",
+      "src/server/agent-runtime/openai-runtime-output.ts",
+      "src/server/agent-runtime/openai-runtime-request.ts",
+      "src/server/agent-runtime/openai-runtime-result.ts",
+      "src/server/agent-runtime/openai-runtime-schema.ts",
+      "src/server/conversation/main-agent-controlled-react-loop.ts",
+      "src/server/conversation/main-agent-react-loop-contract.ts",
+      "src/server/conversation/main-agent-react-loop-helpers.ts",
+      "tests/agent-runtime/openai-runtime.test.ts",
+      "tests/agent-runtime/runtime-quality.test.ts",
+      "tests/agent-runtime/main-agent-controlled-react-loop.test.ts",
+    ]));
+  });
+
   it("binds the exact Job, teacher message, TaskBrief, idempotency key, failure signature and required repair closure", () => {
     const cwd = path.resolve(".tmp", "v1-9-contract-repair-evidence");
     const repairFile = "repair/recovery.ts";
