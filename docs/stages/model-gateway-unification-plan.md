@@ -33,7 +33,7 @@
 - `/v1/videos` + `video-grok`：HTTP 200；`GET /v1/videos/:id` 返回完成态；`GET /v1/videos/:id/content` 下载真实有效 MP4，393,821 字节，SHA-256 已记录，请求 ID 存在。
 - 旧 `/v1/image_generation`：HTTP 404；旧 `/v1/videos/generations`：HTTP 405，不能作为兼容回退。
 
-更新后的同一网关凭据曾完成五类真实 smoke；当前候选重新生成 receipt 时，图片上游连续返回 `HTTP 502 / ALL_IMAGE_ROUTES_FAILED`。当前状态为 `MODEL GATEWAY CONTRACT PASS / FULL REGRESSION PASS / LIVE RECEIPT BLOCKED / RELEASE BLOCKED`，不能把先前成功上推为当前候选门禁通过。
+更新后的同一网关凭据已完成五类真实 smoke；最终候选中图片单次成功，图片、MP3、MP4 均完成字节验真，receipt 与 development gate 已通过。当前状态为 `MODEL GATEWAY CONTRACT PASS / FULL REGRESSION PASS / LIVE RECEIPT PASS / RELEASE BLOCKED`；产品级 V1-9、教师签收和 release 仍需单独验收。
 
 ## 完成门槛
 
