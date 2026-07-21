@@ -8,6 +8,8 @@ export type CapabilityId =
   | "ppt_full_assets"
   | "ppt_full_deck"
   | "ppt_page_repair"
+  | "ppt_image_slides"
+  | "ppt_image_slide_assembly"
   | "coze_ppt"
   | "image_asset"
   | "intro_video"

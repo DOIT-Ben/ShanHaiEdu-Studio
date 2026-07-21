@@ -391,6 +391,13 @@ const toolDefinitions: ToolDefinition[] = [
     producedArtifactKind: "pptx_artifact",
   }),
   packageTool({
+    id: "assemble_ppt_image_slides",
+    label: "组装整图 PPTX 并打磨", description: "将每张整页图片铺满一页 PPT，叠加可编辑文字和数学层，完成结构审查后输出 PPTX。",
+    capabilityId: "ppt_image_slide_assembly",
+    requiredArtifactKinds: ["ppt_design_draft", "ppt_page_images"],
+    producedArtifactKind: "pptx_artifact",
+  }),
+  packageTool({
     id: "repair_ppt_full_deck_pages",
     label: "返修指定 PPT 页面",
     description: "只返修教师明确指定的页面，保留未受影响页的素材和渲染证据。",
@@ -407,6 +414,15 @@ const toolDefinitions: ToolDefinition[] = [
     requiredArtifactKinds: ["ppt_design_draft", "image_prompts"],
     primarySourceArtifactKind: "ppt_design_draft",
     producedArtifactKind: "image_prompts",
+  }),
+  providerTool({
+    id: "generate_ppt_page_images",
+    label: "生成 PPT 逐页整图", description: "参考 FrameFlow，为每个 PPT 页面生成一张完整 16:9 视觉图，不把文字烘焙进图片。",
+    capabilityId: "ppt_image_slides",
+    providerToolId: "image_asset.generate_ppt_page_images",
+    requiredArtifactKinds: ["ppt_design_draft"],
+    primarySourceArtifactKind: "ppt_design_draft",
+    producedArtifactKind: "ppt_page_images",
   }),
   providerTool({
     id: "generate_classroom_image",

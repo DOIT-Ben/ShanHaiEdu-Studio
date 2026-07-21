@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { generateCozePptFromArtifact } from "@/server/coze-ppt/coze-ppt-run";
 import { generateImageFromArtifact, generatePptAssetImage } from "@/server/image-generation/image-generation-run";
+import { generatePptImageSlideBundle } from "@/server/ppt-image-slides/ppt-image-slide-generation";
 import { PptAssetBatchExecutionError, runPptAssetBatch, type PptAssetBatchLifecycle, type PptAssetBatchRunResult } from "@/server/ppt-quality/ppt-asset-batch-run";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import { validatePptDesignPackageForProviderProduction } from "@/server/ppt-quality/ppt-design-validator";
@@ -29,6 +30,7 @@ export type {
   RunCozePptProvider,
   RunImageProvider,
   RunPptAssetBatchProvider,
+  RunPptImageSlideProvider,
   RunVideoNarrationProvider,
   RunVideoProvider,
 } from "./provider-tool-adapter-types";
@@ -43,6 +45,7 @@ import {
   buildCozePptSuccessResult,
   buildImageSuccessResult,
   buildPptAssetSuccessResult,
+  buildPptImageSlideSuccessResult,
   buildProviderArtifactTruth,
   buildVideoSuccessResult,
   resolveBusinessSkillProvenance,
@@ -53,6 +56,7 @@ const COZE_PPT_PROVIDER = "coze_ppt";
 const IMAGE_PROVIDER = "image_asset";
 const PPT_SAMPLE_ASSET_PROVIDER = "ppt_sample_assets";
 const PPT_FULL_ASSET_PROVIDER = "ppt_full_assets";
+const PPT_IMAGE_SLIDE_PROVIDER = "ppt_image_slides";
 const ASSET_IMAGE_PROVIDER = "asset_image_generate";
 const VIDEO_PROVIDER = "video_segment_generate";
 const VIDEO_NARRATION_PROVIDER = "tts_minimax";
@@ -79,7 +83,7 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
     return buildNeedsInputResult(input, capabilityId, provider, missingArtifactKinds);
   }
 
-  if (!isCozePptTool(input.tool) && !isImageTool(input.tool) && !isPptAssetTool(input.tool) && !isVideoTool(input.tool) && !isVideoNarrationTool(input.tool)) {
+  if (!isCozePptTool(input.tool) && !isImageTool(input.tool) && !isPptAssetTool(input.tool) && !isPptImageSlideTool(input.tool) && !isVideoTool(input.tool) && !isVideoNarrationTool(input.tool)) {
     return buildFailureResult(input, {
       capabilityId,
       provider,
@@ -94,6 +98,10 @@ export async function executeProviderTool(input: ProviderToolAdapterInput): Prom
 
   if (isPptAssetTool(input.tool)) {
     return executePptAssetTool(input, capabilityId, provider);
+  }
+
+  if (isPptImageSlideTool(input.tool)) {
+    return executePptImageSlideTool(input, capabilityId, provider);
   }
 
   if (isImageTool(input.tool)) {
@@ -245,6 +253,17 @@ async function executeVideoTool(input: ProviderToolAdapterInput, capabilityId: s
   }
 }
 
+async function executePptImageSlideTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
+  const sourceArtifact = findPrimarySourceArtifact(input);
+  if (!sourceArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["ppt_design_draft"]);
+  try {
+    const bundle = await (input.runPptImageSlides ?? generatePptImageSlideBundle)({ project: input.project ?? buildProjectRecord(input.projectId), designArtifact: sourceArtifact });
+    return buildPptImageSlideSuccessResult(input, capabilityId, sourceArtifact.id, bundle);
+  } catch (error) {
+    return buildFailureResult(input, classifyMediaFailure(error, capabilityId, provider, input.tool.failurePolicy.retryable, "image"), true);
+  }
+}
+
 async function executeVideoNarrationTool(input: ProviderToolAdapterInput, capabilityId: string, provider: string | undefined): Promise<ToolExecutionResult> {
   const sourceArtifact = findPrimarySourceArtifact(input);
   if (!sourceArtifact) return buildNeedsInputResult(input, capabilityId, provider, ["video_script_generate"]);
@@ -329,13 +348,17 @@ function isVideoTool(tool: ToolDefinition): boolean {
   return tool.id === "generate_video_segment" && tool.capabilityId === VIDEO_PROVIDER && tool.providerToolId === "video_segment_generate.generate";
 }
 
+function isPptImageSlideTool(tool: ToolDefinition): boolean {
+  return tool.id === "generate_ppt_page_images" && tool.capabilityId === PPT_IMAGE_SLIDE_PROVIDER && tool.providerToolId === "image_asset.generate_ppt_page_images";
+}
+
 function isVideoNarrationTool(tool: ToolDefinition): boolean {
   return tool.id === "generate_video_narration" && tool.capabilityId === "video_narration_generate" && tool.providerToolId === "tts_minimax.generate_narration";
 }
 
 function resolveProvider(tool: ToolDefinition): string | undefined {
   if (tool.capabilityId === COZE_PPT_PROVIDER || tool.providerToolId?.startsWith("coze_ppt.")) return COZE_PPT_PROVIDER;
-  if (tool.capabilityId === PPT_SAMPLE_ASSET_PROVIDER || tool.capabilityId === PPT_FULL_ASSET_PROVIDER) return IMAGE_PROVIDER;
+  if (tool.capabilityId === PPT_SAMPLE_ASSET_PROVIDER || tool.capabilityId === PPT_FULL_ASSET_PROVIDER || tool.capabilityId === PPT_IMAGE_SLIDE_PROVIDER) return IMAGE_PROVIDER;
   if (tool.capabilityId === ASSET_IMAGE_PROVIDER) return IMAGE_PROVIDER;
   if (tool.capabilityId === "video_narration_generate") return VIDEO_NARRATION_PROVIDER;
   return tool.capabilityId;

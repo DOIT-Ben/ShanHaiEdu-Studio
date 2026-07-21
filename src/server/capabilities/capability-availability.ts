@@ -36,6 +36,7 @@ export function resolveRuntimeProviderAvailability(env: Partial<NodeJS.ProcessEn
     ...(hasImageProvider(env) ? { image_asset: true as const } : {}),
     ...(hasImageProvider(env) ? { ppt_sample_assets: true as const } : {}),
     ...(hasImageProvider(env) ? { ppt_full_assets: true as const } : {}),
+    ...(hasImageProvider(env) ? { ppt_image_slides: true as const } : {}),
     ...(hasVideoProvider(env) ? { video_segment_generate: true as const } : {}),
     ...(hasVideoNarrationProvider(env) ? { video_narration_generate: true as const } : {}),
   };

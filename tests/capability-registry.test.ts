@@ -15,6 +15,8 @@ describe("M54-B CapabilityRegistry", () => {
       "ppt_key_samples",
       "ppt_full_deck",
       "ppt_page_repair",
+      "ppt_image_slides",
+      "ppt_image_slide_assembly",
       "ppt_full_assets",
       "image_asset",
       "intro_video",

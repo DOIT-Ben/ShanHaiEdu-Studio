@@ -1,6 +1,7 @@
 import type { CozePptGenerationResult } from "@/server/coze-ppt/coze-ppt-run";
 import type { ImageGenerationResult } from "@/server/image-generation/image-generation-run";
 import type { PptAssetBatchRunResult } from "@/server/ppt-quality/ppt-asset-batch-run";
+import type { PptImageSlideBundle } from "@/server/ppt-image-slides/ppt-image-slide-types";
 import type { VideoGenerationResult } from "@/server/video-generation/video-generation-run";
 import type { ArtifactRecord } from "@/server/workbench/types";
 
@@ -12,6 +13,31 @@ const COZE_PPT_PROVIDER = "coze_ppt";
 const ASSET_IMAGE_PROVIDER = "asset_image_generate";
 const VIDEO_PROVIDER = "video_segment_generate";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+export function buildPptImageSlideSuccessResult(input: ProviderToolAdapterInput, capabilityId: string, sourceArtifactId: string, bundle: PptImageSlideBundle): ToolExecutionResult {
+  if (!bundle.entries.length || bundle.entries.some((entry) => entry.bytes <= 0 || !entry.sha256 || entry.provider !== "model_gateway")) throw new Error("ppt_image_slide_bundle_invalid");
+  const artifactTruth = buildProviderArtifactTruth(input, "ppt_page_images");
+  const qualityGate = { passed: true, gates: ["one_image_per_page", "images_verified", "gateway_lineage_complete"] } satisfies ToolQualityGateResult;
+  return {
+    status: "succeeded",
+    toolId: input.tool.id,
+    capabilityId,
+    provider: "model_gateway",
+    artifactTruth,
+    qualityGate,
+    artifactDraft: {
+      nodeKey: "ppt_page_images",
+      kind: "ppt_page_images",
+      title: "PPT 逐页整图批次",
+      summary: `已生成 ${bundle.entries.length} 张 16:9 整页视觉图，下一步可组装整图 PPTX。`,
+      markdownContent: "# PPT 逐页整图批次\n\n每页对应一张已验证图片，文字和数学内容将在 PPTX 中作为可编辑层叠加。",
+      structuredContent: { pptImageSlideBundle: bundle, sourceArtifactIds: [sourceArtifactId], artifactTruth, qualityGate },
+    },
+    providerPayload: { bundle, sourceArtifactId, artifactTruth, qualityGate },
+    assistantSummary: `PPT 逐页整图已生成 ${bundle.entries.length} 张并通过文件校验。`,
+    budgetEvent: buildBudgetEvent(input, capabilityId, "succeeded", "tool_succeeded", bundle.entries.length),
+  };
+}
 
 export function buildImageSuccessResult(
   input: ProviderToolAdapterInput,

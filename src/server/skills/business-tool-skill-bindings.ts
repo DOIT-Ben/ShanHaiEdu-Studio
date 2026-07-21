@@ -117,18 +117,16 @@ const toolContractsByName: Record<string, SkillBoundBusinessToolPolicy["contract
   generate_ppt_sample_assets: toolContract(["ppt_design_draft"], ["image_prompts"]),
   assemble_ppt_key_samples: toolContract(["ppt_design_draft", "image_prompts"], ["image_prompts"]),
   generate_ppt_full_assets: toolContract(["ppt_design_draft", "image_prompts"], ["image_prompts"]),
+  generate_ppt_page_images: toolContract(["ppt_design_draft"], ["ppt_page_images"]),
   assemble_ppt_full_deck: toolContract(["ppt_design_draft", "image_prompts"], ["pptx_artifact"]),
+  assemble_ppt_image_slides: toolContract(["ppt_design_draft", "ppt_page_images"], ["pptx_artifact"]),
   repair_ppt_full_deck_pages: toolContract(["pptx_artifact", "ppt_design_draft", "image_prompts"], ["pptx_artifact"]),
   generate_classroom_image: toolContract(["ppt_draft"], ["image_prompts"]),
   generate_video_assets: toolContract(["asset_brief_generate"], ["asset_image_generate"]),
   generate_video_shot: toolContract(["video_segment_plan", "storyboard_generate", "asset_image_generate"], ["video_segment_generate"]),
   assemble_video: toolContract(["video_segment_generate", "storyboard_generate", "video_script_generate", "video_narration_generate"], ["concat_only_assemble"]),
-  create_final_package: toolContract(
-    ["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_script_generate", "concat_only_assemble"],
-    ["final_delivery"],
-  ),
+  create_final_package: toolContract(["requirement_spec", "lesson_plan", "ppt_design_draft", "pptx_artifact", "image_prompts", "video_script_generate", "concat_only_assemble"], ["final_delivery"]),
 };
-
 const businessToolSkillPolicies: readonly BusinessToolSkillPolicy[] = Object.freeze([
   exempt("create_requirement_spec", "no_domain_skill_required"),
   guidance(
@@ -232,7 +230,9 @@ const businessToolSkillPolicies: readonly BusinessToolSkillPolicy[] = Object.fre
   imageSkill("generate_ppt_sample_assets", "生成当前PPT关键页所需的场景图和透明素材。"),
   exempt("assemble_ppt_key_samples", "no_compatible_domain_skill"),
   imageSkill("generate_ppt_full_assets", "生成当前逐页设计所需的正式场景图和透明素材。"),
+  imageSkill("generate_ppt_page_images", "为当前逐页设计生成一页一图的完整 16:9 视觉底图。"),
   exempt("assemble_ppt_full_deck", "no_compatible_domain_skill"),
+  exempt("assemble_ppt_image_slides", "no_compatible_domain_skill"),
   exempt("repair_ppt_full_deck_pages", "no_compatible_domain_skill"),
   imageSkill("generate_classroom_image", "生成当前课件大纲需要的课堂视觉素材。"),
   imageSkill("generate_video_assets", "生成当前独立创意短片资产说明指定的角色、场景、道具和关键帧参考图。"),
@@ -485,7 +485,7 @@ function compatibilityAdapterAccepts(
   }
   if (mapping.adapterId === "image-result-batch.v2") {
     return direction === "produces" && contractKey === "image-generation-result@shanhai-imagegen/v2" &&
-      mapping.toolArtifactKind === "image_prompts";
+      ["image_prompts", "ppt_page_images"].includes(mapping.toolArtifactKind);
   }
   if (mapping.adapterId === "video-package-context.v1") {
     return direction === "consumes" && contractKey === "video-package@shanhai-video/v1" &&
@@ -516,7 +516,7 @@ function compatibilityAdapterAccepts(
 }
 
 function isPptImageBatchTool(toolName: string) {
-  return toolName === "generate_ppt_sample_assets" || toolName === "generate_ppt_full_assets";
+  return toolName === "generate_ppt_sample_assets" || toolName === "generate_ppt_full_assets" || toolName === "generate_ppt_page_images";
 }
 
 function sameTextSet(left: string[], right: string[]) {

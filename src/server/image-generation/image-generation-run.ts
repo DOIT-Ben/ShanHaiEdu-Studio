@@ -60,17 +60,32 @@ export async function generateImageFromArtifact(input: {
   toolInput?: Record<string, unknown>;
   businessSkillContext?: BusinessSkillContext;
 }): Promise<ImageGenerationResult> {
-  const config = readConfig(process.env);
   const prompt = buildImageGenerationPrompt(input);
-  const providerBuffer = await requestMiniMaxImage({ config, prompt, aspectRatio: "16:9" });
-  const buffer = await normalizeMiniMaxProviderFormat(providerBuffer);
+  return generateImageFromPrompt({ project: input.project, prompt, aspectRatio: "16:9" });
+}
+
+export async function generateImageFromPrompt(input: {
+  project: Pick<ProjectRecord, "id">;
+  prompt: string;
+  aspectRatio: "16:9" | "1:1";
+  fileStem?: string;
+  normalizeCanvas?: boolean;
+}): Promise<ImageGenerationResult> {
+  const config = readConfig(process.env);
+  const prompt = input.prompt.trim();
+  if (!prompt) throw new Error("image_prompt_required");
+  const providerBuffer = await requestMiniMaxImage({ config, prompt, aspectRatio: input.aspectRatio });
+  let buffer = await normalizeMiniMaxProviderFormat(providerBuffer);
+  if (input.normalizeCanvas && input.aspectRatio === "16:9") {
+    buffer = await sharp(buffer).resize(1920, 1080, { fit: "cover" }).png().toBuffer();
+  }
   const validation = validateImageBuffer(buffer);
   if (!validation.valid) {
     throw new Error("invalid_image_output");
   }
 
   const sourceMetadata = await inspectImageMetadata(providerBuffer);
-  const suffix = `${sanitizeFileSegment(input.project.id)}-${Date.now()}`;
+  const suffix = `${sanitizeFileSegment(input.fileStem ?? input.project.id)}-${Date.now()}`;
   const rawFileName = `${suffix}-provider-raw${sourceMetadata.extension}`;
   const rawStored = writeLocalArtifact({
     category: "image-artifacts",

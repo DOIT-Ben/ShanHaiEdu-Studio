@@ -70,7 +70,7 @@ describe("V1-9 business Tool Skill Runtime preflight", () => {
     expect(openRegistry).toHaveBeenCalledTimes(1);
     expect(result.status).toBe("ready");
     expect(result.activeSkillNames).toEqual([...activeNames].sort());
-    expect(result.checkedBindingCount).toBe(21);
+    expect(result.checkedBindingCount).toBe(23);
     expect(result.bindingPolicyDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(result.projectionLockDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(result.activeSkills).toEqual(expect.arrayContaining([

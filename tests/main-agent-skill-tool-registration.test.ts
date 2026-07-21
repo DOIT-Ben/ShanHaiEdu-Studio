@@ -31,6 +31,8 @@ describe("Main Agent business Tool Skill bindings", () => {
     expect(byId.get("assemble_video")).not.toHaveProperty("businessSkillName");
     expect(byId.get("generate_ppt_sample_assets")).toMatchObject({ businessSkillName: "shanhai-imagegen" });
     expect(byId.get("generate_ppt_full_assets")).toMatchObject({ businessSkillName: "shanhai-imagegen" });
+    expect(byId.get("generate_ppt_page_images")).toMatchObject({ businessSkillName: "shanhai-imagegen" });
+    expect(byId.get("assemble_ppt_image_slides")).not.toHaveProperty("businessSkillName");
     expect(byId.get("create_final_package")).toMatchObject({ businessSkillName: "shanhai-delivery" });
 
     expect(tools.some((tool) => tool.id === "shanhai-suite" || tool.id === "run_skill_pipeline")).toBe(false);

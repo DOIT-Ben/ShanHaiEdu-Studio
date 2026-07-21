@@ -1,6 +1,7 @@
 import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { CozePptGenerationResult } from "@/server/coze-ppt/coze-ppt-run";
 import type { ImageGenerationResult } from "@/server/image-generation/image-generation-run";
+import type { PptImageSlideBundle } from "@/server/ppt-image-slides/ppt-image-slide-types";
 import type { PptAssetBatchLifecycle, PptAssetBatchRunResult } from "@/server/ppt-quality/ppt-asset-batch-run";
 import type {
   ResolvedShotVideoRequest,
@@ -44,6 +45,11 @@ export type RunPptAssetBatchProvider = (
   } & ProviderBusinessSkillInput,
 ) => Promise<PptAssetBatchRunResult>;
 
+export type RunPptImageSlideProvider = (input: {
+  project: ProjectRecord;
+  designArtifact: ArtifactRecord;
+}) => Promise<PptImageSlideBundle>;
+
 export type RunVideoProvider = (
   input: {
     project: ProjectRecord;
@@ -79,6 +85,7 @@ export type ProviderToolAdapterInput = {
   runCozePpt?: RunCozePptProvider;
   runImage?: RunImageProvider;
   runPptAssetBatch?: RunPptAssetBatchProvider;
+  runPptImageSlides?: RunPptImageSlideProvider;
   runVideo?: RunVideoProvider;
   runVideoNarration?: RunVideoNarrationProvider;
   resolveVideoShot?: ResolveVideoShotProvider;

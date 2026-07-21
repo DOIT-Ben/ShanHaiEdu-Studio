@@ -46,6 +46,7 @@ describe("A23 formal business Tool output adapters", () => {
       "create_final_package",
       "generate_classroom_image",
       "generate_ppt_full_assets",
+      "generate_ppt_page_images",
       "generate_ppt_sample_assets",
       "generate_video_assets",
       "generate_video_shot",

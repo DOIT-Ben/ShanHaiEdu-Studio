@@ -6,6 +6,9 @@ import { composePptFullDeckPptx } from "@/server/ppt-quality/ppt-full-deck-compo
 import { renderPptFullDeck } from "@/server/ppt-quality/ppt-full-deck-renderer";
 import { repairPptFullDeckPages } from "@/server/ppt-quality/ppt-full-deck-page-repair";
 import { buildPptFullDeckCandidate, validatePptFullDeckCandidate } from "@/server/ppt-quality/ppt-full-deck-candidate";
+import { assemblePptImageSlides } from "@/server/ppt-image-slides/ppt-image-slide-assembler";
+import type { PptImageSlideBundle } from "@/server/ppt-image-slides/ppt-image-slide-types";
+import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import type { PptFullDeckCandidate } from "@/server/ppt-quality/ppt-production-types";
 import type { PptDesignPackage } from "@/server/ppt-quality/ppt-quality-types";
 import type { ArtifactRecord } from "@/server/workbench/types";
@@ -90,6 +93,41 @@ export async function executePptFullDeckAssembly(input: PackageToolAdapterInput)
     artifactTruth,
     qualityGate,
     assistantSummary: "完整 PPT 交付审查包已生成，尚未通过逐页 Delivery Critic，也未进入最终交付。",
+    budgetEvent: buildBudgetEvent(input.tool, "succeeded", "tool_succeeded"),
+  };
+}
+
+export async function executePptImageSlideAssembly(input: PackageToolAdapterInput): Promise<ToolExecutionResult> {
+  const design = requireArtifact(input, "ppt_design_draft");
+  const images = requireArtifact(input, "ppt_page_images");
+  const designPackage = design.structuredContent.pptDesignPackage as PptDesignPackage | undefined;
+  const bundle = images.structuredContent.pptImageSlideBundle as PptImageSlideBundle | undefined;
+  if (!designPackage || !bundle) throw new Error("ppt_image_slide_inputs_incomplete");
+  const result = await assemblePptImageSlides({ designPackage, bundle });
+  const stored = writeLocalArtifact({ category: "ppt-production-artifacts", fileName: `ppt-image-slides-${input.projectId}-${Date.now()}.pptx`, buffer: result.pptxBuffer });
+  const artifactTruth = buildArtifactTruth(input.tool, "pptx_artifact");
+  const qualityGate = { passed: true, gates: [...result.review.checks, "pptx_persisted", "review_report_persisted"] } satisfies ToolQualityGateResult;
+  return {
+    status: "succeeded",
+    toolId: input.tool.id,
+    capabilityId: input.tool.capabilityId ?? "ppt_image_slide_assembly",
+    artifactTruth,
+    qualityGate,
+    artifactDraft: {
+      nodeKey: "pptx_artifact",
+      kind: "pptx_artifact",
+      title: "FrameFlow 风格整图 PPTX",
+      summary: `${result.review.slideCount} 页整图 PPTX 已组装，文字层可编辑，结构审查与打磨通过。`,
+      markdownContent: "# FrameFlow 风格整图 PPTX\n\n每页使用一张满版真实视觉图，并叠加独立可编辑文字/数学层。已完成页数、图片绑定、文本层和 PPTX 结构审查。",
+      structuredContent: {
+        storage: { cozePptx: { fileName: `ppt-image-slides-${input.projectId}.pptx`, localOutput: stored.localOutput, bytes: result.pptxBuffer.length, sha256: result.pptxSha256, slideCount: result.review.slideCount, generationMode: "frameflow_image_slide_assembly" } },
+        pptImageSlideReview: result.review,
+        sourceArtifactIds: [design.id, images.id],
+        artifactTruth,
+        qualityGate,
+      },
+    },
+    assistantSummary: "FrameFlow 风格整图 PPTX 已生成，图片整页铺底、可编辑文字层和结构审查均已通过。",
     budgetEvent: buildBudgetEvent(input.tool, "succeeded", "tool_succeeded"),
   };
 }

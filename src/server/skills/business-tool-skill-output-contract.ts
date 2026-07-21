@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-
 import type { ToolExecutionResult } from "@/server/tools/tool-types";
-
 import type { LoadedSkillContractSchema } from "./skill-runtime-types";
 import { omitObjectKeys } from "@/server/contracts/object-projection";
+import { projectImageSlideBatch } from "@/server/ppt-image-slides/ppt-image-slide-skill-output";
 
 type SucceededToolExecutionResult = Extract<ToolExecutionResult, { status: "succeeded" }>;
 
@@ -90,7 +89,7 @@ const registrations: readonly AdapterRegistration[] = Object.freeze([
   },
   {
     adapterId: "image-result-batch.v2",
-    businessToolNames: ["generate_ppt_sample_assets", "generate_ppt_full_assets"],
+    businessToolNames: ["generate_ppt_sample_assets", "generate_ppt_full_assets", "generate_ppt_page_images"],
     skillName: "shanhai-imagegen",
     skillVersion: "1.1",
     artifactType: "image-generation-result",
@@ -220,6 +219,7 @@ function projectSingleImage(result: SucceededToolExecutionResult): Record<string
 
 function projectImageBatch(result: SucceededToolExecutionResult): Record<string, unknown> {
   const content = record(result.artifactDraft.structuredContent, "PPT image output structuredContent");
+  if (content.pptImageSlideBundle) return projectImageSlideBatch(content, projectValidation(result));
   const manifest = record(content.pptAssetManifest, "PPT image manifest");
   const entries = array(manifest.entries, "PPT image manifest entries");
   if (entries.length === 0) fail("formal_skill_output_source_invalid", "PPT image manifest entries are empty.");

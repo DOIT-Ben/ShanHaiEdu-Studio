@@ -3,6 +3,7 @@ import {
   executePptFullDeckAssembly,
   executePptKeySampleAssembly,
   executePptPageRepair,
+  executePptImageSlideAssembly,
 } from "./package-tool-ppt-adapter";
 import { executeConcatOnlyAssemble } from "./package-tool-video-adapter";
 import {
@@ -29,6 +30,7 @@ export async function executePackageTool(input: PackageToolAdapterInput): Promis
     if (input.tool.capabilityId === "ppt_key_samples") return await executePptKeySampleAssembly(input);
     if (input.tool.capabilityId === "ppt_full_deck") return await executePptFullDeckAssembly(input);
     if (input.tool.capabilityId === "ppt_page_repair") return await executePptPageRepair(input);
+    if (input.tool.capabilityId === "ppt_image_slide_assembly") return await executePptImageSlideAssembly(input);
     return buildFailureResult(input, "tool_failed", "这类打包工具暂时不能自动执行。", `Unsupported package capability: ${input.tool.capabilityId}`, "unsupported_package_tool");
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown package tool error";
