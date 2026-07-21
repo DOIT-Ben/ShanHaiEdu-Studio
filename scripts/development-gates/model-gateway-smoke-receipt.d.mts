@@ -1,6 +1,6 @@
 export const MODEL_GATEWAY_SMOKE_RECEIPT_PATH: string;
 export const MODEL_GATEWAY_SMOKE_RECEIPT_SCHEMA: string;
-export const MODEL_GATEWAY_MODELS: Readonly<Record<"agent" | "text" | "image" | "video" | "tts", string>>;
+export const MODEL_GATEWAY_MODELS: Readonly<Record<"agent" | "text" | "image" | "pptImage" | "video" | "tts", string>>;
 
 export function verifyModelGatewaySmokeReceipt(options?: {
   root?: string;
@@ -15,7 +15,7 @@ export function verifyModelGatewaySmokeReceipt(options?: {
   receiptPath: string;
 };
 
-export function gatewayConfigDigest(configs: Record<"agent" | "text" | "image" | "video" | "tts", {
+export function gatewayConfigDigest(configs: Record<"agent" | "text" | "image" | "pptImage" | "video" | "tts", {
   apiKey: string;
   baseUrl: string;
   model: string;

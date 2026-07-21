@@ -63,6 +63,7 @@ async function main() {
   const agent = resolveModelGatewayConfig("agent");
   const text = resolveModelGatewayConfig("text");
   const image = resolveModelGatewayConfig("image");
+  const pptImage = resolveModelGatewayConfig("ppt_image");
   const video = resolveModelGatewayConfig("video");
   const tts = resolveModelGatewayConfig("tts");
   const base = agent.baseUrl;
@@ -75,7 +76,7 @@ async function main() {
     const available = Array.isArray(response.body.data)
       ? response.body.data.map((item) => (item as { id?: unknown }).id).filter((id): id is string => typeof id === "string")
       : [];
-    const required = [agent.model, text.model, image.model, video.model, tts.model];
+    const required = [agent.model, text.model, image.model, pptImage.model, video.model, tts.model];
     if (!required.every((model) => available.includes(model))) throw new Error("required_model_missing");
     return { status: response.response.status, availableModels: available, count: available.length, requiredModelsPresent: true };
   });
@@ -113,6 +114,18 @@ async function main() {
     const bytes = typeof imageData.b64_json === "string" ? Buffer.from(imageData.b64_json, "base64") : Buffer.alloc(0);
     validateImage(bytes);
     return { status: response.response.status, model: response.body.model ?? image.model, attempts, bytes: bytes.length, sha256: digest(bytes), requestIdPresent: requestIdPresent(response.response) };
+  });
+
+  await runCheck(checks, "pptImage", async () => {
+    const response = await fetchJson(`${base}/images/generations`, {
+      method: "POST",
+      headers: { ...headers(pptImage.apiKey), "Idempotency-Key": `shanhai-gateway-smoke-ppt-image-${smokeRunId}` },
+      body: JSON.stringify({ model: pptImage.model, prompt: "16:9 教学课件视觉底图，无文字、数字、公式或水印", size: "1536x1024", response_format: "b64_json", n: 1 }),
+    }, 2);
+    const imageData = Array.isArray(response.body.data) ? response.body.data[0] as { b64_json?: unknown } : {};
+    const bytes = typeof imageData.b64_json === "string" ? Buffer.from(imageData.b64_json, "base64") : Buffer.alloc(0);
+    validateImage(bytes);
+    return { status: response.response.status, model: response.body.model ?? pptImage.model, bytes: bytes.length, sha256: digest(bytes), requestIdPresent: requestIdPresent(response.response) };
   });
 
   await runCheck(checks, "tts", async () => {
@@ -163,7 +176,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     subject: collectGitVerificationSubject(process.cwd()),
     models: MODEL_GATEWAY_MODELS,
-    configDigest: gatewayConfigDigest({ agent, text, image, video, tts }),
+    configDigest: gatewayConfigDigest({ agent, text, image, pptImage, video, tts }),
     checks,
   }, null, 2)}\n`, "utf8");
 }

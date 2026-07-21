@@ -7,11 +7,11 @@ import { promisify } from "node:util";
 import sharp from "sharp";
 import { writeLocalArtifact } from "@/server/artifact-storage/local-artifact-storage";
 import { resolveModelGatewayConfig } from "@/server/model-gateway-config";
+import type { ModelGatewayCapability } from "@/server/model-gateway-config";
 import type { ArtifactRecord, ProjectRecord } from "@/server/workbench/types";
 import type { BusinessSkillContext } from "@/server/agent-runtime/types";
 import type { PptAssetRequest, PptGeneratedAsset } from "@/server/ppt-quality/ppt-asset-types";
 import { buildPptAssetImageGenerationRequest } from "@/server/ppt-quality/ppt-image-provider-request";
-
 export type ImageGenerationFileEvidence = {
   fileName: string;
   localOutput: string;
@@ -70,8 +70,9 @@ export async function generateImageFromPrompt(input: {
   aspectRatio: "16:9" | "1:1";
   fileStem?: string;
   normalizeCanvas?: boolean;
+  gatewayCapability?: Extract<ModelGatewayCapability, "image" | "ppt_image">;
 }): Promise<ImageGenerationResult> {
-  const config = readConfig(process.env);
+  const config = readConfig(process.env, input.gatewayCapability ?? "image");
   const prompt = input.prompt.trim();
   if (!prompt) throw new Error("image_prompt_required");
   const providerBuffer = await requestMiniMaxImage({ config, prompt, aspectRatio: input.aspectRatio });
@@ -301,8 +302,8 @@ async function normalizePptAssetBuffer(buffer: Buffer, request: PptAssetRequest)
     .toBuffer();
 }
 
-function readConfig(env: NodeJS.ProcessEnv): MiniMaxImageProviderConfig {
-  const gateway = resolveModelGatewayConfig("image", env);
+function readConfig(env: NodeJS.ProcessEnv, capability: Extract<ModelGatewayCapability, "image" | "ppt_image"> = "image"): MiniMaxImageProviderConfig {
+  const gateway = resolveModelGatewayConfig(capability, env);
 
   return {
     apiKey: gateway.apiKey,

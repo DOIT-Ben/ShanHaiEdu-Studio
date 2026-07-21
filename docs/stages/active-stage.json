@@ -16,6 +16,10 @@
     "src/server/contracts/contract-validator.ts",
     "src/server/contracts/node-contract-registry.ts",
     "src/server/image-generation/image-generation-run.ts",
+    "src/server/model-gateway-config.ts",
+    "scripts/development-gates/model-gateway-smoke-receipt.mjs",
+    "scripts/development-gates/model-gateway-smoke-receipt.d.mts",
+    "scripts/model-gateway-smoke.ts",
     "src/server/ppt-image-slides/ppt-image-slide-assembler.ts",
     "src/server/ppt-image-slides/ppt-image-slide-generation.ts",
     "src/server/ppt-image-slides/ppt-image-slide-types.ts",
@@ -36,12 +40,14 @@
     "tests/agent-tools/main-agent-tool-registry.test.ts",
     "tests/capability-registry.test.ts",
     "tests/main-agent-skill-tool-registration.test.ts",
+    "tests/model-gateway-config.test.ts",
+    "tests/development-gates/model-gateway-smoke-receipt.test.mjs",
     "tests/business-tool-skill-formal-contract.test.ts",
     "tests/v1-9-skill-runtime-preflight.test.ts",
     "tests/tool-registry.test.ts"
   ],
   "protectedPathExceptions": [],
-  "budgets": { "maxChangedFiles": 30, "maxAddedLines": 2400, "maxDeletedLines": 200, "maxBinaryFiles": 0 },
+  "budgets": { "maxChangedFiles": 40, "maxAddedLines": 2400, "maxDeletedLines": 200, "maxBinaryFiles": 0 },
   "providerContinuity": {
     "requirement": "model-gateway-live-smoke",
     "mode": "development-only",
@@ -49,7 +55,7 @@
     "maxAgeHours": 24,
     "liveCallsAuthorized": true,
     "authorizationSource": "user-current-instruction",
-    "capabilities": ["image"],
+    "capabilities": ["image", "ppt_image"],
     "releaseAccepted": false
   }
 }

@@ -6,6 +6,7 @@ export type ModelGatewayCapability =
   | "agent"
   | "text"
   | "image"
+  | "ppt_image"
   | "video"
   | "tts";
 
@@ -22,6 +23,7 @@ const modelNames: Record<ModelGatewayCapability, string> = {
   agent: "MODEL_GATEWAY_AGENT_MODEL",
   text: "MODEL_GATEWAY_TEXT_MODEL",
   image: "MODEL_GATEWAY_IMAGE_MODEL",
+  ppt_image: "MODEL_GATEWAY_PPT_IMAGE_MODEL",
   video: "MODEL_GATEWAY_VIDEO_MODEL",
   tts: "MODEL_GATEWAY_TTS_MODEL",
 };

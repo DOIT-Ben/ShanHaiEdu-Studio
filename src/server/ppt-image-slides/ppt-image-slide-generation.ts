@@ -24,7 +24,7 @@ export async function generatePptImageSlideBundle(input: {
       `画面要求：${page.aiScene.brief}`,
       `视觉系统：${designPackage.visualSystem.materialLanguage}；${designPackage.visualSystem.lighting}；${designPackage.visualSystem.camera}`,
     ].join("\n");
-    const result: ImageGenerationResult = await (input.generateImage ?? generateImageFromPrompt)({ project: input.project, prompt, aspectRatio: "16:9", normalizeCanvas: true, fileStem: `ppt-page-${page.pageId}` });
+    const result: ImageGenerationResult = await (input.generateImage ?? generateImageFromPrompt)({ project: input.project, prompt, aspectRatio: "16:9", normalizeCanvas: true, gatewayCapability: "ppt_image", fileStem: `ppt-page-${page.pageId}` });
     entries.push({
       pageId: page.pageId,
       pageNumber: page.pageNumber,

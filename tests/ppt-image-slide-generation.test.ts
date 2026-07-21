@@ -13,13 +13,13 @@ describe("FrameFlow PPT page image batch", () => {
       generateImage: async (input) => {
         calls.push(input);
         const fileName = `${String(input.fileStem)}.png`;
-        return { fileName, localOutput: `artifact-storage/image-artifacts/${fileName}`, bytes: 2048, sha256: "a".repeat(64), imageValid: true, mime: "image/png", provider: "model_gateway", model: "image-2", width: 1920, height: 1080, promptDigest: "b".repeat(64), rawAsset: { fileName, localOutput: `artifact-storage/image-artifacts/raw-${fileName}`, bytes: 2048, sha256: "c".repeat(64), mime: "image/png", width: 1920, height: 1080 }, normalizedAsset: { fileName, localOutput: `artifact-storage/image-artifacts/${fileName}`, bytes: 2048, sha256: "a".repeat(64), mime: "image/png", width: 1920, height: 1080 } };
+        return { fileName, localOutput: `artifact-storage/image-artifacts/${fileName}`, bytes: 2048, sha256: "a".repeat(64), imageValid: true, mime: "image/png", provider: "model_gateway", model: "nanobanana", width: 1920, height: 1080, promptDigest: "b".repeat(64), rawAsset: { fileName, localOutput: `artifact-storage/image-artifacts/raw-${fileName}`, bytes: 2048, sha256: "c".repeat(64), mime: "image/png", width: 1920, height: 1080 }, normalizedAsset: { fileName, localOutput: `artifact-storage/image-artifacts/${fileName}`, bytes: 2048, sha256: "a".repeat(64), mime: "image/png", width: 1920, height: 1080 } };
       },
     });
     expect(calls).toHaveLength(12);
-    expect(calls.every((call) => call.aspectRatio === "16:9" && call.normalizeCanvas === true)).toBe(true);
+    expect(calls.every((call) => call.aspectRatio === "16:9" && call.normalizeCanvas === true && call.gatewayCapability === "ppt_image")).toBe(true);
     expect(bundle.entries.map((entry) => entry.pageId)).toEqual(design.pageSpecs.map((page) => page.pageId));
-    expect(bundle.entries.every((entry) => entry.width === 1920 && entry.height === 1080 && entry.provider === "model_gateway")).toBe(true);
+    expect(bundle.entries.every((entry) => entry.width === 1920 && entry.height === 1080 && entry.provider === "model_gateway" && entry.model === "nanobanana")).toBe(true);
     expect(bundle.entries.every((entry) => entry.processingChain[0]?.operation === "resize_to_16_9_canvas")).toBe(true);
   });
 });

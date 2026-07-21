@@ -36,7 +36,7 @@ export function resolveRuntimeProviderAvailability(env: Partial<NodeJS.ProcessEn
     ...(hasImageProvider(env) ? { image_asset: true as const } : {}),
     ...(hasImageProvider(env) ? { ppt_sample_assets: true as const } : {}),
     ...(hasImageProvider(env) ? { ppt_full_assets: true as const } : {}),
-    ...(hasImageProvider(env) ? { ppt_image_slides: true as const } : {}),
+    ...(hasGatewayCapability("ppt_image", env) ? { ppt_image_slides: true as const } : {}),
     ...(hasVideoProvider(env) ? { video_segment_generate: true as const } : {}),
     ...(hasVideoNarrationProvider(env) ? { video_narration_generate: true as const } : {}),
   };
@@ -138,7 +138,7 @@ function hasVideoNarrationProvider(env: Partial<NodeJS.ProcessEnv>): boolean {
 }
 
 function hasGatewayCapability(
-  capability: "image" | "video" | "tts",
+  capability: "image" | "ppt_image" | "video" | "tts",
   env: Partial<NodeJS.ProcessEnv>,
 ): boolean {
   try {

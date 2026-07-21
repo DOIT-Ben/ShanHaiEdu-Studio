@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { collectGitVerificationSubject } from "../../scripts/development-gates/verification-subject.mjs";
 import { MODEL_GATEWAY_MODELS, MODEL_GATEWAY_SMOKE_RECEIPT_PATH, verifyModelGatewaySmokeReceipt } from "../../scripts/development-gates/model-gateway-smoke-receipt.mjs";
 
-test("model gateway smoke receipt binds five live capabilities to the current candidate", () => {
+test("model gateway smoke receipt binds shared and PPT image capabilities to the current candidate", () => {
   const root = createRepository();
   try {
     const generatedAt = new Date().toISOString();
@@ -81,6 +81,7 @@ function createReceipt(root, generatedAt) {
       agent: { ok: true, status: 200, model: MODEL_GATEWAY_MODELS.agent, requestIdPresent: true },
       text: { ok: true, status: 200, model: MODEL_GATEWAY_MODELS.text, requestIdPresent: true },
       image: { ...media, model: MODEL_GATEWAY_MODELS.image },
+      pptImage: { ...media, model: MODEL_GATEWAY_MODELS.pptImage },
       tts: { ...media, model: MODEL_GATEWAY_MODELS.tts },
       video: { ...media, status: "completed", model: MODEL_GATEWAY_MODELS.video },
     },

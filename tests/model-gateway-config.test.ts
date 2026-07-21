@@ -26,12 +26,17 @@ describe("unified model gateway configuration", () => {
     expect(resolveModelGatewayConfig("agent", env).model).toBe("gpt-5.6");
     expect(resolveModelGatewayConfig("text", env).model).toBe("deepseek");
     expect(resolveModelGatewayConfig("image", env).model).toBe("image-2");
+    expect(resolveModelGatewayConfig("ppt_image", { ...env, MODEL_GATEWAY_PPT_IMAGE_MODEL: "nanobanana" }).model).toBe("nanobanana");
     expect(resolveModelGatewayConfig("video", env).model).toBe("video-grok");
     expect(resolveModelGatewayConfig("tts", env)).toMatchObject({ model: "speech-2.8-hd", voiceId: "male-qn-qingse" });
   });
 
   it("fails closed without a gateway URL or credential", () => {
     expect(() => resolveModelGatewayConfig("agent", {})).toThrow("MODEL_GATEWAY_CONFIG_MISSING");
+  });
+
+  it("fails closed when the dedicated PPT image model is not configured", () => {
+    expect(() => resolveModelGatewayConfig("ppt_image", { MODEL_GATEWAY_BASE_URL: "https://gateway.example/v1", MODEL_GATEWAY_API_KEY: "secret" })).toThrow("MODEL_GATEWAY_CONFIG_MISSING");
   });
 
   it("normalizes a gateway root URL to the shared /v1 base without duplicating /v1", () => {

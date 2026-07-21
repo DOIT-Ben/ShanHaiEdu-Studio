@@ -7,7 +7,7 @@
 ## FrameFlow 借鉴边界
 
 - 借鉴任务化生图、真实产物校验、失败可重试和产物血缘。
-- 不引入 FrameFlow 的 Provider 配置；生产调用继续只走 `MODEL_GATEWAY_IMAGE_MODEL`。
+- 不引入 FrameFlow 的 Provider 配置；生产调用继续走统一网关，并由 `MODEL_GATEWAY_PPT_IMAGE_MODEL=nanobanana` 独立选择整图模型。
 - 不复制 FrameFlow 的前端、数据库或第二编排器。
 
 ## 实现范围
